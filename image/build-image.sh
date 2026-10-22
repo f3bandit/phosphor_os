@@ -9,7 +9,8 @@
 #     --cache DIR                 downloads are kept here between builds (default: image/cache/)
 #
 # How it works: the image is Mr. Fusion (MiSTer-devel's universal installer image, GPL-3.0), unchanged
-# except for what its installer copies onto the card. On first boot Mr. Fusion expands the card to
+# except for what its installer copies onto the card and one colour in its HDMI start-up program (no
+# blue screen before the splash). On first boot Mr. Fusion expands the card to
 # full size and installs the MiSTer release it carries; here that release also holds Phosphor
 # (/media/fat/phosphor) and a start block in linux/user-startup.sh, made by Phosphor's own install.sh
 # --boot-phosphor. No kernel or Linux of our own; Phosphor's Main runs in place of MiSTer's, which isn't replaced. Nothing here needs root: the image is put together
@@ -70,6 +71,20 @@ for f in zImage release.7z extlinux/extlinux.conf; do
 	[ -e "$WORK/fat/$f" ] || { echo "Mr. Fusion image has no $f" >&2; exit 1; }
 done
 rm -f "$WORK/fat/release.7z"
+# No blue screen before the splash: Mr. Fusion's bootloader runs de10_nano_hdmi_config.bin, which paints
+# the screen a fixed blue (0x0071C5) before it looks for STARTUP.BMP. Change that one constant (Thumb
+# MOVW r6,#0x71C5 at 0x9C6) to the splash's dark background. Checked byte for byte, so any other
+# version of the file stops the build instead of being patched blind.
+HCFG="$WORK/fat/de10_nano_hdmi_config.bin"
+python3 - "$HCFG" <<'PY' || { echo "de10_nano_hdmi_config.bin isn't the expected version" >&2; exit 1; }
+import sys
+p = sys.argv[1]; d = bytearray(open(p, 'rb').read())
+old = bytes.fromhex('47f2c516')  # movw r6, #0x71c5
+new = bytes.fromhex('40f61056')  # movw r6, #0x0d10
+assert d.count(old) == 1 and d[0x9c6:0x9ca] == old
+d[0x9c6:0x9ca] = new
+open(p, 'wb').write(d)
+PY
 
 # ---- 2. MiSTer release (the same files the official SD installer uses)
 SDI="https://github.com/MiSTer-devel/SD-Installer-Win64_MiSTer"
@@ -149,7 +164,8 @@ cat > "$OUT/$NAME.txt" <<EOF
 Phosphor $PHOS_VER SD card image
   MiSTer release: $MISTER (https://github.com/MiSTer-devel/SD-Installer-Win64_MiSTer)
   Mr. Fusion:     $MRF_VER (https://github.com/MiSTer-devel/mr-fusion, GPL-3.0; source and
-                  licences of the Linux kernel and tools it contains: its legal-info folder)
+                  licences of the Linux kernel and tools it contains: its legal-info folder);
+                  de10_nano_hdmi_config.bin's background colour changed from blue to dark
   Phosphor:       $(cat "$PDIR/VERSION")
 EOF
 say "Done"
