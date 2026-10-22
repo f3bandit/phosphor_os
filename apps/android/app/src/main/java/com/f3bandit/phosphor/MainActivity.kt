@@ -32,7 +32,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.ArtCache
+import com.f3bandit.phosphor.ui.CloudContent
+import com.f3bandit.phosphor.ui.CloudMode
 import com.f3bandit.phosphor.ui.BasedOnContent
 import com.f3bandit.phosphor.ui.ConnectContent
 import com.f3bandit.phosphor.ui.EditContent
@@ -85,12 +88,79 @@ fun PhosphorApp(model: AppModel) {
         composable("edit/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> EditRoute(model, nav, e.arguments!!.getLong("id")) }
         composable("based/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> BasedRoute(model, nav, e.arguments!!.getLong("id")) }
         composable("settings") {
-            SettingsContent(model.pairing?.address ?: "", BuildConfigVersion, onForget = { model.forget() }, onBack = { nav.popBackStack() })
+            SettingsContent(model.pairing?.address ?: "", BuildConfigVersion, onForget = { model.forget() }, onBack = { nav.popBackStack() },
+                onCloud = { nav.navigate("cloud") })
         }
+        composable("cloud") { CloudRoute(model, nav) }
     }
 }
 
-const val BuildConfigVersion = "0.1.0"
+const val BuildConfigVersion = "0.2.0"
+
+@Composable
+fun CloudRoute(model: AppModel, nav: NavHostController) {
+    val api = model.api ?: return
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var st by remember { mutableStateOf<CloudState?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var mode by remember { mutableStateOf(CloudMode.MAIN) }
+    var lines by remember { mutableStateOf(listOf<String>()) }
+    var from by remember { mutableStateOf("") }
+    var form by remember { mutableStateOf(AddForm()) }
+    var seen by remember { mutableStateOf(-1L) }
+    fun toast(t: String) = Toast.makeText(ctx, t, Toast.LENGTH_SHORT).show()
+    // a finished job: show what it found, or say how it went
+    fun handle(s: CloudState, wasBusy: Boolean) {
+        st = s
+        if (!wasBusy || s.busy || s.at == seen) return
+        seen = s.at
+        val out = s.output.lines().filter { it.isNotBlank() }
+        when (s.job) {
+            "devices" -> if (s.jobOk) { lines = out; mode = CloudMode.DEVICES }
+            "preview" -> { lines = out; mode = CloudMode.PREVIEW }
+            "add" -> if (s.jobOk) scope.launch {
+                val f = form
+                val extra = if (f.kind == "smb") mapOf<String, Any>("name" to f.kind, "folder" to "${f.share}/Phosphor") else mapOf<String, Any>("name" to f.kind)
+                runCatching { api.cloud("use", extra) }
+                    .onSuccess { st = it; mode = CloudMode.MAIN; form = AddForm() }
+                    .onFailure { error = model.handle(it) }
+            } else toast(out.firstOrNull() ?: "Couldn't add it")
+            "push" -> toast(if (s.jobOk) "Saves sent" else out.lastOrNull() ?: "Sending failed")
+            "pull" -> { toast(if (s.jobOk) "Saves are back" else "Couldn't get them back"); mode = CloudMode.MAIN }
+            "test" -> toast(if (s.jobOk) "Connection OK" else out.lastOrNull() ?: "Couldn't reach it")
+            "setup" -> toast(if (s.jobOk) "rclone is ready" else out.lastOrNull() ?: "Download failed")
+            "use" -> if (!s.jobOk) toast(out.lastOrNull() ?: "Couldn't choose it")
+        }
+    }
+    LaunchedEffect(api.address) {
+        while (true) {
+            val was = st?.busy == true
+            try { handle(api.cloud(), was); error = null } catch (e: Exception) { error = model.handle(e) }
+            delay(if (st?.busy == true) 1000 else 5000)
+        }
+    }
+    fun start(what: String, extra: Map<String, Any> = emptyMap()) = scope.launch {
+        try { st = api.cloud(what, extra); error = null } catch (e: Exception) { error = model.handle(e) }
+    }
+    CloudContent(st, error, mode, lines, from, form,
+        onSend = { start("push") }, onGetBack = { start("devices") },
+        onDevice = { from = it; start("preview", mapOf("from" to it)) },
+        onConfirm = { start("pull", mapOf("from" to from)) },
+        onUse = { start("use", mapOf("name" to it)) },
+        onAdd = { mode = CloudMode.ADD }, onForm = { form = it },
+        onSubmit = {
+            val f = form
+            val settings: Map<String, String> = when (f.kind) {
+                "drive", "dropbox", "onedrive" -> mapOf("token" to f.token.trim())
+                "webdav" -> mapOf("url" to f.address.trim(), "vendor" to "other", "user" to f.user, "pass" to f.password)
+                else -> mapOf("host" to f.address.trim(), "user" to f.user, "pass" to f.password)
+            }.filterValues { it.isNotEmpty() }
+            start("add", mapOf("name" to f.kind, "type" to f.kind, "settings" to settings))
+        },
+        onSetup = { start("setup") }, onTest = { start("test") },
+        onBack = { if (mode != CloudMode.MAIN) mode = CloudMode.MAIN else nav.popBackStack() })
+}
 
 @Composable
 fun ConnectRoute(model: AppModel, onPaired: () -> Unit) {

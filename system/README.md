@@ -4,7 +4,7 @@
 shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
 folders themselves. `phos` talks to it from the command line.
 
-## What it does (0.8.1)
+## What it does (0.9.0)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the
@@ -34,6 +34,10 @@ folders themselves. `phos` talks to it from the command line.
   the Claude plugin, home network only, devices paired with a 6-digit code shown on the TV, only key
   hashes stored (`config/remote.ini`). Library, details, box art upload and download, "Based on",
   scraper, screen filters, launch; not WiFi or pairing. See [docs/remote-api.md](../docs/remote-api.md).
+- **Cloud saves**: drives the cloud-sync module (phosphor-modules): status and storage places on each
+  request; download rclone, add/choose a storage place, check it, send now, preview and get saves back,
+  one job at a time in the background (stopped after 15 minutes). The module never sends WiFi,
+  Bluetooth pairings, passwords or keys.
 - **Diagnostics**: runs the diag module (`phosphor/modules/diag/diag.sh --kv`) in the background
   (killed after 3 minutes), keeps the last results, and makes the support bundle on request.
 - **Artwork store** in `/media/fat/phosphor/data/art/<system>/<game>/box.jpg`, scaled down to
@@ -69,6 +73,7 @@ untested); a refresh of the downloaded lists now and then.
 | `{"cmd":"video_files", "kind":"filters\|masks\|gamma\|presets"}` | `{files:[...]}` paths relative to MiSTer's `Filters`, `Shadow_Masks`, `Gamma`, `Presets` folders |
 | `{"cmd":"edit", "id":20, "set":{"title":"...", "description":"...", "year":"...", "developer":"...", "publisher":"...", "genre":"...", "players":"...", "region":"..."}}` | change a game's details (`""`/null clears; title can't be empty); replies with the game |
 | `{"cmd":"set_art", "id":20, "file":"/path/image.png"}` | store an image as the game's box art (scaled to 512 px, JPEG); replies with the game |
+| `{"cmd":"cloud", "do":"setup\|add\|use\|test\|push\|preview\|pull\|devices\|history", "from":"MiSTer-xxxxxx", "name":"nas", "type":"webdav", "settings":{"url":"...","user":"...","pass":"..."}, "folder":"...", "force":false}` | cloud saves: `{installed, status{rclone, remote, device, last_push, pending, last_error, ...}, remotes:[{name, type, in_use}], job{name, busy, ok, output, at}}`; `do` starts a background job, ask again (no `do`) for its output |
 | `{"cmd":"remote", "on":true, "do":"pair\|stop\|forget", "id":"..."}` | remote access (local socket only): `{on, port, listening, error, addresses, pairing{code, seconds}, paired, devices:[{id, name, created, last_seen}]}` |
 | `{"cmd":"diag", "run":true, "bundle":true}` | whole-system checks: `{installed, busy, at, summary{level, text}, results:[{area, key, level, message}], bundle, error}`; run/bundle start them in the background |
 | `{"cmd":"scrape_sources", "order":["libretro",...], "off":["igdb"]}` | sources in order `[{id, name, on, ready, needs}]`; with order/off saves them |

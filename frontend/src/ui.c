@@ -21,7 +21,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -828,7 +828,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_REMOTE, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_REMOTE, SET_CLOUD, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -864,6 +864,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
+	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
@@ -1662,6 +1663,334 @@ static void remote_key(pkey_t k)
 	}
 }
 
+/* ---------- Cloud saves ----------
+ * The cloud-sync module: saves sent to the user's own storage after each game, with history; getting
+ * them back only on request, with a preview first. WiFi, Bluetooth pairings and passwords are never sent
+ * (the module's fixed list). Sign-in services (Google Drive, Dropbox, OneDrive) are added from the phone
+ * app, which can paste the sign-in token; WebDAV, SFTP and SMB are added here. */
+
+enum { CL_MAIN, CL_DEVICES, CL_PREVIEW, CL_PLACES, CL_TYPES };
+static struct {
+	int mode, installed, ready, busy, job_ok;
+	char remote[80], device[64], last_push[32], last_error[200], pending[4], job[24];
+	char places[16][48], place_types[16][24];
+	int nplaces;
+	char lines[120][120];          /* devices, or the preview */
+	int nlines;
+	char from[64];                 /* the MiSTer a restore comes from */
+	char add_type[16], add_addr[200], add_user[80], add_folder[80];
+	long long seen_at;
+} cl;
+static vlist_t cl_list;
+static lv_obj_t *cl_head, *cl_sub;
+static const char *const CL_HINTS[] = { "A", "Choose", "B", "Back", NULL };
+static const char *const CL_PREVIEW_HINTS[] = { "A", "Get them back", "B", "Cancel", NULL };
+static const char *const CL_NOTHING_HINTS[] = { "A", "OK", NULL };
+static const char *const CL_PLACES_HINTS[] = { "A", "Use", "B", "Back", NULL };
+static const char *const CL_KINDS[][2] = { { "webdav", "WebDAV (NAS, Nextcloud)" }, { "sftp", "SFTP (a PC, NAS or server)" },
+                                          { "smb", "Windows share / NAS (SMB)" }, { "drive", "Google Drive, Dropbox, OneDrive" } };
+#define CL_NTYPES 4
+
+static void cl_split_output(const char *out)
+{
+	cl.nlines = 0;
+	const char *p = out;
+	while (p && *p && cl.nlines < 120) {
+		const char *e = strchr(p, '\n');
+		size_t n = e ? (size_t)(e - p) : strlen(p);
+		if (n) {
+			const char *q = p;
+			while (n && *q == ' ') { q++; n--; }
+			snprintf(cl.lines[cl.nlines++], sizeof(cl.lines[0]), "%.*s", (int)(n < 119 ? n : 119), q);
+		}
+		p = e ? e + 1 : NULL;
+	}
+}
+
+static void cl_apply(cJSON *r)
+{
+	if (!api_ok(r)) {
+		if (cl_head) lv_label_set_text(cl_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		cJSON_Delete(r);
+		return;
+	}
+	cJSON *st = cJSON_GetObjectItem(r, "status"), *j = cJSON_GetObjectItem(r, "job");
+	cl.installed = cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"));
+	const char *rcl = api_str(st, "rclone");
+	cl.ready = rcl && *rcl;
+	snprintf(cl.remote, sizeof(cl.remote), "%s", api_str(st, "remote") ? api_str(st, "remote") : "");
+	snprintf(cl.device, sizeof(cl.device), "%s", api_str(st, "device") ? api_str(st, "device") : "");
+	snprintf(cl.last_push, sizeof(cl.last_push), "%s", api_str(st, "last_push") ? api_str(st, "last_push") : "");
+	snprintf(cl.last_error, sizeof(cl.last_error), "%s", api_str(st, "last_error") ? api_str(st, "last_error") : "");
+	snprintf(cl.pending, sizeof(cl.pending), "%s", api_str(st, "pending") ? api_str(st, "pending") : "0");
+	cl.nplaces = 0;
+	cJSON *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "remotes")) {
+		if (cl.nplaces >= 16) break;
+		snprintf(cl.places[cl.nplaces], sizeof(cl.places[0]), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+		snprintf(cl.place_types[cl.nplaces], sizeof(cl.place_types[0]), "%s", api_str(it, "type") ? api_str(it, "type") : "");
+		cl.nplaces++;
+	}
+	int was_busy = cl.busy;
+	cl.busy = cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"));
+	cl.job_ok = cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"));
+	snprintf(cl.job, sizeof(cl.job), "%s", api_str(j, "name") ? api_str(j, "name") : "");
+	long long at = (long long)api_num(j, "at", 0);
+	const char *out = api_str(j, "output") ? api_str(j, "output") : "";
+	/* a job just finished: say how it went, and show what it found */
+	if (was_busy && !cl.busy && at != cl.seen_at) {
+		cl.seen_at = at;
+		char first[160] = "";
+		const char *nl = strchr(out, '\n');
+		snprintf(first, sizeof(first), "%.*s", (int)(nl ? (size_t)(nl - out) : strlen(out)), out);
+		if (!strcmp(cl.job, "devices") && cl.job_ok) { cl_split_output(out); cl.mode = CL_DEVICES; cl_list.sel = 0; }
+		else if (!strcmp(cl.job, "preview")) { cl_split_output(out); cl.mode = CL_PREVIEW; cl_list.sel = 0; }
+		else if (!strcmp(cl.job, "push")) toast_show(cl.job_ok ? "Saves sent" : "Sending failed");
+		else if (!strcmp(cl.job, "pull")) toast_show(cl.job_ok ? "Saves are back" : "Couldn't get them back");
+		else if (!strcmp(cl.job, "test")) toast_show(cl.job_ok ? "Connection OK" : first);
+		else if (!strcmp(cl.job, "setup")) toast_show(cl.job_ok ? "rclone is ready" : first);
+		else if (!strcmp(cl.job, "use")) toast_show(cl.job_ok ? "Storage place chosen" : first);
+		else if (!strcmp(cl.job, "add")) {
+			if (cl.job_ok) {           /* added: use it straight away */
+				cJSON *q = cJSON_CreateObject();
+				cJSON_AddStringToObject(q, "cmd", "cloud");
+				cJSON_AddStringToObject(q, "do", "use");
+				cJSON_AddStringToObject(q, "name", cl.add_type);
+				if (cl.add_folder[0]) cJSON_AddStringToObject(q, "folder", cl.add_folder);
+				char *b = cJSON_PrintUnformatted(q);
+				cJSON_Delete(q);
+				cJSON_Delete(r);
+				cJSON *u = api_call("%s", b);
+				free(b);
+				cl.busy = 1;
+				cl_apply(u);
+				return;
+			}
+			toast_show(first[0] ? first : "Couldn't add it");
+		}
+	}
+	cJSON_Delete(r);
+	if (!cl_head) return;
+	char h[200], sub[260];
+	if (!cl.installed) {
+		snprintf(h, sizeof(h), "Not installed");
+		snprintf(sub, sizeof(sub), "Install the cloud-sync module: /media/fat/phosphor/modules/cloud-sync/install.sh (in the Phosphor release).");
+	} else if (!cl.ready) {
+		snprintf(h, sizeof(h), "Needs rclone");
+		snprintf(sub, sizeof(sub), "Download it once (about 25 MB, checked against rclone's checksums).");
+	} else if (!cl.remote[0]) {
+		snprintf(h, sizeof(h), "No storage place yet");
+		snprintf(sub, sizeof(sub), "Choose where saves go: your NAS, a PC, or a cloud drive (from the phone app).");
+	} else {
+		snprintf(h, sizeof(h), "Sending to %s  \xC2\xB7  %s", cl.remote, cl.device);
+		if (cl.last_error[0]) snprintf(sub, sizeof(sub), "%s", cl.last_error);
+		else snprintf(sub, sizeof(sub), "%s%s  \xC2\xB7  WiFi, Bluetooth pairings and passwords are never sent",
+		              cl.last_push[0] ? "Last sent " : "Not sent yet", cl.last_push);
+	}
+	if (cl.busy) {
+		static const char *const W[][2] = { { "setup", "Downloading rclone..." }, { "push", "Sending..." }, { "pull", "Getting saves back..." },
+		                                    { "preview", "Checking what would come back..." }, { "test", "Checking the connection..." },
+		                                    { "devices", "Looking in the cloud..." }, { "add", "Adding..." }, { "use", "Choosing..." } };
+		for (size_t i = 0; i < sizeof(W) / sizeof(W[0]); i++) if (!strcmp(cl.job, W[i][0])) snprintf(sub, sizeof(sub), "%s", W[i][1]);
+	}
+	if (!cl.busy) switch (cl.mode) {          /* sub-pages say what they're for */
+	case CL_DEVICES: snprintf(sub, sizeof(sub), "Whose saves? Each MiSTer has its own copy in the cloud."); break;
+	case CL_PREVIEW: snprintf(sub, sizeof(sub), "From %s. Newer files win; anything replaced here is kept in phosphor/backup/cloud-sync.", cl.from); break;
+	case CL_PLACES: snprintf(sub, sizeof(sub), "Where saves go."); break;
+	case CL_TYPES: snprintf(sub, sizeof(sub), "Add a storage place. Passwords are kept on this MiSTer only."); break;
+	default: break;
+	}
+	lv_label_set_text(cl_head, h);
+	lv_label_set_text(cl_sub, sub);
+	switch (cl.mode) {
+	case CL_DEVICES: case CL_PREVIEW: cl_list.count = cl.nlines; break;
+	case CL_PLACES: cl_list.count = cl.nplaces + 1; break;
+	case CL_TYPES: cl_list.count = CL_NTYPES; break;
+	default: cl_list.count = !cl.installed ? 0 : !cl.ready ? 1 : 4; break;
+	}
+	footer_set(cl.mode == CL_PREVIEW ? (cl.nlines && strncmp(cl.lines[0], "Nothing", 7) ? CL_PREVIEW_HINTS : CL_NOTHING_HINTS) : cl.mode == CL_PLACES ? CL_PLACES_HINTS : CL_HINTS);
+	vlist_refresh(&cl_list);
+}
+
+static void cl_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	switch (cl.mode) {
+	case CL_DEVICES: {
+		char *mark = strstr(cl.lines[i], "  (this MiSTer)");
+		snprintf(t, n, "%.*s", mark ? (int)(mark - cl.lines[i]) : (int)strlen(cl.lines[i]), cl.lines[i]);
+		snprintf(val, vn, "%s", mark ? "this MiSTer" : "another MiSTer");
+		return;
+	}
+	case CL_PREVIEW:
+		snprintf(t, n, "%s", cl.lines[i]);
+		*dim = cl.lines[i][0] != 0 && strchr(cl.lines[i], ':') == NULL;
+		return;
+	case CL_PLACES:
+		if (i == cl.nplaces) { snprintf(t, n, "Add a storage place..."); snprintf(val, vn, ">"); return; }
+		snprintf(t, n, "%s", cl.places[i]);
+		snprintf(val, vn, "%s%s", cl.place_types[i], !strncmp(cl.remote, cl.places[i], strlen(cl.places[i])) && cl.remote[strlen(cl.places[i])] == ':' ? "  \xC2\xB7  in use" : "");
+		return;
+	case CL_TYPES:
+		snprintf(t, n, "%s", CL_KINDS[i][1]);
+		snprintf(val, vn, i == 3 ? "from the phone app" : ">");
+		*dim = i == 3;
+		return;
+	}
+	if (!cl.ready) { snprintf(t, n, "Download rclone"); snprintf(val, vn, ">"); return; }
+	*dim = !cl.remote[0] && i != 2;
+	switch (i) {
+	case 0: snprintf(t, n, "Send now"); snprintf(val, vn, "%s", cl.pending[0] == '1' ? "waiting to send" : ""); break;
+	case 1: snprintf(t, n, "Get saves back"); snprintf(val, vn, ">"); break;
+	case 2: snprintf(t, n, "Storage place"); snprintf(val, vn, "%s", cl.remote[0] ? cl.remote : "Choose >"); break;
+	default: snprintf(t, n, "Check the connection"); snprintf(val, vn, ">"); break;
+	}
+}
+
+static void cl_do(const char *what, const char *from)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "cloud");
+	cJSON_AddStringToObject(q, "do", what);
+	if (from && *from) cJSON_AddStringToObject(q, "from", from);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	free(b);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"); cJSON_Delete(r); return; }
+	cl.busy = 1;
+	cl_apply(r);
+}
+
+static void show_cloud(void);
+
+static void cl_add_send(const char *pass)
+{
+	if (cur != SCR_CLOUD) return;
+	if (!pass) { footer_set(CL_HINTS); return; }
+	cJSON *q = cJSON_CreateObject(), *set;
+	cJSON_AddStringToObject(q, "cmd", "cloud");
+	cJSON_AddStringToObject(q, "do", "add");
+	cJSON_AddStringToObject(q, "name", cl.add_type);
+	cJSON_AddStringToObject(q, "type", cl.add_type);
+	set = cJSON_AddObjectToObject(q, "settings");
+	if (!strcmp(cl.add_type, "webdav")) { cJSON_AddStringToObject(set, "url", cl.add_addr); cJSON_AddStringToObject(set, "vendor", "other"); }
+	else cJSON_AddStringToObject(set, "host", cl.add_addr);
+	if (cl.add_user[0]) cJSON_AddStringToObject(set, "user", cl.add_user);
+	if (*pass) cJSON_AddStringToObject(set, "pass", pass);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	memset(b, 0, strlen(b));          /* the password */
+	free(b);
+	cl.mode = CL_MAIN;
+	cl_list.sel = 2;
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't add it"); cJSON_Delete(r); footer_set(CL_HINTS); return; }
+	cl.busy = 1;
+	cl_apply(r);
+}
+
+static void cl_add_user(const char *u)
+{
+	if (cur != SCR_CLOUD || !u) { footer_set(CL_HINTS); return; }
+	snprintf(cl.add_user, sizeof(cl.add_user), "%s", u);
+	osk_open("Password", "Its password (leave empty if there's none), then Done.", 1, 64, cl_add_send, CL_HINTS);
+}
+
+static void cl_add_folder(const char *f)
+{
+	if (cur != SCR_CLOUD || !f || !*f) { footer_set(CL_HINTS); return; }
+	snprintf(cl.add_folder, sizeof(cl.add_folder), "%s/Phosphor", f);
+	osk_open("User name", "The user name for the share.", 0, 64, cl_add_user, CL_HINTS);
+}
+
+static void cl_add_addr(const char *a)
+{
+	if (cur != SCR_CLOUD || !a || !*a) { footer_set(CL_HINTS); return; }
+	snprintf(cl.add_addr, sizeof(cl.add_addr), "%s", a);
+	if (!strcmp(cl.add_type, "smb")) osk_open("Share name", "The shared folder's name, e.g. Backups", 0, 64, cl_add_folder, CL_HINTS);
+	else osk_open("User name", "The user name for it.", 0, 64, cl_add_user, CL_HINTS);
+}
+
+static void show_cloud(void)
+{
+	cur = SCR_CLOUD;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Cloud saves");
+	cl_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(cl_head, S(56), S(178));
+	cl_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(cl_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(cl_sub, W - S(112), S(22));
+	lv_obj_set_pos(cl_sub, S(56), S(208));
+	vlist_create(&cl_list, body, S(56), S(244), S(900), S(380));
+	cl_list.fill = cl_fill;
+	cl_list.sel = 0;
+	cl_list.top = 0;
+	cl_list.count = 0;
+	cl.mode = CL_MAIN;
+	cl_apply(api_call("{\"cmd\":\"cloud\"}"));
+}
+
+static void cloud_key(pkey_t k)
+{
+	if (vlist_key(&cl_list, k)) return;
+	int i = cl_list.sel;
+	if (k == K_B || k == K_MENU) {
+		if (cl.mode != CL_MAIN) {
+			cl.mode = cl.mode == CL_TYPES ? CL_PLACES : CL_MAIN;
+			cl_list.sel = cl.mode == CL_PLACES ? cl.nplaces : 0;
+			cl_list.top = 0;
+			cl_apply(api_call("{\"cmd\":\"cloud\"}"));
+			return;
+		}
+		show_settings();
+		set_list.sel = SET_CLOUD;
+		vlist_refresh(&set_list);
+		return;
+	}
+	if (k != K_A) return;
+	if (cl.busy) { toast_show("Busy: wait for it to finish"); return; }
+	switch (cl.mode) {
+	case CL_DEVICES:
+		if (i < cl.nlines) {
+			char *mark = strstr(cl.lines[i], "  (this MiSTer)");
+			snprintf(cl.from, sizeof(cl.from), "%.*s", mark ? (int)(mark - cl.lines[i]) : (int)strlen(cl.lines[i]), cl.lines[i]);
+			cl_do("preview", cl.from);
+		}
+		return;
+	case CL_PREVIEW:
+		if (cl.nlines && strncmp(cl.lines[0], "Nothing", 7)) { cl.mode = CL_MAIN; cl_list.sel = 1; cl_do("pull", cl.from); }
+		else { cl.mode = CL_MAIN; cl_apply(api_call("{\"cmd\":\"cloud\"}")); }
+		return;
+	case CL_PLACES:
+		if (i == cl.nplaces) { cl.mode = CL_TYPES; cl_list.sel = 0; cl_apply(api_call("{\"cmd\":\"cloud\"}")); return; }
+		{
+			cJSON *r = api_call("{\"cmd\":\"cloud\",\"do\":\"use\",\"name\":\"%s\"}", cl.places[i]);
+			cl.mode = CL_MAIN;
+			cl_list.sel = 2;
+			if (api_ok(r)) cl.busy = 1;
+			cl_apply(r);
+		}
+		return;
+	case CL_TYPES:
+		if (i == 3) { toast_show("Add Google Drive, Dropbox or OneDrive from the Phosphor app (it needs a sign-in)"); return; }
+		snprintf(cl.add_type, sizeof(cl.add_type), "%s", CL_KINDS[i][0]);
+		cl.add_folder[0] = 0;
+		cl.add_user[0] = 0;
+		osk_open(i == 0 ? "WebDAV address" : "Address", i == 0 ? "e.g. https://nas.local/remote.php/dav/files/me" : "The computer or NAS, e.g. 192.168.1.5",
+		         0, 190, cl_add_addr, CL_HINTS);
+		return;
+	}
+	if (!cl.installed) return;
+	if (!cl.ready) { cl_do("setup", NULL); return; }
+	switch (i) {
+	case 0: if (cl.remote[0]) cl_do("push", NULL); else toast_show("Choose a storage place first"); break;
+	case 1: if (cl.remote[0]) cl_do("devices", NULL); else toast_show("Choose a storage place first"); break;
+	case 2: cl.mode = CL_PLACES; cl_list.sel = 0; cl_list.top = 0; cl_apply(api_call("{\"cmd\":\"cloud\"}")); break;
+	default: if (cl.remote[0]) cl_do("test", NULL); else toast_show("Choose a storage place first"); break;
+	}
+}
+
 /* ---------- file picker ----------
  * For long lists of files in folders (300 filters, 1200 shadow masks): shows one folder at a time,
  * A opens a folder or picks a file, B goes up a folder (or cancels at the top). "Off" comes first. */
@@ -2051,6 +2380,9 @@ void ui_key(pkey_t k)
 	case SCR_REMOTE:
 		remote_key(k);
 		break;
+	case SCR_CLOUD:
+		cloud_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -2060,6 +2392,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_DIAG) show_diag();
 			else if (set_list.sel == SET_WIFI) show_wifi();
 			else if (set_list.sel == SET_REMOTE) show_remote();
+			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else settings_change(1);
 		}
@@ -2079,6 +2412,7 @@ void ui_tick(void)
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }

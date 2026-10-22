@@ -7,7 +7,7 @@
  *                                    "none" to leave it as it is)
  *   phosphor --fb-rb 0|1             colour order for fb_cmd1 (default 1; try 0 if red and blue are swapped)
  *   phosphor --log-serial [dev]      also log to the serial console (default /dev/ttyS0)
- *   phosphor --snapshot out.ppm [--keys right,a,...] [--size 1280x720]
+ *   phosphor --snapshot out.ppm [--keys right,a,wait,...] [--size 1280x720]   (wait: 1 s for background work)
  *                                    render without a screen, press the keys, save a picture
  *
  * While a game runs (MiSTer's /tmp/CORENAME is not MENU) the frontend sleeps and ignores input. */
@@ -82,6 +82,12 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 		snprintf(buf, sizeof(buf), "%s", keys);
 		char *save = NULL;
 		for (char *k = strtok_r(buf, ",", &save); k; k = strtok_r(NULL, ",", &save)) {
+			if (!strcmp(k, "wait")) {                 /* let background work (phosphord jobs) finish: 1 s */
+				usleep(1000000);
+				advance(1000);
+				ui_tick();
+				continue;
+			}
 			pkey_t pk = key_from_name(k);
 			if (pk != KEY_NONE_) ui_key(pk);
 			advance(250);

@@ -53,6 +53,9 @@ class ApiTest {
         val cands = api.candidates(g.id, null)
         println("candidates: ${cands.size}")
 
+        val cl = api.cloud()
+        println("cloud: installed=${cl.installed} ready=${cl.ready} remote=${cl.remote} places=${cl.places}")
+
         val refused = runCatching { api.cmd(JSONObject().put("cmd", "wifi")) }.exceptionOrNull()
         assertTrue(refused is PhosphorError)
         println("wifi refused: ${refused?.message}")

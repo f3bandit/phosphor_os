@@ -8,7 +8,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.activity.ComponentActivity
 import android.graphics.Canvas
+import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.BasedOnContent
+import com.f3bandit.phosphor.ui.CloudContent
+import com.f3bandit.phosphor.ui.CloudMode
 import com.f3bandit.phosphor.ui.ConnectContent
 import com.f3bandit.phosphor.ui.EditContent
 import com.f3bandit.phosphor.ui.GameContent
@@ -85,4 +88,13 @@ class ScreenshotTest {
             null, {}, {}, {}, {})
     }
     @Test fun settings() = shot("8-settings") { SettingsContent("192.168.1.23:8767", "0.1.0", {}, {}) }
+
+    private val cloud = CloudState(true, true, "nas:Phosphor", "MiSTer-a1b2c3", "2026-10-22 11:45", false, "",
+        listOf(CloudPlace("nas", "webdav", true), CloudPlace("drive", "drive", false)), "push", false, true, "", 0)
+    private fun cloudShot(name: String, st: CloudState, mode: CloudMode, lines: List<String> = emptyList(), form: AddForm = AddForm()) = shot(name) {
+        CloudContent(st, null, mode, lines, "MiSTer-a1b2c3", form, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})
+    }
+    @Test fun cloudMain() = cloudShot("9-cloud", cloud, CloudMode.MAIN)
+    @Test fun cloudPreview() = cloudShot("10-cloud-preview", cloud, CloudMode.PREVIEW, listOf("Would get (2):", "  saves/SNES/Zelda.sav", "  saves/PSX/Final Fantasy Tactics (USA).mcd"))
+    @Test fun cloudAdd() = cloudShot("11-cloud-add", cloud, CloudMode.ADD, form = AddForm(kind = "drive"))
 }

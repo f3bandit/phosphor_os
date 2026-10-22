@@ -206,7 +206,17 @@ shared by WebDAV or SFTP, or a Google Drive token (`rclone authorize "drive"` on
 - [ ] Boot: sends once after the network is up; boot time not slower.
 - [ ] `uninstall.sh` → user-startup.sh as before; settings and cloud copies kept.
 
-## 12. Safety checks (each time something is installed)
+## 12. Cloud saves screens (TV and phone)
+
+- [ ] TV, Settings > Cloud saves: "Needs rclone" → Download rclone → ready.
+- [ ] Add a WebDAV/SFTP/SMB place with the on-screen keyboard → chosen automatically; Check the connection → OK.
+- [ ] Send now → "Saves sent"; the line under the title shows the time.
+- [ ] Get saves back → this MiSTer → preview list → A → "Saves are back". Nothing to restore → "OK" only.
+- [ ] Phone, Settings > Cloud saves: same status; Send now; Get saves back with preview.
+- [ ] Phone: add Google Drive with a token from `rclone authorize "drive"` on the PC → sends to Drive.
+- [ ] A wrong password → Check the connection says why; nothing else changes.
+
+## 13. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

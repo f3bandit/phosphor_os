@@ -36,6 +36,10 @@
  *   edit       id set{title, description, year, developer, publisher, genre, players, region}
  *                                           change a game's details ("" or null clears; title can't be empty)
  *   set_art    id file                      store an image file as the game's box art (scaled, JPEG)
+ *   cloud      [do: setup|add|use|test|push|preview|pull|devices|history] [from] [name] [type]
+ *              [settings{}] [folder] [force]
+ *                                           cloud saves (cloud-sync module): {installed, status{...},
+ *                                           remotes:[{name,type,in_use}], job{name,busy,ok,output,at}}
  *   remote     [on] [do: pair|stop|forget] [id]
  *                                           remote access (local socket only): {on, port, listening,
  *                                           error, addresses, pairing{code, seconds}|null, paired,
@@ -48,6 +52,7 @@
 #include "wifi.h"
 #include "video.h"
 #include "remote.h"
+#include "cloud.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -722,6 +727,83 @@ static char *cmd_set_art(sqlite3 *db, cJSON *req)
 	return cmd_game(db, id);
 }
 
+/* cloud saves (cloud-sync module): status, storage places, and one background job at a time */
+static char *cmd_cloud(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) {
+		const char *args[24] = { 0 };
+		char store[20][300];
+		int a = 0, k = 0;
+		const char *from = cJSON_GetStringValue(cJSON_GetObjectItem(req, "from"));
+		const char *name = cJSON_GetStringValue(cJSON_GetObjectItem(req, "name"));
+		if (!strcmp(d, "pull") || !strcmp(d, "preview")) {
+			if (from && *from) { args[a++] = "--from"; args[a++] = from; }
+			if (cJSON_IsTrue(cJSON_GetObjectItem(req, "force"))) args[a++] = "--force";
+		} else if (!strcmp(d, "push")) {
+			if (cJSON_IsTrue(cJSON_GetObjectItem(req, "force"))) args[a++] = "--force";
+		} else if (!strcmp(d, "use")) {
+			const char *folder = cJSON_GetStringValue(cJSON_GetObjectItem(req, "folder"));
+			if (!name || !*name) return fail("name missing");
+			args[a++] = name;
+			if (folder && *folder) args[a++] = folder;
+		} else if (!strcmp(d, "add")) {
+			const char *type = cJSON_GetStringValue(cJSON_GetObjectItem(req, "type"));
+			if (!name || !*name || !type || !*type) return fail("name and type needed");
+			args[a++] = name;
+			args[a++] = type;
+			cJSON *it, *set = cJSON_GetObjectItem(req, "settings");
+			cJSON_ArrayForEach(it, set) {
+				if (!cJSON_IsString(it) || k >= 20 || a >= 22) continue;
+				if (!it->string[0] || strspn(it->string, "abcdefghijklmnopqrstuvwxyz_0123456789") != strlen(it->string)) return fail("bad setting name");
+				snprintf(store[k], sizeof(store[k]), "%s=%s", it->string, it->valuestring);
+				args[a++] = store[k++];
+			}
+		} else if (strcmp(d, "setup") && strcmp(d, "test") && strcmp(d, "devices") && strcmp(d, "history")) {
+			return fail("do: setup, add, use, test, push, preview, pull, devices or history");
+		}
+		int r = cloud_start(d, args);
+		if (r == 1) return fail("cloud-sync is busy with something else; try again in a moment");
+		if (r < 0) return fail("The cloud-sync module isn't installed");
+	}
+	cloud_state_t cs;
+	cloud_state(&cs);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", cs.installed);
+	cJSON *st = cJSON_AddObjectToObject(o, "status");
+	char *save = NULL;
+	for (char *line = cs.status ? strtok_r(cs.status, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		cJSON_AddStringToObject(st, line, eq + 1);
+	}
+	cJSON *rs = cJSON_AddArrayToObject(o, "remotes");
+	save = NULL;
+	for (char *line = cs.remotes ? strtok_r(cs.remotes, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *tab = strchr(line, '\t');
+		if (!tab) continue;
+		*tab = 0;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "name", line);
+		char *use = strstr(tab + 1, "  (in use)");
+		if (use) *use = 0;
+		cJSON_AddStringToObject(x, "type", tab + 1);
+		cJSON_AddBoolToObject(x, "in_use", use != NULL);
+		cJSON_AddItemToArray(rs, x);
+	}
+	cJSON *j = cJSON_AddObjectToObject(o, "job");
+	cJSON_AddStringToObject(j, "name", cs.job);
+	cJSON_AddBoolToObject(j, "busy", cs.busy);
+	cJSON_AddBoolToObject(j, "ok", cs.ok);
+	cJSON_AddStringToObject(j, "output", cs.output ? cs.output : "");
+	cJSON_AddNumberToObject(j, "at", (double)cs.at);
+	free(cs.status);
+	free(cs.remotes);
+	free(cs.output);
+	return reply(o);
+}
+
 static char *cmd_remote(cJSON *req)
 {
 	cJSON *on = cJSON_GetObjectItem(req, "on");
@@ -783,6 +865,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "edit")) out = cmd_edit(db, req);
 	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
+	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
