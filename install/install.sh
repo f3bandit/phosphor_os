@@ -32,6 +32,10 @@ mkdir -p "$ROOT/bin" "$ROOT/config" "$ROOT/data" "$ROOT/logs" "$ROOT/backup" || 
 for f in phosphor phosphord phos; do
 	cp "$HERE/bin/$f" "$ROOT/bin/$f.new" && chmod 755 "$ROOT/bin/$f.new" && mv -f "$ROOT/bin/$f.new" "$ROOT/bin/$f" || { echo "couldn't copy $f" >&2; exit 1; }
 done
+# phosphor-main (Phosphor's Main fork): only copied; nothing starts it or replaces MiSTer's Main
+if [ -f "$HERE/bin/MiSTer_phosphor" ]; then
+	cp "$HERE/bin/MiSTer_phosphor" "$ROOT/bin/MiSTer_phosphor.new" && chmod 755 "$ROOT/bin/MiSTer_phosphor.new" && mv -f "$ROOT/bin/MiSTer_phosphor.new" "$ROOT/bin/MiSTer_phosphor"
+fi
 cp "$HERE/phosphor.sh" "$HERE/uninstall.sh" "$ROOT/" && chmod 755 "$ROOT/phosphor.sh" "$ROOT/uninstall.sh"
 cp "$HERE/VERSION" "$ROOT/VERSION"
 # example settings: only when there isn't one already

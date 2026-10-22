@@ -1,0 +1,103 @@
+/* Phosphor shell: the link to phosphor-main (Phosphor's fork of MiSTer Main), when it's installed.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ *
+ * Talks to the fork's local API (/tmp/phosphor-main.sock, one text command per line) only; no code
+ * from Main. With the fork, the shell holds the screen while this connection is open: Main's menu
+ * ignores the controls, and if the shell stops, Main takes the screen back by itself. */
+#include "mainlink.h"
+#include "log.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <time.h>
+#include <unistd.h>
+
+static int fd = -1, ever = 0;
+static long long next_try;
+
+static long long now_ms(void)
+{
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+static const char *path(void)
+{
+	const char *p = getenv("PHOSPHOR_MAIN_SOCK");
+	return p && *p ? p : "/tmp/phosphor-main.sock";
+}
+
+/* one command, one reply line (1 s at most) */
+static int ask(const char *cmd, char *reply, size_t n)
+{
+	char line[128];
+	snprintf(line, sizeof(line), "%s\n", cmd);
+	if (send(fd, line, strlen(line), MSG_NOSIGNAL) < 0) return -1;
+	size_t len = 0;
+	long long end = now_ms() + 1000;
+	while (len + 1 < n) {
+		struct pollfd p = { fd, POLLIN, 0 };
+		int left = (int)(end - now_ms());
+		if (left <= 0 || poll(&p, 1, left) <= 0) return -1;
+		ssize_t r = recv(fd, reply + len, 1, 0);
+		if (r <= 0) return -1;
+		if (reply[len] == '\n') { reply[len] = 0; return 0; }
+		len++;
+	}
+	return -1;
+}
+
+static int take(void)
+{
+	fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (fd < 0) return 0;
+	struct sockaddr_un a = { .sun_family = AF_UNIX };
+	snprintf(a.sun_path, sizeof(a.sun_path), "%s", path());
+	char r[256];
+	if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0 || ask("hello", r, sizeof(r)) || !strstr(r, "\"api\":")
+	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
+		close(fd);
+		fd = -1;
+		return 0;
+	}
+	fcntl(fd, F_SETFL, O_NONBLOCK);
+	plog("phosphor-main: the shell has the screen");
+	ever = 1;
+	usleep(150000);              /* Main switches to the framebuffer in its next UI pass */
+	return 1;
+}
+
+int mainlink_start(void)
+{
+	if (take()) return 1;
+	plog("stock MiSTer Main (no phosphor-main): press F9 on a keyboard to see the shell");
+	return 0;
+}
+
+int mainlink_connected(void) { return fd >= 0; }
+
+int mainlink_poll(void)
+{
+	if (fd >= 0) {
+		char buf[1024];
+		for (;;) {
+			ssize_t r = recv(fd, buf, sizeof(buf), 0);
+			if (r > 0) continue;              /* events: nothing to do with them yet */
+			if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) return 0;
+			plog("phosphor-main went away; trying again");
+			close(fd);
+			fd = -1;
+			next_try = now_ms() + 2000;
+			return 0;
+		}
+	}
+	if (!ever || now_ms() < next_try) return 0;   /* stock Main: don't keep knocking */
+	next_try = now_ms() + 3000;
+	return take();
+}

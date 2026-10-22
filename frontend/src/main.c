@@ -13,6 +13,7 @@
  * While a game runs (MiSTer's /tmp/CORENAME is not MENU) the frontend sleeps and ignores input. */
 #include "input.h"
 #include "api.h"
+#include "mainlink.h"
 #include "log.h"
 #include "settings.h"
 #include "theme.h"
@@ -125,9 +126,12 @@ static int menu_active(void)
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
 	lv_tick_set_cb(mono_ms);
-	int mw, mh;
-	if (fb_mode && sscanf(fb_mode, "%dx%d", &mw, &mh) == 2) {
-		/* Main only accepts this while the Linux framebuffer is showing (F9 in the stock menu) */
+	int mw = 0, mh = 0;
+	int have_mode = fb_mode && sscanf(fb_mode, "%dx%d", &mw, &mh) == 2;
+	/* with phosphor-main the shell takes the screen itself; with stock Main it's F9 */
+	mainlink_start();
+	if (have_mode) {
+		/* Main only accepts this while the Linux framebuffer is showing */
 		char cmd[64], err[256];
 		snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
 		if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
@@ -144,6 +148,12 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 	int was_active = 1;
 	for (;;) {
 		uint32_t now = mono_ms();
+		if (mainlink_poll() && have_mode) {     /* Main restarted and gave the screen back to us */
+			char cmd[64], err[256];
+			snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
+			if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
+			lv_obj_invalidate(lv_screen_active());
+		}
 		int active = menu_active();
 		if (!active) {
 			/* a game is running: drain input so nothing happens behind it, and sleep */

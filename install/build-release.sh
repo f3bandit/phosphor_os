@@ -8,6 +8,8 @@ D="dist/phosphor-$V"
 rm -rf "$D"
 mkdir -p "$D/bin" "$D/config"
 cp frontend/build-arm/phosphor system/build-arm/phosphord system/build-arm/phos "$D/bin/"
+# phosphor-main (GPL-3.0, its own repo): copied in when built next to this repo; never started by the installer
+if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/bin/MiSTer_phosphor"; fi
 for f in "$D"/bin/*; do file "$f" | grep -q "ARM" || { echo "$f isn't an ARM build" >&2; exit 1; }; done
 cp install/install.sh install/uninstall.sh install/phosphor.sh LICENSE.md "$D/"
 cp system/config/systems.ini "$D/config/"
