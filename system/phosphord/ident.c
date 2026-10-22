@@ -4,9 +4,9 @@
  * Cartridges and computer files: CRC32 of the ROM data, the way the No-Intro sets count it
  * (copier headers left out: iNES/FDS 16 bytes, SNES 512, Atari 7800 128, Lynx 64; N64 read in
  * big-endian .z64 order whatever the file's byte order).
- * Discs: identity is the CRC32 of the first data track (.cue/.bin, .iso), because mods and patched
- * discs usually keep the original's product code. The product code itself (PlayStation SYSTEM.CNF,
- * Saturn and Mega-CD headers) is kept for looking the game up. A .chd is compressed: its identity is
+ * Discs (.cue/.bin, .iso): the product code (PlayStation SYSTEM.CNF, Saturn and Mega-CD headers)
+ * for looking the game up; identity is product code + data track size + CRC of its first megabyte.
+ * That reads well under a second per disc; hashing whole discs took ~40 s each over USB. A .chd is compressed: its identity is
  * the SHA-1 of the original data that the .chd header carries; its product code isn't read yet.
  * Arcade: the MAME set name in the .mra.
  *
@@ -91,6 +91,30 @@ static int crc_file(const gsys_t *sys, const char *path, char out[9])
 			}
 		}
 		crc = crc_update(crc, buf, n);
+	}
+	int err = ferror(f);
+	fclose(f);
+	if (err) return -1;
+	snprintf(out, 9, "%08x", crc);
+	return 0;
+}
+
+/* CRC32 of the first `max` bytes of a file, and its size */
+static int crc_head(const char *path, long max, char out[9], long *size)
+{
+	crc_init();
+	FILE *f = fopen(path, "rb");
+	if (!f) return -1;
+	fseek(f, 0, SEEK_END);
+	*size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	static unsigned char buf[64 * 1024];
+	uint32_t crc = 0;
+	long left = max;
+	size_t n;
+	while (left > 0 && (n = fread(buf, 1, (size_t)(left < (long)sizeof(buf) ? left : (long)sizeof(buf)), f)) > 0) {
+		crc = crc_update(crc, buf, n);
+		left -= (long)n;
 	}
 	int err = ferror(f);
 	fclose(f);
@@ -296,14 +320,17 @@ int ident_file(const gsys_t *sys, const char *path, ident_t *out)
 		return 0;
 	}
 	if (sys->type == 's' && !(dot && !strcasecmp(dot, ".exe"))) {
-		/* the product code is for looking the game up; identity is the data track's CRC, because a mod
-		 * or patched disc usually keeps the original's product code */
+		/* Fast: product code + data track size + a CRC of its first megabyte, all read in well under
+		 * a second (a whole-disc CRC takes ~40 s per disc over USB). Size and the sample keep a mod or
+		 * patched disc, which usually keeps the original's product code, apart from the original. */
 		char track[1024];
 		int rc = disc_serial(sys, path, out->serial, sizeof(out->serial), track, sizeof(track));
 		if (rc == -3) return -1;             /* can't open the disc image right now */
-		if (rc) out->serial[0] = 0;          /* no product code on the disc */
-		if (crc_file(sys, track, out->crc32)) return -1;
-		if (out->crc32[0]) snprintf(out->key, sizeof(out->key), "crc:%s", out->crc32);
+		if (rc) out->serial[0] = 0;          /* no product code on the disc (e.g. PC Engine CD) */
+		long size;
+		char sample[9];
+		if (crc_head(track, 1024L * 1024, sample, &size)) return -1;
+		snprintf(out->key, sizeof(out->key), "disc:%.20s:%ld:%s", out->serial[0] ? out->serial : "-", size, sample);
 		return 0;
 	}
 	if (crc_file(sys, path, out->crc32)) return -1;
