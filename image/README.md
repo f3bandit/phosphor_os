@@ -11,8 +11,10 @@ A ready-to-flash image: stock MiSTer (the MiSTer-devel release) with Phosphor al
 3. Put the card in and power on. The install screen shows while the card is expanded to its full size
    and MiSTer and Phosphor are copied onto it (a few minutes); then it restarts into MiSTer.
 
-Afterwards it's a normal MiSTer: run `update_all` or the downloader to get cores; Phosphor's library
-service starts at boot (block "phosphor" in `linux/user-startup.sh`). `/media/fat/phosphor/uninstall.sh`
+Afterwards it boots into Phosphor: its library service, Phosphor's Main (MiSTer's Main plus Phosphor's
+API, run in place of `/media/fat/MiSTer`, which isn't replaced) and the shell, from the block "phosphor"
+in `linux/user-startup.sh`. MiSTer's own menu is still there (quit the shell, or Launch Phosphor in the
+OSD to come back); run `update_all` or the downloader to get cores as on any MiSTer. `/media/fat/phosphor/uninstall.sh`
 removes Phosphor like on any other install. The Phosphor release is also kept in `/media/fat/phosphor/`
 for installing modules later.
 
@@ -27,7 +29,7 @@ installer image, and changes only what Mr. Fusion's installer copies onto the ca
 
 - `release.7z`: the MiSTer release from
   [SD-Installer-Win64_MiSTer](https://github.com/MiSTer-devel/SD-Installer-Win64_MiSTer), unpacked, with
-  Phosphor installed into it by Phosphor's own `install.sh --boot`, packed again (LZMA2, no filters, so
+  Phosphor installed into it by Phosphor's own `install.sh --boot-phosphor`, packed again (LZMA2, no filters, so
   Mr. Fusion's 7-Zip 16.02 unpacks it);
 - `splash.png`: Phosphor's install screen (`image/make-splash.py`);
 - the first partition is made bigger to fit.

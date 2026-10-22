@@ -5,6 +5,9 @@
 #   install.sh             copy Phosphor to /media/fat/phosphor; nothing starts at boot
 #   install.sh --boot      also start phosphord (library service, not the shell) at boot,
 #                          through a marked block in linux/user-startup.sh
+#   install.sh --boot-phosphor
+#                          boot into Phosphor: phosphord, Phosphor's Main in place of MiSTer's, the shell
+#                          (the same block; MiSTer's menu is still there: Launch Phosphor, or quit the shell)
 #
 # Nothing outside /media/fat/phosphor is changed, except user-startup.sh with --boot (backed up
 # first; uninstall.sh takes the block out again). Console Mode and MiSTer's settings are not touched.
@@ -19,6 +22,7 @@ STARTUP="$FAT/linux/user-startup.sh"
 TAG="phosphor"
 BOOT=0
 [ "${1:-}" = "--boot" ] && BOOT=1
+[ "${1:-}" = "--boot-phosphor" ] && BOOT=2
 
 for f in bin/phosphor bin/phosphord bin/phos phosphor.sh uninstall.sh VERSION; do
 	[ -e "$HERE/$f" ] || { echo "missing $f: run this from the unpacked Phosphor folder" >&2; exit 1; }
@@ -55,7 +59,7 @@ if [ -x "$HERE/modules/diag/install.sh" ]; then
 	PHOSPHOR_ROOT="$ROOT" "$HERE/modules/diag/install.sh" > /dev/null || echo "note: the diag module didn't install" >&2
 fi
 
-if [ "$BOOT" = 1 ]; then
+if [ "$BOOT" != 0 ]; then
 	mkdir -p "${STARTUP%/*}"
 	if [ -f "$STARTUP" ] && ! grep -q "^# $TAG: BEGIN" "$STARTUP"; then
 		cp "$STARTUP" "$ROOT/backup/user-startup.sh.$(date +%Y%m%d-%H%M%S)"
@@ -64,9 +68,11 @@ if [ "$BOOT" = 1 ]; then
 	tmp="$(mktemp)"
 	awk -v t="$TAG" '$0 == "# " t ": BEGIN" {skip=1} !skip {print} $0 == "# " t ": END" {skip=0}' "$STARTUP" > "$tmp"
 	# S99user also runs user-startup.sh with "stop" at shutdown: start only on start
-	printf '# %s: BEGIN\n[ "${1:-start}" = start ] && %s/phosphor.sh service > /dev/null 2>&1 &\n# %s: END\n' "$TAG" "$RUNROOT" "$TAG" >> "$tmp"
+	WHAT=service; [ "$BOOT" = 2 ] && WHAT=boot
+	printf '# %s: BEGIN\n[ "${1:-start}" = start ] && %s/phosphor.sh %s > /dev/null 2>&1 &\n# %s: END\n' "$TAG" "$RUNROOT" "$WHAT" "$TAG" >> "$tmp"
 	cat "$tmp" > "$STARTUP" && rm -f "$tmp" && chmod +x "$STARTUP"
-	echo "phosphord will start at boot (block \"$TAG\" in $STARTUP)"
+	if [ "$BOOT" = 2 ]; then echo "boots into Phosphor (block \"$TAG\" in $STARTUP)"
+	else echo "phosphord will start at boot (block \"$TAG\" in $STARTUP)"; fi
 fi
 
 echo "Phosphor $(cat "$ROOT/VERSION") installed in $ROOT"
