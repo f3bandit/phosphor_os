@@ -62,6 +62,12 @@ shell starts it if it isn't running.
 
   ![Controllers & memory cards](docs/ports.png)
 
+- **Bluetooth** (Settings): the paired controllers, connected or not; pair a new one (put it in pairing mode;
+  MiSTer's own pairing tool does the work, so the OSD and Phosphor share the same pairings); disconnect or
+  forget one. Pairings stay on the SD card.
+
+  ![Bluetooth](docs/bluetooth.png)
+
 - **Backups** (Settings): the backup-agent snapshots with date, reason and size; Back up now; pick one to
   see the saves in it, then A restores saves only or X everything (settings too). A safety backup is
   taken first, so a restore can be undone from the same list.

@@ -21,7 +21,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -828,7 +828,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -863,6 +863,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	}
 	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
+	case SET_BT: snprintf(t, n, "Bluetooth"); snprintf(val, vn, ">"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
@@ -2425,6 +2426,144 @@ static void ports_key(pkey_t k)
 	}
 }
 
+/* ---------- Bluetooth ----------
+ * Controllers paired with MiSTer's own Bluetooth (phosphord runs MiSTer's btctl): pair a new one
+ * (it looks for a controller in pairing mode for up to 90 s), and for each paired one disconnect or
+ * forget. Pairings stay on this SD card. */
+
+enum { BT_MAIN, BT_ACTION };
+static struct {
+	int mode, present, busy, ok, ndev;
+	long long at, seen_at;
+	char message[160], found[64];
+	char mac[24][18], name[24][64];
+	int conn[24], input[24];
+	int pick;
+} bt;
+static vlist_t bt_list;
+static lv_obj_t *bt_head, *bt_sub;
+static const char *const BT_HINTS[] = { "A", "Choose", "B", "Back", NULL };
+static const char *const BT_ACTION_HINTS[] = { "A", "Disconnect", "X", "Forget", "B", "Cancel", NULL };
+
+static void bt_apply(cJSON *r)
+{
+	if (!api_ok(r)) {
+		if (bt_head) lv_label_set_text(bt_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		cJSON_Delete(r);
+		return;
+	}
+	cJSON *p = cJSON_GetObjectItem(r, "pairing"), *it;
+	bt.present = cJSON_IsTrue(cJSON_GetObjectItem(r, "present"));
+	int was = bt.busy;
+	bt.busy = cJSON_IsTrue(cJSON_GetObjectItem(p, "busy"));
+	bt.ok = cJSON_IsTrue(cJSON_GetObjectItem(p, "ok"));
+	bt.at = (long long)api_num(p, "at", 0);
+	snprintf(bt.message, sizeof(bt.message), "%s", api_str(p, "message") ? api_str(p, "message") : "");
+	snprintf(bt.found, sizeof(bt.found), "%s", api_str(p, "found") ? api_str(p, "found") : "");
+	bt.ndev = 0;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "devices")) {
+		if (bt.ndev >= 24) break;
+		int i = bt.ndev++;
+		snprintf(bt.mac[i], sizeof(bt.mac[0]), "%s", api_str(it, "mac") ? api_str(it, "mac") : "");
+		snprintf(bt.name[i], sizeof(bt.name[0]), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+		bt.conn[i] = cJSON_IsTrue(cJSON_GetObjectItem(it, "connected"));
+		bt.input[i] = cJSON_IsTrue(cJSON_GetObjectItem(it, "input"));
+	}
+	cJSON_Delete(r);
+	if (was && !bt.busy && bt.at != bt.seen_at) { bt.seen_at = bt.at; toast_show(bt.message); }
+	if (!bt_head) return;
+	int nc = 0;
+	for (int i = 0; i < bt.ndev; i++) nc += bt.conn[i];
+	char h[200], sub[260];
+	if (!bt.present) {
+		snprintf(h, sizeof(h), "No Bluetooth adapter");
+		snprintf(sub, sizeof(sub), "Plug in a Bluetooth adapter; it shows up here by itself.");
+	} else {
+		snprintf(h, sizeof(h), "%d paired  \xC2\xB7  %d connected", bt.ndev, nc);
+		snprintf(sub, sizeof(sub), "Pairings stay on this SD card.");
+	}
+	if (bt.busy) snprintf(sub, sizeof(sub), "%s%s%s", bt.message, bt.found[0] ? ": " : "", bt.found);
+	if (bt.mode == BT_ACTION && bt.pick < bt.ndev)
+		snprintf(sub, sizeof(sub), "%s: A disconnects it (it reconnects when you turn it on), X forgets it.", bt.name[bt.pick]);
+	lv_label_set_text(bt_head, h);
+	lv_label_set_text(bt_sub, sub);
+	bt_list.count = bt.present ? 1 + bt.ndev : 0;
+	footer_set(bt.mode == BT_ACTION ? BT_ACTION_HINTS : BT_HINTS);
+	vlist_refresh(&bt_list);
+}
+
+static void bt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	if (i == 0) {
+		snprintf(t, n, "%s", bt.busy ? "Stop looking" : "Pair a controller");
+		snprintf(val, vn, "%s", bt.busy ? "Looking..." : ">");
+		return;
+	}
+	i--;
+	snprintf(t, n, "%s", bt.name[i]);
+	snprintf(val, vn, "%s", bt.conn[i] ? "Connected" : "Not connected");
+	*dim = !bt.conn[i];
+}
+
+static void bt_do(const char *what, const char *mac)
+{
+	char q[128];
+	if (mac) snprintf(q, sizeof(q), "{\"cmd\":\"bluetooth\",\"do\":\"%s\",\"mac\":\"%s\"}", what, mac);
+	else snprintf(q, sizeof(q), "{\"cmd\":\"bluetooth\",\"do\":\"%s\"}", what);
+	cJSON *r = api_call("%s", q);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "That didn't work"); cJSON_Delete(r); return; }
+	if (!strcmp(what, "pair")) bt.busy = 1;
+	bt_apply(r);
+}
+
+static void show_bt(void)
+{
+	cur = SCR_BT;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Bluetooth");
+	bt_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_label_set_long_mode(bt_head, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(bt_head, W - S(112), S(24));
+	lv_obj_set_pos(bt_head, S(56), S(178));
+	bt_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(bt_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(bt_sub, W - S(112), S(22));
+	lv_obj_set_pos(bt_sub, S(56), S(208));
+	vlist_create(&bt_list, body, S(56), S(244), S(900), S(380));
+	bt_list.fill = bt_fill;
+	bt_list.sel = 0;
+	bt_list.top = 0;
+	bt_list.count = 0;
+	bt.mode = BT_MAIN;
+	bt_apply(api_call("{\"cmd\":\"bluetooth\"}"));
+}
+
+static void bt_key(pkey_t k)
+{
+	if (vlist_key(&bt_list, k)) { if (bt.mode == BT_ACTION) { bt.mode = BT_MAIN; bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); } return; }
+	if (k == K_B || k == K_MENU) {
+		if (bt.mode == BT_ACTION) { bt.mode = BT_MAIN; bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); return; }
+		back_to_settings(SET_BT);
+		return;
+	}
+	if (bt.mode == BT_ACTION) {
+		if (bt.pick < bt.ndev && (k == K_A || k == K_X)) {
+			char mac[18];
+			snprintf(mac, sizeof(mac), "%s", bt.mac[bt.pick]);
+			bt.mode = BT_MAIN;
+			bt_do(k == K_A ? "disconnect" : "forget", mac);
+			if (k == K_X) toast_show("Forgotten: pair it again to use it");
+		}
+		return;
+	}
+	if (k != K_A || !bt.present) return;
+	if (bt_list.sel == 0) { bt_do(bt.busy ? "cancel" : "pair", NULL); return; }
+	if (bt.busy) { toast_show("Busy: wait for pairing or stop it"); return; }
+	bt.pick = bt_list.sel - 1;
+	bt.mode = BT_ACTION;
+	bt_apply(api_call("{\"cmd\":\"bluetooth\"}"));
+}
+
 /* ---------- Welcome (first start) ----------
  * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
  * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
@@ -2917,6 +3056,9 @@ void ui_key(pkey_t k)
 	case SCR_PORTS:
 		ports_key(k);
 		break;
+	case SCR_BT:
+		bt_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -2925,6 +3067,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_SOURCES) show_sources();
 			else if (set_list.sel == SET_DIAG) show_diag();
 			else if (set_list.sel == SET_WIFI) show_wifi();
+			else if (set_list.sel == SET_BT) show_bt();
 			else if (set_list.sel == SET_REMOTE) show_remote();
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
@@ -2952,6 +3095,7 @@ void ui_tick(void)
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
+		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
 		if (cur == SCR_PORTS && pt.busy) pt_apply(api_call("{\"cmd\":\"memcard\"}"));
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));

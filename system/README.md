@@ -40,6 +40,10 @@ folders themselves. `phos` talks to it from the command line.
   backup (1024 sectors, each read up to 4 times, to `phosphor/memcards/portN-date.mcd`), restore (backs
   the card up first, writes only the sectors that differ, reads each back), check. The Phosphor menu
   core is loaded only by a job (`memcard do:prepare`), never by reading the controllers.
+- **Bluetooth** (`bt.c`): paired controllers from `bluetoothctl` (paired-devices, info); pairing runs MiSTer's
+  own `btctl pair` in the background and stops it after the first controller (90 s at most, or cancel; it gets
+  SIGINT so it stops discovery cleanly); disconnect and forget through `btctl`. Nothing is copied or sent
+  anywhere: pairings stay in MiSTer's `linux/bluetooth`.
 - **Backups**: drives the backup-agent module: its snapshots (SD card, NVMe or NAS), back up now, preview
   and restore everything or only saves and save states (a safety snapshot is taken first).
 - Modules are run by one shared helper (`modjob.c`): phosphord's paths passed in, own process group, a
