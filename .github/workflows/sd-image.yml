@@ -1,0 +1,53 @@
+# Builds the Phosphor SD card image (image/build-image.sh) from a Phosphor release's
+# phosphor-<v>-armhf.tar.gz and the newest (or a chosen) MiSTer release.
+# Run by hand from the Actions tab; the image is kept as a workflow artifact, and attached to the
+# release only when "attach" is ticked. Releases themselves are made by hand.
+name: SD card image
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Phosphor release tag to take phosphor-*-armhf.tar.gz from (e.g. v0.7.0)
+        required: true
+      mister:
+        description: MiSTer release (e.g. release_20260912); empty = newest
+        required: false
+        default: ""
+      attach:
+        description: Attach the image to that Phosphor release
+        type: boolean
+        default: false
+permissions:
+  contents: write
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q p7zip-full mtools dosfstools zip
+      - name: Phosphor release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ inputs.tag }}" --pattern 'phosphor-*-armhf.tar.gz' --dir dist
+          ls -l dist
+      - name: Build
+        run: |
+          args=()
+          [ -n "${{ inputs.mister }}" ] && args+=(--mister "${{ inputs.mister }}")
+          image/build-image.sh dist/phosphor-*-armhf.tar.gz "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sd-image
+          path: |
+            dist/*.img.zip
+            dist/*.img.zip.sha256
+            dist/*-sdcard-*.txt
+          compression-level: 0
+      - name: Attach to the release
+        if: ${{ inputs.attach }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" dist/*.img.zip dist/*.img.zip.sha256 --clobber

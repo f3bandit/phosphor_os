@@ -13,6 +13,8 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FAT="${PHOS_FAT:-/media/fat}"
 ROOT="$FAT/phosphor"
+# where that folder is on the MiSTer, for the boot block (differs only when building an SD card image)
+RUNROOT="${PHOS_FAT_TARGET:-$FAT}/phosphor"
 STARTUP="$FAT/linux/user-startup.sh"
 TAG="phosphor"
 BOOT=0
@@ -54,7 +56,7 @@ if [ "$BOOT" = 1 ]; then
 	tmp="$(mktemp)"
 	awk -v t="$TAG" '$0 == "# " t ": BEGIN" {skip=1} !skip {print} $0 == "# " t ": END" {skip=0}' "$STARTUP" > "$tmp"
 	# S99user also runs user-startup.sh with "stop" at shutdown: start only on start
-	printf '# %s: BEGIN\n[ "${1:-start}" = start ] && %s/phosphor.sh service > /dev/null 2>&1 &\n# %s: END\n' "$TAG" "$ROOT" "$TAG" >> "$tmp"
+	printf '# %s: BEGIN\n[ "${1:-start}" = start ] && %s/phosphor.sh service > /dev/null 2>&1 &\n# %s: END\n' "$TAG" "$RUNROOT" "$TAG" >> "$tmp"
 	cat "$tmp" > "$STARTUP" && rm -f "$tmp" && chmod +x "$STARTUP"
 	echo "phosphord will start at boot (block \"$TAG\" in $STARTUP)"
 fi
