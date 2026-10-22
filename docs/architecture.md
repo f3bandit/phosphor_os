@@ -39,4 +39,6 @@ when a share appears, so a late mount never needs a reboot or a fixed delay.
 ## Licences
 
 - Main fork and menu core fork: GPL-3.0 (derived from MiSTer-devel). Source published with any release.
-- Frontend and modules: our code; licence to be decided before the first release.
+- Frontend, modules and everything else in this repo: PolyForm Noncommercial 1.0.0 (`LICENSE.md`).
+  Keep the boundary clean: no MiSTer GPL code copied in; talk to the Main fork only through its API.
+  Dependencies must be permissive (MIT, BSD, Apache, zlib), never GPL.
