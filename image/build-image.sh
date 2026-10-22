@@ -5,6 +5,8 @@
 #   image/build-image.sh [phosphor-<v>-armhf.tar.gz] [options]
 #     --mister release_YYYYMMDD   MiSTer release to install (default: the newest in SD-Installer-Win64_MiSTer)
 #     --mrfusion v2.9             Mr. Fusion version the image is built from
+#     --wifi-conf FILE            TESTING ONLY: put this wpa_supplicant.conf on the card (linux/), so the
+#                                 SS1 is on WiFi right after installing; the image is named ...-wifi-test
 #     --out DIR                   where the .img.zip goes (default: dist/)
 #     --cache DIR                 downloads are kept here between builds (default: image/cache/)
 #
@@ -22,6 +24,7 @@ cd "$(dirname "$0")/.."
 REPO="$PWD"
 MRF_VER="v2.9"
 MISTER=""
+WIFI_CONF=""
 OUT="$REPO/dist"
 CACHE="$REPO/image/cache"
 TARBALL=""
@@ -30,6 +33,7 @@ while [ $# -gt 0 ]; do
 		--mister) MISTER="$2"; shift 2 ;;
 		--mrfusion) MRF_VER="$2"; shift 2 ;;
 		--out) OUT="$2"; shift 2 ;;
+		--wifi-conf) WIFI_CONF="$2"; shift 2 ;;
 		--cache) CACHE="$2"; shift 2 ;;
 		-h|--help) sed -n '2,18p' "$0"; exit 0 ;;
 		*) TARBALL="$1"; shift ;;
@@ -133,6 +137,11 @@ cp -r "$CACHE/ShadowMasks_MiSTer/Shadow_Masks" "$WORK/rel/files/"
 cp -r "$CACHE/Presets_MiSTer/Presets" "$WORK/rel/files/"
 # the Phosphor release itself, so modules can be installed later without downloading anything
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
+# testing only: a WiFi network the SS1 joins straight away (never in a release image)
+if [ -n "$WIFI_CONF" ]; then
+	say "WiFi settings from $WIFI_CONF (test image)"
+	sed 's/\r$//' "$WIFI_CONF" > "$WORK/rel/files/linux/wpa_supplicant.conf"
+fi
 
 # ---- 4. Repack. Plain LZMA2 without filters, so Mr. Fusion's older 7zr unpacks it.
 say "Packing the release"
@@ -155,7 +164,7 @@ mkfs.vfat -n MRFUSION "$WORK/p1.img" > /dev/null
 mcopy -s -i "$WORK/p1.img" "$WORK"/fat/* ::/
 dd if="$WORK/p1.img" of="$IMG" bs=512 seek="$P1_START" conv=notrunc status=none
 
-NAME="phosphor-$PHOS_VER-sdcard-${MISTER#release_}"
+NAME="phosphor-$PHOS_VER-sdcard-${MISTER#release_}${WIFI_CONF:+-wifi-test}"
 mv "$IMG" "$WORK/$NAME.img"
 rm -f "$OUT/$NAME.img.zip"
 (cd "$WORK" && zip -q -9 "$OUT/$NAME.img.zip" "$NAME.img")
