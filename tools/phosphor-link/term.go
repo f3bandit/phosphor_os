@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	"go.bug.st/serial"
 	"golang.org/x/term"
 )
 
@@ -15,7 +14,7 @@ func runTerm(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	p, err := serial.Open(name, &serial.Mode{BaudRate: cfg.Baud})
+	p, err := openRetry(name, cfg.Baud)
 	if err != nil {
 		return err
 	}

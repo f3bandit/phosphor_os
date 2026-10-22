@@ -85,5 +85,5 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
-0.1.0. Tested against the pretend console, including heavy mid-line noise, a stopped U-Boot and
-reboots, and the Claude desktop settings changes. Not yet run on a real SuperStation One.
+0.1.1. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
+the pretend console with heavy mid-line noise, a stopped U-Boot and reboots.
