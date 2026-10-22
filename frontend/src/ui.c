@@ -21,7 +21,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -828,7 +828,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_REMOTE, SET_CLOUD, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -865,6 +865,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
+	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
@@ -1995,6 +1996,173 @@ static void cloud_key(pkey_t k)
 	}
 }
 
+/* ---------- Backups ----------
+ * The backup-agent module's snapshots (saves and settings, kept on the SD card, NVMe or NAS). A snapshot
+ * shows what it would put back; A restores only saves and save states, X everything in it (settings
+ * too). Every restore takes a safety snapshot first, so it can be undone from this list. */
+
+enum { BK_MAIN, BK_PREVIEW };
+static struct {
+	int mode, installed, busy, job_ok;
+	char job[24], dest[200], last_error[200];
+	char names[60][64], when[60][20], reason[60][40];
+	int kb[60], nsnaps;
+	char lines[150][120];
+	int nlines;
+	char pick[64], pick_label[80];
+	long long seen_at;
+} bk;
+static vlist_t bk_list;
+static lv_obj_t *bk_head, *bk_sub;
+static const char *const BK_HINTS[] = { "A", "Choose", "B", "Back", NULL };
+static const char *const BK_PREVIEW_HINTS[] = { "A", "Restore saves", "X", "Everything", "B", "Cancel", NULL };
+
+static void bk_reason(const char *r, char *out, size_t n)
+{
+	if (!strcmp(r, "manual")) snprintf(out, n, "Backed up by hand");
+	else if (!strcmp(r, "daily")) snprintf(out, n, "Daily");
+	else if (!strcmp(r, "pre-restore")) snprintf(out, n, "Before a restore");
+	else if (!strncmp(r, "exit-", 5)) snprintf(out, n, "After %s", r + 5);
+	else snprintf(out, n, "%s", r);
+}
+
+static void bk_apply(cJSON *r)
+{
+	if (!api_ok(r)) {
+		if (bk_head) lv_label_set_text(bk_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		cJSON_Delete(r);
+		return;
+	}
+	cJSON *st = cJSON_GetObjectItem(r, "status"), *j = cJSON_GetObjectItem(r, "job"), *it;
+	bk.installed = cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"));
+	snprintf(bk.dest, sizeof(bk.dest), "%s", api_str(st, "dest") ? api_str(st, "dest") : "");
+	snprintf(bk.last_error, sizeof(bk.last_error), "%s", api_str(st, "last_error") ? api_str(st, "last_error") : "");
+	bk.nsnaps = 0;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "snapshots")) {
+		if (bk.nsnaps >= 60) break;
+		int i = bk.nsnaps++;
+		snprintf(bk.names[i], sizeof(bk.names[0]), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+		snprintf(bk.when[i], sizeof(bk.when[0]), "%s", api_str(it, "when") ? api_str(it, "when") : "");
+		bk_reason(api_str(it, "reason") ? api_str(it, "reason") : "", bk.reason[i], sizeof(bk.reason[0]));
+		bk.kb[i] = (int)api_num(it, "kb", 0);
+	}
+	int was = bk.busy;
+	bk.busy = cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"));
+	bk.job_ok = cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"));
+	snprintf(bk.job, sizeof(bk.job), "%s", api_str(j, "name") ? api_str(j, "name") : "");
+	long long at = (long long)api_num(j, "at", 0);
+	const char *out = api_str(j, "output") ? api_str(j, "output") : "";
+	if (was && !bk.busy && at != bk.seen_at) {
+		bk.seen_at = at;
+		if (!strcmp(bk.job, "preview")) {
+			bk.nlines = 0;
+			for (const char *p = out; p && *p && bk.nlines < 150;) {
+				const char *e = strchr(p, '\n');
+				size_t n = e ? (size_t)(e - p) : strlen(p);
+				/* files only (folders end in /), and not the "Would restore into ..." line */
+				if (n && p[n - 1] != '/' && strncmp(p, "Would restore", 13))
+					snprintf(bk.lines[bk.nlines++], sizeof(bk.lines[0]), "%.*s", (int)(n < 119 ? n : 119), p);
+				p = e ? e + 1 : NULL;
+			}
+			if (!bk.job_ok && bk.nlines == 0) snprintf(bk.lines[bk.nlines++], sizeof(bk.lines[0]), "No saves in this backup");
+			bk.mode = BK_PREVIEW;
+			bk_list.sel = 0;
+			bk_list.top = 0;
+		} else if (!strcmp(bk.job, "now")) toast_show(bk.job_ok ? "Backed up" : "Backup failed");
+		else if (!strcmp(bk.job, "restore")) toast_show(bk.job_ok ? "Restored (the backup made just before it can undo it)" : "Restore failed: nothing changed");
+	}
+	cJSON_Delete(r);
+	if (!bk_head) return;
+	char h[240], sub[260];
+	if (!bk.installed) {
+		snprintf(h, sizeof(h), "Not installed");
+		snprintf(sub, sizeof(sub), "Install the backup-agent module (modules/backup-agent/install.sh in the Phosphor release).");
+	} else {
+		snprintf(h, sizeof(h), "%d backup%s  \xC2\xB7  %s", bk.nsnaps, bk.nsnaps == 1 ? "" : "s", bk.dest);
+		if (bk.last_error[0]) snprintf(sub, sizeof(sub), "%s", bk.last_error);
+		else snprintf(sub, sizeof(sub), "Taken when you leave a game and once a day. They stay on this drive, never in the cloud.");
+	}
+	if (bk.mode == BK_PREVIEW) snprintf(sub, sizeof(sub), "%s: A puts back the saves only; X everything in it, settings too.", bk.pick_label);
+	if (bk.busy) snprintf(sub, sizeof(sub), "%s", !strcmp(bk.job, "now") ? "Backing up..." : !strcmp(bk.job, "restore") ? "Restoring..." : "Looking inside...");
+	lv_label_set_text(bk_head, h);
+	lv_label_set_text(bk_sub, sub);
+	bk_list.count = bk.mode == BK_PREVIEW ? bk.nlines : bk.installed ? bk.nsnaps + 1 : 0;
+	footer_set(bk.mode == BK_PREVIEW ? BK_PREVIEW_HINTS : BK_HINTS);
+	vlist_refresh(&bk_list);
+}
+
+static void bk_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	if (bk.mode == BK_PREVIEW) { snprintf(t, n, "%s", bk.lines[i]); return; }
+	if (i == 0) { snprintf(t, n, "Back up now"); snprintf(val, vn, ">"); return; }
+	i--;
+	snprintf(t, n, "%s", bk.when[i]);
+	snprintf(val, vn, "%s  \xC2\xB7  %d KB", bk.reason[i], bk.kb[i]);
+	*dim = !strcmp(bk.reason[i], "Before a restore");
+}
+
+static void bk_do(const char *what, const char *name, const char *only)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "backup");
+	cJSON_AddStringToObject(q, "do", what);
+	if (name) cJSON_AddStringToObject(q, "name", name);
+	if (only) cJSON_AddStringToObject(q, "only", only);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	free(b);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"); cJSON_Delete(r); return; }
+	bk.busy = 1;
+	bk_apply(r);
+}
+
+static void show_backup(void)
+{
+	cur = SCR_BACKUP;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Backups");
+	bk_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_label_set_long_mode(bk_head, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(bk_head, W - S(112), S(24));
+	lv_obj_set_pos(bk_head, S(56), S(178));
+	bk_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(bk_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(bk_sub, W - S(112), S(22));
+	lv_obj_set_pos(bk_sub, S(56), S(208));
+	vlist_create(&bk_list, body, S(56), S(244), S(900), S(380));
+	bk_list.fill = bk_fill;
+	bk_list.sel = 0;
+	bk_list.top = 0;
+	bk_list.count = 0;
+	bk.mode = BK_MAIN;
+	bk_apply(api_call("{\"cmd\":\"backup\"}"));
+}
+
+static void backup_key(pkey_t k)
+{
+	if (vlist_key(&bk_list, k)) return;
+	if (k == K_B || k == K_MENU) {
+		if (bk.mode == BK_PREVIEW) { bk.mode = BK_MAIN; bk_list.sel = 0; bk_apply(api_call("{\"cmd\":\"backup\"}")); return; }
+		back_to_settings(SET_BACKUP);
+		return;
+	}
+	if (bk.busy) { if (k == K_A || k == K_X) toast_show("Busy: wait for it to finish"); return; }
+	if (bk.mode == BK_PREVIEW) {
+		if (k == K_A) { bk.mode = BK_MAIN; bk_list.sel = 0; bk_do("restore", bk.pick, "saves|savestates"); }
+		else if (k == K_X) { bk.mode = BK_MAIN; bk_list.sel = 0; bk_do("restore", bk.pick, NULL); }
+		return;
+	}
+	if (k != K_A || !bk.installed) return;
+	if (bk_list.sel == 0) { bk_do("now", NULL, NULL); return; }
+	int i = bk_list.sel - 1;
+	if (i < bk.nsnaps) {
+		snprintf(bk.pick, sizeof(bk.pick), "%s", bk.names[i]);
+		snprintf(bk.pick_label, sizeof(bk.pick_label), "%s (%s)", bk.when[i], bk.reason[i]);
+		bk_do("preview", bk.pick, "saves|savestates");
+	}
+}
+
 /* ---------- Welcome (first start) ----------
  * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
  * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
@@ -2481,6 +2649,9 @@ void ui_key(pkey_t k)
 	case SCR_WELCOME:
 		welcome_key(k);
 		break;
+	case SCR_BACKUP:
+		backup_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -2491,6 +2662,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_WIFI) show_wifi();
 			else if (set_list.sel == SET_REMOTE) show_remote();
 			else if (set_list.sel == SET_CLOUD) show_cloud();
+			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else settings_change(1);
 		}
@@ -2510,6 +2682,7 @@ void ui_tick(void)
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));

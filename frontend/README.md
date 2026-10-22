@@ -53,6 +53,9 @@ shell starts it if it isn't running.
 
   ![Welcome](docs/welcome.png)
 
+- **Backups** (Settings): the backup-agent snapshots with date, reason and size; Back up now; pick one to
+  see the saves in it, then A restores saves only or X everything (settings too). A safety backup is
+  taken first, so a restore can be undone from the same list.
 - **Cloud saves** (Settings): where saves go and when they were last sent; Send now; Get saves back (pick
   a MiSTer, see what would change, then A); storage places (add WebDAV, SFTP or SMB with the on-screen
   keyboard; Google Drive, Dropbox and OneDrive from the phone app); Check the connection.

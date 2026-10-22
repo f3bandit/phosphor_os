@@ -49,6 +49,13 @@ data class Status(
     val missingArt: Int, val missingDetails: Int, val notFound: Int,
 )
 
+data class Snapshot(val name: String, val whenText: String, val reason: String, val kb: Int)
+
+data class BackupState(
+    val installed: Boolean, val dest: String, val lastError: String, val snapshots: List<Snapshot>,
+    val job: String, val busy: Boolean, val jobOk: Boolean, val output: String, val at: Long,
+)
+
 data class CloudPlace(val name: String, val type: String, val inUse: Boolean)
 
 data class CloudState(
@@ -166,6 +173,20 @@ class PhosphorApi(val address: String, private val token: String?) {
             device = st.optString("device"), lastPush = st.optString("last_push"), pending = st.optString("pending") == "1",
             lastError = st.optString("last_error"),
             places = (0 until pa.length()).map { pa.getJSONObject(it) }.map { CloudPlace(it.optString("name"), it.optString("type"), it.optBoolean("in_use")) },
+            job = j.optString("name"), busy = j.optBoolean("busy"), jobOk = j.optBoolean("ok"), output = j.optString("output"), at = j.optLong("at"),
+        )
+    }
+
+    /** snapshots on the MiSTer's own drives (backup-agent module); what: now, preview, restore;
+     *  only: "saves|savestates" to put back just the saves, null for everything in the snapshot */
+    suspend fun backup(what: String? = null, name: String? = null, only: String? = null): BackupState {
+        val r = cmd(obj("cmd" to "backup", "do" to what, "name" to name, "only" to only))
+        val st = r.optJSONObject("status") ?: JSONObject()
+        val j = r.optJSONObject("job") ?: JSONObject()
+        val sa = r.optJSONArray("snapshots") ?: JSONArray()
+        return BackupState(
+            installed = r.optBoolean("installed"), dest = st.optString("dest"), lastError = st.optString("last_error"),
+            snapshots = (0 until sa.length()).map { sa.getJSONObject(it) }.map { Snapshot(it.optString("name"), it.optString("when"), it.optString("reason"), it.optInt("kb")) },
             job = j.optString("name"), busy = j.optBoolean("busy"), jobOk = j.optBoolean("ok"), output = j.optString("output"), at = j.optLong("at"),
         )
     }

@@ -34,6 +34,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.ArtCache
+import com.f3bandit.phosphor.ui.BackupsContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
 import com.f3bandit.phosphor.ui.BasedOnContent
@@ -89,13 +90,52 @@ fun PhosphorApp(model: AppModel) {
         composable("based/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> BasedRoute(model, nav, e.arguments!!.getLong("id")) }
         composable("settings") {
             SettingsContent(model.pairing?.address ?: "", BuildConfigVersion, onForget = { model.forget() }, onBack = { nav.popBackStack() },
-                onCloud = { nav.navigate("cloud") })
+                onCloud = { nav.navigate("cloud") }, onBackups = { nav.navigate("backups") })
         }
         composable("cloud") { CloudRoute(model, nav) }
+        composable("backups") { BackupsRoute(model, nav) }
     }
 }
 
-const val BuildConfigVersion = "0.2.0"
+const val BuildConfigVersion = "0.3.0"
+
+@Composable
+fun BackupsRoute(model: AppModel, nav: NavHostController) {
+    val api = model.api ?: return
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var st by remember { mutableStateOf<BackupState?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var preview by remember { mutableStateOf<Snapshot?>(null) }
+    var files by remember { mutableStateOf(listOf<String>()) }
+    var seen by remember { mutableStateOf(-1L) }
+    fun handle(s: BackupState, wasBusy: Boolean) {
+        st = s
+        if (!wasBusy || s.busy || s.at == seen) return
+        seen = s.at
+        when (s.job) {
+            "preview" -> files = if (s.jobOk) s.output.lines().filter { it.isNotBlank() && !it.endsWith("/") && !it.startsWith("Would restore") } else emptyList()
+            "now" -> Toast.makeText(ctx, if (s.jobOk) "Backed up" else "Backup failed", Toast.LENGTH_SHORT).show()
+            "restore" -> { Toast.makeText(ctx, if (s.jobOk) "Restored" else "Restore failed: nothing changed", Toast.LENGTH_SHORT).show(); preview = null }
+        }
+    }
+    LaunchedEffect(api.address) {
+        while (true) {
+            val was = st?.busy == true
+            try { handle(api.backup(), was); error = null } catch (e: Exception) { error = model.handle(e) }
+            delay(if (st?.busy == true) 800 else 5000)
+        }
+    }
+    fun start(what: String, name: String? = null, only: String? = null) = scope.launch {
+        try { st = api.backup(what, name, only); error = null } catch (e: Exception) { error = model.handle(e) }
+    }
+    BackupsContent(st, error, preview, files,
+        onNow = { start("now") },
+        onPick = { preview = it; files = emptyList(); start("preview", it.name, "saves|savestates") },
+        onRestoreSaves = { preview?.let { start("restore", it.name, "saves|savestates") } },
+        onRestoreAll = { preview?.let { start("restore", it.name) } },
+        onBack = { if (preview != null) preview = null else nav.popBackStack() })
+}
 
 @Composable
 fun CloudRoute(model: AppModel, nav: NavHostController) {
