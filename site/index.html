@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phosphor: unofficial firmware for the SuperStation One</title>
+<meta name="description" content="Phosphor is unofficial custom firmware for the SuperStation One, built on mainline MiSTer and its Linux: a console-style home screen with your games, box art, controllers, memory cards, WiFi and Bluetooth, all with a controller.">
+<meta property="og:title" content="Phosphor">
+<meta property="og:description" content="Unofficial custom firmware for the SuperStation One, built on mainline MiSTer and its Linux.">
+<meta property="og:image" content="img/tv-home.png">
+<meta name="theme-color" content="#0e0e10">
+<link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+	--glass: #0e0e10;      /* the screen when nothing is lit */
+	--panel: #17171b;
+	--line: #2a2a31;
+	--glow: #ffb347;       /* phosphor amber, the shell's own accent */
+	--text: #ece8e1;
+	--dim: #8d8a85;
+	--measure: 34rem;
+	--gutter: clamp(1rem, 4vw, 3.5rem);
+}
+* { box-sizing: border-box; }
+html { background: var(--glass); color-scheme: dark; }
+body {
+	margin: 0;
+	background: var(--glass);
+	color: var(--text);
+	font: 400 1.0625rem/1.6 Inter, system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+img { display: block; max-width: 100%; height: auto; }
+a { color: var(--glow); text-underline-offset: 0.2em; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; border-radius: 4px; }
+
+.wrap { max-width: 76rem; margin: 0 auto; padding: 0 var(--gutter); }
+
+/* the wordmark, set like the shell's: mono, spaced, amber */
+.mark {
+	font: 500 1.125rem/1 "IBM Plex Mono", ui-monospace, monospace;
+	letter-spacing: 0.32em;
+	color: var(--glow);
+	text-decoration: none;
+}
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding-top: 1.75rem; }
+header.top nav { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.9375rem; }
+header.top nav a { color: var(--dim); text-decoration: none; }
+header.top nav a:hover { color: var(--text); }
+
+/* ---- hero: the screen switches on ---- */
+.hero { padding: clamp(3rem, 9vw, 6.5rem) 0 clamp(3rem, 7vw, 5rem); }
+.hero h1 {
+	font-weight: 600;
+	font-size: clamp(2.4rem, 6.2vw, 4.6rem);
+	line-height: 1.04;
+	letter-spacing: -0.025em;
+	margin: 0 0 1.4rem;
+	max-width: 14ch;
+}
+.hero p.lede { max-width: var(--measure); color: var(--dim); font-size: 1.1875rem; margin: 0; }
+.hero p.lede strong { color: var(--text); font-weight: 500; }
+
+.tv {
+	position: relative;
+	margin-top: clamp(2.5rem, 6vw, 4.5rem);
+	border-radius: clamp(10px, 1.6vw, 22px);
+	padding: clamp(6px, 0.9vw, 12px);
+	background: #050506;
+	box-shadow: 0 0 0 1px var(--line), 0 40px 120px -40px rgba(255, 179, 71, 0.28);
+}
+.tv .screen { position: relative; overflow: hidden; border-radius: clamp(6px, 1vw, 12px); aspect-ratio: 16 / 9; background: var(--glass); }
+.tv .screen img { width: 100%; height: 100%; object-fit: cover; }
+/* one moment: a CRT-style switch-on (a bright line opens to the picture, the glow settles) */
+.tv .screen img { animation: power-on 1.5s cubic-bezier(.2, .7, .2, 1) 0.35s both; transform-origin: 50% 50%; }
+.tv .screen::after {
+	content: ""; position: absolute; inset: 0; pointer-events: none;
+	background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.13) 2px 3px);
+	mix-blend-mode: multiply;
+}
+.tv .screen::before {
+	content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; z-index: 2; pointer-events: none;
+	background: #fff4dc; box-shadow: 0 0 24px 6px var(--glow);
+	animation: beam 1.5s ease-out 0.35s both;
+}
+@keyframes power-on {
+	0%   { transform: scaleY(0.004) scaleX(0.6); filter: brightness(4) saturate(0); }
+	35%  { transform: scaleY(0.004) scaleX(1); filter: brightness(4) saturate(0); }
+	60%  { transform: scaleY(1) scaleX(1); filter: brightness(1.8) saturate(0.6); }
+	100% { transform: none; filter: none; }
+}
+@keyframes beam {
+	0%, 35% { opacity: 1; transform: scaleX(1); }
+	55%     { opacity: 0; transform: scaleX(1); }
+	100%    { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.tv .screen img, .tv .screen::before { animation: none; }
+	.tv .screen::before { opacity: 0; }
+}
+
+/* ---- the tour: one real screen per thing it does ---- */
+section { padding: clamp(3.5rem, 8vw, 6rem) 0; border-top: 1px solid var(--line); }
+section > .wrap > h2 {
+	font-weight: 600; font-size: clamp(1.75rem, 3.4vw, 2.5rem); letter-spacing: -0.02em; line-height: 1.12;
+	margin: 0 0 1rem; max-width: 22ch;
+}
+section > .wrap > p.intro { color: var(--dim); max-width: var(--measure); margin: 0 0 clamp(2.5rem, 6vw, 4rem); }
+
+.feature {
+	display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: clamp(1.5rem, 4vw, 3.5rem);
+	align-items: center; margin-bottom: clamp(3rem, 7vw, 5.5rem);
+}
+.feature:last-child { margin-bottom: 0; }
+.feature.flip { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); }
+.feature.flip .shot { order: 2; }
+.feature .shot img { border-radius: 10px; box-shadow: 0 0 0 1px var(--line); }
+.feature h3 { font-weight: 600; font-size: 1.375rem; letter-spacing: -0.01em; margin: 0 0 0.6rem; }
+.feature p { color: var(--dim); margin: 0 0 0.8rem; }
+.feature p:last-child { margin-bottom: 0; }
+
+.phones { display: flex; gap: clamp(0.75rem, 2vw, 1.5rem); align-items: flex-start; }
+.phones img { width: calc((100% - 2 * clamp(0.75rem, 2vw, 1.5rem)) / 3); border-radius: 18px; box-shadow: 0 0 0 1px var(--line); }
+.phones img:nth-child(2) { margin-top: 2.5rem; }
+
+/* ---- how it sits on MiSTer: real layers, bottom to top ---- */
+.stack { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column-reverse; gap: 6px; max-width: 46rem; }
+.stack li {
+	display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: 1.25rem; align-items: baseline;
+	padding: 1.05rem 1.25rem; background: var(--panel); border-radius: 8px;
+}
+.stack li b { font-weight: 600; }
+.stack li span { color: var(--dim); font-size: 0.96875rem; }
+.stack li.ours { box-shadow: inset 3px 0 0 var(--glow); }
+.stack-key { color: var(--dim); font-size: 0.9375rem; margin: 1.25rem 0 0; max-width: var(--measure); }
+.stack-key i { display: inline-block; width: 3px; height: 0.9em; background: var(--glow); vertical-align: -0.1em; margin-right: 0.5rem; font-style: normal; }
+
+/* ---- promises ---- */
+.promises { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: clamp(1.5rem, 3vw, 2.5rem) clamp(1.5rem, 4vw, 3.5rem); }
+.promises h3 { font-weight: 600; font-size: 1.125rem; margin: 0 0 0.4rem; }
+.promises p { color: var(--dim); margin: 0; }
+
+.status { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2rem; align-items: end; }
+.status p { color: var(--dim); max-width: var(--measure); margin: 0; }
+.status .now { font: 500 0.9375rem/1.4 "IBM Plex Mono", ui-monospace, monospace; color: var(--glow); white-space: nowrap; }
+.status .now::before {
+	content: ""; display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; margin-right: 0.6em;
+	background: var(--glow); box-shadow: 0 0 10px var(--glow); vertical-align: 0.05em;
+}
+
+footer { border-top: 1px solid var(--line); padding: 2.5rem 0 3.5rem; color: var(--dim); font-size: 0.875rem; }
+footer .wrap { display: flex; justify-content: space-between; gap: 1.5rem 3rem; flex-wrap: wrap; }
+footer p { margin: 0; max-width: 40rem; }
+
+@media (max-width: 760px) {
+	.feature, .feature.flip { grid-template-columns: 1fr; }
+	.feature.flip .shot { order: 0; }
+	.stack li { grid-template-columns: 1fr; gap: 0.2rem; }
+	.status { grid-template-columns: 1fr; }
+	header.top nav { gap: 1rem; }
+}
+@media (max-width: 420px) { header.top nav { display: none; } }
+</style>
+</head>
+<body>
+
+<header class="wrap top">
+	<a class="mark" href="#">PHOSPHOR</a>
+	<nav aria-label="Sections">
+		<a href="#tour">What it does</a>
+		<a href="#built">How it's built</a>
+		<a href="#status">Status</a>
+	</nav>
+</header>
+
+<main>
+	<div class="wrap hero">
+		<h1>Your MiSTer, as a console.</h1>
+		<p class="lede">Phosphor is unofficial custom firmware for the <strong>SuperStation One</strong>, built on <strong>mainline MiSTer and its Linux</strong>. Pick up a controller and your games are there with box art, ready to play. Memory cards, Bluetooth, WiFi and saves are a few button presses away, on the TV or on your phone.</p>
+		<div class="tv">
+			<div class="screen"><img src="img/tv-home.png" width="1280" height="720" alt="Phosphor's home screen: the library by kind of system (Disc, Cartridge, Handheld, Arcade) and the last game played"></div>
+		</div>
+	</div>
+
+	<section id="tour">
+		<div class="wrap">
+			<h2>Everything from the couch</h2>
+			<p class="intro">These are real screens from Phosphor running at 1280 by 720, the way it draws them on the SuperStation One.</p>
+
+			<div class="feature">
+				<div class="shot"><img src="img/tv-games.png" width="1280" height="720" loading="lazy" alt="A list of games with box art, year and play time"></div>
+				<div>
+					<h3>Your library, found for you</h3>
+					<p>Phosphor finds the games on the SD card, a USB drive, NVMe or a network share, works out what each one is, and fetches box art and details from sources you choose.</p>
+					<p>Hacks and translations can point at the game they're based on and share its art.</p>
+				</div>
+			</div>
+
+			<div class="feature flip">
+				<div class="shot"><img src="img/tv-ports.png" width="1280" height="720" loading="lazy" alt="Controllers and memory cards: two PlayStation controllers shown live, memory card backups"></div>
+				<div>
+					<h3>The front ports, live</h3>
+					<p>The SuperStation One's PlayStation ports work right in the menu: see each controller's buttons and sticks, switch a DualShock to analog, and use it to move around Phosphor.</p>
+					<p>Back up a memory card to the SD card, or put a backup on a card. The card is always backed up first.</p>
+				</div>
+			</div>
+
+			<div class="feature">
+				<div class="shot"><img src="img/tv-bluetooth.png" width="1280" height="720" loading="lazy" alt="Bluetooth: pair a controller, the paired controllers and whether they're connected"></div>
+				<div>
+					<h3>Bluetooth and WiFi without a keyboard</h3>
+					<p>Pair a controller by putting it in pairing mode. Join a network with the on-screen keyboard. Both use MiSTer's own setup, so nothing is set up twice.</p>
+				</div>
+			</div>
+
+			<div class="feature flip">
+				<div class="shot"><img src="img/tv-screen-filters.png" width="1280" height="720" loading="lazy" alt="Screen filters for one system: scanlines, shadow mask, gamma, presets"></div>
+				<div>
+					<h3>Screen filters per system</h3>
+					<p>Scanlines, shadow masks and gamma for each system, from MiSTer's own filter folders. Every change is backed up and can be undone with one button.</p>
+				</div>
+			</div>
+
+			<div class="feature">
+				<div class="shot"><img src="img/tv-cloud-saves.png" width="1280" height="720" loading="lazy" alt="Cloud saves: where saves go, when they were last sent, getting saves back"></div>
+				<div>
+					<h3>Saves kept safe</h3>
+					<p>Backups of saves and settings on the SD card, NVMe or your NAS, taken when you leave a game and once a day. Cloud saves to your own WebDAV, SFTP, SMB, Google Drive, Dropbox or OneDrive, shared between MiSTers if you like.</p>
+				</div>
+			</div>
+
+			<div class="feature flip">
+				<div class="shot phones">
+					<img src="img/phone-2-home.png" width="493" height="1069" loading="lazy" alt="Phone app: the library with games that need box art or details">
+					<img src="img/phone-5-game.png" width="493" height="1069" loading="lazy" alt="Phone app: a game's page with box art and Play on TV">
+					<img src="img/phone-14-cards.png" width="493" height="1069" loading="lazy" alt="Phone app: controllers and memory cards">
+				</div>
+				<div>
+					<h3>A phone app for the fiddly parts</h3>
+					<p>Paired with a code on your home network: browse the library, fix box art with a photo, edit details, start a game on the TV, manage saves, memory cards and Bluetooth.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section id="built">
+		<div class="wrap">
+			<h2>Custom firmware on mainline MiSTer</h2>
+			<p class="intro">Phosphor follows MiSTer-devel's mainline releases: the same Linux and kernel, kept current the usual way. Its own layers sit above them, and MiSTer's own menu is always one button away.</p>
+			<ol class="stack" aria-label="Layers, from MiSTer's Linux at the bottom to what you see at the top">
+				<li><b>MiSTer Linux</b><span>Stock, from MiSTer-devel, updated the usual way.</span></li>
+				<li class="ours"><b>MiSTer Main + Phosphor's API</b><span>MiSTer's own program, plus a small local interface so Phosphor can work with it instead of around it.</span></li>
+				<li class="ours"><b>Menu core + front ports</b><span>MiSTer's menu core, plus PlayStation controller and memory card access, off until Phosphor asks.</span></li>
+				<li class="ours"><b>phosphord</b><span>The library, box art lookup, saves, network and Bluetooth, in the background.</span></li>
+				<li class="ours"><b>Phosphor and the phone app</b><span>What you see and hold.</span></li>
+			</ol>
+			<p class="stack-key"><i></i>Phosphor's parts. The changes to MiSTer's own programs will be published under the GPL, like MiSTer.</p>
+		</div>
+	</section>
+
+	<section>
+		<div class="wrap">
+			<h2>How it treats your system</h2>
+			<p class="intro">A few rules everything in Phosphor follows.</p>
+			<div class="promises">
+				<div><h3>Your settings stay home</h3><p>WiFi passwords and Bluetooth pairings live on the SuperStation One, your phone, NVMe or NAS. Never on the internet.</p></div>
+				<div><h3>A backup before every change</h3><p>Anything Phosphor changes is backed up first and can be put back from the same screen.</p></div>
+				<div><h3>Only when you press the button</h3><p>Nothing installs, updates or rewrites itself. Cores are yours to manage.</p></div>
+				<div><h3>MiSTer underneath</h3><p>No replaced kernel, no replaced files. Remove Phosphor and the card is plain MiSTer again.</p></div>
+			</div>
+		</div>
+	</section>
+
+	<section id="status">
+		<div class="wrap status">
+			<div>
+				<h2>Not out yet</h2>
+				<p>Phosphor is in development and being tested on a SuperStation One. There's no download yet; this page will have one when there is. Phosphor is a working name.</p>
+			</div>
+			<p class="now">Testing on hardware</p>
+		</div>
+	</section>
+</main>
+
+<footer>
+	<div class="wrap">
+		<p>Phosphor is made by f3bandit. It runs on <a href="https://github.com/MiSTer-devel">MiSTer</a>, the open FPGA project by MiSTer-devel and its community, and is unofficial: not made or supported by MiSTer-devel or by the makers of the SuperStation One.</p>
+		<p>Free for personal, non-commercial use.</p>
+	</div>
+</footer>
+
+</body>
+</html>
