@@ -101,9 +101,21 @@ and `PHOSD_BIN=../system/build/phosphord` so the shell can start it.
 The ARM shell and ARM phosphord, run together under `qemu-arm-static`, render the same picture
 pixel for pixel as the host builds.
 
+## With phosphor-main (Phosphor's Main fork)
+
+When [phosphor-main](https://github.com/f3bandit/phosphor-main) is running, the shell connects to its
+API (`/tmp/phosphor-main.sock`, `src/mainlink.c`) and takes the screen itself: no F9, and Main's menu
+ignores the controls while the shell is up. If the shell stops, Main takes the screen back; if Main
+restarts, the shell takes it again. Trying it (undone by a reboot):
+
+```
+killall MiSTer MiSTer_ConsoleMode; sleep 1; /media/fat/phosphor/bin/MiSTer_phosphor &
+sleep 3; /media/fat/phosphor/phosphor.sh start
+```
+
 ## Trying it on a MiSTer (stock Main)
 
-Until the Phosphor Main fork exists, the Linux framebuffer has to be switched on by hand:
+With stock Main the Linux framebuffer has to be switched on by hand:
 
 1. Copy `build-arm/phosphor` and `../system/build-arm/phosphord` to `/media/fat/phosphor/bin/`.
 2. In the MiSTer menu, press **F9** on a keyboard to show the Linux screen.
@@ -111,8 +123,7 @@ Until the Phosphor Main fork exists, the Linux framebuffer has to be switched on
    port). It asks Main for a 1280x720 framebuffer (`fb_cmd1`).
 4. If red and blue look swapped, start it with `--fb-rb 0`. `--fb-mode none` leaves the mode alone.
 
-Stock Main still reacts to the controller in the menu at the same time; the Main fork will hand
-input to the frontend.
+Stock Main still reacts to the controller in the menu at the same time (phosphor-main fixes that).
 
 ## Systems and launch settings
 

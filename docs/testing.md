@@ -236,7 +236,23 @@ Set the backup folder to the NVMe first (`DEST` in `phosphor/config/backup-agent
 - [ ] While a game runs, a restore is refused.
 - [ ] Phone, Settings > Backups: same list; Back up now; Restore saves / Everything.
 
-## 15. Safety checks (each time something is installed)
+## 15. phosphor-main (Main fork, phase 1)
+
+Only by hand, undone by a reboot. `MiSTer_phosphor` is in `/media/fat/phosphor/bin/` after installing the release.
+
+- [ ] `killall MiSTer MiSTer_ConsoleMode; /media/fat/phosphor/bin/MiSTer_phosphor &` → MiSTer's menu comes up as usual
+      (the stock menu; Console Mode is back after a reboot).
+- [ ] `/media/fat/phosphor/phosphor.sh start` → the shell shows **without F9**; the log says "the shell has the screen".
+- [ ] Controller in the shell: Main's menu doesn't react behind it (no file browser popping up, no double moves).
+- [ ] Menu button in the shell: Main's OSD doesn't open.
+- [ ] Start a game from the shell; in the game the menu button opens the OSD as usual; quitting the core
+      comes back to the shell (not Main's file browser).
+- [ ] `killall phosphor` (the shell) → Main's own menu comes back by itself.
+- [ ] Start the shell again → it takes the screen again.
+- [ ] `echo status | socat - UNIX:/tmp/phosphor-main.sock` (or `nc -U`) answers with the core and owner.
+- [ ] Reboot → stock/Console Mode boot as before (nothing was changed on the card).
+
+## 16. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

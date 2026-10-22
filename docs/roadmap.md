@@ -21,7 +21,8 @@ LaunchBox, TheGamesDB, ScreenScraper, IGDB; user's choice and order) are done (p
 To do: register Phosphor with ScreenScraper for a developer id; test the keyed sources with real
 keys; then the Claude plugin (#11) for remote library management.
 
-Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API; the frontend
+Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API (phase 1 built:
+screen owner, in-game sheet button, launch, events; the shell uses it, `docs/testing.md` section 15); the frontend
 MVP (library shelf, game list, launch, settings, mount-change rescan); the in-game sheet (HDMI/scaler
 first, OSD fallback for direct-video analog).
 
