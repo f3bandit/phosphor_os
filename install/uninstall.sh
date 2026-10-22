@@ -12,6 +12,8 @@ STARTUP="$FAT/linux/user-startup.sh"
 TAG="phosphor"
 
 [ -x "$ROOT/phosphor.sh" ] && "$ROOT/phosphor.sh" stop > /dev/null 2>&1
+ENTRY="$FAT/Scripts/phosphor.sh"
+if [ -f "$ENTRY" ] && grep -q "^# phosphor: menu entry" "$ENTRY"; then rm -f "$ENTRY" && echo "menu entry removed"; fi
 if [ -f "$STARTUP" ] && grep -q "^# $TAG: BEGIN" "$STARTUP"; then
 	tmp="$(mktemp)"
 	awk -v t="$TAG" '$0 == "# " t ": BEGIN" {skip=1} !skip {print} $0 == "# " t ": END" {skip=0}' "$STARTUP" > "$tmp"

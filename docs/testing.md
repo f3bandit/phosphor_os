@@ -250,6 +250,9 @@ Only by hand, undone by a reboot. `MiSTer_phosphor` is in `/media/fat/phosphor/b
 - [ ] `killall phosphor` (the shell) → Main's own menu comes back by itself.
 - [ ] In MiSTer's menu: OSD > System Settings (left from the core list) shows **Phosphor**; choosing it
       starts the shell and it takes the screen. Reboot still sits one line lower and hold-for-cold-reboot works.
+- [ ] Console Mode / stock Main: OSD > System Settings > Scripts > **phosphor** → it says Phosphor started;
+      F9 on a keyboard shows it. With Phosphor's Main it takes the screen when the script window closes.
+- [ ] `uninstall.sh` removes `Scripts/phosphor.sh`; a `Scripts/phosphor.sh` that isn't Phosphor's is never replaced.
 - [ ] Start the shell again → it takes the screen again.
 - [ ] `echo status | socat - UNIX:/tmp/phosphor-main.sock` (or `nc -U`) answers with the core and owner.
 - [ ] Reboot → stock/Console Mode boot as before (nothing was changed on the card).
