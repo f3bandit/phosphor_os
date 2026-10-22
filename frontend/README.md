@@ -47,6 +47,11 @@ shell starts it if it isn't running.
   last change; "Other network..." for hidden ones.
 - **On-screen keyboard**: D-pad moves, A types, X deletes, Y switches letters / capitals / symbols,
   Start is done, B cancels.
+- **Remote access** (Settings): on/off, the address, "Pair a device" (shows a 6-digit code for 2 minutes),
+  paired devices with when they were last used; X forgets one.
+
+  ![Pairing a device](docs/remote-pair.png)
+
 - **Screen filters** (Settings): per system, apply a preset or pick each filter, shadow mask and size,
   and gamma from MiSTer's own folders; shows the next time the core starts; SELECT undoes.
 

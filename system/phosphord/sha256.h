@@ -1,0 +1,12 @@
+/* phosphord: SHA-256 (FIPS 180-4), for remote access device keys.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+#ifndef PHOSD_SHA256_H
+#define PHOSD_SHA256_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+void sha256(const void *data, size_t len, uint8_t out[32]);
+void sha256_hex(const void *data, size_t len, char out[65]);
+
+#endif

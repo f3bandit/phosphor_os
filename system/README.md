@@ -4,7 +4,7 @@
 shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
 folders themselves. `phos` talks to it from the command line.
 
-## What it does (0.7.0)
+## What it does (0.8.0)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the
@@ -30,6 +30,10 @@ folders themselves. `phos` talks to it from the command line.
   `_shmask.cfg`, `_gamma.cfg`, same layout Main uses), applies presets from `Presets/`, lists
   `Filters/`, `Shadow_Masks/`, `Gamma/`. Every change is backed up first and can be undone; the core
   name comes from `systems.ini` (`cfgname=`) or the installed core file.
+- **Remote access** (off until turned on in Settings): HTTP on port 8767 for the phone app, a PC app or
+  the Claude plugin, home network only, devices paired with a 6-digit code shown on the TV, only key
+  hashes stored (`config/remote.ini`). Library, details, box art upload and download, "Based on",
+  scraper, screen filters, launch; not WiFi or pairing. See [docs/remote-api.md](../docs/remote-api.md).
 - **Diagnostics**: runs the diag module (`phosphor/modules/diag/diag.sh --kv`) in the background
   (killed after 3 minutes), keeps the last results, and makes the support bundle on request.
 - **Artwork store** in `/media/fat/phosphor/data/art/<system>/<game>/box.jpg`, scaled down to
@@ -63,6 +67,9 @@ untested); a refresh of the downloaded lists now and then.
 | `{"cmd":"wifi", "do":"scan\|connect\|forget\|up\|down\|undo", "ssid":"...", "password":"...", "hidden":false}` | `{status{present, connected, ssid, signal, freq, ip, supplicant}, scanning, networks:[{ssid, signal, bands, security, saved, current}], saved:[{ssid, open}]}`; passwords never come back |
 | `{"cmd":"video", "system":"snes", "set":{"filter":"...", "vertical":"...", "scanlines":"...", "interlace":"...", "mask":"...", "maskmode":"off\|1x\|2x\|1x rotated\|2x rotated", "gamma":"..."}, "preset":"...", "undo":true}` | one system's screen filters: `{video{core, custom, filter, vertical, scanlines, interlace, mask, maskmode, gamma}}`; without `system`, every system with a core; `"off"` turns a slot off. Writes MiSTer's own `config/<core>_scaler.cfg`, `_shmask.cfg`, `_gamma.cfg` after a backup |
 | `{"cmd":"video_files", "kind":"filters\|masks\|gamma\|presets"}` | `{files:[...]}` paths relative to MiSTer's `Filters`, `Shadow_Masks`, `Gamma`, `Presets` folders |
+| `{"cmd":"edit", "id":20, "set":{"title":"...", "description":"...", "year":"...", "developer":"...", "publisher":"...", "genre":"...", "players":"...", "region":"..."}}` | change a game's details (`""`/null clears; title can't be empty); replies with the game |
+| `{"cmd":"set_art", "id":20, "file":"/path/image.png"}` | store an image as the game's box art (scaled to 512 px, JPEG); replies with the game |
+| `{"cmd":"remote", "on":true, "do":"pair\|stop\|forget", "id":"..."}` | remote access (local socket only): `{on, port, listening, error, addresses, pairing{code, seconds}, paired, devices:[{id, name, created, last_seen}]}` |
 | `{"cmd":"diag", "run":true, "bundle":true}` | whole-system checks: `{installed, busy, at, summary{level, text}, results:[{area, key, level, message}], bundle, error}`; run/bundle start them in the background |
 | `{"cmd":"scrape_sources", "order":["libretro",...], "off":["igdb"]}` | sources in order `[{id, name, on, ready, needs}]`; with order/off saves them |
 | `{"cmd":"last"}` | the last game played, or null |
