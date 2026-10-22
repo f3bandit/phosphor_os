@@ -2171,7 +2171,7 @@ static void backup_key(pkey_t k)
  * the Phosphor menu core if the stock one is loaded (Main restarts: a few seconds). */
 
 enum { PT_MAIN, PT_CONFIRM };
-enum { PT_BACKUP1, PT_BACKUP2, PT_ANALOG, PT_FIRST_FILE };
+enum { PT_BACKUP1, PT_BACKUP2, PT_ANALOG, PT_INPUT, PT_FIRST_FILE };
 static struct {
 	int mode, busy, job_ok, available, can_load, main_api, in_game, done, total, loading;
 	char job[16], message[200];
@@ -2286,7 +2286,7 @@ static void pt_apply(cJSON *r)
 		snprintf(sub, sizeof(sub), pt.can_load ? "A on any line loads the Phosphor menu core (a few seconds)." : "It comes with the Phosphor release (phosphor/cores/menu_phosphor.rbf).");
 	} else {
 		snprintf(h, sizeof(h), "Front ports  \xC2\xB7  %d memory card backup%s", pt.nfiles, pt.nfiles == 1 ? "" : "s");
-		snprintf(sub, sizeof(sub), "Backups stay in phosphor/memcards on this SD card. MT32-pi and MIDI are off while this is open.");
+		snprintf(sub, sizeof(sub), "Backups stay in phosphor/memcards on this SD card. MT32-pi and MIDI are off while the front ports are in use.");
 	}
 	if (pt.mode == PT_CONFIRM) {
 		char lab[100];
@@ -2313,6 +2313,10 @@ static void pt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case PT_BACKUP1: case PT_BACKUP2:
 		snprintf(t, n, "Back up the memory card in port %d", i == PT_BACKUP1 ? 1 : 2);
 		snprintf(val, vn, ">");
+		return;
+	case PT_INPUT:
+		snprintf(t, n, "Use them to move around Phosphor");
+		snprintf(val, vn, "<  %s  >", SETTINGS.front_pads ? "On" : "Off");
 		return;
 	case PT_ANALOG:
 		snprintf(t, n, "Switch DualShocks to analog");
@@ -2385,6 +2389,12 @@ static void ports_key(pkey_t k)
 	if (pt.busy) { if (k == K_A || k == K_X) toast_show("Busy: wait for it to finish"); return; }
 	if (pt.mode == PT_CONFIRM) {
 		if (k == K_A || k == K_X) { pt.mode = PT_MAIN; pt_do("restore", k == K_A ? 1 : 2, pt.pick); }
+		return;
+	}
+	if (pt_list.sel == PT_INPUT && (k == K_A || k == K_LEFT || k == K_RIGHT)) {
+		SETTINGS.front_pads = !SETTINGS.front_pads;
+		settings_save();
+		vlist_refresh(&pt_list);
 		return;
 	}
 	if (k != K_A) return;

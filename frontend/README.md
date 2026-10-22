@@ -57,6 +57,8 @@ shell starts it if it isn't running.
   front ports, live (type, buttons, sticks; switch DualShocks to analog), memory card backups (the whole
   card to `phosphor/memcards`, `.mcd` like MiSTer's PSX core) and putting a backup back on a card (the
   card is backed up first). Needs phosphor-main; loads the Phosphor menu core if the stock one is loaded.
+  The front-port controllers also move around Phosphor (Cross confirms, Circle goes back, Start opens
+  Settings); one setting on that screen turns this off.
 
   ![Controllers & memory cards](docs/ports.png)
 
