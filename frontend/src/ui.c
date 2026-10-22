@@ -9,6 +9,8 @@
  *   Settings (Menu button)
  *   footer: what the buttons do here */
 #include "ui.h"
+#include <unistd.h>
+#include "mainlink.h"
 #include "icons.h"
 #include "api.h"
 #include "log.h"
@@ -895,10 +897,32 @@ static void picker_key(pkey_t k)
 	else if (k == K_B || k == K_Y) picker_close();
 }
 
+/* ---------- Restart (A twice) ---------- */
+
+static uint32_t restart_asked;
+
+static void restart_ask(void)
+{
+	uint32_t now = lv_tick_get();
+	if (!restart_asked || now - restart_asked > 4000) {
+		restart_asked = now ? now : 1;
+		toast_show("Press A again to restart");
+		return;
+	}
+	restart_asked = 0;
+	plog("restart from Settings");
+	toast_show("Restarting...");
+	lv_refr_now(NULL);
+	sync();
+	if (getenv("PHOS_NO_REBOOT")) return;          /* tests */
+	pid_t pid = fork();
+	if (pid == 0) { execl("/sbin/reboot", "reboot", (char *)NULL); execlp("reboot", "reboot", (char *)NULL); _exit(127); }
+}
+
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -941,6 +965,8 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
+	case SET_MISTER: snprintf(t, n, "MiSTer menu"); snprintf(val, vn, ">"); break;
+	case SET_RESTART: snprintf(t, n, "Restart"); break;
 	case SET_ABOUT: snprintf(t, n, "Phosphor"); snprintf(val, vn, "%s", PHOS_VERSION); break;
 	}
 }
@@ -3179,6 +3205,11 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
+			else if (set_list.sel == SET_MISTER && k == K_A) {
+				if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
+				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
+			}
+			else if (set_list.sel == SET_RESTART && k == K_A) restart_ask();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else settings_change(1);
 		}

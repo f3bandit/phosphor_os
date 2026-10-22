@@ -156,11 +156,11 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
 			lv_obj_invalidate(lv_screen_active());
 		}
-		int active = menu_active();
+		int active = menu_active() && !mainlink_hidden();
 		if (!active) {
 			/* a game is running: drain input so nothing happens behind it, and sleep */
 			while (input_poll(now) != KEY_NONE_) {}
-			if (was_active) plog("game running: idle");
+			if (was_active) plog(mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
 			was_active = 0;
 			usleep(200000);
 			continue;

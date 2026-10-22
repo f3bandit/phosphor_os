@@ -166,6 +166,9 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
       screen (first start). Every later boot goes straight to the library.
 - [ ] `ps` shows `MiSTer_phosphor`, not `MiSTer`; `/media/fat/MiSTer` is unchanged (same size as MiSTer's).
 - [ ] Quit the shell (`killall phosphor`) → MiSTer's menu; OSD > Launch Phosphor brings it back.
+- [ ] Settings > MiSTer menu → MiSTer's own menu (file browser, OSD); controllers don't move anything in
+      Phosphor meanwhile; OSD > Launch Phosphor → Phosphor again, right where it was.
+- [ ] Settings > Restart: first A says "Press A again", second A restarts the SS1 (back into Phosphor).
 - [ ] Card in the PC afterwards: one big `MiSTer_Data` exFAT partition, the full size of the card.
 - [ ] `/media/fat/phosphor` is there, `linux/user-startup.sh` has the phosphor block,
       `phosphor.sh status` shows phosphord running after boot.

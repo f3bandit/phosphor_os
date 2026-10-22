@@ -17,7 +17,9 @@
 #include <time.h>
 #include <unistd.h>
 
-static int fd = -1, ever = 0;
+static int fd = -1, ever = 0, hidden = 0;
+static char lbuf[2048];
+static size_t llen;
 static long long next_try;
 
 static long long now_ms(void)
@@ -69,6 +71,8 @@ static int take(void)
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 	plog("phosphor-main: the shell has the screen");
 	ever = 1;
+	hidden = 0;
+	llen = 0;
 	usleep(150000);              /* Main switches to the framebuffer in its next UI pass */
 	return 1;
 }
@@ -81,15 +85,44 @@ int mainlink_start(void)
 }
 
 int mainlink_connected(void) { return fd >= 0; }
+int mainlink_hidden(void) { return fd >= 0 && hidden; }
+
+int mainlink_give(void)
+{
+	if (fd < 0) return 0;
+	if (send(fd, "screen main\n", 12, MSG_NOSIGNAL) != 12) return 0;
+	hidden = 1;
+	plog("phosphor-main: screen given to MiSTer's menu");
+	return 1;
+}
 
 int mainlink_poll(void)
 {
 	if (fd >= 0) {
 		char buf[1024];
+		int retake = 0;
 		for (;;) {
 			ssize_t r = recv(fd, buf, sizeof(buf), 0);
-			if (r > 0) continue;              /* events: nothing to do with them yet */
-			if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) return 0;
+			if (r > 0) {
+				/* events, one per line: "show" (Launch Phosphor in Main's OSD) brings the shell back */
+				for (ssize_t i = 0; i < r; i++) {
+					if (buf[i] != '\n') { if (llen + 1 < sizeof(lbuf)) lbuf[llen++] = buf[i]; continue; }
+					lbuf[llen] = 0;
+					llen = 0;
+					if (hidden && strstr(lbuf, "\"event\":\"show\"")) {
+						if (send(fd, "screen phosphor\n", 16, MSG_NOSIGNAL) == 16) {
+							hidden = 0;
+							retake = 1;
+							plog("phosphor-main: the shell has the screen again");
+						}
+					}
+				}
+				continue;
+			}
+			if (r < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+				if (retake) usleep(150000);   /* Main switches to the framebuffer in its next UI pass */
+				return retake;
+			}
 			plog("phosphor-main went away; trying again");
 			close(fd);
 			fd = -1;
