@@ -11,11 +11,15 @@
  *   launch     id                           start it
  *   favorite   id on                        mark or unmark
  *   rescan                                  look for games again
- *   import                                  one-time import of gamelist.xml / media art */
+ *   import                                  one-time import of gamelist.xml / media art
+ *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
+ *   unlink     id                           not based on another game any more
+ *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}] */
 #include "api.h"
 #include "art.h"
 #include "cJSON.h"
 #include "db.h"
+#include "ident.h"
 #include "importer.h"
 #include "log.h"
 #include "indexer.h"
@@ -25,7 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PHOSD_VERSION "0.1.0"
+#define PHOSD_VERSION "0.2.0"
 
 /* games with at least one file that's here right now */
 #define VISIBLE "EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)"
@@ -67,12 +71,29 @@ static const char *where(const char *root)
 	return "SD card";
 }
 
+/* the scraper's view of a game: whether it should look it up, and why not */
+static const char *scrape_state(sqlite3_stmt *st, int based_col, int key_col, int scrape_col)
+{
+	if (sqlite3_column_type(st, based_col) != SQLITE_NULL) return "linked";      /* uses its base's art */
+	const char *key = (const char *)sqlite3_column_text(st, key_col);
+	const char *sc = (const char *)sqlite3_column_text(st, scrape_col);
+	if (sc && !strcmp(sc, "miss")) return "not_found";                           /* looked up, unknown: no art */
+	if (!key || !strncmp(key, "n:", 2)) return "unidentified";                   /* not hashed (yet), or a .chd */
+	return "ready";
+}
+
+/* details: the game's own, or (when it's based on another game) the base's where it has none */
 static cJSON *game_json(sqlite3 *db, long long id)
 {
 	sqlite3_stmt *st;
 	if (sqlite3_prepare_v2(db,
-	        "SELECT id, system_id, title, year, developer, publisher, genre, players, description, art_box, "
-	        "favorite, play_count, play_seconds, last_played, region FROM games WHERE id=?", -1, &st, NULL) != SQLITE_OK)
+	        "SELECT g.id, g.system_id, g.title,"
+	        " IFNULL(g.year, b.year), IFNULL(g.developer, b.developer), IFNULL(g.publisher, b.publisher),"
+	        " IFNULL(g.genre, b.genre), IFNULL(g.players, b.players), IFNULL(g.description, b.description),"
+	        " IFNULL(g.art_box, b.art_box),"
+	        " g.favorite, g.play_count, g.play_seconds, g.last_played, IFNULL(g.region, b.region),"
+	        " g.based_on, b.title, g.key, g.scrape"
+	        " FROM games g LEFT JOIN games b ON b.id = g.based_on WHERE g.id=?", -1, &st, NULL) != SQLITE_OK)
 		return NULL;
 	sqlite3_bind_int64(st, 1, id);
 	if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); return NULL; }
@@ -102,10 +123,18 @@ static cJSON *game_json(sqlite3 *db, long long id)
 	if (sqlite3_column_type(st, 13) != SQLITE_NULL) cJSON_AddNumberToObject(g, "last_played", (double)sqlite3_column_int64(st, 13));
 	else cJSON_AddNullToObject(g, "last_played");
 	add_text(g, "region", st, 14);
+	if (sqlite3_column_type(st, 15) != SQLITE_NULL) {
+		cJSON *b = cJSON_AddObjectToObject(g, "based_on");
+		cJSON_AddNumberToObject(b, "id", (double)sqlite3_column_int64(st, 15));
+		add_text(b, "title", st, 16);
+	} else {
+		cJSON_AddNullToObject(g, "based_on");
+	}
+	cJSON_AddStringToObject(g, "scrape", scrape_state(st, 15, 17, 18));
 	sqlite3_finalize(st);
 
 	cJSON *files = cJSON_AddArrayToObject(g, "files");
-	if (sqlite3_prepare_v2(db, "SELECT path, root, size, online FROM files WHERE game_id=? ORDER BY online DESC, id", -1, &st, NULL) == SQLITE_OK) {
+	if (sqlite3_prepare_v2(db, "SELECT path, root, size, online, crc32, serial FROM files WHERE game_id=? ORDER BY online DESC, id", -1, &st, NULL) == SQLITE_OK) {
 		sqlite3_bind_int64(st, 1, id);
 		while (sqlite3_step(st) == SQLITE_ROW) {
 			cJSON *f = cJSON_CreateObject();
@@ -113,6 +142,8 @@ static cJSON *game_json(sqlite3 *db, long long id)
 			cJSON_AddStringToObject(f, "where", where((const char *)sqlite3_column_text(st, 1)));
 			cJSON_AddNumberToObject(f, "size", (double)sqlite3_column_int64(st, 2));
 			cJSON_AddBoolToObject(f, "online", sqlite3_column_int(st, 3));
+			add_text(f, "crc32", st, 4);
+			add_text(f, "serial", st, 5);
 			cJSON_AddItemToArray(files, f);
 		}
 		sqlite3_finalize(st);
@@ -125,6 +156,7 @@ static char *cmd_status(sqlite3 *db)
 	cJSON *o = ok();
 	cJSON_AddStringToObject(o, "version", PHOSD_VERSION);
 	cJSON_AddBoolToObject(o, "indexing", indexer_busy());
+	cJSON_AddBoolToObject(o, "identifying", indexer_identifying());
 	cJSON_AddNumberToObject(o, "generation", indexer_generation());
 	sqlite3_stmt *st;
 	int n = 0;
@@ -194,7 +226,7 @@ static char *cmd_games(sqlite3 *db, cJSON *req)
 	cJSON_AddNumberToObject(o, "total", system_count(db, sys->valuestring));
 	cJSON *arr = cJSON_AddArrayToObject(o, "games");
 	sqlite3_stmt *st;
-	if (sqlite3_prepare_v2(db, "SELECT g.id, g.title, g.favorite FROM games g WHERE g.system_id=? AND " VISIBLE
+	if (sqlite3_prepare_v2(db, "SELECT g.id, g.title, g.favorite, g.based_on FROM games g WHERE g.system_id=? AND " VISIBLE
 	                           " ORDER BY g.title COLLATE NATSORT LIMIT ? OFFSET ?", -1, &st, NULL) == SQLITE_OK) {
 		sqlite3_bind_text(st, 1, sys->valuestring, -1, SQLITE_STATIC);
 		sqlite3_bind_int(st, 2, limit);
@@ -204,6 +236,7 @@ static char *cmd_games(sqlite3 *db, cJSON *req)
 			cJSON_AddNumberToObject(x, "id", (double)sqlite3_column_int64(st, 0));
 			add_text(x, "title", st, 1);
 			cJSON_AddBoolToObject(x, "favorite", sqlite3_column_int(st, 2));
+			cJSON_AddBoolToObject(x, "linked", sqlite3_column_type(st, 3) != SQLITE_NULL);
 			cJSON_AddItemToArray(arr, x);
 		}
 		sqlite3_finalize(st);
@@ -239,6 +272,130 @@ static char *cmd_last(sqlite3 *db)
 	return reply(o);
 }
 
+/* ---------- "based on" ---------- */
+
+static int game_system(sqlite3 *db, long long id, char *sys, int n, long long *based_on)
+{
+	sqlite3_stmt *st;
+	int found = 0;
+	if (sqlite3_prepare_v2(db, "SELECT system_id, based_on FROM games WHERE id=?", -1, &st, NULL) != SQLITE_OK) return 0;
+	sqlite3_bind_int64(st, 1, id);
+	if (sqlite3_step(st) == SQLITE_ROW) {
+		snprintf(sys, (size_t)n, "%s", sqlite3_column_text(st, 0));
+		if (based_on) *based_on = sqlite3_column_type(st, 1) == SQLITE_NULL ? -1 : sqlite3_column_int64(st, 1);
+		found = 1;
+	}
+	sqlite3_finalize(st);
+	return found;
+}
+
+static char *cmd_link(sqlite3 *db, cJSON *req)
+{
+	long long id = req_id(req), base = -1, bb = -1;
+	cJSON *b = cJSON_GetObjectItem(req, "base");
+	if (cJSON_IsNumber(b)) base = (long long)b->valuedouble;
+	char s1[32], s2[32];
+	if (!game_system(db, id, s1, sizeof(s1), NULL)) return fail("no such game");
+	if (!game_system(db, base, s2, sizeof(s2), &bb)) return fail("no such base game");
+	if (strcmp(s1, s2)) return fail("the base game has to be for the same system");
+	if (bb >= 0) base = bb;                          /* based on a hack: use what that hack is based on */
+	if (base == id) return fail("a game can't be based on itself");
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "UPDATE games SET based_on=?2 WHERE id=?1", -1, &st, NULL) != SQLITE_OK) return fail(sqlite3_errmsg(db));
+	sqlite3_bind_int64(st, 1, id);
+	sqlite3_bind_int64(st, 2, base);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+	/* games based on this one now point at its base too (no chains) */
+	if (sqlite3_prepare_v2(db, "UPDATE games SET based_on=?2 WHERE based_on=?1", -1, &st, NULL) == SQLITE_OK) {
+		sqlite3_bind_int64(st, 1, id);
+		sqlite3_bind_int64(st, 2, base);
+		sqlite3_step(st);
+		sqlite3_finalize(st);
+	}
+	cJSON *g = game_json(db, id), *o = ok();
+	if (g) cJSON_AddItemToObject(o, "game", g);
+	return reply(o);
+}
+
+static char *cmd_unlink(sqlite3 *db, cJSON *req)
+{
+	long long id = req_id(req);
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "UPDATE games SET based_on=NULL WHERE id=?", -1, &st, NULL) != SQLITE_OK) return fail(sqlite3_errmsg(db));
+	sqlite3_bind_int64(st, 1, id);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+	cJSON *g = game_json(db, id);
+	if (!g) return fail("no such game");
+	cJSON *o = ok();
+	cJSON_AddItemToObject(o, "game", g);
+	return reply(o);
+}
+
+typedef struct { long long id; int score; char *title; } cand_t;
+
+static int cand_cmp(const void *a, const void *b)
+{
+	const cand_t *x = a, *y = b;
+	if (x->score != y->score) return y->score - x->score;
+	return natcmp(x->title, y->title);
+}
+
+/* games this one could be based on: same system, not itself, not hacks themselves, most alike first */
+static char *cmd_candidates(sqlite3 *db, cJSON *req)
+{
+	long long id = req_id(req), cur_base = -1;
+	char sys[32], me[512] = "", mine[512], q[512] = "";
+	if (!game_system(db, id, sys, sizeof(sys), &cur_base)) return fail("no such game");
+	cJSON *lim = cJSON_GetObjectItem(req, "limit"), *qq = cJSON_GetObjectItem(req, "q");
+	int limit = cJSON_IsNumber(lim) ? lim->valueint : 200;
+	if (cJSON_IsString(qq)) title_norm(qq->valuestring, q, sizeof(q));
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "SELECT title FROM games WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
+		sqlite3_bind_int64(st, 1, id);
+		if (sqlite3_step(st) == SQLITE_ROW) snprintf(me, sizeof(me), "%s", sqlite3_column_text(st, 0));
+		sqlite3_finalize(st);
+	}
+	title_norm(me, mine, sizeof(mine));
+	cand_t *c = NULL;
+	int n = 0, cap = 0;
+	if (sqlite3_prepare_v2(db, "SELECT g.id, g.title FROM games g WHERE g.system_id=? AND g.id<>? AND g.based_on IS NULL", -1, &st, NULL) != SQLITE_OK)
+		return fail(sqlite3_errmsg(db));
+	sqlite3_bind_text(st, 1, sys, -1, SQLITE_STATIC);
+	sqlite3_bind_int64(st, 2, id);
+	while (sqlite3_step(st) == SQLITE_ROW) {
+		const char *t = (const char *)sqlite3_column_text(st, 1);
+		char norm[512];
+		title_norm(t, norm, sizeof(norm));
+		if (q[0] && !strstr(norm, q)) continue;
+		if (n == cap) { cap = cap ? cap * 2 : 256; c = realloc(c, sizeof(*c) * (size_t)cap); }
+		c[n].id = sqlite3_column_int64(st, 0);
+		c[n].score = title_similarity(q[0] ? q : mine, norm);
+		c[n].title = strdup(t);
+		n++;
+	}
+	sqlite3_finalize(st);
+	qsort(c, (size_t)n, sizeof(*c), cand_cmp);
+	cJSON *o = ok();
+	cJSON_AddNumberToObject(o, "total", n);
+	if (cur_base >= 0) cJSON_AddNumberToObject(o, "current", (double)cur_base);
+	else cJSON_AddNullToObject(o, "current");
+	cJSON *arr = cJSON_AddArrayToObject(o, "games");
+	for (int i = 0; i < n; i++) {
+		if (i < limit) {
+			cJSON *x = cJSON_CreateObject();
+			cJSON_AddNumberToObject(x, "id", (double)c[i].id);
+			cJSON_AddStringToObject(x, "title", c[i].title);
+			cJSON_AddNumberToObject(x, "score", c[i].score);
+			cJSON_AddItemToArray(arr, x);
+		}
+		free(c[i].title);
+	}
+	free(c);
+	return reply(o);
+}
+
 char *api_handle(sqlite3 *db, const char *request)
 {
 	cJSON *req = cJSON_Parse(request);
@@ -252,6 +409,9 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "games")) out = cmd_games(db, req);
 	else if (!strcmp(c->valuestring, "game")) out = cmd_game(db, req_id(req));
 	else if (!strcmp(c->valuestring, "last")) out = cmd_last(db);
+	else if (!strcmp(c->valuestring, "link")) out = cmd_link(db, req);
+	else if (!strcmp(c->valuestring, "unlink")) out = cmd_unlink(db, req);
+	else if (!strcmp(c->valuestring, "candidates")) out = cmd_candidates(db, req);
 	else if (!strcmp(c->valuestring, "launch")) {
 		char err[300];
 		out = play_launch(db, req_id(req), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);

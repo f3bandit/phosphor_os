@@ -8,6 +8,7 @@
  * (played, favourite, art or details), in which case it's kept, hidden, for when it comes back. */
 #include "indexer.h"
 #include "db.h"
+#include "ident.h"
 #include "log.h"
 #include "paths.h"
 #include "systems.h"
@@ -22,7 +23,7 @@
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-static int requested = 1, busy, generation;
+static int requested = 1, busy, identifying, generation;
 
 void indexer_request(void)
 {
@@ -33,6 +34,7 @@ void indexer_request(void)
 }
 
 int indexer_busy(void) { return busy; }
+int indexer_identifying(void) { return identifying; }
 int indexer_generation(void) { return generation; }
 
 typedef struct {
@@ -132,7 +134,7 @@ static void scan(sqlite3 *db)
 	scan_t s = { .db = db, .gen = gen };
 	prep(db, &s.find_file, "SELECT id, size, mtime FROM files WHERE path=?");
 	prep(db, &s.touch_file, "UPDATE files SET seen=?, online=1 WHERE id=?");
-	prep(db, &s.update_file, "UPDATE files SET size=?, mtime=?, crc32=NULL, serial=NULL, seen=?, online=1 WHERE id=?");
+	prep(db, &s.update_file, "UPDATE files SET size=?, mtime=?, crc32=NULL, serial=NULL, ident=0, seen=?, online=1 WHERE id=?");
 	prep(db, &s.add_game, "INSERT OR IGNORE INTO games(system_id, key, title, added) VALUES(?,?,?,?)");
 	prep(db, &s.find_game, "SELECT id FROM games WHERE system_id=? AND key=?");
 	prep(db, &s.add_file, "INSERT INTO files(game_id, path, root, size, mtime, seen, online) VALUES(?,?,?,?,?,?,1)");
@@ -198,7 +200,8 @@ static void scan(sqlite3 *db)
 	sqlite3_finalize(away);
 	/* games with no files left and nothing worth keeping */
 	db_exec(db, "DELETE FROM games WHERE id NOT IN (SELECT game_id FROM files) AND play_count=0 AND favorite=0 "
-	            "AND art_box IS NULL AND description IS NULL");
+	            "AND art_box IS NULL AND description IS NULL AND based_on IS NULL "
+	            "AND id NOT IN (SELECT based_on FROM games WHERE based_on IS NOT NULL)");
 	snprintf(buf, sizeof(buf), "%d", gen);
 	db_meta_set(db, "scan_gen", buf);
 	db_exec(db, "COMMIT");
@@ -208,6 +211,20 @@ static void scan(sqlite3 *db)
 	plog("scan %d: %d files (%d new, %d changed) in %lds", gen, s.seen, s.added, s.changed, (long)(time(NULL) - t0));
 }
 
+/* identifying reads whole files: only while the menu is up, never while a core runs from the drive */
+static int menu_up(void)
+{
+	char core[64] = "";
+	FILE *f = fopen(p_corename(), "r");
+	if (!f) return 1;
+	if (!fgets(core, sizeof(core), f)) core[0] = 0;
+	fclose(f);
+	core[strcspn(core, "\r\n")] = 0;
+	return !core[0] || !strcmp(core, "MENU");
+}
+
+static int ident_should_stop(void) { return requested || !menu_up(); }
+
 static void *thread(void *arg)
 {
 	(void)arg;
@@ -215,13 +232,27 @@ static void *thread(void *arg)
 	if (!db) return NULL;
 	for (;;) {
 		pthread_mutex_lock(&lk);
-		while (!requested) pthread_cond_wait(&cv, &lk);
+		if (!requested) {
+			/* wake up now and then to carry on identifying (e.g. once a game is closed) */
+			struct timespec ts;
+			clock_gettime(CLOCK_REALTIME, &ts);
+			ts.tv_sec += 15;
+			pthread_cond_timedwait(&cv, &lk, &ts);
+		}
+		int scan_now = requested;
 		requested = 0;
-		busy = 1;
+		busy = scan_now;
 		pthread_mutex_unlock(&lk);
-		scan(db);
-		busy = 0;
-		__sync_add_and_fetch(&generation, 1);
+		if (scan_now) {
+			scan(db);
+			busy = 0;
+			__sync_add_and_fetch(&generation, 1);
+		}
+		if (menu_up()) {
+			identifying = 1;
+			if (ident_pending(db, ident_should_stop) > 0) __sync_add_and_fetch(&generation, 1);
+			identifying = 0;
+		}
 	}
 	return NULL;
 }
