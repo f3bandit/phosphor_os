@@ -327,7 +327,7 @@ const statusScript = `echo "MiSTer Linux: $(cat /MiSTer.version 2>/dev/null || e
 echo "kernel: $(uname -r)"
 echo "uptime: $(uptime)"
 echo "core: $(cat /tmp/CORENAME 2>/dev/null || echo none)"
-echo "Main: $(pidof MiSTer >/dev/null && echo running || echo not running)"
+if ls -l /proc/[0-9]*/exe 2>/dev/null | grep -q '/MiSTer$'; then echo "Main: running"; else echo "Main: not running"; fi
 df -h /media/fat 2>/dev/null | tail -n 1 | awk '{ print "SD card: " $4 " free of " $2 }'
 ip -4 -o addr show 2>/dev/null | awk '$2 != "lo" { print "address: " $2 " " $4 }'
 [ -d /media/fat/phosphor ] && echo "Phosphor: installed" || echo "Phosphor: not installed"

@@ -131,12 +131,28 @@ func findPort(cfg Config) (string, error) {
 
 // ---------- connection ----------
 
+// openRetry: Windows takes a moment to free a port after the last program closed it.
+func openRetry(name string, baud int) (serial.Port, error) {
+	var err error
+	for i := 0; i < 15; i++ {
+		var p serial.Port
+		if p, err = serial.Open(name, &serial.Mode{BaudRate: baud}); err == nil {
+			return p, nil
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), "busy") && !strings.Contains(strings.ToLower(err.Error()), "access") {
+			return nil, err
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("%v (another program may have it open, such as a terminal or the Claude app)", err)
+}
+
 func OpenSerial(cfg Config) (*SerialLink, error) {
 	name, err := findPort(cfg)
 	if err != nil {
 		return nil, err
 	}
-	p, err := serial.Open(name, &serial.Mode{BaudRate: cfg.Baud})
+	p, err := openRetry(name, cfg.Baud)
 	if err != nil {
 		return nil, fmt.Errorf("can't open %s: %w", name, err)
 	}
