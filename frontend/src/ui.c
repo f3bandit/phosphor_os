@@ -2482,7 +2482,12 @@ static void bt_apply(cJSON *r)
 		snprintf(h, sizeof(h), "%d paired  \xC2\xB7  %d connected", bt.ndev, nc);
 		snprintf(sub, sizeof(sub), "Pairings stay on this SD card.");
 	}
-	if (bt.busy) snprintf(sub, sizeof(sub), "%s%s%s", bt.message, bt.found[0] ? ": " : "", bt.found);
+	if (bt.busy) {
+		size_t ml = strlen(bt.message);
+		int dots = ml >= 3 && !strcmp(bt.message + ml - 3, "...");
+		if (bt.found[0] && dots) snprintf(sub, sizeof(sub), "%.*s: %s...", (int)(ml - 3), bt.message, bt.found);
+		else snprintf(sub, sizeof(sub), "%s", bt.message);
+	}
 	if (bt.mode == BT_ACTION && bt.pick < bt.ndev)
 		snprintf(sub, sizeof(sub), "%s: A disconnects it (it reconnects when you turn it on), X forgets it.", bt.name[bt.pick]);
 	lv_label_set_text(bt_head, h);

@@ -24,7 +24,9 @@ links and start games on the TV, over the home network. Android 8 and later.
 
    ![Controllers & memory cards](docs/14-cards.png)
 
-6. **Settings > Cloud saves**: send now, get saves back (pick a MiSTer, see what would change), add a
+6. **Settings > Bluetooth** (0.5): the controllers paired with the MiSTer; pair a new one (put it in pairing
+   mode), disconnect or forget one. Pairings stay on the MiSTer.
+7. **Settings > Cloud saves**: send now, get saves back (pick a MiSTer, see what would change), add a
    storage place: WebDAV, SFTP, SMB, or Google Drive / Dropbox / OneDrive by pasting the sign-in token from
    `rclone authorize` on a PC. Passwords and tokens go only to the MiSTer; WiFi, Bluetooth pairings and
    passwords are never sent to the cloud.

@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.BackupsContent
 import com.f3bandit.phosphor.ui.CardsContent
+import com.f3bandit.phosphor.ui.BluetoothContent
 import com.f3bandit.phosphor.ui.BasedOnContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
@@ -114,4 +115,7 @@ class ScreenshotTest {
     @Test fun cards() = shot("14-cards") { CardsContent(cards, padsNow, null, null, {}, {}, {}, {}, {}, {}) }
     @Test fun cardsBusy() = shot("15-cards-busy") { CardsContent(cards.copy(busy = true, job = "backup", port = 1, done = 512, total = 1024), padsNow, null, null, {}, {}, {}, {}, {}, {}) }
     @Test fun cardsPutBack() = shot("16-cards-put-back") { CardsContent(cards, padsNow, null, cardFiles[0], {}, {}, {}, {}, {}, {}) }
+    private val bt = BtState(true, listOf(BtDevice("11:22:33:44:55:66", "8BitDo Pro 2", true, true), BtDevice("AA:BB:CC:11:22:33", "DualSense Wireless Controller", false, true)), false, false, 0, "", "")
+    @Test fun bluetooth() = shot("17-bluetooth") { BluetoothContent(bt, null, null, {}, {}, {}, {}, {}, {}) }
+    @Test fun bluetoothPairing() = shot("18-bluetooth-pairing") { BluetoothContent(bt.copy(busy = true, message = "Pairing...", found = "Xbox Wireless Controller"), null, null, {}, {}, {}, {}, {}, {}) }
 }
