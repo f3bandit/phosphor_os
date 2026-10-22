@@ -16,6 +16,7 @@ through every MiSTer update.
 | Main fork | MiSTer Main with a small local API for the frontend (launch, pause, snapshots, pads, memory cards) | separate private repo `phosphor-main` (GPL-3.0, published at release) |
 | Menu core fork | MiSTer's menu core plus SNAC controller and PS1 memory card logic, so those screens need no core swap | separate private repo `phosphor-menu` (GPL-3.0, published at release) |
 | Modules | One-job ARM programs that start on an event or on request, then exit | separate private repo [`phosphor-modules`](https://github.com/f3bandit/phosphor-modules) |
+| SD card image | Ready-to-flash card: stock MiSTer + Phosphor, built from Mr. Fusion | `image/` |
 | Mockups | Design explorations | `mockups/` |
 
 ## Modules

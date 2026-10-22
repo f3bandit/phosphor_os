@@ -132,7 +132,22 @@ NES already has its own settings (a scanlines file in the vertical slot), so it'
 - [ ] Arcade isn't listed (MiSTer keeps arcade settings per game, not per core).
 - [ ] Backups in `phosphor/data/backup/video/`.
 
-## 7. Safety checks (each time something is installed)
+## 7. SD card image (spare card only)
+
+Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.img.zip` (`image/build-image.sh`).
+
+- [ ] Flash with balenaEtcher (or Raspberry Pi Imager); the PC then shows a `MRFUSION` drive.
+- [ ] Optional: put a `wpa_supplicant.conf` on it → WiFi works after the install.
+- [ ] Boot: Phosphor install screen shows on HDMI (the SS1's video path), card is expanded, it restarts
+      into the MiSTer menu by itself (under ~2 minutes).
+- [ ] Card in the PC afterwards: one big `MiSTer_Data` exFAT partition, the full size of the card.
+- [ ] `/media/fat/phosphor` is there, `linux/user-startup.sh` has the phosphor block,
+      `phosphor.sh status` shows phosphord running after boot.
+- [ ] `update_all` / downloader runs normally afterwards and doesn't remove Phosphor.
+- [ ] `/media/fat/phosphor/uninstall.sh` leaves a stock MiSTer.
+- [ ] SS1 specifics after update_all (SS1 cores, dock port, NVMe) work as on a normal stock install.
+
+## 8. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

@@ -37,3 +37,6 @@ greybox_tmp/
 # Build artifacts
 dist/
 *.zip
+
+# SD card image downloads
+image/cache/
