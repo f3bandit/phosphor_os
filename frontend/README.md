@@ -25,6 +25,8 @@ shell starts it if it isn't running.
   under its own name, with "Based on …" in its details. "Not based on another game" undoes it.
 
   ![Based on](docs/based-on.png)
+- **Box art** is shown whether phosphord stored it as JPEG (scraped) or PNG (imported); JPEGs are
+  decoded whole (stb_image) so they scale to fit.
 - **Launching** goes through phosphord, which records play count and time.
 - **Refreshes by itself** when phosphord finishes a scan (a drive or share was plugged in) or finds
   that two entries are the same game.
@@ -32,8 +34,8 @@ shell starts it if it isn't running.
 - **Controllers and keyboards** through evdev, picked up when plugged in, with key repeat. D-pad,
   hat or left stick; south button / Enter = A, east / Esc = B, north / Y key = Y, Start / Guide / F1 = Menu, shoulders
   or PgUp/PgDn = page.
-- **Settings**: accent colour (Amber, Red, Green, Blue, Purple), 12/24-hour clock, look for games
-  again. Saved in `/media/fat/phosphor/config/frontend.ini`.
+- **Settings**: accent colour (Amber, Red, Green, Blue, Purple), 12/24-hour clock, get box art and
+  details (on/off, with progress: found, to go, not found), look for games again. Saved in `/media/fat/phosphor/config/frontend.ini`.
 - **While a game runs** (MiSTer's `/tmp/CORENAME` isn't `MENU`) it sleeps and ignores input.
 - Logs to `/tmp/phosphor/frontend.log`, and to the serial console with `--log-serial`.
 

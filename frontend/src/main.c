@@ -16,6 +16,7 @@
 #include "log.h"
 #include "settings.h"
 #include "theme.h"
+#include "jpeg.h"
 #include "ui.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -180,6 +181,7 @@ int main(int argc, char **argv)
 	log_open(serial);
 	plog("Phosphor %s", PHOS_VERSION);
 	lv_init();
+	jpeg_init();
 	settings_load();
 	theme_init((accent_t)SETTINGS.accent);
 	return snap ? run_snapshot(snap, keys, w, h) : run_fbdev(fb, fb_mode, fb_rb);

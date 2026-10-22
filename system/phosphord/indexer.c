@@ -9,6 +9,7 @@
 #include "indexer.h"
 #include "db.h"
 #include "ident.h"
+#include "scraper.h"
 #include "log.h"
 #include "paths.h"
 #include "systems.h"
@@ -250,7 +251,7 @@ static void *thread(void *arg)
 		}
 		if (menu_up()) {
 			identifying = 1;
-			if (ident_pending(db, ident_should_stop) > 0) __sync_add_and_fetch(&generation, 1);
+			if (ident_pending(db, ident_should_stop) > 0) { __sync_add_and_fetch(&generation, 1); scraper_kick(); }
 			identifying = 0;
 		}
 	}

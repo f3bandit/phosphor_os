@@ -8,7 +8,7 @@
 #define ART_BOX_MAX 512   /* longest side of stored box art, in pixels */
 
 /* Store an image as a game's box art: decoded (PNG, JPEG, GIF, BMP...), scaled down to fit
- * ART_BOX_MAX, saved as PNG. rel receives the path relative to data/art. Returns 0 on success. */
+ * ART_BOX_MAX, saved as JPEG (quality 85). rel receives the path relative to data/art. Returns 0 on success. */
 int art_store_box(const char *system_id, const char *game_key, const char *src_image, char *rel, size_t reln);
 
 /* absolute path of a stored image */

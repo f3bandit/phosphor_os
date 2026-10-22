@@ -921,7 +921,7 @@
 #define LV_USE_BMP 0
 
 /** Also decodes split JPEG, a custom format optimized for embedded systems. */
-#define LV_USE_TJPGD 1
+#define LV_USE_TJPGD 0   /* box art JPEGs go through src/jpeg.c (whole-image decode, so they can be scaled) */
 
 /** High-performance decoder supporting the complete JPEG specifications. */
 #define LV_USE_LIBJPEG_TURBO 0

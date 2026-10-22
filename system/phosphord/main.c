@@ -12,6 +12,7 @@
 #include "log.h"
 #include "paths.h"
 #include "play.h"
+#include "scraper.h"
 #include "systems.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -117,6 +118,7 @@ int main(int argc, char **argv)
 	if (lfd < 0) return 1;
 	for (int i = 0; i < MAX_CLIENTS; i++) cl[i].fd = -1;
 	indexer_start();
+	scraper_start();
 
 	int mfd = open("/proc/self/mounts", O_RDONLY);
 	plog("ready on %s", p_socket());
