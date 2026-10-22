@@ -25,12 +25,26 @@
 typedef struct {
 	int fd;
 	char name[24];
+	char label[64];      /* what the device calls itself */
 	int ax_min[64], ax_max[64];
 	int ax_dir[64];      /* -1/0/1 last reported direction per axis */
 } dev_t_;
 
 static dev_t_ devs[MAX_DEV];
-static int ndev, ino_fd = -1;
+static int ndev, ino_fd = -1, started;
+static char notice[96];           /* "Connected: ..." for the screen, once */
+
+/* MiSTer Main's own virtual devices come and go with every core: not news */
+static int newsworthy(const char *label) { return !strstr(label, "MiSTer") && !strstr(label, "uinput") && !strstr(label, "virtual"); }
+
+const char *input_notice(void)
+{
+	static char out[96];
+	if (!notice[0]) return NULL;
+	snprintf(out, sizeof(out), "%s", notice);
+	notice[0] = 0;
+	return out;
+}
 
 static pkey_t queue[32];
 static int qh, qt;
@@ -75,7 +89,9 @@ static void open_dev(const char *name)
 	}
 	char dname[128] = "?";
 	ioctl(fd, EVIOCGNAME(sizeof(dname)), dname);
+	snprintf(d->label, sizeof(d->label), "%.63s", dname);
 	plog("input: %s (%s)", name, dname);
+	if (started && newsworthy(d->label)) snprintf(notice, sizeof(notice), "Connected: %.80s", d->label);
 }
 
 static void scan_devs(void)
@@ -93,6 +109,7 @@ void input_init(void)
 	ino_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (ino_fd >= 0) inotify_add_watch(ino_fd, "/dev/input", IN_CREATE | IN_ATTRIB);
 	scan_devs();
+	started = 1;
 }
 
 static pkey_t map_key(int code)
@@ -196,6 +213,7 @@ pkey_t input_poll(unsigned now)
 		}
 		if (r < 0 && errno == ENODEV) {
 			plog("input: %s gone", devs[i].name);
+			if (newsworthy(devs[i].label)) snprintf(notice, sizeof(notice), "Disconnected: %.80s", devs[i].label);
 			close(devs[i].fd);
 			devs[i] = devs[--ndev];
 			i--;

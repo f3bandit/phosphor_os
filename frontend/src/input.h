@@ -22,5 +22,8 @@ void input_pad(int port, unsigned buttons, int lx, int ly, int analog, unsigned 
 /* inject keys for tests and screenshots */
 void input_push(pkey_t k);
 pkey_t key_from_name(const char *name);
+/* a controller or keyboard was just plugged in or paired ("Connected: name") or went away; NULL if
+ * nothing new. Each one is returned once. */
+const char *input_notice(void);
 
 #endif

@@ -119,6 +119,8 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Set 5 minutes, leave the controller: the screen goes dark with a dim PHOSPHOR that moves now and then.
 - [ ] Any button (USB, Bluetooth or front-port pad) wakes it, and that press does nothing else.
 - [ ] Playing a game for longer than the time, then quitting: Phosphor comes back awake, not dark.
+- [ ] Plug in a USB pad / turn on a paired Bluetooth pad: "Connected: <name>" for a moment; unplug or turn
+      off: "Disconnected: <name>". Loading and quitting a game doesn't show these for MiSTer's own devices.
 
 ## 5. WiFi (Settings > WiFi)
 
