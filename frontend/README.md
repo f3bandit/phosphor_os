@@ -62,6 +62,12 @@ shell starts it if it isn't running.
 
   ![Controllers & memory cards](docs/ports.png)
 
+- **Favorites, Recently played, Search**: two more cards on the home shelf (after the categories) list
+  favorites and the games played lately, across all systems; X in any game list marks a favorite; Y on the
+  home screen searches by part of a name (on-screen keyboard).
+
+  ![Favorites](docs/favorites.png)
+
 - **Bluetooth** (Settings): the paired controllers, connected or not; pair a new one (put it in pairing mode;
   MiSTer's own pairing tool does the work, so the OSD and Phosphor share the same pairings); disconnect or
   forget one. Pairings stay on the SD card.

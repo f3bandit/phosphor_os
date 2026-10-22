@@ -99,6 +99,15 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Starting a game: shell sleeps, ignores input; back in the menu: wakes up.
 - [ ] Memory and CPU while idle (should be near zero) and while scrolling.
 
+## 4b. Favorites, Recently played, Search
+
+- [ ] X on a game in any list → "Added to Favorites", the row says Favorite; X again removes it.
+- [ ] Home shelf: Favorites and Recently played cards after the categories, with counts; A opens them
+      (system name on each row); B goes back to the home screen.
+- [ ] Play a game, come back → it's first in Recently played.
+- [ ] Y on the home screen → keyboard; type part of a name, Done → matching games from every system; a name
+      with no match says so; B on the keyboard cancels.
+
 ## 5. WiFi (Settings > WiFi)
 
 Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also keeps the last 10 in

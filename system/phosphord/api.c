@@ -7,7 +7,7 @@
  *   systems    [category] [all]             [{id,name,category,games}]; empty ones only with all
  *   games      [system] [filter] [q] [offset] [limit]
  *                                           {total, games:[{id,title,favorite,linked,system,art,details,scrape}]};
- *                                           filter: missing_art|missing_details|not_found|linked|unidentified
+ *                                           filter: missing_art|missing_details|not_found|linked|unidentified|favorites|recent
  *   game       id                           details, art (absolute path), play history, files
  *   last                                    the last game played (same shape as game), or null
  *   launch     id                           start it
@@ -275,7 +275,8 @@ static char *cmd_systems(sqlite3 *db, cJSON *req)
 }
 
 /* games [system] [filter] [q] [offset] [limit]: a system's games, or (with filter or q) games anywhere.
- * filter: missing_art | missing_details | not_found | linked | unidentified */
+ * filter: missing_art | missing_details | not_found | linked | unidentified | favorites | recent
+ * (recent: played ones, last played first) */
 static char *cmd_games(sqlite3 *db, cJSON *req)
 {
 	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
@@ -293,7 +294,9 @@ static char *cmd_games(sqlite3 *db, cJSON *req)
 		else if (!strcmp(filter, "not_found")) fw = " AND g.scrape='miss' AND g.based_on IS NULL";
 		else if (!strcmp(filter, "linked")) fw = " AND g.based_on IS NOT NULL";
 		else if (!strcmp(filter, "unidentified")) fw = " AND g.key LIKE 'n:%'";
-		else return fail("filter: missing_art, missing_details, not_found, linked or unidentified");
+		else if (!strcmp(filter, "favorites")) fw = " AND g.favorite=1";
+		else if (!strcmp(filter, "recent")) fw = " AND g.last_played IS NOT NULL";
+		else return fail("filter: missing_art, missing_details, not_found, linked, unidentified, favorites or recent");
 	}
 	char where[600];
 	snprintf(where, sizeof(where), " FROM games g LEFT JOIN games b ON b.id=g.based_on WHERE " VISIBLE "%s%s%s",
@@ -324,7 +327,8 @@ static char *cmd_games(sqlite3 *db, cJSON *req)
 	cJSON *arr = cJSON_AddArrayToObject(o, "games");
 	snprintf(sql, sizeof(sql), "SELECT g.id, g.title, g.favorite, g.based_on, g.system_id,"
 	         " COALESCE(g.art_box, b.art_box) IS NOT NULL, COALESCE(g.description, b.description) IS NOT NULL,"
-	         " g.key, g.scrape%s ORDER BY %sg.title COLLATE NATSORT LIMIT ?3 OFFSET ?4", where, sys ? "" : "g.system_id, ");
+	         " g.key, g.scrape%s ORDER BY %sg.title COLLATE NATSORT LIMIT ?3 OFFSET ?4", where,
+	         (filter && !strcmp(filter, "recent")) ? "g.last_played DESC, " : (sys || (filter && !strcmp(filter, "favorites")) || q) ? "" : "g.system_id, ");
 	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
 		if (sys) sqlite3_bind_text(st, 1, sys, -1, SQLITE_STATIC);
 		if (q) sqlite3_bind_text(st, 2, like, -1, SQLITE_STATIC);

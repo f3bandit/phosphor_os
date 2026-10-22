@@ -219,9 +219,13 @@ static int vlist_key(vlist_t *v, pkey_t k)
 /* ---------- Home: category shelf ---------- */
 
 static const icon_t CAT_ICON[CAT_COUNT] = { ICON_DISC, ICON_CARTRIDGE, ICON_HANDHELD, ICON_ARCADE, ICON_COMPUTER };
+/* the shelf: the categories, then Favorites and Recently played */
+enum { SH_FAV = CAT_COUNT, SH_RECENT, SHELF_COUNT };
+static icon_t shelf_icon(int i) { return i == SH_FAV ? ICON_STAR : i == SH_RECENT ? ICON_CLOCK : CAT_ICON[i]; }
+static const char *shelf_name(int i) { return i == SH_FAV ? "Favorites" : i == SH_RECENT ? "Recently played" : category_name((category_t)i); }
 
 static struct {
-	lv_obj_t *card[CAT_COUNT], *ic[CAT_COUNT], *nm[CAT_COUNT], *ct[CAT_COUNT];
+	lv_obj_t *card[SHELF_COUNT], *ic[SHELF_COUNT], *nm[SHELF_COUNT], *ct[SHELF_COUNT];
 	int sel;
 	float pos;          /* animated selection position */
 	lv_obj_t *cont, *cont_title, *cont_sub;
@@ -231,7 +235,7 @@ static void shelf_layout(float pos)
 {
 	home.pos = pos;
 	int cx = W / 2, step = S(236);
-	for (int i = 0; i < CAT_COUNT; i++) {
+	for (int i = 0; i < SHELF_COUNT; i++) {
 		float d = i - pos, ad = d < 0 ? -d : d;
 		float grow = ad < 1 ? 1 - ad : 0;                  /* 1 at the focused card */
 		int cw = S(200) + (int)(S(36) * grow), ch = S(250) + (int)(S(45) * grow);
@@ -251,7 +255,7 @@ static void shelf_anim_cb(void *var, int32_t v) { (void)var; shelf_layout(v / 10
 
 static void shelf_go(int sel)
 {
-	if (sel < 0 || sel >= CAT_COUNT) return;
+	if (sel < 0 || sel >= SHELF_COUNT) return;
 	lv_anim_delete(&home, shelf_anim_cb);
 	lv_anim_t a;
 	lv_anim_init(&a);
@@ -266,13 +270,19 @@ static void shelf_go(int sel)
 
 /* ---------- data from phosphord ---------- */
 
-static int cat_count[CAT_COUNT];
+static int cat_count[SHELF_COUNT];
 static cJSON *last_game;          /* {"id","title","system_name","category",...} or NULL */
 
 static void load_home_data(void)
 {
-	for (int c = 0; c < CAT_COUNT; c++) cat_count[c] = -1;
-	cJSON *r = api_call("{\"cmd\":\"categories\"}");
+	for (int c = 0; c < SHELF_COUNT; c++) cat_count[c] = -1;
+	cJSON *r = api_call("{\"cmd\":\"games\",\"filter\":\"favorites\",\"limit\":0}");
+	if (api_ok(r)) cat_count[SH_FAV] = (int)api_num(r, "total", 0);
+	cJSON_Delete(r);
+	r = api_call("{\"cmd\":\"games\",\"filter\":\"recent\",\"limit\":0}");
+	if (api_ok(r)) cat_count[SH_RECENT] = (int)api_num(r, "total", 0);
+	cJSON_Delete(r);
+	r = api_call("{\"cmd\":\"categories\"}");
 	if (api_ok(r)) {
 		cJSON *it;
 		cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "categories")) {
@@ -300,7 +310,7 @@ static void play_id(long long id)
 
 static void home_counts(void)
 {
-	for (int c = 0; c < CAT_COUNT; c++) {
+	for (int c = 0; c < SHELF_COUNT; c++) {
 		int n = cat_count[c];
 		char t[48];
 		if (n < 0) snprintf(t, sizeof(t), "Looking...");
@@ -333,7 +343,7 @@ static void show_home(void)
 	lv_obj_set_style_text_letter_space(sec, S(3), 0);
 	lv_obj_set_pos(sec, S(56), S(104));
 
-	for (int i = 0; i < CAT_COUNT; i++) {
+	for (int i = 0; i < SHELF_COUNT; i++) {
 		lv_obj_t *c = mk_box(body, S(200), S(250), PAL.panel, S(18));
 		lv_obj_set_style_border_width(c, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(c, PAL.line, 0);
@@ -341,8 +351,8 @@ static void show_home(void)
 		lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 		lv_obj_set_style_pad_row(c, S(14), 0);
 		home.card[i] = c;
-		home.ic[i] = icon_create(c, CAT_ICON[i], S(72));
-		home.nm[i] = mk_label(c, FONT_NAME, PAL.dim, category_name((category_t)i));
+		home.ic[i] = icon_create(c, shelf_icon(i), S(72));
+		home.nm[i] = mk_label(c, FONT_NAME, PAL.dim, shelf_name(i));
 		home.ct[i] = mk_label(c, FONT_SMALL, PAL.faint, "");
 	}
 	shelf_layout((float)home.sel);
@@ -393,8 +403,8 @@ static void show_home(void)
 	}
 	home_continue();
 
-	static const char *const hints_last[] = { "A", "Open", "X", "Play last", "\xE2\x89\xA1", "Settings", NULL };
-	static const char *const hints[] = { "A", "Open", "\xE2\x89\xA1", "Settings", NULL };
+	static const char *const hints_last[] = { "A", "Open", "X", "Play last", "Y", "Search", "\xE2\x89\xA1", "Settings", NULL };
+	static const char *const hints[] = { "A", "Open", "Y", "Search", "\xE2\x89\xA1", "Settings", NULL };
 	footer_set(last_game ? hints_last : hints);
 }
 
@@ -494,7 +504,11 @@ static void show_systems(category_t c)
 
 /* ---------- Games of a system ---------- */
 
-typedef struct { long long id; char *title; int linked; } game_item_t;
+typedef struct { long long id; char *title; int linked, fav; char sys[24]; } game_item_t;
+/* what the game list shows: a system's games, or (across systems) favorites, recently played, a search */
+enum { GL_SYSTEM, GL_FAV, GL_RECENT, GL_SEARCH };
+static int games_mode;
+static char games_q[64];
 static game_item_t *games;
 static int ngames;
 static char games_sys[24];
@@ -517,7 +531,20 @@ static void free_games(void)
 static void load_games(const char *sys)
 {
 	free_games();
-	cJSON *r = api_call("{\"cmd\":\"games\",\"system\":\"%s\"}", sys);
+	cJSON *r;
+	if (games_mode == GL_FAV) r = api_call("{\"cmd\":\"games\",\"filter\":\"favorites\"}");
+	else if (games_mode == GL_RECENT) r = api_call("{\"cmd\":\"games\",\"filter\":\"recent\",\"limit\":200}");
+	else if (games_mode == GL_SEARCH) {
+		cJSON *q = cJSON_CreateObject();
+		cJSON_AddStringToObject(q, "cmd", "games");
+		cJSON_AddStringToObject(q, "q", games_q);
+		cJSON_AddNumberToObject(q, "limit", 500);
+		char *b = cJSON_PrintUnformatted(q);
+		cJSON_Delete(q);
+		r = api_call("%s", b);
+		free(b);
+	}
+	else r = api_call("{\"cmd\":\"games\",\"system\":\"%s\"}", sys);
 	if (api_ok(r)) {
 		cJSON *arr = cJSON_GetObjectItem(r, "games");
 		int n = cJSON_GetArraySize(arr);
@@ -527,16 +554,53 @@ static void load_games(const char *sys)
 			games[ngames].id = (long long)api_num(it, "id", -1);
 			games[ngames].title = strdup(api_str(it, "title") ? api_str(it, "title") : "");
 			games[ngames].linked = cJSON_IsTrue(cJSON_GetObjectItem(it, "linked"));
+			games[ngames].fav = cJSON_IsTrue(cJSON_GetObjectItem(it, "favorite"));
+			snprintf(games[ngames].sys, sizeof(games[0].sys), "%s", api_str(it, "system") ? api_str(it, "system") : "");
 			ngames++;
 		}
 	}
 	cJSON_Delete(r);
 }
 
+/* system names for lists across systems */
+static struct { char id[24], name[48]; } sysname[96];
+static int nsysname;
+static const char *system_name(const char *id)
+{
+	if (!nsysname) {
+		cJSON *r = api_call("{\"cmd\":\"systems\",\"all\":true}"), *it;
+		cJSON *arr = api_ok(r) ? cJSON_GetObjectItem(r, "systems") : NULL;
+		cJSON_ArrayForEach(it, arr) {
+			if (nsysname >= 96) break;
+			snprintf(sysname[nsysname].id, sizeof(sysname[0].id), "%s", api_str(it, "id") ? api_str(it, "id") : "");
+			snprintf(sysname[nsysname].name, sizeof(sysname[0].name), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+			nsysname++;
+		}
+		cJSON_Delete(r);
+	}
+	for (int i = 0; i < nsysname; i++) if (!strcmp(sysname[i].id, id)) return sysname[i].name;
+	return id;
+}
+
 static void game_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	(void)val; (void)vn; (void)dim;
+	(void)dim;
 	snprintf(t, n, "%s", games[i].title);
+	if (games_mode == GL_SYSTEM) { if (games[i].fav) snprintf(val, vn, "Favorite"); }
+	else snprintf(val, vn, "%s%s", games[i].fav && games_mode != GL_FAV ? "Favorite  \xC2\xB7  " : "", system_name(games[i].sys));
+}
+
+static void games_toggle_fav(void)
+{
+	if (!ngames) return;
+	game_item_t *g = &games[game_list.sel];
+	cJSON *r = api_call("{\"cmd\":\"favorite\",\"id\":%lld,\"on\":%s}", g->id, g->fav ? "false" : "true");
+	if (api_ok(r)) {
+		g->fav = !g->fav;
+		toast_show(g->fav ? "Added to Favorites" : "Removed from Favorites");
+		vlist_refresh(&game_list);
+	} else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't change it");
+	cJSON_Delete(r);
 }
 
 /* box art loads a moment after the selection settles, so scrolling through a list stays quick */
@@ -560,9 +624,13 @@ static void game_detail(void)
 	cJSON_Delete(detail);
 	detail = NULL;
 	if (!ngames) {
-		lv_label_set_text(g_title, "No games found");
+		lv_label_set_text(g_title, games_mode == GL_FAV ? "No favorites yet" : games_mode == GL_RECENT ? "Nothing played yet"
+			: games_mode == GL_SEARCH ? "Nothing with that name" : "No games found");
 		lv_label_set_text(g_info, "");
-		lv_label_set_text(g_desc, "Put them in games/ on the SD card, a USB drive or your network share.");
+		lv_label_set_text(g_desc, games_mode == GL_FAV ? "In any list of games, X marks the selected one as a favorite."
+			: games_mode == GL_RECENT ? "Games you play show up here, the last one first."
+			: games_mode == GL_SEARCH ? "Search looks for part of a game's name: try a shorter word."
+			: "Put them in games/ on the SD card, a USB drive or your network share.");
 		lv_label_set_text(g_where, "");
 		lv_obj_set_hidden(g_art, true);
 		lv_obj_set_hidden(g_noart, false);
@@ -630,13 +698,14 @@ static void games_hints(void);
 static void show_games(const char *sys_id, const char *sys_name, int cat)
 {
 	cur = SCR_GAMES;
+	if (sys_id[0]) games_mode = GL_SYSTEM;
 	snprintf(games_sys, sizeof(games_sys), "%s", sys_id);
 	games_cat = cat;
 	if (art_timer) { lv_timer_delete(art_timer); art_timer = NULL; }
 	load_games(sys_id);
 	lv_obj_clean(body);
 	char label[96];
-	spaced_caps(label, sizeof(label), category_name((category_t)cat));
+	spaced_caps(label, sizeof(label), games_mode == GL_SYSTEM ? category_name((category_t)cat) : "Library");
 	screen_title(label, sys_name);
 	vlist_create(&game_list, body, S(56), S(176), S(560), S(440));
 	game_list.count = ngames;
@@ -689,6 +758,7 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 
 	char cnt[48];
 	snprintf(cnt, sizeof(cnt), "%d game%s", ngames, ngames == 1 ? "" : "s");
+
 	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.dim, cnt);
 	lv_obj_update_layout(c);
 	lv_obj_set_pos(c, S(56) + S(560) - S(10) - lv_obj_get_width(c), S(134));
@@ -700,7 +770,7 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 
 static void games_hints(void)
 {
-	static const char *const hints[] = { "A", "Play", "B", "Back", "Y", "Based on", "L", "Page up", "R", "Page down", NULL };
+	static const char *const hints[] = { "A", "Play", "B", "Back", "X", "Favorite", "Y", "Based on", "L", "Page up", "R", "Page down", NULL };
 	footer_set(hints);
 }
 
@@ -3000,6 +3070,33 @@ void ui_rescan(void)
 	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
 }
 
+/* ---------- lists across systems: favorites, recently played, search ---------- */
+
+static void show_list(int mode)
+{
+	games_mode = mode;
+	char t[96];
+	if (mode == GL_SEARCH) snprintf(t, sizeof(t), "\xE2\x80\x9C%s\xE2\x80\x9D", games_q);
+	else snprintf(t, sizeof(t), "%s", mode == GL_FAV ? "Favorites" : "Recently played");
+	show_games("", t, 0);
+}
+
+static const char *const SEARCH_BACK_HINTS[] = { "A", "Open", "Y", "Search", "\xE2\x89\xA1", "Settings", NULL };
+
+static void search_done(const char *text)
+{
+	if (!text) return;                       /* B: cancelled */
+	while (*text == ' ') text++;
+	if (!*text) { toast_show("Type part of a game's name"); return; }
+	snprintf(games_q, sizeof(games_q), "%s", text);
+	show_list(GL_SEARCH);
+}
+
+static void search_open(void)
+{
+	osk_open("Search", "Part of a game's name, then Done.", 0, 40, search_done, SEARCH_BACK_HINTS);
+}
+
 void ui_key(pkey_t k)
 {
 	if (osk_key(k)) return;
@@ -3007,7 +3104,10 @@ void ui_key(pkey_t k)
 	case SCR_HOME:
 		if (k == K_LEFT) shelf_go(home.sel - 1);
 		else if (k == K_RIGHT) shelf_go(home.sel + 1);
+		else if (k == K_A && home.sel == SH_FAV) show_list(GL_FAV);
+		else if (k == K_A && home.sel == SH_RECENT) show_list(GL_RECENT);
 		else if (k == K_A) show_systems((category_t)home.sel);
+		else if (k == K_Y) search_open();
 		else if (k == K_MENU) show_settings();
 		else if (k == K_X && last_game) play_id((long long)api_num(last_game, "id", -1));
 		break;
@@ -3020,7 +3120,9 @@ void ui_key(pkey_t k)
 		if (picker_open()) { picker_key(k); break; }
 		if (vlist_key(&game_list, k)) game_detail();
 		else if (k == K_Y && ngames) picker_show();
+		else if (k == K_X && ngames) games_toggle_fav();
 		else if (k == K_A && ngames) play_id(games[game_list.sel].id);
+		else if (k == K_B && games_mode != GL_SYSTEM) show_home();
 		else if (k == K_B) {
 			int keep = 0;
 			show_systems(sys_cat);
