@@ -12,7 +12,7 @@
 # except for what its installer copies onto the card. On first boot Mr. Fusion expands the card to
 # full size and installs the MiSTer release it carries; here that release also holds Phosphor
 # (/media/fat/phosphor) and a start block in linux/user-startup.sh, made by Phosphor's own install.sh
-# --boot. No kernel, Linux or Main of our own. Nothing here needs root: the image is put together
+# --boot-phosphor. No kernel or Linux of our own; Phosphor's Main runs in place of MiSTer's, which isn't replaced. Nothing here needs root: the image is put together
 # with sfdisk, mkfs.vfat, mtools and dd on plain files.
 #
 # Needs: curl, git, 7z (7-Zip or p7zip), sfdisk, mkfs.vfat, mtools, unzip, zip, sha256sum.
@@ -102,9 +102,9 @@ mkdir -p "$WORK/phos"
 tar -C "$WORK/phos" -xzf "$TARBALL"
 PDIR="$(ls -d "$WORK"/phos/phosphor-* | head -1)"
 PHOS_VER="$(cut -d' ' -f1 "$PDIR/VERSION")"
-PHOS_FAT="$WORK/rel/files" PHOS_FAT_TARGET=/media/fat bash "$PDIR/install.sh" --boot
+PHOS_FAT="$WORK/rel/files" PHOS_FAT_TARGET=/media/fat bash "$PDIR/install.sh" --boot-phosphor
 grep -q '^# phosphor: BEGIN' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block missing" >&2; exit 1; }
-grep -q ' /media/fat/phosphor/phosphor.sh service' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
+grep -q ' /media/fat/phosphor/phosphor.sh boot' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
 # the Phosphor release itself, so modules can be installed later without downloading anything
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
 
