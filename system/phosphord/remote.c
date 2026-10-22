@@ -508,6 +508,8 @@ static void do_api(req_t *r, const char *body)
 	if (!allowed) { cJSON_Delete(j); respond_error(r->fd, 403, "that command only works on the MiSTer itself"); return; }
 	/* "diag" may look, not make support bundles (they hold system details); every "bundle" key, any case */
 	while (cJSON_GetObjectItem(j, "bundle")) cJSON_DeleteItemFromObject(j, "bundle");
+	/* "bluetooth" may look, not pair, forget or disconnect: pairing only from the MiSTer itself */
+	if (!strcmp(cmd, "bluetooth")) while (cJSON_GetObjectItem(j, "do")) cJSON_DeleteItemFromObject(j, "do");
 	char *s = cJSON_PrintUnformatted(j);
 	cJSON_Delete(j);
 	char *out = s ? forward(s) : NULL;
