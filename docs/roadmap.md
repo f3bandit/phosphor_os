@@ -13,10 +13,12 @@ Each step is useful on its own; later steps reuse earlier ones.
 | 7 | **Android app integration** | The phone app talks to Phosphor: remote control, library, settings, memory cards, backups | Over the same local API (network-exposed, paired with a code). Fits SS1 Tool for Android or a dedicated companion app. |
 | 8 | **Cloud storage** | Saves and settings synced to the user's own cloud (Google Drive, Dropbox, OneDrive, WebDAV, SMB) | Through a module using rclone (MIT) on the ARM side; no Phosphor-run servers needed. |
 | 9 | **In-menu WiFi** | Scan networks with signal strength, band and security; connect, forget, reorder; all from the menu with a controller | Uses `wpa_supplicant`/`iw` like SS1 Tool's WiFi page; on-screen keyboard for passwords. |
+| 11 | **Claude plugin for the library** | A plugin for the Claude app (phone, tablet or PC) with clear instructions for managing the Phosphor library: find and fix box art and details, link hacks to their base games, fill in missing descriptions, review "not found" games | **Android**: through the Phosphor Android app on the same network. **Windows**: a Phosphor PC app reaching the MiSTer over the SS1 dock's debug port, Ethernet or WiFi; the PC does the searching and image work, so it's much faster than the ARM side, and sends finished art and details to phosphord. Builds on Phosphor Link (MCP server, already working over the debug port) and phosphord's API. |
 | 10 | **Status bar** | Top right, beside the clock: network share, Ethernet, WiFi (signal bars), Bluetooth (with count of connected controllers) | Live from `/sys/class/net`, `iw`, BlueZ and `/proc/self/mounts` (event-driven, no polling loop). Dim = off/disconnected, bright = active; tap through to the matching settings page. |
 
-Library next steps: content identity (CRC32 / disc serial against No-Intro and Redump), "Based on…"
-links for hacks and mods (use the base game's art and description), scraper queue.
+Library: content identity, "Based on" links and the libretro scraper are done (phosphord 0.3).
+Next: descriptions for cartridge systems (ScreenScraper or TheGamesDB, to choose), product codes
+inside .chd files, then the Claude plugin (#11) for remote library management.
 
 Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API; the frontend
 MVP (library shelf, game list, launch, settings, mount-change rescan); the in-game sheet (HDMI/scaler
