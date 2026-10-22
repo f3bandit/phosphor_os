@@ -85,5 +85,5 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
-0.1.1. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
+0.1.2. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
 the pretend console with heavy mid-line noise, a stopped U-Boot and reboots.
