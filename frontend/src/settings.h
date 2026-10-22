@@ -3,7 +3,7 @@
 #ifndef PHOS_SETTINGS_H
 #define PHOS_SETTINGS_H
 
-#define PHOS_VERSION "0.4.0"
+#define PHOS_VERSION "0.5.0"
 
 typedef struct {
 	int accent;
