@@ -7,7 +7,8 @@
  * Discs (.cue/.bin, .iso): the product code (PlayStation SYSTEM.CNF, Saturn and Mega-CD headers)
  * for looking the game up; identity is product code + data track size + CRC of its first megabyte.
  * That reads well under a second per disc; hashing whole discs took ~40 s each over USB. A .chd is compressed: its identity is
- * the SHA-1 of the original data that the .chd header carries; its product code isn't read yet.
+ * the SHA-1 of the original data that the .chd header carries, and its product code is read from
+ * the disc inside (libchdr) for looking it up.
  * Arcade: the MAME set name in the .mra.
  *
  * Identity decides which entries are the same game: two copies on the SD card and a USB drive
@@ -16,6 +17,8 @@
 #include "ident.h"
 #include "db.h"
 #include "log.h"
+#include <libchdr/chd.h>
+#include <libchdr/cdrom.h>
 #include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -129,15 +132,65 @@ typedef struct {
 	FILE *f;
 	int sector;   /* bytes per sector in the file: 2352 (raw) or 2048 */
 	int offset;   /* where the 2048 data bytes start in a sector */
+	/* a .chd instead of a file: frames of 2448 bytes (2352 + subcode) in compressed hunks */
+	chd_file *chd;
+	uint32_t hunkbytes, frames_per_hunk, pregap;
+	long cached_hunk;
+	unsigned char *hunk;
 } disc_t;
+
+static const unsigned char SYNC[12] = { 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0 };
 
 static int disc_read(disc_t *d, long lba, unsigned char out[2048])
 {
+	if (d->chd) {
+		long frame = lba + (long)d->pregap;
+		long hunk = frame / (long)d->frames_per_hunk;
+		if (hunk != d->cached_hunk) {
+			if (chd_read(d->chd, (uint32_t)hunk, d->hunk) != CHDERR_NONE) return -1;
+			d->cached_hunk = hunk;
+		}
+		const unsigned char *f = d->hunk + (frame % (long)d->frames_per_hunk) * CD_FRAME_SIZE;
+		int off = !memcmp(f, SYNC, 12) ? (f[15] == 2 ? 24 : 16) : 0;   /* raw mode 1 / mode 2, or cooked */
+		memcpy(out, f + off, 2048);
+		return 0;
+	}
 	if (fseek(d->f, lba * d->sector + d->offset, SEEK_SET)) return -1;
 	return fread(out, 1, 2048, d->f) == 2048 ? 0 : -1;
 }
 
-static const unsigned char SYNC[12] = { 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0 };
+static int chd_disc_open(const char *path, disc_t *d)
+{
+	memset(d, 0, sizeof(*d));
+	if (chd_open(path, CHD_OPEN_READ, NULL, &d->chd) != CHDERR_NONE) { d->chd = NULL; return -1; }
+	const chd_header *h = chd_get_header(d->chd);
+	d->hunkbytes = h->hunkbytes;
+	d->frames_per_hunk = h->hunkbytes / CD_FRAME_SIZE;
+	if (!d->frames_per_hunk) { chd_close(d->chd); d->chd = NULL; return -1; }
+	/* track 1's pregap is stored in the image when its type starts with V */
+	char meta[256];
+	uint32_t len = 0;
+	if (chd_get_metadata(d->chd, CDROM_TRACK_METADATA2_TAG, 0, meta, sizeof(meta) - 1, &len, NULL, NULL) == CHDERR_NONE) {
+		meta[len < sizeof(meta) ? len : sizeof(meta) - 1] = 0;
+		int pregap = 0;
+		char pgtype[32] = "";
+		const char *p = strstr(meta, "PREGAP:");
+		if (p) pregap = atoi(p + 7);
+		p = strstr(meta, "PGTYPE:");
+		if (p) sscanf(p + 7, "%31s", pgtype);
+		if (pgtype[0] == 'V') d->pregap = (uint32_t)pregap;
+	}
+	d->hunk = malloc(d->hunkbytes);
+	d->cached_hunk = -1;
+	if (!d->hunk) { chd_close(d->chd); d->chd = NULL; return -1; }
+	return 0;
+}
+
+static void disc_close(disc_t *d)
+{
+	if (d->chd) { chd_close(d->chd); free(d->hunk); d->chd = NULL; }
+	if (d->f) { fclose(d->f); d->f = NULL; }
+}
 
 /* the first data track of a .cue (or a .bin/.iso itself) */
 static int disc_open(const char *path, disc_t *d, char *track, size_t tn)
@@ -163,8 +216,9 @@ static int disc_open(const char *path, disc_t *d, char *track, size_t tn)
 		if (name[0] == '/' || !slash) snprintf(track, tn, "%s", name);
 		else snprintf(track, tn, "%.*s/%s", (int)(slash - path), path, name);
 	} else if (dot && !strcasecmp(dot, ".chd")) {
-		return -2;   /* compressed: not read yet */
+		return chd_disc_open(path, d);
 	}
+	memset(d, 0, sizeof(*d));
 	d->f = fopen(track, "rb");
 	if (!d->f) return -1;
 	unsigned char h[16];
@@ -245,7 +299,7 @@ static int disc_serial(const gsys_t *sys, const char *path, char *serial, int n,
 {
 	disc_t d;
 	int rc = disc_open(path, &d, track, tn);
-	if (rc) return rc == -2 ? -2 : -3;
+	if (rc) return -3;
 	unsigned char s[2048];
 	rc = -1;
 	if (!strcmp(sys->id, "PSX")) {
@@ -254,7 +308,7 @@ static int disc_serial(const gsys_t *sys, const char *path, char *serial, int n,
 		if (!memcmp(s, "SEGA SEGASATURN", 15)) { trim_copy(serial, n, s + 0x20, 10); rc = serial[0] ? 0 : -1; }
 		else if (!memcmp(s, "SEGADISCSYSTEM", 14)) { trim_copy(serial, n, s + 0x180, 14); rc = serial[0] ? 0 : -1; }
 	}
-	fclose(d.f);
+	disc_close(&d);
 	return rc;
 }
 
@@ -314,9 +368,11 @@ int ident_file(const gsys_t *sys, const char *path, ident_t *out)
 	}
 	const char *dot = strrchr(path, '.');
 	if (sys->type == 's' && dot && !strcasecmp(dot, ".chd")) {
-		char sha[48];
+		/* identity: the header's SHA-1; product code: read from the disc inside (for lookups) */
+		char sha[48], track[8];
 		if (chd_sha1(path, sha, sizeof(sha))) return -1;
 		if (sha[0]) snprintf(out->key, sizeof(out->key), "chd:%s", sha);
+		if (disc_serial(sys, path, out->serial, sizeof(out->serial), track, sizeof(track))) out->serial[0] = 0;
 		return 0;
 	}
 	if (sys->type == 's' && !(dot && !strcasecmp(dot, ".exe"))) {
@@ -513,9 +569,11 @@ int ident_pending(sqlite3 *db, int (*should_stop)(void))
 		sqlite3_bind_text(save, 1, id.crc32, -1, SQLITE_STATIC);
 		sqlite3_bind_text(save, 2, id.serial, -1, SQLITE_STATIC);
 		sqlite3_bind_int64(save, 3, fid);
-		sqlite3_step(save);
+		int src = sqlite3_step(save);
+		sqlite3_reset(save);
+		if (src != SQLITE_DONE) { db_exec(db, "ROLLBACK"); last = fid - 1; break; }   /* busy: next round */
 		changed += assign(db, fid, gid, sysid, id.key, path);
-		db_exec(db, "COMMIT");
+		if (db_exec(db, "COMMIT") != SQLITE_OK) { db_exec(db, "ROLLBACK"); last = fid - 1; break; }
 		done++;
 	}
 	sqlite3_finalize(next);

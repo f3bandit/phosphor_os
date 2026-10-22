@@ -4,7 +4,7 @@
 shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
 folders themselves. `phos` talks to it from the command line.
 
-## What it does (0.3.0)
+## What it does (0.4.0)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the
@@ -17,10 +17,11 @@ folders themselves. `phos` talks to it from the command line.
   game; renamed or moved files keep their history and links.
 - **Based on**: a hack, mod or translation can point to its base game and then shows the base's
   art and details under its own name. Suggestions rank the system's games by title likeness.
-- **Box art and details** from libretro (no account), in the background while the menu is up, when
-  turned on: official No-Intro/Redump lists matched by CRC32 / product code, covers from libretro's
-  thumbnails, developer/publisher/genre/year/players (and PlayStation descriptions). Only empty
-  fields are filled; linked, unidentified and already looked up games are skipped.
+- **Box art and details** in the background while the menu is up, when turned on, from the
+  sources the user picked, in their order: libretro, ArcadeDB, LaunchBox (no account), TheGamesDB,
+  ScreenScraper, IGDB (keys in `config/scraper.ini`). Matched by content (CRC32 / product code /
+  set name), never by file name; only empty fields are filled; linked, unidentified and already
+  looked up games are skipped.
 - **Artwork store** in `/media/fat/phosphor/data/art/<system>/<game>/box.jpg`, scaled down to
   512 px when stored so the shell never decodes a huge scan.
 - **Import** (`phos import`, run once on request): reads `gamelist.xml` and Console Mode-style
@@ -32,8 +33,8 @@ folders themselves. `phos` talks to it from the command line.
 - **API** on `/tmp/phosphor/phosphord.sock`: one JSON request per line, one JSON reply per line.
   Sleeps in `poll()`; wakes every 2 s only to keep play time.
 
-Next: descriptions for cartridge systems (ScreenScraper or TheGamesDB), product codes from inside
-.chd files.
+Next: check TheGamesDB, ScreenScraper and IGDB with real keys (their platform numbers are set but
+untested); a refresh of the downloaded lists now and then.
 
 ## API
 
@@ -49,6 +50,7 @@ Next: descriptions for cartridge systems (ScreenScraper or TheGamesDB), product 
 | `{"cmd":"candidates", "id":3, "q":"mario", "limit":200}` | games 3 could be based on, most alike first: `{total, current, games:[{id, title, score}]}` |
 | `{"cmd":"scrape", "on":true}` | box art and details on/off (`on` optional): `{on, running, pending, found, not_found, status}` |
 | `{"cmd":"rescrape", "id":3}` | look game 3 up again |
+| `{"cmd":"scrape_sources", "order":["libretro",...], "off":["igdb"]}` | sources in order `[{id, name, on, ready, needs}]`; with order/off saves them |
 | `{"cmd":"last"}` | the last game played, or null |
 | `{"cmd":"launch", "id":3}` | starts it |
 | `{"cmd":"favorite", "id":3, "on":true}` | |
@@ -76,10 +78,12 @@ cmake -B build-arm -DCMAKE_TOOLCHAIN_FILE=../frontend/cmake/armhf.cmake && cmake
 Static ARM binaries: `phosphord` about 1.5 MB with SQLite built in, `phos` about 340 KB.
 
 Paths can be redirected for tests: `PHOS_FAT`, `PHOS_TMP`, `PHOS_GAMES_ROOTS`, `PHOS_MISTER_CMD`,
-`PHOS_CORENAME`. Tested on a sandbox library on this machine and, as ARM builds, under
-`qemu-arm-static` together with the shell. Not yet run on MiSTer hardware.
+`PHOS_CORENAME`, and for downloads `PHOS_CURL`, `PHOS_CACERT`. Tested on a sandbox library and on a
+real SuperStation One (identity, libretro, LaunchBox and the database under load).
 
 ## Third-party code
 
 `third_party/`: SQLite 3.50.4 (public domain), cJSON 1.7.19 (MIT), stb_image and stb_image_write
-(public domain or MIT). Nothing GPL.
+(public domain or MIT), libchdr (BSD-3; with the LZMA SDK, public domain, miniz, MIT, and zstd,
+BSD). Nothing GPL. Downloaded data (libretro's lists and thumbnails, LaunchBox, ArcadeDB, and the
+keyed services) stays on the user's own MiSTer and is used under each service's terms.

@@ -16,9 +16,10 @@ Each step is useful on its own; later steps reuse earlier ones.
 | 11 | **Claude plugin for the library** | A plugin for the Claude app (phone, tablet or PC) with clear instructions for managing the Phosphor library: find and fix box art and details, link hacks to their base games, fill in missing descriptions, review "not found" games | **Android**: through the Phosphor Android app on the same network. **Windows**: a Phosphor PC app reaching the MiSTer over the SS1 dock's debug port, Ethernet or WiFi; the PC does the searching and image work, so it's much faster than the ARM side, and sends finished art and details to phosphord. Builds on Phosphor Link (MCP server, already working over the debug port) and phosphord's API. |
 | 10 | **Status bar** | Top right, beside the clock: network share, Ethernet, WiFi (signal bars), Bluetooth (with count of connected controllers) | Live from `/sys/class/net`, `iw`, BlueZ and `/proc/self/mounts` (event-driven, no polling loop). Dim = off/disconnected, bright = active; tap through to the matching settings page. |
 
-Library: content identity, "Based on" links and the libretro scraper are done (phosphord 0.3).
-Next: descriptions for cartridge systems (ScreenScraper or TheGamesDB, to choose), product codes
-inside .chd files, then the Claude plugin (#11) for remote library management.
+Library: content identity, "Based on" links and the scraper with six sources (libretro, ArcadeDB,
+LaunchBox, TheGamesDB, ScreenScraper, IGDB; user's choice and order) are done (phosphord 0.4).
+To do: register Phosphor with ScreenScraper for a developer id; test the keyed sources with real
+keys; then the Claude plugin (#11) for remote library management.
 
 Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API; the frontend
 MVP (library shelf, game list, launch, settings, mount-change rescan); the in-game sheet (HDMI/scaler

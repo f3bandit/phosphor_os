@@ -20,7 +20,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -823,7 +823,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_RESCAN, SET_ABOUT, SET_COUNT };
+enum { SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -855,6 +855,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		else snprintf(val, vn, "%d found  \xC2\xB7  %d not found", found, nf);
 		break;
 	}
+	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_ABOUT: snprintf(t, n, "Phosphor"); snprintf(val, vn, "%s", PHOS_VERSION); break;
 	}
@@ -905,6 +906,98 @@ static void show_settings(void)
 	footer_set(hints);
 }
 
+/* ---------- Box art sources ----------
+ * Which sources the scraper asks, in what order (the first answer for each field wins).
+ * Sources that need a key say so; keys go in phosphor/config/scraper.ini. */
+
+typedef struct { char id[24], name[40], needs[120]; int on, ready; } src_item_t;
+static src_item_t srcs[16];
+static int nsrcs;
+static vlist_t src_list;
+
+static void show_settings(void);
+
+static void sources_load(cJSON *r)
+{
+	nsrcs = 0;
+	cJSON *it;
+	if (api_ok(r)) cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "sources")) {
+		if (nsrcs >= 16) break;
+		src_item_t *x = &srcs[nsrcs++];
+		snprintf(x->id, sizeof(x->id), "%s", api_str(it, "id") ? api_str(it, "id") : "");
+		snprintf(x->name, sizeof(x->name), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+		snprintf(x->needs, sizeof(x->needs), "%s", api_str(it, "needs") ? api_str(it, "needs") : "");
+		x->on = cJSON_IsTrue(cJSON_GetObjectItem(it, "on"));
+		x->ready = cJSON_IsTrue(cJSON_GetObjectItem(it, "ready"));
+	}
+	cJSON_Delete(r);
+}
+
+static void src_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	src_item_t *x = &srcs[i];
+	snprintf(t, n, "%d.  %s", i + 1, x->name);
+	if (!x->on) { snprintf(val, vn, "Off"); *dim = 1; }
+	else if (!x->ready) { snprintf(val, vn, "On  \xC2\xB7  needs a key"); *dim = 1; }
+	else snprintf(val, vn, "On");
+}
+
+/* send the whole list back: order and which are off */
+static void sources_save(void)
+{
+	char body[1200];
+	int j = snprintf(body, sizeof(body), "{\"cmd\":\"scrape_sources\",\"order\":[");
+	for (int i = 0; i < nsrcs; i++) j += snprintf(body + j, sizeof(body) - (size_t)j, "%s\"%s\"", i ? "," : "", srcs[i].id);
+	j += snprintf(body + j, sizeof(body) - (size_t)j, "],\"off\":[");
+	int k = 0;
+	for (int i = 0; i < nsrcs; i++) if (!srcs[i].on) j += snprintf(body + j, sizeof(body) - (size_t)j, "%s\"%s\"", k++ ? "," : "", srcs[i].id);
+	snprintf(body + j, sizeof(body) - (size_t)j, "]}");
+	sources_load(api_call("%s", body));
+	vlist_refresh(&src_list);
+}
+
+static void show_sources(void)
+{
+	cur = SCR_SOURCES;
+	sources_load(api_call("{\"cmd\":\"scrape_sources\"}"));
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Box art sources");
+	vlist_create(&src_list, body, S(56), S(176), S(760), S(330));
+	src_list.count = nsrcs;
+	src_list.fill = src_fill;
+	src_list.sel = 0;
+	src_list.top = 0;
+	vlist_refresh(&src_list);
+	lv_obj_t *note = mk_label(body, FONT_SMALL, PAL.dim,
+	        "Asked in this order; for each piece (box art, description, year...) the first source that has it wins. "
+	        "Games are matched by their contents, never guessed from file names.\n"
+	        "TheGamesDB, ScreenScraper and IGDB need a key or login: put them in phosphor/config/scraper.ini on the SD card.");
+	lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(note, S(760));
+	lv_obj_set_pos(note, S(56), S(176) + src_list.vis * src_list.row_h + S(14));
+	static const char *const hints[] = { "A", "On / Off", "Y", "Move up", "X", "Move down", "B", "Back", NULL };
+	footer_set(hints);
+}
+
+static void sources_key(pkey_t k)
+{
+	if (k == K_UP || k == K_DOWN) { vlist_key(&src_list, k); return; }
+	int i = src_list.sel;
+	if (!nsrcs) { if (k == K_B) { show_settings(); } return; }
+	if (k == K_A || k == K_LEFT || k == K_RIGHT) { srcs[i].on = !srcs[i].on; sources_save(); }
+	else if (k == K_Y && i > 0) {
+		src_item_t t = srcs[i]; srcs[i] = srcs[i - 1]; srcs[i - 1] = t;
+		src_list.sel--; sources_save();
+	} else if (k == K_X && i + 1 < nsrcs) {
+		src_item_t t = srcs[i]; srcs[i] = srcs[i + 1]; srcs[i + 1] = t;
+		src_list.sel++; sources_save();
+	} else if (k == K_B || k == K_MENU) {
+		show_settings();
+		set_list.sel = SET_SOURCES;
+		vlist_refresh(&set_list);
+	}
+}
+
 /* ---------- navigation ---------- */
 
 void ui_rescan(void)
@@ -941,11 +1034,15 @@ void ui_key(pkey_t k)
 			sys_detail();
 		}
 		break;
+	case SCR_SOURCES:
+		sources_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
 			if (set_list.sel == SET_RESCAN && k == K_A) { ui_rescan(); toast_show("Looking for games..."); }
+			else if (set_list.sel == SET_SOURCES) show_sources();
 			else settings_change(1);
 		}
 		else if (k == K_B || k == K_MENU) show_home();
