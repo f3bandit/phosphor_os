@@ -44,9 +44,11 @@ thing and no client scans folders itself.
   never while a core is running from the same drive):
   - cartridges and computer files: CRC32 of the ROM data the way No-Intro counts it (iNES/FDS,
     SNES copier, Atari 7800 and Lynx headers left out; N64 read in .z64 byte order);
-  - discs (.cue/.bin, .iso): CRC32 of the data track, because mods and patched discs usually keep
-    the original's product code. The product code (PlayStation SYSTEM.CNF, Saturn and Mega-CD
-    headers) is kept separately for looking the game up;
+  - discs (.cue/.bin, .iso): the product code (PlayStation SYSTEM.CNF, Saturn and Mega-CD
+    headers) for looking the game up, and as identity the product code + data track size + CRC32 of
+    its first megabyte. Under a second per disc; hashing whole discs took ~40 s each over the
+    SuperStation's USB, 2-3 hours for a typical library. Size and sample keep mods and patched
+    discs (which usually keep the original's product code) apart from the original;
   - .chd: the SHA-1 of the original data stored in the .chd header, so nothing is decompressed;
   - arcade: the MAME set name in the .mra.
   Copies of the same game on the SD card, a USB drive and the share become one game with several

@@ -9,7 +9,7 @@
 typedef struct {
 	char crc32[9];       /* 8 hex digits, ROM data without copier headers; "" if not hashed */
 	char serial[32];     /* disc product code (SLUS-00594, T-12705H, GM T-...) or arcade set name, for lookups */
-	char key[48];        /* game identity: crc:xxxxxxxx, chd:<sha1>, mra:<set>; "" if none */
+	char key[80];        /* game identity: crc:xxxxxxxx, disc:<code>:<size>:<crc of 1st MB>, chd:<sha1>, mra:<set>; "" if none */
 } ident_t;
 
 /* Identify one file. Returns 0 if it could be read (key may still be empty: e.g. a .chd). */

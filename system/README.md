@@ -12,8 +12,8 @@ folders themselves. `phos` talks to it from the command line.
   Games on a drive that's away are kept, offline and hidden, and come back with the same id, art
   and play history. A game whose files are deleted is removed unless it has history or details.
 - **Identity by content**, in the background and only while the menu is up: CRC32 for cartridges
-  (copier headers left out, N64 in .z64 order), the data track's CRC32 plus the product code for
-  discs, the header SHA-1 for .chd, the set name for arcade. Copies on several drives become one
+  (copier headers left out, N64 in .z64 order), product code + track size + a CRC of the first
+  megabyte for discs (under a second each), the header SHA-1 for .chd, the set name for arcade. Copies on several drives become one
   game; renamed or moved files keep their history and links.
 - **Based on**: a hack, mod or translation can point to its base game and then shows the base's
   art and details under its own name. Suggestions rank the system's games by title likeness.
