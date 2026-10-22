@@ -229,6 +229,8 @@ static int lb_import(sqlite3 *db, const char *zip)
 	if (eocd < 0) { fclose(f); plog("launchbox: not a zip"); return -1; }
 	uint32_t cd_size = tail[eocd + 12] | tail[eocd + 13] << 8 | tail[eocd + 14] << 16 | (uint32_t)tail[eocd + 15] << 24;
 	uint32_t cd_off = tail[eocd + 16] | tail[eocd + 17] << 8 | tail[eocd + 18] << 16 | (uint32_t)tail[eocd + 19] << 24;
+	/* a damaged download must not make us read or allocate beyond the file */
+	if (cd_size < 46 || cd_size > 64u * 1024 * 1024 || (long)cd_off + (long)cd_size > fsz) { fclose(f); plog("launchbox: damaged zip"); return -1; }
 	unsigned char *cd = malloc(cd_size);
 	fseek(f, (long)cd_off, SEEK_SET);
 	if (!cd || fread(cd, 1, cd_size, f) != cd_size) { free(cd); fclose(f); return -1; }
@@ -236,6 +238,7 @@ static int lb_import(sqlite3 *db, const char *zip)
 	uint32_t csize = 0;
 	for (uint32_t p = 0; p + 46 <= cd_size;) {
 		uint16_t nl = cd[p + 28] | cd[p + 29] << 8, el = cd[p + 30] | cd[p + 31] << 8, cl = cd[p + 32] | cd[p + 33] << 8;
+		if ((uint64_t)p + 46 + nl + el + cl > cd_size) break;
 		if (nl == 12 && !memcmp(cd + p + 46, "Metadata.xml", 12)) {
 			csize = cd[p + 20] | cd[p + 21] << 8 | cd[p + 22] << 16 | (uint32_t)cd[p + 23] << 24;
 			local = cd[p + 42] | cd[p + 43] << 8 | cd[p + 44] << 16 | (long)cd[p + 45] << 24;
