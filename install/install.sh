@@ -42,7 +42,7 @@ for f in "$HERE"/config/*.ini; do
 done
 # diag (whole-system checks, Settings > Diagnostics) only runs when asked: always installed.
 # The other modules change how the MiSTer boots, so they're installed one by one, by hand:
-#   modules/<name>/install.sh  (cifs-helper, backup-agent, health-watch, update-guard)
+#   modules/<name>/install.sh  (cifs-helper, backup-agent, health-watch, update-guard, cloud-sync)
 if [ -x "$HERE/modules/diag/install.sh" ]; then
 	PHOSPHOR_ROOT="$ROOT" "$HERE/modules/diag/install.sh" > /dev/null || echo "note: the diag module didn't install" >&2
 fi
