@@ -68,6 +68,8 @@ shell starts it if it isn't running.
 
   ![Favorites](docs/favorites.png)
 
+- **Screensaver** (Settings): after 5, 10 (default), 20 or 30 idle minutes, or never, the screen goes dark
+  with only a dim wordmark that moves every 20 s; any button wakes it without doing anything else.
 - **MiSTer menu and Restart** (Settings): hand the screen to MiSTer's own menu (Launch Phosphor in the
   OSD comes back), or restart the system (A twice).
 - **Bluetooth** (Settings): the paired controllers, connected or not; pair a new one (put it in pairing mode;

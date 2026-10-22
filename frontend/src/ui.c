@@ -922,7 +922,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -937,6 +937,11 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	switch (i) {
 	case SET_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
 	case SET_TEXTURE: snprintf(t, n, "Background texture"); snprintf(val, vn, "<  %s  >", texture_name((texture_t)SETTINGS.texture)); break;
+	case SET_SAVER:
+		snprintf(t, n, "Screensaver");
+		if (SETTINGS.saver_min) snprintf(val, vn, "<  After %d minutes  >", SETTINGS.saver_min);
+		else snprintf(val, vn, "<  Never  >");
+		break;
 	case SET_CLOCK: snprintf(t, n, "Clock"); snprintf(val, vn, "<  %s  >", SETTINGS.clock24 ? "24-hour" : "12-hour"); break;
 	case SET_SCRAPE: {
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
@@ -1006,6 +1011,14 @@ static void settings_change(int dir)
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
 		cJSON_Delete(scrape_state);
 		scrape_state = api_call("{\"cmd\":\"scrape\",\"on\":%s}", on ? "false" : "true");
+		vlist_refresh(&set_list);
+	} else if (set_list.sel == SET_SAVER) {
+		static const int opts[] = { 0, 5, 10, 20, 30 };
+		int i = 0;
+		while (i < 5 && opts[i] != SETTINGS.saver_min) i++;
+		i = ((i < 5 ? i : 2) + dir + 5) % 5;
+		SETTINGS.saver_min = opts[i];
+		settings_save();
 		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_CLOCK) {
 		SETTINGS.clock24 = !SETTINGS.clock24;
@@ -3123,8 +3136,72 @@ static void search_open(void)
 	osk_open("Search", "Part of a game's name, then Done.", 0, 40, search_done, SEARCH_BACK_HINTS);
 }
 
+/* ---------- Screensaver ----------
+ * After the idle time set in Settings the screen goes dark: only the wordmark, dim, moving to a new
+ * place every 20 s so nothing stays lit in one spot. Any button wakes it (that press does nothing else). */
+
+static lv_obj_t *saver, *saver_word;
+static uint32_t last_input, saver_moved;
+
+static void saver_move(void)
+{
+	lv_obj_update_layout(saver_word);
+	int ww = lv_obj_get_width(saver_word), wh = lv_obj_get_height(saver_word);
+	int x = (int)(lv_rand(S(40), (uint32_t)LV_MAX(S(41), W - ww - S(40))));
+	int y = (int)(lv_rand(S(40), (uint32_t)LV_MAX(S(41), H - wh - S(40))));
+	lv_obj_set_pos(saver_word, x, y);
+}
+
+static void saver_show(void)
+{
+	if (saver) return;
+	saver = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(saver);
+	lv_obj_set_size(saver, W, H);
+	lv_obj_set_style_bg_color(saver, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(saver, LV_OPA_COVER, 0);
+	saver_word = mk_label(saver, FONT_WORD, PAL.acc, "PHOSPHOR");
+	lv_obj_set_style_text_letter_space(saver_word, S(3), 0);
+	lv_obj_set_style_text_opa(saver_word, LV_OPA_40, 0);
+	saver_move();
+	lv_obj_fade_in(saver, 800, 0);
+	saver_moved = lv_tick_get();
+	plog("screensaver on");
+}
+
+static void saver_hide(void)
+{
+	if (!saver) return;
+	lv_obj_delete(saver);
+	saver = NULL;
+	saver_word = NULL;
+}
+
+/* the screensaver's part of a key press: 1 when it ate it (woke up) */
+static int saver_key(void)
+{
+	last_input = lv_tick_get();
+	if (!saver) return 0;
+	saver_hide();
+	return 1;
+}
+
+static void saver_tick(uint32_t now)
+{
+	if (!last_input) last_input = now ? now : 1;
+	if (saver) {
+		if (now - saver_moved >= 20000) { saver_moved = now; saver_move(); }
+		return;
+	}
+	if (SETTINGS.saver_min && now - last_input >= (uint32_t)SETTINGS.saver_min * 60000u) saver_show();
+}
+
+void ui_screensaver_now(void) { saver_show(); }   /* tests and snapshots */
+void ui_activity(void) { last_input = lv_tick_get(); saver_hide(); }
+
 void ui_key(pkey_t k)
 {
+	if (saver_key()) return;
 	if (osk_key(k)) return;
 	switch (cur) {
 	case SCR_HOME:
@@ -3224,6 +3301,7 @@ static uint32_t last_status, last_poll;
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
+	saver_tick(now);
 	if (now - last_status > 2000 || last_status == 0) { status_update(); last_status = now ? now : 1; }
 	/* the controllers on the front ports, live */
 	static uint32_t last_pads;

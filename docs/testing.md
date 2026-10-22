@@ -108,6 +108,13 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Y on the home screen → keyboard; type part of a name, Done → matching games from every system; a name
       with no match says so; B on the keyboard cancels.
 
+## 4c. Screensaver
+
+- [ ] Settings > Screensaver: Never / 5 / 10 / 20 / 30 minutes (left/right), kept after a restart.
+- [ ] Set 5 minutes, leave the controller: the screen goes dark with a dim PHOSPHOR that moves now and then.
+- [ ] Any button (USB, Bluetooth or front-port pad) wakes it, and that press does nothing else.
+- [ ] Playing a game for longer than the time, then quitting: Phosphor comes back awake, not dark.
+
 ## 5. WiFi (Settings > WiFi)
 
 Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also keeps the last 10 in

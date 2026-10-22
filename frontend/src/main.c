@@ -85,6 +85,7 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 		snprintf(buf, sizeof(buf), "%s", keys);
 		char *save = NULL;
 		for (char *k = strtok_r(buf, ",", &save); k; k = strtok_r(NULL, ",", &save)) {
+			if (!strcmp(k, "saver")) { ui_screensaver_now(); advance(1000); ui_tick(); continue; }
 			if (!strcmp(k, "wait")) {                 /* let background work (phosphord jobs) finish: 1 s */
 				usleep(1000000);
 				advance(1000);
@@ -168,6 +169,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		if (!was_active) {
 			plog("back in the menu");
 			was_active = 1;
+			ui_activity();
 			lv_obj_invalidate(lv_screen_active());
 		}
 		front_pads(now);

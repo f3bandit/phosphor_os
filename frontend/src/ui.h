@@ -10,4 +10,7 @@ void ui_key(pkey_t k);
 void ui_tick(void);          /* every frame: status bar, scan progress, mount changes */
 void ui_rescan(void);
 
+void ui_screensaver_now(void);   /* show the screensaver right away (snapshots) */
+void ui_activity(void);          /* back from a game or MiSTer's menu: the idle time starts again */
+
 #endif
