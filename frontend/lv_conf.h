@@ -311,7 +311,12 @@
  *  - LV_DRAW_SW_ASM_SVE2
  *  - LV_DRAW_SW_ASM_CUSTOM
  */
+/* NEON on the MiSTer's Cortex-A9 (fills and blends several times faster at 1080p); plain C elsewhere */
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NEON
+#else
 #define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_NONE
+#endif
 
 #if LV_USE_DRAW_SW_ASM == LV_DRAW_SW_ASM_CUSTOM
 /** Custom assembly include file */

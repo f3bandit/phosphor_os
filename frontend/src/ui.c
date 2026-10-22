@@ -153,6 +153,7 @@ static void toast_show(const char *msg)
 typedef struct {
 	lv_obj_t *box, *rows[VL_MAX_ROWS], *lab[VL_MAX_ROWS], *val[VL_MAX_ROWS], *bar[VL_MAX_ROWS], *thumb;
 	int vis, count, sel, top, row_h;
+	signed char shown[VL_MAX_ROWS];     /* what each row last looked like: -1 unknown, else on*2+dim */
 	void (*fill)(int i, char *text, size_t n, char *value, size_t vn, int *dim);
 } vlist_t;
 
@@ -176,6 +177,7 @@ static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int 
 		v->val[r] = mk_label(row, FONT_SMALL, PAL.faint, "");
 		lv_obj_align(v->val[r], LV_ALIGN_RIGHT_MID, -S(18), 0);
 		v->rows[r] = row;
+		v->shown[r] = -1;
 	}
 	v->thumb = mk_box(v->box, S(3), S(40), PAL.line, S(2));
 	lv_obj_set_x(v->thumb, w - S(4));
@@ -194,14 +196,19 @@ static void vlist_refresh(vlist_t *v)
 		int dim = 0;
 		v->fill(i, t, sizeof(t), val, sizeof(val), &dim);
 		int on = i == v->sel;
-		lv_label_set_text(v->lab[r], t);
-		lv_label_set_text(v->val[r], val);
-		lv_obj_set_style_bg_opa(v->rows[r], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-		lv_obj_set_style_bg_color(v->rows[r], PAL.panel_on, 0);
-		lv_obj_set_style_text_color(v->lab[r], on ? PAL.text : dim ? PAL.faint : PAL.dim, 0);
-		lv_obj_set_style_text_color(v->val[r], on ? PAL.acc : PAL.faint, 0);
-		if (on) lv_obj_set_hidden(v->bar[r], false);
-		else lv_obj_set_hidden(v->bar[r], true);
+		/* only what changed: every change redraws that part of the screen (a 1080p screen is a lot of
+		   pixels for the MiSTer's ARM, and this runs every second while some screens are open) */
+		if (strcmp(lv_label_get_text(v->lab[r]), t)) lv_label_set_text(v->lab[r], t);
+		if (strcmp(lv_label_get_text(v->val[r]), val)) lv_label_set_text(v->val[r], val);
+		int look = on * 2 + (dim ? 1 : 0);
+		if (v->shown[r] != look) {
+			v->shown[r] = (signed char)look;
+			lv_obj_set_style_bg_opa(v->rows[r], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+			lv_obj_set_style_bg_color(v->rows[r], PAL.panel_on, 0);
+			lv_obj_set_style_text_color(v->lab[r], on ? PAL.text : dim ? PAL.faint : PAL.dim, 0);
+			lv_obj_set_style_text_color(v->val[r], on ? PAL.acc : PAL.faint, 0);
+			lv_obj_set_hidden(v->bar[r], !on);
+		}
 	}
 	/* scroll position */
 	if (v->count > v->vis) {
@@ -907,6 +914,7 @@ static void picker_key(pkey_t k)
 
 /* MiSTer's downloader (phosphord "cores"): shared by the Welcome screen and Settings */
 static struct { int available, busy, worked, ran; char line[200]; } cr;
+static void job_bar_update(void);
 static void cores_refresh(void)
 {
 	cJSON *r = api_call("{\"cmd\":\"cores\"}");
@@ -920,11 +928,39 @@ static void cores_refresh(void)
 		if (was && !cr.busy) toast_show(cr.worked ? "Cores and filters are in" : "The downloader stopped: see Settings > Get cores");
 	}
 	cJSON_Delete(r);
+	job_bar_update();
+}
+/* while it runs: "Running." "Running.." "Running..." in the row, and its latest line in a bar along the
+   bottom of every screen (above the button legend) */
+static lv_obj_t *job_bar, *job_line;
+static void job_bar_update(void)
+{
+	if (!job_bar) return;
+	int show = cr.busy;
+	if (show) lv_label_set_text(job_line, cr.line[0] ? cr.line : "Starting MiSTer's downloader...");
+	if (show == !lv_obj_is_hidden(job_bar)) return;
+	lv_obj_set_hidden(job_bar, !show);
+	if (show) lv_obj_move_foreground(job_bar);
+	lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, show ? -S(152) : -S(80));
+}
+static void job_bar_create(void)
+{
+	job_bar = mk_box(root, W, S(72), lv_color_hex(0x000000), 0);
+	lv_obj_set_style_bg_opa(job_bar, LV_OPA_COVER, 0);
+	lv_obj_align(job_bar, LV_ALIGN_BOTTOM_MID, 0, -S(64));
+	lv_obj_t *t = mk_label(job_bar, FONT_LABEL, PAL.acc, "GETTING CORES");
+	lv_obj_align(t, LV_ALIGN_LEFT_MID, S(56), 0);
+	job_line = mk_label(job_bar, FONT_NAME, PAL.text, "");
+	lv_label_set_long_mode(job_line, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(job_line, W - S(56) - S(230) - S(56));
+	lv_obj_align(job_line, LV_ALIGN_LEFT_MID, S(230), 0);
+	lv_obj_set_hidden(job_bar, true);
+	job_bar_update();
 }
 static void cores_value(char *val, size_t vn)
 {
 	if (!cr.available) snprintf(val, vn, "MiSTer's updater not found");
-	else if (cr.busy) snprintf(val, vn, "%.60s", cr.line[0] ? cr.line : "Working...");
+	else if (cr.busy) { static const char *const D[] = { ".", "..", "..." }; snprintf(val, vn, "Running%s", D[(lv_tick_get() / 1000) % 3]); }
 	else if (cr.ran) snprintf(val, vn, "%s  >", cr.worked ? "Done" : "Didn't finish, try again");
 	else snprintf(val, vn, "Not yet  >");
 }
@@ -968,6 +1004,22 @@ enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
+static int samba_b(const char *k) { return samba_st && cJSON_IsTrue(cJSON_GetObjectItem(samba_st, k)); }
+static void my_ip(char *out, size_t n);
+static void samba_refresh(void)
+{
+	int was = samba_b("busy");
+	cJSON_Delete(samba_st);
+	samba_st = api_call("{\"cmd\":\"samba\"}");
+	if (!was || samba_b("busy") || !api_ok(samba_st)) return;
+	/* just finished: say what happened */
+	char msg[200], ip[64];
+	if (!samba_b("worked")) snprintf(msg, sizeof(msg), "Sharing: %s", api_str(samba_st, "error") && *api_str(samba_st, "error") ? api_str(samba_st, "error") : "that didn't work");
+	else if (samba_b("want")) { my_ip(ip, sizeof(ip)); snprintf(msg, sizeof(msg), "Sharing is on: \\\\%s  (user root, password 1)", ip); }
+	else snprintf(msg, sizeof(msg), "Sharing is off");
+	toast_show(msg);
+}
+
 /* this system's address on the network (first IPv4 that isn't loopback), for "\\\\address" */
 static void my_ip(char *out, size_t n)
 {
@@ -986,8 +1038,7 @@ static void scrape_refresh(void)
 {
 	cJSON_Delete(scrape_state);
 	scrape_state = api_call("{\"cmd\":\"scrape\"}");
-	cJSON_Delete(samba_st);
-	samba_st = api_call("{\"cmd\":\"samba\"}");
+	samba_refresh();
 }
 
 static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -1025,12 +1076,17 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_SAMBA:
 		snprintf(t, n, "Share the SD card on the network (Samba)");
-		if (!api_ok(samba_st) || !cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "available"))) { *dim = 1; snprintf(val, vn, "Not on this system"); }
-		else if (cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "on"))) {
+		if (!api_ok(samba_st) || !samba_b("available")) { *dim = 1; snprintf(val, vn, "Not on this system"); }
+		else if (samba_b("busy")) {
+			static const char *const D[] = { ".", "..", "..." };
+			snprintf(val, vn, "Turning %s%s", samba_b("want") ? "on" : "off", D[(lv_tick_get() / 1000) % 3]);
+		}
+		else if (samba_b("on") && samba_b("running")) {
 			char ip[64];
 			my_ip(ip, sizeof(ip));
 			snprintf(val, vn, "<  On: \\\\%s  >", ip);
 		}
+		else if (samba_b("on")) snprintf(val, vn, "<  On, not running  >");
 		else snprintf(val, vn, "<  Off  >");
 		break;
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
@@ -1091,12 +1147,12 @@ static void settings_change(int dir)
 		settings_save();
 		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_SAMBA) {
-		if (!api_ok(samba_st) || !cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "available"))) { toast_show("MiSTer's Samba isn't on this system"); return; }
-		int on = cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "on"));
+		if (!api_ok(samba_st) || !samba_b("available")) { toast_show("MiSTer's Samba isn't on this system"); return; }
+		if (samba_b("busy")) { toast_show("Wait a moment, it's still changing"); return; }
+		int on = samba_b("on") && samba_b("running");
 		cJSON *r = api_call("{\"cmd\":\"samba\",\"on\":%s}", on ? "false" : "true");
 		if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
-		else if (!on) toast_show("Sharing on: sign in as root, password 1");
-		else toast_show("Sharing off (Settings turns it back on)");
+		else toast_show(on ? "Turning sharing off..." : "Turning sharing on: a few seconds...");
 		cJSON_Delete(samba_st);
 		samba_st = r;
 		vlist_refresh(&set_list);
@@ -3525,6 +3581,7 @@ void ui_tick(void)
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); }
 		if (cur == SCR_WELCOME && cr.busy) { cores_refresh(); vlist_refresh(&wl_list); }
+		else if (cr.busy && cur != SCR_SETTINGS) cores_refresh();     /* the bar, on every screen */
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
 		if (cur == SCR_PORTS && pt.busy) pt_apply(api_call("{\"cmd\":\"memcard\"}"));
@@ -3589,6 +3646,7 @@ void ui_init(int w, int h)
 	lv_obj_center(tl);
 	lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -S(80));
 	lv_obj_set_hidden(toast, true);
+	job_bar_create();
 
 	status_update();
 	if (SETTINGS.setup_done) show_home();
