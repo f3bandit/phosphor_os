@@ -10,6 +10,7 @@
 #   phosphor.sh stop           stop both
 #   phosphor.sh status         what's running, versions, the library
 #   phosphor.sh log            last lines of both logs
+#   phosphor.sh check          quick checks for testing (what runs, what answers): ok / -- / FAIL lines
 #
 # The shell draws on the Linux framebuffer and asks MiSTer Main for a 1280x720 mode. With Phosphor's
 # Main (bin/MiSTer_phosphor) it takes the screen by itself; with MiSTer's own Main press F9 on a
@@ -80,6 +81,38 @@ case "${1:-status}" in
 		echo "phosphord: $(running phosphord && echo running || echo stopped)"
 		[ -x "$BIN/phos" ] && running phosphord && "$BIN/phos" status && echo && "$BIN/phos" '{"cmd":"scrape"}' && echo
 		[ -f "$ROOT/VERSION" ] && echo "installed: $(cat "$ROOT/VERSION")"
+		;;
+	check)
+		n_fail=0
+		ok() { echo "ok    $*"; }
+		no() { echo "--    $*"; }
+		bad() { echo "FAIL  $*"; n_fail=$((n_fail + 1)); }
+		q() { "$BIN/phos" "$1" 2> /dev/null; }
+		has() { case "$1" in *"$2"*) return 0 ;; esac; return 1; }
+		[ -f "$ROOT/VERSION" ] && ok "installed: $(cat "$ROOT/VERSION")" || bad "not installed in $ROOT"
+		running phosphord && ok "phosphord running" || bad "phosphord not running"
+		s="$(q status)"; has "$s" '"ok":true' && ok "phosphord answers ($(echo "$s" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p'), $(echo "$s" | sed -n 's/.*"games":\([0-9]*\).*/\1/p') games)" || bad "phosphord doesn't answer"
+		running phosphor && ok "shell running" || no "shell not running (phosphor.sh start)"
+		if pidof MiSTer_phosphor > /dev/null; then ok "Phosphor's Main running"
+		else m="$(ps -o comm= 2> /dev/null | grep '^MiSTer' | head -1)"; no "Phosphor's Main not running (${m:-no Main} is)"; fi
+		p="$(q '{"cmd":"ports"}')"
+		has "$p" '"main_api":true' && ok "Main's Phosphor API answers" || no "Main's Phosphor API not there"
+		if has "$p" '"available":true'; then ok "front ports available (Phosphor menu core)"
+		elif has "$p" '"in_game":true'; then no "front ports: a game is running"
+		else no "front ports not available (stock menu core or no phosphor-main)"; fi
+		[ -f "$ROOT/cores/menu_phosphor.rbf" ] && ok "Phosphor menu core installed" || no "Phosphor menu core not installed"
+		b="$(q '{"cmd":"bluetooth"}')"
+		if has "$b" '"present":true'; then ok "Bluetooth adapter ($(echo "$b" | grep -o '"mac"' | wc -l) paired)"; else no "no Bluetooth adapter"; fi
+		w="$(q '{"cmd":"wifi"}')"; has "$w" '"connected":true' && ok "WiFi connected" || no "WiFi not connected"
+		r="$(q '{"cmd":"remote"}')"; has "$r" '"listening":true' && ok "remote access listening" || no "remote access off"
+		grep -q "^# phosphor: BEGIN" /media/fat/linux/user-startup.sh 2> /dev/null && ok "boot block: $(grep -A1 '^# phosphor: BEGIN' /media/fat/linux/user-startup.sh | grep -o 'phosphor.sh [a-z]*')" || no "no boot block (starts by hand)"
+		for l in "$ROOT/logs/phosphord.log" "$ROOT/logs/phosphor.log"; do
+			[ -f "$l" ] || continue
+			e="$(tail -n 300 "$l" | grep -ciE 'error|fail|can.t|crash' )"
+			[ "$e" = 0 ] && ok "${l##*/}: nothing alarming in the last 300 lines" || no "${l##*/}: $e lines mention errors (phosphor.sh log)"
+		done
+		df -h /media/fat 2> /dev/null | awk 'NR==2 {print "ok    free on the SD card: " $4}'
+		[ "$n_fail" = 0 ] && echo "no failures" || { echo "$n_fail failure(s)"; exit 1; }
 		;;
 	log)
 		tail -n 30 "$ROOT/logs/phosphord.log" "$ROOT/logs/phosphor.log" 2>/dev/null
