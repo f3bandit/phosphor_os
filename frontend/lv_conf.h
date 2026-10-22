@@ -889,12 +889,12 @@
 /** Avoids repeatedly opening and decoding the same images, at the cost of RAM.
  *  Of little benefit with only the built-in image formats.
  */
-#define LV_CACHE_DEF_SIZE 0
+#define LV_CACHE_DEF_SIZE (16 * 1024 * 1024)   /* decoded box art, so going back to a game is instant */
 
 /** Avoids repeatedly reading image headers, at the cost of RAM.
  *  Of little benefit with only the built-in image formats.
  */
-#define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
+#define LV_IMAGE_HEADER_CACHE_DEF_CNT 64
 
 /** Decoder for LVGL's run-length encoded binary image format. */
 #define LV_USE_RLE 0
