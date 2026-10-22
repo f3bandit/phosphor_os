@@ -9,9 +9,12 @@ typedef struct {
 	int available;   /* MiSTer's Samba is there (linux/_samba.sh or samba.sh, S91smb) */
 	int on;          /* starts with the system (linux/samba.sh) */
 	int running;     /* smbd is running now */
+	int busy, want;  /* turning it on (want 1) or off (want 0) right now */
+	int ok;          /* the last change worked; error says why not */
+	char error[160];
 } samba_state_t;
 
 void samba_state(samba_state_t *s);
-int samba_set(int on, char *err, size_t n);
+int samba_start(int on);   /* in the background (starting smbd takes seconds); 1 if already busy */
 
 #endif

@@ -46,7 +46,8 @@
  *   cores      [do: update]                cores, filters and the rest with MiSTer's own downloader
  *                                           (Scripts/update.sh), only when asked: {available, busy,
  *                                           worked, at, line}
- *   samba      [on: true|false]            MiSTer's file sharing (Samba): turn on / off; available, on, running
+ *   samba      [on: true|false]            MiSTer's file sharing (Samba): turn on / off (in the background); available, on,
+ *                                           running, busy, want, worked, error
  *   bluetooth  [do: pair|cancel|forget|disconnect] [mac]
  *                                           {present, devices:[{mac, name, connected, input, icon}],
  *                                           pairing{busy, ok, at, found, message}}; pair looks for a
@@ -1129,8 +1130,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	}
 	else if (!strcmp(c->valuestring, "samba")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
-		char err[160] = "";
-		if (cJSON_IsBool(on) && samba_set(cJSON_IsTrue(on), err, sizeof(err)) != 0) out = fail(err);
+		if (cJSON_IsBool(on) && samba_start(cJSON_IsTrue(on)) < 0) out = fail("Couldn't start");
 		if (!out) {
 			samba_state_t s;
 			samba_state(&s);
@@ -1138,6 +1138,10 @@ char *api_handle(sqlite3 *db, const char *request)
 			cJSON_AddBoolToObject(o, "available", s.available);
 			cJSON_AddBoolToObject(o, "on", s.on);
 			cJSON_AddBoolToObject(o, "running", s.running);
+			cJSON_AddBoolToObject(o, "busy", s.busy);
+			cJSON_AddBoolToObject(o, "want", s.want);
+			cJSON_AddBoolToObject(o, "worked", s.ok);
+			cJSON_AddStringToObject(o, "error", s.error);
 			out = reply(o);
 		}
 	}

@@ -7,6 +7,8 @@
 #include "samba.h"
 #include "log.h"
 #include "paths.h"
+#include <dirent.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +23,29 @@ static int run(const char *cmd)
 	return (r != -1 && WIFEXITED(r)) ? WEXITSTATUS(r) : -1;
 }
 
-static int smbd_running(void) { return run("pidof smbd > /dev/null 2>&1") == 0; }
+/* smbd in /proc (no extra process: this is asked every second while Settings is open) */
+static int smbd_running(void)
+{
+	DIR *d = opendir("/proc");
+	if (!d) return 0;
+	struct dirent *e;
+	int found = 0;
+	while (!found && (e = readdir(d))) {
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		char p[300], comm[32] = "";
+		snprintf(p, sizeof(p), "/proc/%s/comm", e->d_name);
+		FILE *f = fopen(p, "r");
+		if (!f) continue;
+		if (fgets(comm, sizeof(comm), f)) found = !strcmp(comm, "smbd\n");
+		fclose(f);
+	}
+	closedir(d);
+	return found;
+}
+
+static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+static int busy, want, last_ok = 1;
+static char last_err[160];
 
 void samba_state(samba_state_t *s)
 {
@@ -32,6 +56,12 @@ void samba_state(samba_state_t *s)
 	snprintf(p, sizeof(p), "%s/linux/_samba.sh", p_fat());
 	s->available = (s->on || file_exists(p)) && file_exists("/etc/init.d/S91smb");
 	s->running = smbd_running();
+	pthread_mutex_lock(&mu);
+	s->busy = busy;
+	s->want = want;
+	s->ok = last_ok;
+	snprintf(s->error, sizeof(s->error), "%s", last_err);
+	pthread_mutex_unlock(&mu);
 }
 
 static int copy_file(const char *from, const char *to)
@@ -53,7 +83,7 @@ static int copy_file(const char *from, const char *to)
 	return 0;
 }
 
-int samba_set(int on, char *err, size_t n)
+static int samba_set(int on, char *err, size_t n)
 {
 	char sh[512], off[512];
 	snprintf(sh, sizeof(sh), "%s/linux/samba.sh", p_fat());
@@ -83,5 +113,39 @@ int samba_set(int on, char *err, size_t n)
 	}
 	if (smbd_running()) run("/etc/init.d/S91smb stop > /dev/null 2>&1");
 	plog("samba: off");
+	return 0;
+}
+
+static void *job(void *arg)
+{
+	int on = (int)(long)arg;
+	char err[160] = "";
+	int r = samba_set(on, err, sizeof(err));
+	pthread_mutex_lock(&mu);
+	busy = 0;
+	last_ok = r == 0;
+	snprintf(last_err, sizeof(last_err), "%s", err);
+	pthread_mutex_unlock(&mu);
+	return NULL;
+}
+
+int samba_start(int on)
+{
+	pthread_mutex_lock(&mu);
+	if (busy) { pthread_mutex_unlock(&mu); return 1; }
+	busy = 1;
+	want = on;
+	last_err[0] = 0;
+	pthread_mutex_unlock(&mu);
+	pthread_t t;
+	if (pthread_create(&t, NULL, job, (void *)(long)on) != 0) {
+		pthread_mutex_lock(&mu);
+		busy = 0;
+		last_ok = 0;
+		snprintf(last_err, sizeof(last_err), "Couldn't start");
+		pthread_mutex_unlock(&mu);
+		return -1;
+	}
+	pthread_detach(t);
 	return 0;
 }
