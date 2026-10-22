@@ -13,7 +13,7 @@ if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/b
 # phosphor-menu (the menu core with the front ports): its GitHub Actions build, saved next to the repo
 if [ -f ../phosphor-menu/menu_phosphor.rbf ]; then mkdir -p "$D/cores"; cp ../phosphor-menu/menu_phosphor.rbf "$D/cores/"; fi
 for f in "$D"/bin/*; do file "$f" | grep -q "ARM" || { echo "$f isn't an ARM build" >&2; exit 1; }; done
-cp install/install.sh install/uninstall.sh install/phosphor.sh install/menu-entry.sh LICENSE.md "$D/"
+cp install/install.sh install/uninstall.sh install/phosphor.sh LICENSE.md "$D/"
 cp system/config/systems.ini "$D/config/"
 cat > "$D/config/scraper.ini" <<'INI'
 [sources]
