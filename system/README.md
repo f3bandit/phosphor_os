@@ -34,6 +34,12 @@ folders themselves. `phos` talks to it from the command line.
   the Claude plugin, home network only, devices paired with a 6-digit code shown on the TV, only key
   hashes stored (`config/remote.ini`). Library, details, box art upload and download, "Based on",
   scraper, screen filters, launch; not WiFi or pairing. See [docs/remote-api.md](../docs/remote-api.md).
+- **Front ports** (`memcard.c`): controllers and memory cards on the SuperStation One's front ports,
+  through phosphor-main and the Phosphor menu core (phosphor-menu). One connection to Main; the ports are
+  on while something uses them and off after 20 s (MT32-pi / MIDI back). Card jobs in the background:
+  backup (1024 sectors, each read up to 4 times, to `phosphor/memcards/portN-date.mcd`), restore (backs
+  the card up first, writes only the sectors that differ, reads each back), check. The Phosphor menu
+  core is loaded only by a job (`memcard do:prepare`), never by reading the controllers.
 - **Backups**: drives the backup-agent module: its snapshots (SD card, NVMe or NAS), back up now, preview
   and restore everything or only saves and save states (a safety snapshot is taken first).
 - Modules are run by one shared helper (`modjob.c`): phosphord's paths passed in, own process group, a

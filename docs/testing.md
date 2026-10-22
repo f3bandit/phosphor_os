@@ -275,6 +275,15 @@ any other core puts the stock one back. Use a memory card whose saves are backed
 - [ ] Load a game core and come back: the ports are off and the menu core is the stock one again
       unless Phosphor loads it again.
 - [ ] Controllers keep working in the shell the whole time (front ports on or off).
+- [ ] Shell: Settings > Controllers & memory cards with the stock menu core → "Loading the Phosphor menu
+      core...", the screen goes to MiSTer's menu for a moment and the shell comes back by itself.
+- [ ] The two port lines follow the buttons and sticks live; unplugging shows "nothing plugged in".
+- [ ] "Switch DualShocks to analog" with a DualShock in digital mode → the line says DualShock (analog).
+- [ ] "Back up the memory card in port 1" → progress, then "Saved as port1-....mcd"; the file is 128 KB in
+      `/media/fat/phosphor/memcards/` and loads as a card in the PSX core (copy it to `saves/PSX/` to try).
+- [ ] Spare card: pick a backup → A (port 1) → it backs up the card first, then writes; the card works in a
+      game afterwards. The backup made just before is in the list.
+- [ ] Leave the screen: about 20 s later `ports` (socat) says `"on":false`.
 
 ## 17. Safety checks (each time something is installed)
 

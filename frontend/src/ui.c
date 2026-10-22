@@ -21,7 +21,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -828,7 +828,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -866,6 +866,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
+	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
@@ -2163,6 +2164,257 @@ static void backup_key(pkey_t k)
 	}
 }
 
+/* ---------- Controllers & memory cards ----------
+ * The front ports through phosphord (phosphor-main + the Phosphor menu core): both controllers live
+ * (buttons, sticks, digital/analog), memory card backups (whole card to phosphor/memcards) and
+ * putting a backup back on a card (phosphord backs the card up first). Opening the screen loads
+ * the Phosphor menu core if the stock one is loaded (Main restarts: a few seconds). */
+
+enum { PT_MAIN, PT_CONFIRM };
+enum { PT_BACKUP1, PT_BACKUP2, PT_ANALOG, PT_FIRST_FILE };
+static struct {
+	int mode, busy, job_ok, available, can_load, main_api, in_game, done, total, loading;
+	char job[16], message[200];
+	char names[80][64];
+	long long at[80];
+	int nfiles;
+	char pick[64];
+	char pad[2][160];
+	int pad_id[2], pad_conn[2];
+} pt;
+static vlist_t pt_list;
+static lv_obj_t *pt_head, *pt_padl[2], *pt_sub;
+static const char *const PT_HINTS[] = { "A", "Choose", "B", "Back", NULL };
+static const char *const PT_CONFIRM_HINTS[] = { "A", "Port 1", "X", "Port 2", "B", "Cancel", NULL };
+
+static const char *pt_type(int id)
+{
+	switch (id) {
+	case 0x41: return "Digital controller";
+	case 0x73: return "DualShock (analog)";
+	case 0x53: return "Analog joystick";
+	case 0x23: return "neGcon";
+	case 0x12: return "Mouse";
+	case 0x63: return "GunCon";
+	case 0xF3: return "Controller (setting up)";
+	default: return "Controller";
+	}
+}
+
+static void pt_pads(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"pads\"}"), *it;
+	static const char *const BTN[16] = { "Select", "L3", "R3", "Start", "Up", "Right", "Down", "Left",
+		"L2", "R2", "L1", "R1", "Triangle", "Circle", "Cross", "Square" };
+	if (!api_ok(r)) {
+		for (int p = 0; p < 2; p++) { pt.pad_conn[p] = 0; snprintf(pt.pad[p], sizeof(pt.pad[0]), "Port %d", p + 1); }
+		cJSON_Delete(r);
+	} else {
+		cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "pads")) {
+			int p = (int)api_num(it, "port", 0) - 1;
+			if (p < 0 || p > 1) continue;
+			pt.pad_conn[p] = cJSON_IsTrue(cJSON_GetObjectItem(it, "connected"));
+			pt.pad_id[p] = (int)api_num(it, "id", 0);
+			char *o = pt.pad[p];
+			size_t n = sizeof(pt.pad[0]), k;
+			if (!pt.pad_conn[p]) { snprintf(o, n, "Port %d  \xC2\xB7  nothing plugged in", p + 1); continue; }
+			k = (size_t)snprintf(o, n, "Port %d  \xC2\xB7  %s", p + 1, pt_type(pt.pad_id[p]));
+			int b = (int)api_num(it, "buttons", 0), any = 0;
+			for (int i = 0; i < 16 && k < n - 12; i++)
+				if (b & (1 << i)) k += (size_t)snprintf(o + k, n - k, "%s%s", any++ ? " " : "   ", BTN[i]);
+			if (pt.pad_id[p] == 0x73 || pt.pad_id[p] == 0x53)
+				snprintf(o + k, n - k, "   L %d,%d  R %d,%d", (int)api_num(it, "lx", 0), (int)api_num(it, "ly", 0),
+					(int)api_num(it, "rx", 0), (int)api_num(it, "ry", 0));
+		}
+		cJSON_Delete(r);
+	}
+	for (int p = 0; p < 2; p++) if (pt_padl[p]) {
+		lv_label_set_text(pt_padl[p], pt.pad[p]);
+		lv_obj_set_style_text_color(pt_padl[p], pt.pad_conn[p] ? PAL.text : PAL.dim, 0);
+	}
+}
+
+static void pt_label_for(const char *name, char *out, size_t n)
+{
+	int port, y, mo, d, h, mi;
+	if (sscanf(name, "port%d-%4d%2d%2d-%2d%2d", &port, &y, &mo, &d, &h, &mi) == 6)
+		snprintf(out, n, "Port %d card  \xC2\xB7  %04d-%02d-%02d %02d:%02d", port, y, mo, d, h, mi);
+	else snprintf(out, n, "%s", name);
+}
+
+static void pt_apply(cJSON *r)
+{
+	if (!api_ok(r)) {
+		if (pt_head) lv_label_set_text(pt_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		cJSON_Delete(r);
+		return;
+	}
+	cJSON *p = cJSON_GetObjectItem(r, "ports"), *j = cJSON_GetObjectItem(r, "job"), *it;
+	pt.main_api = cJSON_IsTrue(cJSON_GetObjectItem(p, "main_api"));
+	pt.available = cJSON_IsTrue(cJSON_GetObjectItem(p, "available"));
+	pt.can_load = cJSON_IsTrue(cJSON_GetObjectItem(p, "can_load"));
+	pt.in_game = cJSON_IsTrue(cJSON_GetObjectItem(p, "in_game"));
+	int was = pt.busy;
+	pt.busy = cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"));
+	pt.job_ok = cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"));
+	pt.done = (int)api_num(j, "done", 0);
+	pt.total = (int)api_num(j, "total", 1);
+	snprintf(pt.job, sizeof(pt.job), "%s", api_str(j, "name") ? api_str(j, "name") : "");
+	snprintf(pt.message, sizeof(pt.message), "%s", api_str(j, "message") ? api_str(j, "message") : "");
+	pt.nfiles = 0;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "backups")) {
+		if (pt.nfiles >= 80) break;
+		snprintf(pt.names[pt.nfiles], sizeof(pt.names[0]), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+		pt.at[pt.nfiles++] = (long long)api_num(it, "at", 0);
+	}
+	cJSON_Delete(r);
+	if (was && !pt.busy) {
+		if (!strcmp(pt.job, "prepare")) pt.loading = 0;
+		if (!strcmp(pt.job, "prepare") && pt.job_ok) pt.available = 1;
+		if (strcmp(pt.job, "prepare") || !pt.job_ok) toast_show(pt.message[0] ? pt.message : pt.job_ok ? "Done" : "That didn't work");
+	}
+	if (!pt_head) return;
+	char h[240], sub[260];
+	if (!pt.main_api) {
+		snprintf(h, sizeof(h), "Needs Phosphor's Main");
+		snprintf(sub, sizeof(sub), "The front ports are read through phosphor-main, which isn't running.");
+	} else if (pt.in_game) {
+		snprintf(h, sizeof(h), "In a game");
+		snprintf(sub, sizeof(sub), "The front ports are read here only from the menu.");
+	} else if (!pt.available && !pt.busy) {
+		snprintf(h, sizeof(h), pt.can_load ? "Front ports off" : "The Phosphor menu core isn't installed");
+		snprintf(sub, sizeof(sub), pt.can_load ? "A on any line loads the Phosphor menu core (a few seconds)." : "It comes with the Phosphor release (phosphor/cores/menu_phosphor.rbf).");
+	} else {
+		snprintf(h, sizeof(h), "Front ports  \xC2\xB7  %d memory card backup%s", pt.nfiles, pt.nfiles == 1 ? "" : "s");
+		snprintf(sub, sizeof(sub), "Backups stay in phosphor/memcards on this SD card. MT32-pi and MIDI are off while this is open.");
+	}
+	if (pt.mode == PT_CONFIRM) {
+		char lab[100];
+		pt_label_for(pt.pick, lab, sizeof(lab));
+		snprintf(sub, sizeof(sub), "Put %s on the card in port 1 (A) or port 2 (X)? The card is backed up first.", lab);
+	}
+	if (pt.busy) {
+		int pc = pt.total > 0 ? pt.done * 100 / pt.total : 0;
+		if (!strcmp(pt.job, "prepare")) snprintf(sub, sizeof(sub), "Loading the Phosphor menu core...");
+		else if (!strcmp(pt.job, "backup")) snprintf(sub, sizeof(sub), "Backing up the memory card... %d%%", pc);
+		else if (!strcmp(pt.job, "restore")) snprintf(sub, sizeof(sub), "%s... %d%%", pt.done < pt.total / 2 ? "Backing up the card first" : "Writing", pc);
+		else snprintf(sub, sizeof(sub), "Working...");
+	}
+	lv_label_set_text(pt_head, h);
+	lv_label_set_text(pt_sub, sub);
+	pt_list.count = PT_FIRST_FILE + pt.nfiles;
+	footer_set(pt.mode == PT_CONFIRM ? PT_CONFIRM_HINTS : PT_HINTS);
+	vlist_refresh(&pt_list);
+}
+
+static void pt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	switch (i) {
+	case PT_BACKUP1: case PT_BACKUP2:
+		snprintf(t, n, "Back up the memory card in port %d", i == PT_BACKUP1 ? 1 : 2);
+		snprintf(val, vn, ">");
+		return;
+	case PT_ANALOG:
+		snprintf(t, n, "Switch DualShocks to analog");
+		*dim = !((pt.pad_conn[0] && pt.pad_id[0] == 0x41) || (pt.pad_conn[1] && pt.pad_id[1] == 0x41));
+		return;
+	}
+	i -= PT_FIRST_FILE;
+	pt_label_for(pt.names[i], t, n);
+	snprintf(val, vn, "Put back >");
+	*dim = strncmp(pt.names[i], "port", 4) != 0;
+}
+
+static void pt_do(const char *what, int port, const char *name)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "memcard");
+	cJSON_AddStringToObject(q, "do", what);
+	if (port) cJSON_AddNumberToObject(q, "port", port);
+	if (name) cJSON_AddStringToObject(q, "name", name);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	free(b);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"); cJSON_Delete(r); return; }
+	pt.busy = 1;
+	pt_apply(r);
+}
+
+static void show_ports(void)
+{
+	cur = SCR_PORTS;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Controllers & memory cards");
+	pt_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_label_set_long_mode(pt_head, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(pt_head, W - S(112), S(24));
+	lv_obj_set_pos(pt_head, S(56), S(178));
+	for (int p = 0; p < 2; p++) {
+		pt_padl[p] = mk_label(body, FONT_BODY, PAL.dim, "");
+		lv_label_set_long_mode(pt_padl[p], LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_size(pt_padl[p], W - S(112), S(24));
+		lv_obj_set_pos(pt_padl[p], S(56), S(216 + 30 * p));
+	}
+	pt_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(pt_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(pt_sub, W - S(112), S(22));
+	lv_obj_set_pos(pt_sub, S(56), S(282));
+	vlist_create(&pt_list, body, S(56), S(316), S(900), S(320));
+	pt_list.fill = pt_fill;
+	pt_list.sel = 0;
+	pt_list.top = 0;
+	pt_list.count = 0;
+	pt.mode = PT_MAIN;
+	pt.loading = 0;
+	for (int p = 0; p < 2; p++) { pt.pad_conn[p] = 0; snprintf(pt.pad[p], sizeof(pt.pad[0]), "Port %d", p + 1); }
+	pt_apply(api_call("{\"cmd\":\"memcard\"}"));
+	if (pt.available) pt_pads();
+	else if (pt.can_load && !pt.busy) { pt.loading = 1; pt_do("prepare", 0, NULL); }
+	else pt_pads();
+}
+
+static void ports_key(pkey_t k)
+{
+	if (vlist_key(&pt_list, k)) return;
+	if (k == K_B || k == K_MENU) {
+		if (pt.mode == PT_CONFIRM) { pt.mode = PT_MAIN; pt_apply(api_call("{\"cmd\":\"memcard\"}")); return; }
+		back_to_settings(SET_PORTS);
+		return;
+	}
+	if (pt.busy) { if (k == K_A || k == K_X) toast_show("Busy: wait for it to finish"); return; }
+	if (pt.mode == PT_CONFIRM) {
+		if (k == K_A || k == K_X) { pt.mode = PT_MAIN; pt_do("restore", k == K_A ? 1 : 2, pt.pick); }
+		return;
+	}
+	if (k != K_A) return;
+	if (!pt.available) {
+		if (pt.can_load) pt_do("prepare", 0, NULL);
+		return;
+	}
+	switch (pt_list.sel) {
+	case PT_BACKUP1: pt_do("backup", 1, NULL); return;
+	case PT_BACKUP2: pt_do("backup", 2, NULL); return;
+	case PT_ANALOG: {
+		int any = 0;
+		for (int p = 0; p < 2; p++) if (pt.pad_conn[p] && pt.pad_id[p] == 0x41) {
+			char q[64];
+			snprintf(q, sizeof(q), "{\"cmd\":\"pad_analog\",\"port\":%d}", p + 1);
+			cJSON_Delete(api_call("%s", q));
+			any = 1;
+		}
+		toast_show(any ? "Switched (a controller without analog stays digital)" : "No digital DualShock plugged in");
+		return;
+	}
+	}
+	int i = pt_list.sel - PT_FIRST_FILE;
+	if (i >= 0 && i < pt.nfiles) {
+		snprintf(pt.pick, sizeof(pt.pick), "%s", pt.names[i]);
+		pt.mode = PT_CONFIRM;
+		pt_apply(api_call("{\"cmd\":\"memcard\"}"));
+	}
+}
+
 /* ---------- Welcome (first start) ----------
  * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
  * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
@@ -2652,6 +2904,9 @@ void ui_key(pkey_t k)
 	case SCR_BACKUP:
 		backup_key(k);
 		break;
+	case SCR_PORTS:
+		ports_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -2663,6 +2918,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_REMOTE) show_remote();
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
+			else if (set_list.sel == SET_PORTS) show_ports();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else settings_change(1);
 		}
@@ -2678,11 +2934,15 @@ void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
 	if (now - last_status > 2000 || last_status == 0) { status_update(); last_status = now ? now : 1; }
+	/* the controllers on the front ports, live */
+	static uint32_t last_pads;
+	if (cur == SCR_PORTS && pt.available && now - last_pads >= 100) { last_pads = now; pt_pads(); }
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
+		if (cur == SCR_PORTS && pt.busy) pt_apply(api_call("{\"cmd\":\"memcard\"}"));
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
