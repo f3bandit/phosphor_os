@@ -216,7 +216,17 @@ shared by WebDAV or SFTP, or a Google Drive token (`rclone authorize "drive"` on
 - [ ] Phone: add Google Drive with a token from `rclone authorize "drive"` on the PC → sends to Drive.
 - [ ] A wrong password → Check the connection says why; nothing else changes.
 
-## 13. Safety checks (each time something is installed)
+## 13. Welcome screen (first start)
+
+Rename `/media/fat/phosphor/config/frontend.ini` (or use the SD card image) and start the shell.
+
+- [ ] Welcome shows instead of the library; Network shows Ethernet / the WiFi name.
+- [ ] Network → WiFi screen; B comes back to Welcome (not Settings). Same for phone app and Cloud saves.
+- [ ] Box art On/Off and Accent colour change right away.
+- [ ] Start → library; restarting the shell goes straight to the library.
+- [ ] An existing install (frontend.ini present) never shows Welcome.
+
+## 14. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,
