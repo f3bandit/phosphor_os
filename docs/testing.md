@@ -190,7 +190,23 @@ Install `phosphor-android-0.1.0-debug.apk` (allow installing from the file manag
 - [ ] Close and reopen the app: still paired (key kept encrypted).
 - [ ] Dark status/navigation bars, text readable, big font setting doesn't break layouts.
 
-## 11. Safety checks (each time something is installed)
+## 11. Cloud saves (cloud-sync module)
+
+On the MiSTer: `modules/cloud-sync/install.sh`, then `cloud-sync.sh setup`. A test place: a folder on the PC
+shared by WebDAV or SFTP, or a Google Drive token (`rclone authorize "drive"` on the PC).
+
+- [ ] `setup` downloads rclone (arm-v7) and says the checksum checked; `rclone version` runs on the SS1.
+- [ ] `add` + `use` + `test` → OK. Memory while sending (`top`): rclone stays well under 120 MB.
+- [ ] `push`: saves, savestates, config appear under `Phosphor/MiSTer-xxxxxx/current`.
+- [ ] Play a game that saves (same size save), back to the menu → sent ~10 s later (log in `/tmp/phosphor/cloud-sync.log`);
+      the old version is in `history/<date>`.
+- [ ] While a game runs nothing is sent; a pull is refused.
+- [ ] `pull --dry-run`, then `pull` after deleting a save locally → it comes back; replaced files in `phosphor/backup/cloud-sync`.
+- [ ] Unplug the network, leave a game → "pending"; plug it back → sent within the hour.
+- [ ] Boot: sends once after the network is up; boot time not slower.
+- [ ] `uninstall.sh` → user-startup.sh as before; settings and cloud copies kept.
+
+## 12. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,
