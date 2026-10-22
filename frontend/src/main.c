@@ -3,8 +3,10 @@
  *
  *   phosphor                         run on the MiSTer's Linux framebuffer (/dev/fb0)
  *   phosphor --fb /dev/fbN           another framebuffer
- *   phosphor --fb-mode 1280x720      ask MiSTer Main for this framebuffer size (fb_cmd1; default 1280x720,
- *                                    "none" to leave it as it is)
+ *   phosphor --fb-mode WxH           ask MiSTer Main for this framebuffer size (fb_cmd1). Default "full":
+ *                                    the size of the picture MiSTer sends to the TV, so Phosphor fills the
+ *                                    screen (Main only scales the framebuffer by whole numbers, so 1280x720
+ *                                    on a 1080p TV would sit in a box in the middle). "none": leave it.
  *   phosphor --fb-rb 0|1             colour order for fb_cmd1 (default 1; try 0 if red and blue are swapped)
  *   phosphor --log-serial [dev]      also log to the serial console (default /dev/ttyS0)
  *   phosphor --snapshot out.ppm [--keys right,a,wait,...] [--size 1280x720]   (wait: 1 s for background work)
@@ -149,7 +151,8 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
 	lv_tick_set_cb(mono_ms);
 	int mw = 0, mh = 0;
-	int have_mode = fb_mode && sscanf(fb_mode, "%dx%d", &mw, &mh) == 2;
+	/* "full": 0x0, which Main turns into the size it sends to the TV */
+	int have_mode = fb_mode && (!strcmp(fb_mode, "full") || sscanf(fb_mode, "%dx%d", &mw, &mh) == 2);
 	/* with phosphor-main the shell takes the screen itself; with stock Main it's F9 */
 	mainlink_start();
 	if (have_mode) {
@@ -169,12 +172,19 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 	ui_init(w, h);
 
 	int was_active = 1;
+	uint32_t redraw_at = 0;
 	for (;;) {
 		uint32_t now = mono_ms();
 		if (mainlink_poll() && have_mode) {     /* Main restarted and gave the screen back to us */
 			char cmd[64], err[256];
 			snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
 			if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
+			console_quiet();
+			lv_obj_invalidate(lv_screen_active());
+			redraw_at = now + 700;      /* Main may still be setting the video up: draw it all again */
+		}
+		if (redraw_at && (int)(now - redraw_at) >= 0) {
+			redraw_at = 0;
 			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 		}
@@ -193,6 +203,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			console_quiet();
 			ui_activity();
 			lv_obj_invalidate(lv_screen_active());
+			redraw_at = now + 700;
 		}
 		front_pads(now);
 		pkey_t k;
@@ -243,7 +254,7 @@ static void front_pads(uint32_t now)
 
 int main(int argc, char **argv)
 {
-	const char *snap = NULL, *keys = NULL, *fb = "/dev/fb0", *serial = NULL, *fb_mode = "1280x720";
+	const char *snap = NULL, *keys = NULL, *fb = "/dev/fb0", *serial = NULL, *fb_mode = "full";
 	int w = 1280, h = 720, fb_rb = 1;
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--snapshot") && i + 1 < argc) snap = argv[++i];

@@ -140,6 +140,8 @@ static cJSON *m_json_locked(const char *line, int timeout_ms)
 
 static int jbool(cJSON *j, const char *k) { return cJSON_IsTrue(cJSON_GetObjectItem(j, k)); }
 
+static int load_failed;     /* the menu core was loaded and its front ports didn't answer */
+
 static void rbf_path(char *out, size_t n) { snprintf(out, n, "%s/phosphor/cores/menu_phosphor.rbf", p_fat()); }
 
 /* what Main says (mlk held) */
@@ -160,7 +162,7 @@ static void look_locked(ports_state_t *s)
 	}
 	char rbf[512];
 	rbf_path(rbf, sizeof(rbf));
-	s->can_load = !s->available && !s->in_game && file_exists(rbf);
+	s->can_load = !s->available && !s->in_game && !load_failed && file_exists(rbf);
 }
 
 static int prepare_locked(char *err, size_t n, int may_load)
@@ -173,6 +175,9 @@ static int prepare_locked(char *err, size_t n, int may_load)
 	if (!s.available) {
 		if (!s.can_load) { snprintf(err, n, "The Phosphor menu core isn't installed (phosphor/cores/menu_phosphor.rbf)"); return -1; }
 		if (!may_load) { snprintf(err, n, "The front ports need the Phosphor menu core: open Controllers & memory cards"); return -1; }
+		/* loading it restarts Main (the screen goes away for seconds): once, and never again after it
+		   didn't answer, until phosphord restarts */
+		if (load_failed) { snprintf(err, n, "The front ports aren't answering in the Phosphor menu core"); return -1; }
 		char rbf[512], line[600];
 		rbf_path(rbf, sizeof(rbf));
 		snprintf(line, sizeof(line), "launch %s", rbf);
@@ -189,7 +194,12 @@ static int prepare_locked(char *err, size_t n, int may_load)
 			look_locked(&s);
 		}
 		loading = 0;
-		if (!s.available) { snprintf(err, n, "The Phosphor menu core didn't start"); return -1; }
+		if (!s.available) {
+			load_failed = 1;
+			plog("front ports: the menu core didn't answer; not loading it again");
+			snprintf(err, n, "The front ports aren't answering in the Phosphor menu core");
+			return -1;
+		}
 	}
 	if (!ports_on) {
 		cJSON *j = m_json_locked("ports on", 1500);

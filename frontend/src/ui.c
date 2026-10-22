@@ -26,6 +26,10 @@
 #include <stdarg.h>
 #include <sys/statvfs.h>
 #include <sys/utsname.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT } screen_t;
 
@@ -960,13 +964,30 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_CORES, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_CORES, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
+static cJSON *samba_st;          /* phosphord's samba reply, likewise */
+
+/* this system's address on the network (first IPv4 that isn't loopback), for "\\\\address" */
+static void my_ip(char *out, size_t n)
+{
+	struct ifaddrs *ifs, *i;
+	snprintf(out, n, "MiSTer");
+	if (getifaddrs(&ifs) != 0) return;
+	for (i = ifs; i; i = i->ifa_next) {
+		if (!i->ifa_addr || i->ifa_addr->sa_family != AF_INET || (i->ifa_flags & IFF_LOOPBACK)) continue;
+		inet_ntop(AF_INET, &((struct sockaddr_in *)i->ifa_addr)->sin_addr, out, (socklen_t)n);
+		break;
+	}
+	freeifaddrs(ifs);
+}
 
 static void scrape_refresh(void)
 {
 	cJSON_Delete(scrape_state);
 	scrape_state = api_call("{\"cmd\":\"scrape\"}");
+	cJSON_Delete(samba_st);
+	samba_st = api_call("{\"cmd\":\"samba\"}");
 }
 
 static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -1002,6 +1023,16 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
 	case SET_BT: snprintf(t, n, "Bluetooth"); snprintf(val, vn, ">"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
+	case SET_SAMBA:
+		snprintf(t, n, "Share the SD card on the network (Samba)");
+		if (!api_ok(samba_st) || !cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "available"))) { *dim = 1; snprintf(val, vn, "Not on this system"); }
+		else if (cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "on"))) {
+			char ip[64];
+			my_ip(ip, sizeof(ip));
+			snprintf(val, vn, "<  On: \\\\%s  >", ip);
+		}
+		else snprintf(val, vn, "<  Off  >");
+		break;
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
@@ -1058,6 +1089,16 @@ static void settings_change(int dir)
 		i = ((i < 5 ? i : 2) + dir + 5) % 5;
 		SETTINGS.saver_min = opts[i];
 		settings_save();
+		vlist_refresh(&set_list);
+	} else if (set_list.sel == SET_SAMBA) {
+		if (!api_ok(samba_st) || !cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "available"))) { toast_show("MiSTer's Samba isn't on this system"); return; }
+		int on = cJSON_IsTrue(cJSON_GetObjectItem(samba_st, "on"));
+		cJSON *r = api_call("{\"cmd\":\"samba\",\"on\":%s}", on ? "false" : "true");
+		if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		else if (!on) toast_show("Sharing on: sign in as root, password 1");
+		else toast_show("Sharing off (Settings turns it back on)");
+		cJSON_Delete(samba_st);
+		samba_st = r;
 		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_CLOCK) {
 		SETTINGS.clock24 = !SETTINGS.clock24;

@@ -19,14 +19,17 @@ accent_t theme_accent(void);
 const char *theme_accent_name(accent_t a);
 
 /* fonts */
-#define FONT_SMALL   (&phos_inter_14)
-#define FONT_BODY    (&phos_inter_16)
-#define FONT_NAME    (&phos_inter_med_18)
-#define FONT_TITLE   (&phos_inter_semi_22)
-#define FONT_HEADING (&phos_inter_semi_32)
-#define FONT_LABEL   (&phos_mono_13)   /* spaced capitals: LIBRARY, PICK UP WHERE YOU LEFT OFF */
-#define FONT_WORD    (&phos_mono_18)   /* PHOSPHOR wordmark */
-#define FONT_LOGO    (&phos_mono_40)
+/* each in two sizes: the 1280x720 design, and 1.5 times that for a 1920x1080 screen */
+extern int theme_big;
+#define PHOS_F(n)    (theme_big ? &n##_l : &n)
+#define FONT_SMALL   PHOS_F(phos_inter_14)
+#define FONT_BODY    PHOS_F(phos_inter_16)
+#define FONT_NAME    PHOS_F(phos_inter_med_18)
+#define FONT_TITLE   PHOS_F(phos_inter_semi_22)
+#define FONT_HEADING PHOS_F(phos_inter_semi_32)
+#define FONT_LABEL   PHOS_F(phos_mono_13)   /* spaced capitals: LIBRARY, PICK UP WHERE YOU LEFT OFF */
+#define FONT_WORD    PHOS_F(phos_mono_18)   /* PHOSPHOR wordmark */
+#define FONT_LOGO    PHOS_F(phos_mono_40)
 
 /* layout (designed at 1280x720; scaled with the screen) */
 int S(int px);
