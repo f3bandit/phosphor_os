@@ -1,22 +1,27 @@
 # Roadmap
 
-Each step is useful on its own. Order matters: later steps reuse earlier ones.
+Each step is useful on its own; later steps reuse earlier ones.
 
-1. **cifs-helper module.** Mount on DHCP bound, retry with backoff, port-445 check, lock, `soft` mounts,
-   stale-mount health check, boot log, hook reinstalled from `user-startup.sh`. Test on a stock MiSTer
-   Pi with WiFi first.
-2. **backup-agent module.** Saves and frontend settings, on game exit or a schedule.
-3. **Main fork (`phosphor-main`).** Track MiSTer-devel/Main_MiSTer; add the local API (launch, pause,
-   snapshot slots, framebuffer switch, last-frame grab). Keep the diff small; CI flags upstream changes.
-4. **Menu core fork (`phosphor-menu`).** Track MiSTer-devel/Menu_MiSTer; add the SNAC pad reader and PS1
-   memory card SIO from the SS1 Controller Tester and SS1 MemCard cores.
-5. **Frontend MVP.** Library shelf, game list, launch, settings, mount-change rescan.
-6. **Memory Cards and Controllers screens** over the Main API (no core swap).
-7. **In-game sheet.** HDMI/scaler first; OSD fallback for direct-video analog.
-8. **health-watch and update-guard modules.**
-9. **Release prep.** Name and trademark check, publish the GPL forks, own downloader database for installs.
+| # | Feature | What it means | Notes |
+|---|---|---|---|
+| 1 | **MiSTer-devel Linux** | Run on official MiSTer Linux and Main, always current | No Linux fork. Phosphor never ships its own `linux.img` or kernel; it follows MiSTer-devel's releases. |
+| 2 | **SD card image** | A ready-to-flash image: stock MiSTer + Phosphor preinstalled, first-boot setup, card expanded to full size | Built from MiSTer's own installer approach (like mr-fusion); one exFAT partition; rebuilt in CI for each MiSTer release. |
+| 3 | **Headless menu core** | Fork of MiSTer's menu core with SNAC pad reader + PS1 memory card logic built in, so Memory Cards and Controllers screens need no core swap | `phosphor-menu` (GPL-3.0), reached through the Main fork's API. Logic ported from the SS1 Controller Tester and SS1 MemCard cores. |
+| 4 | **Modules** | One-job ARM programs started by events: cifs-helper, backup-agent, health-watch, update-guard | cifs-helper first. |
+| 5 | **Screen filters** | Scanlines, shadow masks, CRT-style filters | In games: manage MiSTer's own filter and shadow-mask files per core (presets, preview). In the menu: drawn by the frontend. |
+| 6 | **Themes** | Accent colours (amber default, red, green, blue, purple) and wallpaper patterns (zigzags, X's, squares, triangles, circles, hexagons, 8-bit tiles), all recolourable with the theme | **8-bit tiles must be original art drawn for Phosphor**, not tiles taken from NES/SNES games (those are the games' copyrighted graphics). An 8-bit *style* is fine. |
+| 7 | **Android app integration** | The phone app talks to Phosphor: remote control, library, settings, memory cards, backups | Over the same local API (network-exposed, paired with a code). Fits SS1 Tool for Android or a dedicated companion app. |
+| 8 | **Cloud storage** | Saves and settings synced to the user's own cloud (Google Drive, Dropbox, OneDrive, WebDAV, SMB) | Through a module using rclone (MIT) on the ARM side; no Phosphor-run servers needed. |
+| 9 | **In-menu WiFi** | Scan networks with signal strength, band and security; connect, forget, reorder; all from the menu with a controller | Uses `wpa_supplicant`/`iw` like SS1 Tool's WiFi page; on-screen keyboard for passwords. |
+
+Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API; the frontend
+MVP (library shelf, game list, launch, settings, mount-change rescan); the in-game sheet (HDMI/scaler
+first, OSD fallback for direct-video analog).
+
+Release prep: name and trademark check, publish the GPL forks, own downloader database for installs.
 
 ## Open questions
 
 - Frontend language/toolkit: Rust + Slint (like Degauss and Zaparoo), or Go with a framebuffer renderer?
 - Final name (Phosphor is a working name).
+- Android: extend SS1 Tool for Android, or a separate companion app?
