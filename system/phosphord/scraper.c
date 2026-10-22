@@ -138,6 +138,53 @@ static pthread_mutex_t cfg_lk = PTHREAD_MUTEX_INITIALIZER;
 
 static void cfg_path(char *out, size_t n) { snprintf(out, n, "%s/scraper.ini", p_config()); }
 
+static int cfg_has(const char *sec, const char *key)
+{
+	for (int i = 0; i < ncfg; i++) if (!strcasecmp(cfg[i].sec, sec) && !strcasecmp(cfg[i].key, key) && cfg[i].val[0]) return 1;
+	return 0;
+}
+
+static void cfg_set(const char *sec, const char *key, const char *val)
+{
+	if (ncfg >= CFG_MAX || !*val || cfg_has(sec, key)) return;
+	snprintf(cfg[ncfg].sec, sizeof(cfg[0].sec), "%s", sec);
+	snprintf(cfg[ncfg].key, sizeof(cfg[0].key), "%s", key);
+	snprintf(cfg[ncfg].val, sizeof(cfg[0].val), "%s", val);
+	ncfg++;
+}
+
+/* Console Mode keeps the user's own TheGamesDB key and ScreenScraper login in its folder: used when
+ * scraper.ini doesn't have them (read where they are; never copied, never sent anywhere but to those
+ * services). Its developer login for ScreenScraper is Console Mode's own and isn't used. */
+static void cfg_from_console_mode(void)
+{
+	char path[600], line[300];
+	snprintf(path, sizeof(path), "%s/ConsoleMode/tgdb_apikey.txt", p_fat());
+	FILE *f = fopen(path, "r");
+	if (f) {
+		if (fgets(line, sizeof(line), f)) {
+			line[strcspn(line, "\r\n \t")] = 0;
+			if (strlen(line) >= 16) cfg_set("thegamesdb", "apikey", line);
+		}
+		fclose(f);
+	}
+	snprintf(path, sizeof(path), "%s/ConsoleMode/screenscraper.txt", p_fat());
+	f = fopen(path, "r");
+	if (f) {
+		while (fgets(line, sizeof(line), f)) {
+			line[strcspn(line, "\r\n")] = 0;
+			char *eq = strchr(line, '=');
+			if (!eq) continue;
+			*eq = 0;
+			const char *k = line, *v = eq + 1;
+			while (*v == ' ') v++;
+			if (!strcasecmp(k, "ssid")) cfg_set("screenscraper", "user", v);
+			else if (!strcasecmp(k, "sspassword")) cfg_set("screenscraper", "password", v);
+		}
+		fclose(f);
+	}
+}
+
 static void cfg_load(void)
 {
 	pthread_mutex_lock(&cfg_lk);
@@ -160,12 +207,13 @@ static void cfg_load(void)
 			while (isspace((unsigned char)*v)) v++;
 			while (*v && isspace((unsigned char)v[strlen(v) - 1])) v[strlen(v) - 1] = 0;
 			snprintf(cfg[ncfg].sec, sizeof(cfg[0].sec), "%s", sec);
-			snprintf(cfg[ncfg].key, sizeof(cfg[0].key), "%s", k);
+			snprintf(cfg[ncfg].key, sizeof(cfg[0].key), "%.47s", k);
 			snprintf(cfg[ncfg].val, sizeof(cfg[0].val), "%s", v);
 			ncfg++;
 		}
 		fclose(f);
 	}
+	cfg_from_console_mode();
 	pthread_mutex_unlock(&cfg_lk);
 }
 

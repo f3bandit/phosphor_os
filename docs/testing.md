@@ -99,6 +99,14 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Starting a game: shell sleeps, ignores input; back in the menu: wakes up.
 - [ ] Memory and CPU while idle (should be near zero) and while scrolling.
 
+## 4a. Box art sources with keys
+
+- [ ] Settings > Box art sources: TheGamesDB shows as ready without editing anything (the key comes from
+      `ConsoleMode/tgdb_apikey.txt`); a game with no art yet gets TheGamesDB art/details after a rescrape.
+- [ ] ScreenScraper stays "needs a developer id" until Phosphor has its own (your login from
+      `ConsoleMode/screenscraper.txt` is picked up, Console Mode's developer login isn't used).
+- [ ] `phosphor/config/scraper.ini` doesn't get the keys copied into it.
+
 ## 4b. Favorites, Recently played, Search
 
 - [ ] X on a game in any list → "Added to Favorites", the row says Favorite; X again removes it.

@@ -40,6 +40,9 @@ folders themselves. `phos` talks to it from the command line.
   backup (1024 sectors, each read up to 4 times, to `phosphor/memcards/portN-date.mcd`), restore (backs
   the card up first, writes only the sectors that differ, reads each back), check. The Phosphor menu
   core is loaded only by a job (`memcard do:prepare`), never by reading the controllers.
+- **Scraper keys**: `config/scraper.ini`; when it doesn't have them, the user's own TheGamesDB key and
+  ScreenScraper login are read from Console Mode's folder (`tgdb_apikey.txt`, `screenscraper.txt`), never
+  copied. ScreenScraper still needs Phosphor's own developer id.
 - **Bluetooth** (`bt.c`): paired controllers from `bluetoothctl` (paired-devices, info); pairing runs MiSTer's
   own `btctl pair` in the background and stops it after the first controller (90 s at most, or cancel; it gets
   SIGINT so it stops discovery cleanly); disconnect and forget through `btctl`. Nothing is copied or sent
