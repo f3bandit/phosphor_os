@@ -21,7 +21,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -828,7 +828,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_REMOTE, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -863,6 +863,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	}
 	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
+	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
@@ -1468,6 +1469,199 @@ static void wifi_key(pkey_t k)
 	}
 }
 
+/* ---------- Remote access ----------
+ * Lets the phone app / PC app / Claude plugin manage the library over the home network. Off until
+ * turned on here; each device pairs once with a 6-digit code shown on this screen. */
+
+typedef struct { char id[17], name[64]; long created, last_seen; } rdev_t;
+static rdev_t rdevs[16];
+static int nrdevs, r_on, r_listening, r_port;
+static char r_addr[48], r_err[128], r_code[8], r_paired[64];
+static int r_left;
+static vlist_t rem_list;
+static lv_obj_t *rem_head, *rem_sub, *pair_box, *pair_code, *pair_info, *pair_left;
+static const char *const REM_HINTS[] = { "A", "Change", "X", "Forget device", "B", "Back", NULL };
+static const char *const PAIR_HINTS[] = { "B", "Close", NULL };
+
+static void when(long t, char *out, size_t n)
+{
+	if (t <= 0) { snprintf(out, n, "never"); return; }
+	time_t now = time(NULL), tt = (time_t)t;
+	if (now - tt < 120) { snprintf(out, n, "just now"); return; }
+	struct tm a, b;
+	localtime_r(&tt, &a);
+	localtime_r(&now, &b);
+	if (a.tm_year == b.tm_year && a.tm_yday == b.tm_yday) snprintf(out, n, "today");
+	else strftime(out, n, "%b %d", &a);
+}
+
+static void pair_close(void)
+{
+	if (pair_box) { lv_obj_delete(pair_box); pair_box = NULL; }
+	footer_set(REM_HINTS);
+}
+
+static void pair_draw(void)
+{
+	if (!pair_box) return;
+	char c[16];
+	snprintf(c, sizeof(c), "%.3s %.3s", r_code, r_code + 3);
+	lv_label_set_text(pair_code, c);
+	char info[200];
+	snprintf(info, sizeof(info), "In the Phosphor app, enter this code and the address\n%s:%d", r_addr[0] ? r_addr : "(no network)", r_port);
+	lv_label_set_text(pair_info, info);
+	char l[48];
+	snprintf(l, sizeof(l), "Closes in %d:%02d", r_left / 60, r_left % 60);
+	lv_label_set_text(pair_left, l);
+}
+
+static void remote_apply(cJSON *r)
+{
+	if (!api_ok(r)) {
+		if (rem_head) lv_label_set_text(rem_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		cJSON_Delete(r);
+		return;
+	}
+	int had_code = r_code[0] != 0;
+	char old_paired[64];
+	snprintf(old_paired, sizeof(old_paired), "%s", r_paired);
+	r_on = cJSON_IsTrue(cJSON_GetObjectItem(r, "on"));
+	r_listening = cJSON_IsTrue(cJSON_GetObjectItem(r, "listening"));
+	r_port = (int)api_num(r, "port", 8767);
+	snprintf(r_err, sizeof(r_err), "%s", api_str(r, "error") ? api_str(r, "error") : "");
+	cJSON *a = cJSON_GetObjectItem(r, "addresses");
+	snprintf(r_addr, sizeof(r_addr), "%s", cJSON_GetArraySize(a) > 0 && cJSON_IsString(cJSON_GetArrayItem(a, 0)) ? cJSON_GetArrayItem(a, 0)->valuestring : "");
+	cJSON *p = cJSON_GetObjectItem(r, "pairing");
+	snprintf(r_code, sizeof(r_code), "%s", cJSON_IsObject(p) && api_str(p, "code") ? api_str(p, "code") : "");
+	r_left = cJSON_IsObject(p) ? (int)api_num(p, "seconds", 0) : 0;
+	snprintf(r_paired, sizeof(r_paired), "%s", api_str(r, "paired") ? api_str(r, "paired") : "");
+	nrdevs = 0;
+	cJSON *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "devices")) {
+		if (nrdevs >= 16) break;
+		rdev_t *d = &rdevs[nrdevs++];
+		snprintf(d->id, sizeof(d->id), "%s", api_str(it, "id") ? api_str(it, "id") : "");
+		snprintf(d->name, sizeof(d->name), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+		d->created = (long)api_num(it, "created", 0);
+		d->last_seen = (long)api_num(it, "last_seen", 0);
+	}
+	cJSON_Delete(r);
+	if (rem_head) {
+		char h[160], sub[200];
+		if (!r_on) {
+			snprintf(h, sizeof(h), "Off");
+			snprintf(sub, sizeof(sub), "Turn it on to manage your library from the Phosphor app on a phone or PC, on your home network.");
+		} else if (!r_listening) {
+			snprintf(h, sizeof(h), "On, but not reachable");
+			snprintf(sub, sizeof(sub), "%s", r_err[0] ? r_err : "Starting...");
+		} else {
+			snprintf(h, sizeof(h), "On  \xC2\xB7  %s:%d", r_addr[0] ? r_addr : "no network yet", r_port);
+			snprintf(sub, sizeof(sub), "Paired devices can see and edit the library, box art and screen filters. WiFi and pairing stay here.");
+		}
+		lv_label_set_text(rem_head, h);
+		lv_label_set_text(rem_sub, sub);
+		rem_list.count = 2 + nrdevs;
+		vlist_refresh(&rem_list);
+	}
+	if (pair_box) {
+		if (!r_code[0]) {
+			if (r_paired[0] && strcmp(r_paired, old_paired)) { char m[120]; snprintf(m, sizeof(m), "Paired: %s", r_paired); toast_show(m); }
+			else if (had_code) toast_show("Pairing closed");
+			pair_close();
+		} else pair_draw();
+	}
+}
+
+static void rem_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	if (i == 0) { snprintf(t, n, "Remote access"); snprintf(val, vn, "<  %s  >", r_on ? "On" : "Off"); *dim = !r_on; return; }
+	if (i == 1) { snprintf(t, n, "Pair a device"); snprintf(val, vn, r_on ? ">" : "turn it on first"); *dim = !r_on; return; }
+	rdev_t *d = &rdevs[i - 2];
+	char a[32], b[32];
+	when(d->created, a, sizeof(a));
+	when(d->last_seen, b, sizeof(b));
+	snprintf(t, n, "%s", d->name);
+	snprintf(val, vn, "paired %s  \xC2\xB7  last used %s", a, b);
+}
+
+static void pair_open(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"pair\"}");
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start pairing"); cJSON_Delete(r); return; }
+	r_paired[0] = 0;
+	pair_box = mk_box(body, S(720), S(300), PAL.panel, S(16));
+	lv_obj_set_style_border_width(pair_box, 1, 0);
+	lv_obj_set_style_border_color(pair_box, PAL.acc, 0);
+	lv_obj_center(pair_box);
+	lv_obj_t *l = mk_label(pair_box, FONT_LABEL, PAL.dim, "PAIR A DEVICE");
+	lv_obj_set_style_text_letter_space(l, S(3), 0);
+	lv_obj_set_pos(l, S(36), S(30));
+	pair_code = mk_label(pair_box, FONT_LOGO, PAL.acc, "");
+	lv_obj_set_style_text_letter_space(pair_code, S(6), 0);
+	lv_obj_set_pos(pair_code, S(36), S(64));
+	pair_info = mk_label(pair_box, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(pair_info, S(36), S(140));
+	pair_left = mk_label(pair_box, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_pos(pair_left, S(36), S(236));
+	footer_set(PAIR_HINTS);
+	remote_apply(r);
+}
+
+static void show_remote(void)
+{
+	cur = SCR_REMOTE;
+	pair_box = NULL;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Remote access");
+	rem_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(rem_head, S(56), S(178));
+	rem_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(rem_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(rem_sub, W - S(112), S(22));
+	lv_obj_set_pos(rem_sub, S(56), S(208));
+	vlist_create(&rem_list, body, S(56), S(244), S(900), S(380));
+	rem_list.fill = rem_fill;
+	rem_list.sel = 0;
+	rem_list.top = 0;
+	rem_list.count = 2;
+	remote_apply(api_call("{\"cmd\":\"remote\"}"));
+	footer_set(REM_HINTS);
+}
+
+static void remote_key(pkey_t k)
+{
+	if (pair_box) {
+		if (k == K_B || k == K_MENU) {
+			cJSON_Delete(api_call("{\"cmd\":\"remote\",\"do\":\"stop\"}"));
+			r_code[0] = 0;
+			pair_close();
+		}
+		return;
+	}
+	if (vlist_key(&rem_list, k)) return;
+	int i = rem_list.sel;
+	if (i == 0 && (k == K_A || k == K_LEFT || k == K_RIGHT)) {
+		remote_apply(api_call("{\"cmd\":\"remote\",\"on\":%s}", r_on ? "false" : "true"));
+		toast_show(r_on ? "Remote access is on" : "Remote access is off");
+	} else if (i == 1 && k == K_A) {
+		if (!r_on) toast_show("Turn remote access on first");
+		else pair_open();
+	} else if (i >= 2 && k == K_X && i - 2 < nrdevs) {
+		char name[64];
+		snprintf(name, sizeof(name), "%s", rdevs[i - 2].name);
+		cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"forget\",\"id\":\"%s\"}", rdevs[i - 2].id);
+		if (api_ok(r)) { char m[120]; snprintf(m, sizeof(m), "Forgot %s", name); toast_show(m); }
+		else toast_show("Couldn't forget it");
+		remote_apply(r);
+		if (rem_list.sel >= rem_list.count) rem_list.sel = rem_list.count - 1;
+		vlist_refresh(&rem_list);
+	} else if (k == K_B || k == K_MENU) {
+		show_settings();
+		set_list.sel = SET_REMOTE;
+		vlist_refresh(&set_list);
+	}
+}
+
 /* ---------- file picker ----------
  * For long lists of files in folders (300 filters, 1200 shadow masks): shows one folder at a time,
  * A opens a folder or picks a file, B goes up a folder (or cancels at the top). "Off" comes first. */
@@ -1854,6 +2048,9 @@ void ui_key(pkey_t k)
 	case SCR_PICK:
 		fp_key(k);
 		break;
+	case SCR_REMOTE:
+		remote_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -1862,6 +2059,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_SOURCES) show_sources();
 			else if (set_list.sel == SET_DIAG) show_diag();
 			else if (set_list.sel == SET_WIFI) show_wifi();
+			else if (set_list.sel == SET_REMOTE) show_remote();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else settings_change(1);
 		}
@@ -1881,6 +2079,7 @@ void ui_tick(void)
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
 		cJSON *r = api_call("{\"cmd\":\"status\"}");

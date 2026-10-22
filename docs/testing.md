@@ -147,7 +147,22 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
 - [ ] `/media/fat/phosphor/uninstall.sh` leaves a stock MiSTer.
 - [ ] SS1 specifics after update_all (SS1 cores, dock port, NVMe) work as on a normal stock install.
 
-## 8. Safety checks (each time something is installed)
+## 8. Remote access (Settings > Remote access)
+
+From the PC (same network), with curl; the commands are in `docs/remote-api.md`.
+
+- [ ] Off by default: `curl http://<ip>:8767/info` gets no answer.
+- [ ] Turn it on: the screen shows the MiSTer's address; `/info` answers.
+- [ ] Pair a device: code on screen; `POST /pair` with it → token; the screen closes and says "Paired".
+- [ ] Wrong code 5 times → pairing closes. Code after 2 minutes → refused.
+- [ ] With the token: `games`, `game`, `edit` (check the new details on the TV), `PUT /art` with a phone
+      photo (shows on the TV), `GET /art`, `launch` (the game starts).
+- [ ] `wifi` and `remote` refused remotely.
+- [ ] Forget the device (X) → its token gets 401.
+- [ ] Reboot: still on, device still paired (`phosphor/config/remote.ini` has hashes, not tokens).
+- [ ] While a game runs, the remote API still answers and doesn't slow the game.
+
+## 9. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

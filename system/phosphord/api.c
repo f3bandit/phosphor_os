@@ -30,7 +30,14 @@
  *                                           {installed, busy, at, summary{level,text}, results:[{area,
  *                                           key, level, message}], bundle}; run/bundle start them
  *   scrape_sources [order] [off]            the sources in order: [{id,name,on,ready,needs}];
- *                                           with order/off (arrays of ids) saves them */
+ *                                           with order/off (arrays of ids) saves them
+ *   edit       id set{title, description, year, developer, publisher, genre, players, region}
+ *                                           change a game's details ("" or null clears; title can't be empty)
+ *   set_art    id file                      store an image file as the game's box art (scaled, JPEG)
+ *   remote     [on] [do: pair|stop|forget] [id]
+ *                                           remote access (local socket only): {on, port, listening,
+ *                                           error, addresses, pairing{code, seconds}|null, paired,
+ *                                           devices:[{id, name, created, last_seen}]} */
 #include "api.h"
 #include "art.h"
 #include "cJSON.h"
@@ -38,6 +45,8 @@
 #include "diag.h"
 #include "wifi.h"
 #include "video.h"
+#include "remote.h"
+#include "version.h"
 #include "ident.h"
 #include "importer.h"
 #include "log.h"
@@ -49,7 +58,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PHOSD_VERSION "0.7.0"
 
 /* games with at least one file that's here right now */
 #define VISIBLE "EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)"
@@ -592,6 +600,108 @@ static char *cmd_diag(cJSON *req)
 	return reply(o);
 }
 
+static const char *EDITABLE[] = { "title", "description", "year", "developer", "publisher", "genre", "players", "region", NULL };
+
+static char *cmd_edit(sqlite3 *db, cJSON *req)
+{
+	long long id = req_id(req);
+	cJSON *set = cJSON_GetObjectItem(req, "set"), *it;
+	if (!cJSON_IsObject(set)) return fail("set missing");
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "SELECT 1 FROM games WHERE id=?", -1, &st, NULL) != SQLITE_OK) return fail("database");
+	sqlite3_bind_int64(st, 1, id);
+	int found = sqlite3_step(st) == SQLITE_ROW;
+	sqlite3_finalize(st);
+	if (!found) return fail("no such game");
+	/* check everything first, so a bad field changes nothing */
+	cJSON_ArrayForEach(it, set) {
+		int known = 0;
+		for (int i = 0; EDITABLE[i]; i++) if (!strcmp(it->string, EDITABLE[i])) known = 1;
+		if (!known) return fail("can't change that field");
+		if (!cJSON_IsString(it) && !cJSON_IsNull(it) && !cJSON_IsNumber(it)) return fail("values must be text");
+		if (!strcmp(it->string, "title") && (!cJSON_IsString(it) || !it->valuestring[strspn(it->valuestring, " \t")]))
+			return fail("the title can't be empty");
+	}
+	db_exec(db, "BEGIN");
+	cJSON_ArrayForEach(it, set) {
+		char sql[96], num[32];
+		snprintf(sql, sizeof(sql), "UPDATE games SET %s=? WHERE id=?", it->string);   /* name checked above */
+		if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) { db_exec(db, "ROLLBACK"); return fail("database"); }
+		const char *v = NULL;
+		if (cJSON_IsString(it)) v = it->valuestring;
+		else if (cJSON_IsNumber(it)) { snprintf(num, sizeof(num), "%g", it->valuedouble); v = num; }
+		while (v && (*v == ' ' || *v == '\t')) v++;
+		if (v && *v) sqlite3_bind_text(st, 1, v, -1, SQLITE_TRANSIENT);
+		else sqlite3_bind_null(st, 1);
+		sqlite3_bind_int64(st, 2, id);
+		sqlite3_step(st);
+		sqlite3_finalize(st);
+	}
+	db_exec(db, "COMMIT");
+	return cmd_game(db, id);
+}
+
+static char *cmd_set_art(sqlite3 *db, cJSON *req)
+{
+	long long id = req_id(req);
+	const char *file = cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"));
+	if (!file || !*file) return fail("file missing");
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "SELECT system_id, key FROM games WHERE id=?", -1, &st, NULL) != SQLITE_OK) return fail("database");
+	sqlite3_bind_int64(st, 1, id);
+	if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); return fail("no such game"); }
+	char sys[64], key[512], rel[600];
+	snprintf(sys, sizeof(sys), "%s", (const char *)sqlite3_column_text(st, 0));
+	snprintf(key, sizeof(key), "%s", (const char *)sqlite3_column_text(st, 1));
+	sqlite3_finalize(st);
+	if (art_store_box(sys, key, file, rel, sizeof(rel))) return fail("that isn't an image Phosphor can read");
+	if (sqlite3_prepare_v2(db, "UPDATE games SET art_box=? WHERE id=?", -1, &st, NULL) != SQLITE_OK) return fail("database");
+	sqlite3_bind_text(st, 1, rel, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int64(st, 2, id);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+	plog("new box art for game %lld", id);
+	return cmd_game(db, id);
+}
+
+static char *cmd_remote(cJSON *req)
+{
+	cJSON *on = cJSON_GetObjectItem(req, "on");
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (cJSON_IsBool(on) && remote_set_on(cJSON_IsTrue(on))) return fail("can't save remote.ini");
+	if (d && !strcmp(d, "pair")) { if (remote_pair_start()) return fail("no random numbers"); }
+	else if (d && !strcmp(d, "stop")) remote_pair_stop();
+	else if (d && !strcmp(d, "forget")) {
+		const char *id = cJSON_GetStringValue(cJSON_GetObjectItem(req, "id"));
+		if (!id || remote_forget(id)) return fail("no such device");
+	} else if (d) return fail("do: pair, stop or forget");
+	remote_info_t ri;
+	remote_info(&ri);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "on", ri.on);
+	cJSON_AddNumberToObject(o, "port", ri.port);
+	cJSON_AddBoolToObject(o, "listening", ri.listening);
+	cJSON_AddStringToObject(o, "error", ri.error);
+	cJSON *a = cJSON_AddArrayToObject(o, "addresses");
+	for (int i = 0; i < ri.naddr; i++) cJSON_AddItemToArray(a, cJSON_CreateString(ri.addr[i]));
+	if (ri.code[0]) {
+		cJSON *p = cJSON_AddObjectToObject(o, "pairing");
+		cJSON_AddStringToObject(p, "code", ri.code);
+		cJSON_AddNumberToObject(p, "seconds", ri.code_left);
+	} else cJSON_AddNullToObject(o, "pairing");
+	cJSON_AddStringToObject(o, "paired", ri.paired);
+	cJSON *ds = cJSON_AddArrayToObject(o, "devices");
+	for (int i = 0; i < ri.ndev; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "id", ri.dev[i].id);
+		cJSON_AddStringToObject(x, "name", ri.dev[i].name);
+		cJSON_AddNumberToObject(x, "created", (double)ri.dev[i].created);
+		cJSON_AddNumberToObject(x, "last_seen", (double)ri.dev[i].last_seen);
+		cJSON_AddItemToArray(ds, x);
+	}
+	return reply(o);
+}
+
 char *api_handle(sqlite3 *db, const char *request)
 {
 	cJSON *req = cJSON_Parse(request);
@@ -612,6 +722,9 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "wifi")) out = cmd_wifi(req);
 	else if (!strcmp(c->valuestring, "video")) out = cmd_video(req);
 	else if (!strcmp(c->valuestring, "video_files")) out = cmd_video_files(req);
+	else if (!strcmp(c->valuestring, "edit")) out = cmd_edit(db, req);
+	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
+	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
