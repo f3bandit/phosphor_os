@@ -18,12 +18,16 @@
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
  *   rescrape   id                           look this game up again
+ *   diag       [run] [bundle]               whole-system checks (diag module), in the background:
+ *                                           {installed, busy, at, summary{level,text}, results:[{area,
+ *                                           key, level, message}], bundle}; run/bundle start them
  *   scrape_sources [order] [off]            the sources in order: [{id,name,on,ready,needs}];
  *                                           with order/off (arrays of ids) saves them */
 #include "api.h"
 #include "art.h"
 #include "cJSON.h"
 #include "db.h"
+#include "diag.h"
 #include "ident.h"
 #include "importer.h"
 #include "log.h"
@@ -35,7 +39,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PHOSD_VERSION "0.4.0"
+#define PHOSD_VERSION "0.5.0"
 
 /* games with at least one file that's here right now */
 #define VISIBLE "EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)"
@@ -404,6 +408,46 @@ static char *cmd_candidates(sqlite3 *db, cJSON *req)
 	return reply(o);
 }
 
+/* diag --kv lines: "area.key=level|message", "summary=level|text" */
+static char *cmd_diag(cJSON *req)
+{
+	if (cJSON_IsTrue(cJSON_GetObjectItem(req, "run"))) diag_run();
+	if (cJSON_IsTrue(cJSON_GetObjectItem(req, "bundle"))) diag_bundle();
+	diag_state_t s;
+	diag_state(&s);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", s.installed);
+	cJSON_AddStringToObject(o, "busy", s.busy == 1 ? "checking" : s.busy == 2 ? "bundle" : "");
+	if (s.at) cJSON_AddNumberToObject(o, "at", (double)s.at);
+	else cJSON_AddNullToObject(o, "at");
+	if (s.bundle[0]) cJSON_AddStringToObject(o, "bundle", s.bundle);
+	else cJSON_AddNullToObject(o, "bundle");
+	if (s.error[0]) cJSON_AddStringToObject(o, "error", s.error);
+	cJSON *res = cJSON_AddArrayToObject(o, "results");
+	char *save = NULL;
+	for (char *line = s.output ? strtok_r(s.output, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(line, '='), *bar = eq ? strchr(eq, '|') : NULL;
+		if (!eq || !bar) continue;
+		*eq = 0;
+		*bar = 0;
+		if (!strcmp(line, "summary")) {
+			cJSON *sm = cJSON_AddObjectToObject(o, "summary");
+			cJSON_AddStringToObject(sm, "level", eq + 1);
+			cJSON_AddStringToObject(sm, "text", bar + 1);
+			continue;
+		}
+		cJSON *x = cJSON_CreateObject();
+		char *dot = strchr(line, '.');
+		if (dot) { *dot = 0; cJSON_AddStringToObject(x, "area", line); cJSON_AddStringToObject(x, "key", dot + 1); }
+		else { cJSON_AddStringToObject(x, "area", ""); cJSON_AddStringToObject(x, "key", line); }
+		cJSON_AddStringToObject(x, "level", eq + 1);
+		cJSON_AddStringToObject(x, "message", bar + 1);
+		cJSON_AddItemToArray(res, x);
+	}
+	free(s.output);
+	return reply(o);
+}
+
 char *api_handle(sqlite3 *db, const char *request)
 {
 	cJSON *req = cJSON_Parse(request);
@@ -420,6 +464,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "link")) out = cmd_link(db, req);
 	else if (!strcmp(c->valuestring, "unlink")) out = cmd_unlink(db, req);
 	else if (!strcmp(c->valuestring, "candidates")) out = cmd_candidates(db, req);
+	else if (!strcmp(c->valuestring, "diag")) out = cmd_diag(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));

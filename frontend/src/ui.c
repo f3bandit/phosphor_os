@@ -20,7 +20,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -156,7 +156,7 @@ static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int 
 		lv_obj_align(v->bar[r], LV_ALIGN_LEFT_MID, S(8), 0);
 		v->lab[r] = mk_label(row, FONT_BODY, PAL.dim, "");
 		lv_label_set_long_mode(v->lab[r], LV_LABEL_LONG_MODE_DOTS);
-		lv_obj_set_width(v->lab[r], w - S(200));
+		lv_obj_set_size(v->lab[r], w - S(200), S(26));     /* one line: long text ends in ... */
 		lv_obj_align(v->lab[r], LV_ALIGN_LEFT_MID, S(24), 0);
 		v->val[r] = mk_label(row, FONT_SMALL, PAL.faint, "");
 		lv_obj_align(v->val[r], LV_ALIGN_RIGHT_MID, -S(18), 0);
@@ -823,7 +823,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_ABOUT, SET_COUNT };
+enum { SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -857,6 +857,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	}
 	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
+	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_ABOUT: snprintf(t, n, "Phosphor"); snprintf(val, vn, "%s", PHOS_VERSION); break;
 	}
 }
@@ -998,6 +999,135 @@ static void sources_key(pkey_t k)
 	}
 }
 
+/* ---------- Diagnostics ----------
+ * The diag module's checks of the whole system (board, cores, OS, storage, video, sound, input,
+ * network, USB, Phosphor), run by phosphord in the background. Problems and warnings first. */
+
+typedef struct { char label[96], msg[220]; int level; } diag_item_t;   /* level: 3 fail, 2 warn, 1 info, 0 ok */
+static diag_item_t *ditems;
+static int nditems;
+static vlist_t diag_list;
+static lv_obj_t *diag_head, *diag_sub;
+static char diag_busy[16];
+
+static int level_of(const char *l)
+{
+	return !l ? 0 : !strcmp(l, "fail") ? 3 : !strcmp(l, "warn") ? 2 : !strcmp(l, "info") ? 1 : 0;
+}
+
+static const char *AREA_NAMES[][2] = {
+	{ "board", "Board" }, { "cores", "Cores" }, { "os", "System" }, { "storage", "Storage" }, { "video", "Video" },
+	{ "sound", "Sound" }, { "input", "Controllers" }, { "network", "Network" }, { "usb", "USB" }, { "phosphor", "Phosphor" },
+};
+
+static void diag_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	diag_item_t *d = &ditems[i];
+	snprintf(t, n, "%s  \xC2\xB7  %s", d->label, d->msg);
+	static const char *WORD[] = { "OK", "Info", "Check", "Problem" };
+	snprintf(val, vn, "%s", WORD[d->level]);
+	*dim = d->level < 2;
+}
+
+static void diag_apply(cJSON *r)
+{
+	free(ditems);
+	ditems = NULL;
+	nditems = 0;
+	snprintf(diag_busy, sizeof(diag_busy), "%s", api_str(r, "busy") ? api_str(r, "busy") : "");
+	cJSON *arr = cJSON_GetObjectItem(r, "results");
+	int n = cJSON_GetArraySize(arr);
+	ditems = calloc((size_t)(n ? n : 1), sizeof(*ditems));
+	cJSON *it;
+	cJSON_ArrayForEach(it, arr) {
+		diag_item_t *d = &ditems[nditems++];
+		const char *area = api_str(it, "area"), *key = api_str(it, "key");
+		const char *an = area ? area : "";
+		for (size_t k = 0; k < sizeof(AREA_NAMES) / sizeof(AREA_NAMES[0]); k++) if (area && !strcmp(area, AREA_NAMES[k][0])) an = AREA_NAMES[k][1];
+		char kk[64];
+		snprintf(kk, sizeof(kk), "%s", key ? key : "");
+		for (char *c = kk; *c; c++) if (*c == '_') *c = ' ';
+		snprintf(d->label, sizeof(d->label), "%s %s", an, kk);
+		snprintf(d->msg, sizeof(d->msg), "%s", api_str(it, "message") ? api_str(it, "message") : "");
+		d->level = level_of(api_str(it, "level"));
+	}
+	/* problems first, then warnings, otherwise in the module's order */
+	diag_item_t *sorted = calloc((size_t)(nditems ? nditems : 1), sizeof(*sorted));
+	int k = 0;
+	for (int pass = 3; pass >= 1; pass--)       /* problems, then warnings, then the rest */
+		for (int i = 0; i < nditems; i++)
+			if (pass == 1 ? ditems[i].level <= 1 : ditems[i].level == pass) sorted[k++] = ditems[i];
+	free(ditems);
+	ditems = sorted;
+
+	cJSON *sm = cJSON_GetObjectItem(r, "summary");
+	if (!api_ok(r)) {
+		lv_label_set_text(diag_head, "phosphord isn't answering");
+		lv_label_set_text(diag_sub, "");
+	} else if (!cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"))) {
+		lv_label_set_text(diag_head, "The diagnostics module isn't installed");
+		lv_label_set_text(diag_sub, "Install phosphor-modules/diag to /media/fat/phosphor/modules/diag.");
+	} else if (!strcmp(diag_busy, "checking")) {
+		lv_label_set_text(diag_head, "Checking the whole system...");
+		lv_label_set_text(diag_sub, "Board, cores, system, storage, video, sound, controllers, network, USB. About 20 seconds.");
+	} else if (sm) {
+		int lv = level_of(api_str(sm, "level"));
+		lv_label_set_text(diag_head, lv == 0 ? "Everything looks fine" : lv == 2 ? "A few things worth a look" : "Some things need fixing");
+		char sub[300];
+		const char *b = api_str(r, "bundle"), *e = api_str(r, "error");
+		if (!strcmp(diag_busy, "bundle")) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  making a report for support...", api_str(sm, "text"));
+		else if (e) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  %s", api_str(sm, "text"), e);
+		else if (b) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  report saved: %s", api_str(sm, "text"), b);
+		else snprintf(sub, sizeof(sub), "%s", api_str(sm, "text"));
+		lv_label_set_text(diag_sub, sub);
+	} else {
+		lv_label_set_text(diag_head, api_str(r, "error") ? api_str(r, "error") : "Not checked yet");
+		lv_label_set_text(diag_sub, "");
+	}
+	cJSON_Delete(r);
+	diag_list.count = nditems;
+	vlist_refresh(&diag_list);
+}
+
+static void show_diag(void)
+{
+	cur = SCR_DIAG;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Diagnostics");
+	diag_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(diag_head, S(56), S(178));
+	diag_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(diag_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(diag_sub, W - S(112), S(22));
+	lv_obj_set_pos(diag_sub, S(56), S(208));
+	vlist_create(&diag_list, body, S(56), S(244), W - S(112), S(380));
+	diag_list.fill = diag_fill;
+	diag_list.sel = 0;
+	diag_list.top = 0;
+	diag_list.count = 0;
+	/* first visit: run the checks; later: show the last results */
+	cJSON *r = api_call("{\"cmd\":\"diag\"}");
+	if (api_ok(r) && cJSON_IsNull(cJSON_GetObjectItem(r, "at")) && !*(api_str(r, "busy") ? api_str(r, "busy") : "")) {
+		cJSON_Delete(r);
+		r = api_call("{\"cmd\":\"diag\",\"run\":true}");
+	}
+	diag_apply(r);
+	static const char *const hints[] = { "Y", "Check again", "X", "Save a report for support", "B", "Back", NULL };
+	footer_set(hints);
+}
+
+static void diag_key(pkey_t k)
+{
+	if (vlist_key(&diag_list, k)) return;
+	if (k == K_Y && !diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\",\"run\":true}"));
+	else if (k == K_X && !diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\",\"bundle\":true}"));
+	else if (k == K_B || k == K_MENU) {
+		show_settings();
+		set_list.sel = SET_DIAG;
+		vlist_refresh(&set_list);
+	}
+}
+
 /* ---------- navigation ---------- */
 
 void ui_rescan(void)
@@ -1037,12 +1167,16 @@ void ui_key(pkey_t k)
 	case SCR_SOURCES:
 		sources_key(k);
 		break;
+	case SCR_DIAG:
+		diag_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
 			if (set_list.sel == SET_RESCAN && k == K_A) { ui_rescan(); toast_show("Looking for games..."); }
 			else if (set_list.sel == SET_SOURCES) show_sources();
+			else if (set_list.sel == SET_DIAG) show_diag();
 			else settings_change(1);
 		}
 		else if (k == K_B || k == K_MENU) show_home();
@@ -1061,6 +1195,7 @@ void ui_tick(void)
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		cJSON *r = api_call("{\"cmd\":\"status\"}");
 		int g = r ? (int)api_num(r, "generation", -1) : -1;
 		cJSON_Delete(r);
