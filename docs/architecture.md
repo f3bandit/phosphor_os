@@ -1,23 +1,60 @@
 # Architecture
 
+Phosphor is a complete console operating system for MiSTer. It runs on MiSTer-devel's own kernel
+and Linux (it never ships a `linux.img` or kernel), and owns everything above them: the system
+service, the library, artwork, settings, the shell (frontend), the hardware link (Main fork) and the
+menu core. It doesn't read or depend on other frontends' files.
+
 ## Layers
 
 ```
- ┌──────────────────────────── Frontend (ARM, draws to the Linux framebuffer) ─────┐
- │  Library · Details · Settings · Memory Cards · Controllers · In-game sheet     │
- └───────────────▲─────────────────────────────────────────────────────────────────┘
-                 │ local API (socket/pipe, blocking, request → reply)
- ┌───────────────┴──────────── Main fork (owns the ARM↔FPGA link) ─────────────────┐
- │  launch/MGL · pause · save-state slots · fb ↔ scaler switch · last-frame grab   │
- │  pad state · memory card sector read/write (relayed to the menu core)          │
- └───────────────▲─────────────────────────────────────────────────────────────────┘
-                 │ HPS bus (same channel stock Main uses)
- ┌───────────────┴──────────── Menu core fork (FPGA) ───────────────────────────────┐
- │  stock menu video (shows the Linux framebuffer) + SNAC pad reader + PS1 card SIO│
- └──────────────────────────────────────────────────────────────────────────────────┘
+ ┌──────────────────────── Shell: phosphor (frontend, Linux framebuffer) ──────────────┐
+ │  Home · Library · Game details · Settings · Memory Cards · Controllers · In-game     │
+ └──────────────▲───────────────────────────────────────────────▲──────────────────────┘
+                │ phosphord API (local socket, JSON lines)       │ Main API
+ ┌──────────────┴─────────── System service: phosphord ──────┐   │
+ │  library database · indexer · artwork store · scraper     │   │
+ │  play history · favourites · settings · module control    │───┤ launch / pause / pads
+ │  same API for the SS1 Tool and the Android app            │   │
+ └───────────────────────────────────────────────────────────┘   │
+ ┌───────────────────────────── Main fork (owns the ARM↔FPGA link) ┴──────────────────┐
+ │  launch/MGL · pause · save-state slots · fb ↔ scaler switch · last-frame grab      │
+ │  pad state · memory card sector read/write (relayed to the menu core)             │
+ └──────────────▲─────────────────────────────────────────────────────────────────────┘
+                │ HPS bus (same channel stock Main uses)
+ ┌──────────────┴──────────── Menu core fork (FPGA) ──────────────────────────────────┐
+ │  stock menu video (shows the Linux framebuffer) + SNAC pad reader + PS1 card SIO   │
+ └────────────────────────────────────────────────────────────────────────────────────┘
 
- Modules (ARM, event-started, exit when done) talk to Main's API or plain files in /tmp.
+ MiSTer-devel kernel and Linux underneath, updated by MiSTer; update-guard keeps restore points.
+ Modules (ARM, event-started, exit when done) are controlled by phosphord.
 ```
+
+## System service: phosphord
+
+One process owns the system's data, so every client (shell, SS1 Tool, phone app) sees the same
+thing and no client scans folders itself.
+
+- **Library database**: `/media/fat/phosphor/data/library.db` (SQLite, public domain).
+  - `systems`: id, name, category.
+  - `games`: system, identity key, title, region, year, developer, publisher, genre, players,
+    description, box art, favourite, play count, play time, last played.
+  - `files`: path, root (SD / USB n / share), size, modified time, CRC32 or disc serial, online.
+- **Identity by content.** Each game is matched by content: CRC32 for cartridge images, the
+  disc serial for CDs (No-Intro / Redump data). Renaming or moving a file keeps its art, details
+  and history. Until a file is hashed, its name stands in.
+- **Indexer.** Runs in the background at start and whenever the mount table changes (a USB drive or
+  the share appears or goes). Uses size and modified time, so unchanged files are never re-read.
+  Files on a drive that's away are marked offline, not forgotten.
+- **Artwork store**: `/media/fat/phosphor/data/art/<system>/<game key>/` with `box.png` (and later
+  screenshot, title, logo), stored pre-sized so the ARM side never decodes a huge image.
+- **Scraper**: a background job queue. Sources: libretro thumbnails (no account), ScreenScraper
+  (your account), TheGamesDB. Matched by content identity, cached, works offline afterwards.
+- **Importers, run once on request**: bring an existing `gamelist.xml` / Console Mode `media/` art
+  into the library when someone moves to Phosphor. After that, only Phosphor's data is read.
+- **Launching** goes through phosphord: it writes the MGL, asks Main to load it and records the
+  play (start, and time played when the core exits back to the menu).
+- **API**: a local socket in `/tmp/phosphor/`, one JSON request per line, one JSON reply per line.
 
 ## Why only Main touches the FPGA link
 
@@ -31,14 +68,25 @@ switch the output to the Linux framebuffer, draw the sheet over the dimmed frame
 switch back. Save-state slots map to MiSTer's 4 per-core slots, on cores that support them.
 Direct-video / 15 kHz analog falls back to MiSTer's OSD.
 
-## Network shares
+## Storage layout
 
-The frontend watches mount changes (poll `/proc/self/mounts` for `POLLPRI`) and adds games
-when a share appears, so a late mount never needs a reboot or a fixed delay.
+```
+/media/fat/phosphor/
+  bin/          phosphor (shell), phosphord, phos (command line client)
+  data/         library.db, art/
+  config/       frontend.ini, systems.ini, module settings
+  modules/      phosphor-modules
+  logs/         what's worth keeping across reboots
+/tmp/phosphor/  socket, runtime logs
+```
+
+Games stay where MiSTer keeps them (`games/<System>` on the SD card, USB drives and the network
+share; `_Arcade` for arcade). Phosphor never writes into games folders.
 
 ## Licences
 
 - Main fork and menu core fork: GPL-3.0 (derived from MiSTer-devel). Source published with any release.
-- Frontend, modules and everything else in this repo: PolyForm Noncommercial 1.0.0 (`LICENSE.md`).
+- Shell, phosphord, modules and everything else in this repo: PolyForm Noncommercial 1.0.0 (`LICENSE.md`).
   Keep the boundary clean: no MiSTer GPL code copied in; talk to the Main fork only through its API.
-  Dependencies must be permissive (MIT, BSD, Apache, zlib), never GPL.
+  Dependencies must be permissive (MIT, BSD, Apache, zlib, public domain), never GPL:
+  LVGL (MIT), SQLite (public domain), cJSON (MIT), stb (public domain / MIT).
