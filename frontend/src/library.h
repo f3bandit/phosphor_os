@@ -36,6 +36,9 @@ int library_category_count(category_t c);/* games in a category */
 int library_category_systems(category_t c, int *out, int max);
 const char *category_name(category_t c);
 
+/* the folders a system's games are in (games/<System> on each drive, or _Arcade) */
+int library_system_dirs(const game_system_t *s, char out[][512], int max);
+
 /* games of one system, sorted by title; caller frees with library_free_games */
 game_t *library_games(const game_system_t *s, int *n);
 void library_free_games(game_t *g, int n);

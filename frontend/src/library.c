@@ -197,7 +197,7 @@ static void walk(const char *dir, const char *exts, int depth, visit_fn fn, void
 }
 
 /* each existing folder for this system across the roots */
-static int system_dirs(const game_system_t *s, char out[][512], int max)
+int library_system_dirs(const game_system_t *s, char out[][512], int max)
 {
 	int n = 0;
 	if (!strcmp(s->id, "Arcade")) {
@@ -258,7 +258,7 @@ static void *scan_thread(void *arg)
 	(void)arg;
 	for (int i = 0; i < NSYSTEMS; i++) {
 		char dirs[16][512];
-		int nd = system_dirs(&SYSTEMS[i], dirs, 16), count = 0;
+		int nd = library_system_dirs(&SYSTEMS[i], dirs, 16), count = 0;
 		for (int j = 0; j < nd; j++) walk(dirs[j], SYSTEMS[i].exts, 0, count_cb, &count);
 		int core = core_installed(&SYSTEMS[i]);
 		pthread_mutex_lock(&scan_lock);
@@ -353,7 +353,7 @@ game_t *library_games(const game_system_t *s, int *n)
 {
 	glist_t l = { 0 };
 	char dirs[16][512];
-	int nd = system_dirs(s, dirs, 16);
+	int nd = library_system_dirs(s, dirs, 16);
 	for (int j = 0; j < nd; j++) walk(dirs[j], s->exts, 0, add_cb, &l);
 	if (l.n > 1) qsort(l.g, l.n, sizeof(game_t), by_title);
 	*n = l.n;

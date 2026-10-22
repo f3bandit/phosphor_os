@@ -11,6 +11,7 @@
 #include "icons.h"
 #include "library.h"
 #include "log.h"
+#include "meta.h"
 #include "settings.h"
 #include "sysinfo.h"
 #include "theme.h"
@@ -428,7 +429,9 @@ static game_system_t *games_sys;
 static game_t *games;
 static int ngames;
 static vlist_t game_list;
-static lv_obj_t *g_title, *g_file, *g_where, *g_size;
+static lv_obj_t *g_art, *g_noart, *g_title, *g_info, *g_desc, *g_where;
+static lv_timer_t *art_timer;
+static char art_src[1100];
 
 static void game_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
@@ -443,67 +446,131 @@ static const char *where_label(const char *path)
 	return "SD card";
 }
 
+/* box art loads a moment after the selection settles, so scrolling through a list stays quick */
+static void art_load(lv_timer_t *t)
+{
+	(void)t;
+	art_timer = NULL;
+	if (cur != SCR_GAMES || !ngames) return;
+	const meta_t *m = meta_for(games[game_list.sel].path);
+	if (m->image) {
+		snprintf(art_src, sizeof(art_src), "A:%s", m->image);   /* LVGL's file driver letter */
+		lv_image_set_src(g_art, art_src);
+		lv_obj_set_hidden(g_art, false);
+		lv_obj_set_hidden(g_noart, true);
+	} else {
+		lv_obj_set_hidden(g_art, true);
+		lv_obj_set_hidden(g_noart, false);
+	}
+}
+
 static void game_detail(void)
 {
+	if (art_timer) { lv_timer_delete(art_timer); art_timer = NULL; }
 	if (!ngames) {
 		lv_label_set_text(g_title, "No games found");
-		lv_label_set_text(g_file, "Put them in games/ on the SD card, a USB drive or your network share");
+		lv_label_set_text(g_info, "");
+		lv_label_set_text(g_desc, "Put them in games/ on the SD card, a USB drive or your network share.");
 		lv_label_set_text(g_where, "");
-		lv_label_set_text(g_size, "");
+		lv_obj_set_hidden(g_art, true);
+		lv_obj_set_hidden(g_noart, false);
 		return;
 	}
 	game_t *g = &games[game_list.sel];
-	lv_label_set_text(g_title, g->title);
-	const char *base = strrchr(g->path, '/');
-	lv_label_set_text(g_file, base ? base + 1 : g->path);
-	lv_label_set_text(g_where, where_label(g->path));
-	struct stat st;
-	char sz[48] = "";
-	if (stat(g->path, &st) == 0) {
-		double mb = st.st_size / 1048576.0;
-		if (mb >= 1) snprintf(sz, sizeof(sz), "%.1f MB", mb);
-		else snprintf(sz, sizeof(sz), "%lld KB", (long long)(st.st_size / 1024));
+	const meta_t *m = meta_for(g->path);
+	lv_label_set_text(g_title, m->name ? m->name : g->title);
+
+	/* 1997 · Publisher · 1-2 players · Genre */
+	char info[256] = "";
+	const char *parts[] = { m->date, m->publisher ? m->publisher : m->developer, NULL, m->genre };
+	char players[32] = "";
+	if (m->players) { snprintf(players, sizeof(players), "%s player%s", m->players, strcmp(m->players, "1") ? "s" : ""); parts[2] = players; }
+	for (int i = 0; i < 4; i++) {
+		if (!parts[i] || !*parts[i]) continue;
+		if (info[0]) strncat(info, "  \xC2\xB7  ", sizeof(info) - strlen(info) - 1);
+		strncat(info, parts[i], sizeof(info) - strlen(info) - 1);
 	}
-	lv_label_set_text(g_size, sz);
+	lv_label_set_text(g_info, info);
+	lv_label_set_text(g_desc, m->desc ? m->desc : "");
+
+	const char *base = strrchr(g->path, '/');
+	char where[600];
+	snprintf(where, sizeof(where), "%s  \xC2\xB7  %s", where_label(g->path), base ? base + 1 : g->path);
+	lv_label_set_text(g_where, where);
+
+	/* keep the old art up until the new one is ready, unless this game has none */
+	if (!m->image) { lv_obj_set_hidden(g_art, true); lv_obj_set_hidden(g_noart, false); }
+	art_timer = lv_timer_create(art_load, 120, NULL);
+	lv_timer_set_repeat_count(art_timer, 1);
 }
 
 static void show_games(game_system_t *s)
 {
 	cur = SCR_GAMES;
 	games_sys = s;
+	if (art_timer) { lv_timer_delete(art_timer); art_timer = NULL; }
 	if (games) library_free_games(games, ngames);
 	games = library_games(s, &ngames);
+	char dirs[16][512];
+	int nd = library_system_dirs(s, dirs, 16);
+	meta_load(s->id, dirs, nd);
 	lv_obj_clean(body);
 	char label[96];
 	spaced_caps(label, sizeof(label), category_name(s->cat));
 	screen_title(label, s->name);
-	vlist_create(&game_list, body, S(56), S(176), S(700), S(440));
+	vlist_create(&game_list, body, S(56), S(176), S(560), S(440));
 	game_list.count = ngames;
 	game_list.fill = game_fill;
 	game_list.sel = 0;
 	game_list.top = 0;
 
-	lv_obj_t *panel = mk_box(body, S(410), S(300), PAL.panel, S(16));
+	/* details: box art on top, then title, details and description */
+	int pw = S(584), ph = S(456), pad = S(26), iw = pw - 2 * pad;
+	lv_obj_t *panel = mk_box(body, pw, ph, PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, W - S(56) - S(410), S(176));
+	lv_obj_set_pos(panel, W - S(56) - pw, S(170));
+
+	int ah = S(196);
+	g_art = lv_image_create(panel);
+	lv_obj_set_size(g_art, iw, ah);
+	lv_image_set_inner_align(g_art, LV_IMAGE_ALIGN_CONTAIN);
+	lv_obj_set_pos(g_art, pad, pad);
+	lv_obj_set_hidden(g_art, true);
+	g_noart = mk_box(panel, iw, ah, lv_color_mix(PAL.panel, PAL.bg, 128), S(10));
+	lv_obj_set_pos(g_noart, pad, pad);
+	lv_obj_t *nic = icon_create(g_noart, CAT_ICON[s->cat], S(64));
+	lv_obj_set_style_text_color(nic, PAL.line, 0);
+	lv_obj_center(nic);
+
+	int y = pad + ah + S(16);
 	g_title = mk_label(panel, FONT_TITLE, PAL.text, "");
-	lv_label_set_long_mode(g_title, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(g_title, S(354));
-	lv_obj_set_pos(g_title, S(28), S(28));
-	g_file = mk_label(panel, FONT_SMALL, PAL.dim, "");
-	lv_label_set_long_mode(g_file, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(g_file, S(354));
-	lv_obj_align(g_file, LV_ALIGN_BOTTOM_LEFT, S(28), -S(84));
-	g_where = mk_label(panel, FONT_SMALL, PAL.dim, "");
-	lv_obj_align(g_where, LV_ALIGN_BOTTOM_LEFT, S(28), -S(52));
-	g_size = mk_label(panel, FONT_SMALL, PAL.faint, "");
-	lv_obj_align(g_size, LV_ALIGN_BOTTOM_LEFT, S(28), -S(28));
+	lv_label_set_long_mode(g_title, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(g_title, iw, S(30));
+	lv_obj_set_pos(g_title, pad, y);
+	y += S(32);
+	g_info = mk_label(panel, FONT_SMALL, PAL.acc, "");
+	lv_label_set_long_mode(g_info, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(g_info, iw, S(20));
+	lv_obj_set_pos(g_info, pad, y);
+	y += S(28);
+	int bottom = S(34);
+	g_desc = mk_label(panel, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(g_desc, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_style_text_line_space(g_desc, S(3), 0);
+	lv_obj_set_size(g_desc, iw, ph - y - bottom - S(8));
+	lv_obj_set_pos(g_desc, pad, y);
+	g_where = mk_label(panel, FONT_SMALL, PAL.faint, "");
+	lv_label_set_long_mode(g_where, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(g_where, iw);
+	lv_obj_align(g_where, LV_ALIGN_BOTTOM_LEFT, pad, -S(14));
 
 	char cnt[48];
 	snprintf(cnt, sizeof(cnt), "%d game%s", ngames, ngames == 1 ? "" : "s");
 	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.dim, cnt);
-	lv_obj_align(c, LV_ALIGN_TOP_RIGHT, -S(56), S(134));
+	lv_obj_align(c, LV_ALIGN_TOP_LEFT, S(56) + S(560) - S(10) - lv_obj_get_width(c), S(134));
+	lv_obj_update_layout(c);
+	lv_obj_set_x(c, S(56) + S(560) - S(10) - lv_obj_get_width(c));
 
 	vlist_refresh(&game_list);
 	game_detail();
