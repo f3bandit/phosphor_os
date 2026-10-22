@@ -21,8 +21,12 @@ first, OSD fallback for direct-video analog).
 
 Release prep: name and trademark check, publish the GPL forks, own downloader database for installs.
 
+## Decided
+
+- Frontend toolkit: **C + LVGL 9.6** (MIT). Slint was ruled out: its royalty-free licence excludes
+  embedded systems, leaving GPLv3 or paid, neither compatible with PolyForm Noncommercial.
+
 ## Open questions
 
-- Frontend language/toolkit: Rust + Slint (like Degauss and Zaparoo), or Go with a framebuffer renderer?
 - Final name (Phosphor is a working name).
 - Android: extend SS1 Tool for Android, or a separate companion app?
