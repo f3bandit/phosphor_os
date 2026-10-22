@@ -32,6 +32,9 @@ First one: `cifs-helper`.
 - Files live on the SD card (`/media/fat/phosphor/`), never inside `linux.img`; hooks are reinstalled from `user-startup.sh` after Linux updates.
 - Nothing busy-waits: blocking reads with timeouts, so idle means zero CPU.
 - Only MiSTer's own interfaces to the FPGA: `/dev/MiSTer_cmd`, MGL, core-mounted files, and the Main fork's API.
+- Private settings (WiFi networks, Bluetooth pairings, share passwords, keys, device keys) stay on the
+  SS1, the NVMe, a NAS or the phone app: never over the internet. Remote access answers the home network
+  only and can't read or change WiFi.
 - Original design only: own name, palette, fonts (open licence), icons, sounds and terms.
 
 See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
