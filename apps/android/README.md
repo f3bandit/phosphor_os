@@ -1,7 +1,8 @@
 # Phosphor for Android
 
-The phone and tablet app for Phosphor: browse the MiSTer's library, fix box art and details, set "Based on"
-links and start games on the TV, over the home network. Android 8 and later.
+The phone and tablet app for Phosphor (0.7.0): browse the MiSTer's library, fix box art and details, set
+"Based on" links and start games on the TV; Favorites, memory cards, Bluetooth (read only), backups, cloud
+saves, screen filters and diagnostics. Over the home network only. Android 8 and later.
 
 | | | | |
 |---|---|---|---|
