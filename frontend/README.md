@@ -34,7 +34,12 @@ shell starts it if it isn't running.
 - **Controllers and keyboards** through evdev, picked up when plugged in, with key repeat. D-pad,
   hat or left stick; south button / Enter = A, east / Esc = B, north / Y key = Y, Start / Guide / F1 = Menu, shoulders
   or PgUp/PgDn = page.
-- **Settings**: accent colour (Amber, Red, Green, Blue, Purple), 12/24-hour clock, get box art and
+- **Background textures** (Settings): none, zigzag, X's, squares, triangles, circles, hexagons or
+  8-bit tiles (original pixel art), drawn faintly in the accent colour and redrawn when it changes.
+  Each is one small tile made in code and repeated, so they cost nothing while scrolling.
+
+  ![Textures](docs/textures.png)
+- **Settings**: accent colour (Amber, Red, Green, Blue, Purple), background texture, 12/24-hour clock, get box art and
   details (on/off, with progress: found, to go, not found), box art sources (on/off and order:
   A toggles, Y/X move up/down), look for games again, Diagnostics.
 - **WiFi** (Settings): networks in range (mesh access points grouped, strongest first) and saved ones;
