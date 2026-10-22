@@ -52,8 +52,9 @@ switch_main() {
 
 case "${1:-status}" in
 	boot)
+		# Phosphor's Main is already the system's (main= in MiSTer.ini); without it, swap now
 		start_service
-		switch_main
+		pidof MiSTer_phosphor > /dev/null || switch_main
 		"$0" start
 		;;
 	main)

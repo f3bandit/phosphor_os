@@ -12,6 +12,15 @@ STARTUP="$FAT/linux/user-startup.sh"
 TAG="phosphor"
 
 [ -x "$ROOT/phosphor.sh" ] && "$ROOT/phosphor.sh" stop > /dev/null 2>&1
+# MiSTer.ini: take out Phosphor's main= and put back the one that was there
+INI="$FAT/MiSTer.ini"
+if [ -f "$INI" ] && grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI"; then
+	prev="$(head -1 "$ROOT/backup/main.prev" 2>/dev/null)"
+	tmp="$(mktemp)"
+	awk -v p="$prev" '/^main=phosphor\/bin\/MiSTer_phosphor/ { if (p != "") print "main=" p "\r"; next } { print }' "$INI" > "$tmp" && cat "$tmp" > "$INI"
+	rm -f "$tmp"
+	echo "MiSTer.ini: main= put back (${prev:-the default})"
+fi
 ENTRY="$FAT/Scripts/phosphor.sh"
 if [ -f "$ENTRY" ] && grep -q "^# phosphor: menu entry" "$ENTRY"; then rm -f "$ENTRY" && echo "menu entry removed"; fi
 if [ -f "$STARTUP" ] && grep -q "^# $TAG: BEGIN" "$STARTUP"; then
