@@ -1,0 +1,355 @@
+// Phosphor Link as an MCP server, so the Claude desktop app can use the MiSTer directly.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+//
+// MCP over stdio: JSON-RPC 2.0, one message per line. stdout carries only protocol messages;
+// everything else goes to stderr.
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+)
+
+const maxText = 200_000
+
+type rpcReq struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+type rpcErr struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type rpcResp struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  any             `json:"result,omitempty"`
+	Error   *rpcErr         `json:"error,omitempty"`
+}
+
+type tool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema map[string]any `json:"inputSchema"`
+}
+
+func obj(props map[string]any, req ...string) map[string]any {
+	m := map[string]any{"type": "object", "properties": props}
+	if len(req) > 0 {
+		m["required"] = req
+	}
+	return m
+}
+func str(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
+func num(d string) map[string]any { return map[string]any{"type": "number", "description": d} }
+
+var tools = []tool{
+	{"status", "Connect to the MiSTer (SuperStation One dock debug port, or SSH) and report how it's reached, MiSTer Linux version, kernel, uptime, the running core and free space.", obj(map[string]any{})},
+	{"list_ports", "List the serial ports on this PC (the dock's USB-C debug port shows up as a USB serial port).", obj(map[string]any{})},
+	{"run", "Run a bash command or script on the MiSTer as root and return its output and exit code. Multi-line scripts are fine. Output over 200 KB is cut.", obj(map[string]any{
+		"command":   str("Shell command or script"),
+		"timeout_s": num("Seconds to wait (default 120)"),
+	}, "command")},
+	{"push_file", "Copy a file from this PC to the MiSTer (checked with md5).", obj(map[string]any{
+		"local_path":  str("Path on this PC"),
+		"remote_path": str("Full path on the MiSTer"),
+		"mode":        str("chmod mode, default 644 (755 for scripts)"),
+	}, "local_path", "remote_path")},
+	{"push_text", "Write text to a file on the MiSTer (scripts, settings), creating folders as needed.", obj(map[string]any{
+		"text":        str("File contents"),
+		"remote_path": str("Full path on the MiSTer"),
+		"mode":        str("chmod mode, default 644"),
+	}, "text", "remote_path")},
+	{"pull_file", "Copy a file from the MiSTer to this PC (checked with md5).", obj(map[string]any{
+		"remote_path": str("Full path on the MiSTer"),
+		"local_path":  str("Where to save it on this PC"),
+	}, "remote_path", "local_path")},
+	{"read_file", "Read a text file on the MiSTer and return it.", obj(map[string]any{
+		"remote_path": str("Full path on the MiSTer"),
+		"max_bytes":   num("Return at most this many bytes (default 200000)"),
+	}, "remote_path")},
+	{"serial_log", "Listen to the serial console without typing (MiSTer Main's messages, kernel messages) for some seconds, or until a piece of text appears. Serial only.", obj(map[string]any{
+		"seconds": num("How long to listen (default 10, max 600)"),
+		"until":   str("Stop early when this text appears"),
+	})},
+	{"recent_output", "Return the last part of everything the serial console printed since connecting, including Main's output. Serial only.", obj(map[string]any{
+		"max_bytes": num("Default 20000"),
+	})},
+	{"reboot", "Reboot the MiSTer and return the full boot log (U-Boot, kernel, Main start), then log in again. Serial only. Nothing is typed until the login prompt, so the boot isn't interrupted.", obj(map[string]any{
+		"timeout_s": num("Seconds to wait for the login prompt (default 180)"),
+	})},
+	{"disconnect", "Close the connection (kernel messages and the terminal are put back the way they were). The next call reconnects.", obj(map[string]any{})},
+}
+
+type mcpServer struct {
+	sess *session
+	out  *json.Encoder
+	wmu  sync.Mutex
+}
+
+func runMCP(cfg Config) error {
+	log.SetOutput(os.Stderr)
+	log.SetPrefix("phosphor-link: ")
+	srv := &mcpServer{sess: &session{cfg: cfg}, out: json.NewEncoder(os.Stdout)}
+	defer srv.sess.close()
+	rd := bufio.NewReaderSize(os.Stdin, 1<<20)
+	var wg sync.WaitGroup
+	for {
+		line, err := rd.ReadBytes('\n')
+		if len(strings.TrimSpace(string(line))) > 0 {
+			var req rpcReq
+			if jerr := json.Unmarshal(line, &req); jerr != nil {
+				srv.send(rpcResp{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcErr{-32700, "parse error"}})
+			} else {
+				wg.Add(1)
+				go func() { defer wg.Done(); srv.handle(req) }()
+			}
+		}
+		if err == io.EOF {
+			wg.Wait()
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (m *mcpServer) send(r rpcResp) {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
+	_ = m.out.Encode(r)
+}
+
+func (m *mcpServer) handle(req rpcReq) {
+	if len(req.ID) == 0 {
+		return // a notification (initialized, cancelled): nothing to answer
+	}
+	reply := func(res any) { m.send(rpcResp{JSONRPC: "2.0", ID: req.ID, Result: res}) }
+	fail := func(code int, msg string) {
+		m.send(rpcResp{JSONRPC: "2.0", ID: req.ID, Error: &rpcErr{code, msg}})
+	}
+	switch req.Method {
+	case "initialize":
+		var p struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		_ = json.Unmarshal(req.Params, &p)
+		if p.ProtocolVersion == "" {
+			p.ProtocolVersion = "2025-06-18"
+		}
+		reply(map[string]any{
+			"protocolVersion": p.ProtocolVersion,
+			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]any{"name": "phosphor-link", "version": version},
+			"instructions": "Tools for a MiSTer FPGA (DE10-Nano, SuperStation One) reached through the SuperStation One dock's " +
+				"USB-C debug port (serial console) or SSH. Commands run as root. The SD card is /media/fat. " +
+				"Phosphor OS lives in /media/fat/phosphor; its diagnostics: bash /media/fat/phosphor/modules/diag/diag.sh",
+		})
+	case "ping":
+		reply(map[string]any{})
+	case "tools/list":
+		reply(map[string]any{"tools": tools})
+	case "tools/call":
+		var p struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			fail(-32602, "bad parameters")
+			return
+		}
+		text, isErr := m.call(p.Name, p.Arguments)
+		reply(map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": isErr})
+	default:
+		fail(-32601, "unknown method "+req.Method)
+	}
+}
+
+func argS(a map[string]any, k, def string) string {
+	if v, ok := a[k].(string); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+func argN(a map[string]any, k string, def float64) float64 {
+	if v, ok := a[k].(float64); ok && v > 0 {
+		return v
+	}
+	return def
+}
+
+func secs(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
+
+func (m *mcpServer) call(name string, a map[string]any) (string, bool) {
+	if a == nil {
+		a = map[string]any{}
+	}
+	if name == "list_ports" {
+		ps, err := listPorts()
+		if err != nil {
+			return err.Error(), true
+		}
+		return formatPorts(ps), false
+	}
+	if name == "disconnect" {
+		m.sess.drop()
+		return "disconnected", false
+	}
+	l, err := m.sess.get()
+	if err != nil {
+		return "Can't reach the MiSTer: " + err.Error(), true
+	}
+	text, isErr, broken := m.callOn(l, name, a)
+	if broken {
+		m.sess.drop()
+	}
+	return text, isErr
+}
+
+func (m *mcpServer) callOn(l Link, name string, a map[string]any) (text string, isErr, broken bool) {
+	errOut := func(err error) (string, bool, bool) {
+		// a timeout leaves the console usable; anything else (port gone, ssh dropped) reconnects next time
+		b := !strings.Contains(err.Error(), "timed out")
+		return err.Error(), true, b
+	}
+	switch name {
+	case "status":
+		out, _, err := l.Run(statusScript, 30*time.Second)
+		if err != nil {
+			return errOut(err)
+		}
+		return "connected by " + l.Name() + "\n" + out, false, false
+	case "run":
+		cmd := argS(a, "command", "")
+		if cmd == "" {
+			return "command is empty", true, false
+		}
+		out, rc, err := l.Run(cmd, secs(argN(a, "timeout_s", 120)))
+		if err != nil {
+			t, _, b := errOut(err)
+			return clip(out, maxText) + "\n[" + t + "]", true, b
+		}
+		return fmt.Sprintf("%s\n[exit %d]", clip(out, maxText), rc), rc != 0, false
+	case "push_file":
+		lp := argS(a, "local_path", "")
+		data, err := os.ReadFile(lp)
+		if err != nil {
+			return err.Error(), true, false
+		}
+		rp := argS(a, "remote_path", "")
+		if err := l.Push(data, rp, argS(a, "mode", "644")); err != nil {
+			return errOut(err)
+		}
+		return fmt.Sprintf("copied %s to %s (%d bytes, md5 checked)", lp, rp, len(data)), false, false
+	case "push_text":
+		rp := argS(a, "remote_path", "")
+		t, _ := a["text"].(string)
+		if err := l.Push([]byte(t), rp, argS(a, "mode", "644")); err != nil {
+			return errOut(err)
+		}
+		return fmt.Sprintf("wrote %s (%d bytes)", rp, len(t)), false, false
+	case "pull_file":
+		rp, lp := argS(a, "remote_path", ""), argS(a, "local_path", "")
+		data, err := l.Pull(rp)
+		if err != nil {
+			return errOut(err)
+		}
+		if dir := filepath.Dir(lp); dir != "" {
+			_ = os.MkdirAll(dir, 0755)
+		}
+		if err := os.WriteFile(lp, data, 0644); err != nil {
+			return err.Error(), true, false
+		}
+		return fmt.Sprintf("saved %s to %s (%d bytes, md5 checked)", rp, lp, len(data)), false, false
+	case "read_file":
+		data, err := l.Pull(argS(a, "remote_path", ""))
+		if err != nil {
+			return errOut(err)
+		}
+		mx := int(argN(a, "max_bytes", maxText))
+		if !utf8.Valid(data) {
+			return fmt.Sprintf("%d bytes of binary data; use pull_file to save it", len(data)), false, false
+		}
+		return clip(string(data), mx), false, false
+	case "serial_log":
+		li, ok := l.(Listener)
+		if !ok {
+			return errNotSerial.Error(), true, false
+		}
+		d := argN(a, "seconds", 10)
+		if d > 600 {
+			d = 600
+		}
+		out, err := li.Listen(secs(d), argS(a, "until", ""))
+		if err != nil {
+			return errOut(err)
+		}
+		if strings.TrimSpace(out) == "" {
+			return "(nothing printed)", false, false
+		}
+		return clip(out, maxText), false, false
+	case "recent_output":
+		li, ok := l.(Listener)
+		if !ok {
+			return errNotSerial.Error(), true, false
+		}
+		return li.Recent(int(argN(a, "max_bytes", 20000))), false, false
+	case "reboot":
+		rb, ok := l.(Rebooter)
+		if !ok {
+			return errNotSerial.Error(), true, false
+		}
+		out, err := rb.Reboot(secs(argN(a, "timeout_s", 180)))
+		if err != nil {
+			return clip(out, maxText) + "\n[" + err.Error() + "]", true, true
+		}
+		return clip(out, maxText), false, false
+	}
+	return "unknown tool " + name, true, false
+}
+
+const statusScript = `echo "MiSTer Linux: $(cat /MiSTer.version 2>/dev/null || echo unknown)"
+echo "kernel: $(uname -r)"
+echo "uptime: $(uptime)"
+echo "core: $(cat /tmp/CORENAME 2>/dev/null || echo none)"
+echo "Main: $(pidof MiSTer >/dev/null && echo running || echo not running)"
+df -h /media/fat 2>/dev/null | tail -n 1 | awk '{ print "SD card: " $4 " free of " $2 }'
+ip -4 -o addr show 2>/dev/null | awk '$2 != "lo" { print "address: " $2 " " $4 }'
+[ -d /media/fat/phosphor ] && echo "Phosphor: installed" || echo "Phosphor: not installed"
+`
+
+func formatPorts(ps []PortInfo) string {
+	if len(ps) == 0 {
+		return "no serial ports found"
+	}
+	var b strings.Builder
+	for _, p := range ps {
+		fmt.Fprintf(&b, "%s", p.Name)
+		if p.USB {
+			fmt.Fprintf(&b, "  USB %s:%s", p.VID, p.PID)
+			if p.Product != "" {
+				fmt.Fprintf(&b, "  %s", p.Product)
+			}
+			if p.Serial != "" {
+				fmt.Fprintf(&b, "  serial %s", p.Serial)
+			}
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
