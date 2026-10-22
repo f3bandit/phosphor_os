@@ -89,6 +89,8 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Systems → games: fast scrolling through ~300 SNES games; art loads after the selection settles.
 - [ ] Game details: JPEG covers (scraped) and PNG covers (imported) both show.
 - [ ] Y "Based on" picker: link a TLW Final Fantasy Tactics hack to FFT (USA) → art and description show.
+- [ ] Background textures on the TV: each one faint but visible, no seams, follows the accent colour;
+      scrolling as fast with a texture as without.
 - [ ] Settings: accent colour, clock, box art on/off with progress, Box art sources (order, on/off).
 - [ ] Settings → Diagnostics: runs, problems first, X saves a report.
 - [ ] Status bar: share, Ethernet, WiFi signal, Bluetooth count, clock (12/24 h).

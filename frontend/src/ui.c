@@ -14,6 +14,7 @@
 #include "log.h"
 #include "settings.h"
 #include "sysinfo.h"
+#include "texture.h"
 #include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -827,7 +828,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -841,6 +842,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	(void)dim;
 	switch (i) {
 	case SET_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
+	case SET_TEXTURE: snprintf(t, n, "Background texture"); snprintf(val, vn, "<  %s  >", texture_name((texture_t)SETTINGS.texture)); break;
 	case SET_CLOCK: snprintf(t, n, "Clock"); snprintf(val, vn, "<  %s  >", SETTINGS.clock24 ? "24-hour" : "12-hour"); break;
 	case SET_SCRAPE: {
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
@@ -882,6 +884,11 @@ static void settings_change(int dir)
 		ui_init(W, H);
 		show_settings();
 		set_list.sel = keep;
+		vlist_refresh(&set_list);
+	} else if (set_list.sel == SET_TEXTURE) {
+		SETTINGS.texture = (SETTINGS.texture + dir + TEX_COUNT) % TEX_COUNT;
+		settings_save();
+		texture_apply(root, (texture_t)SETTINGS.texture);
 		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_SCRAPE) {
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
@@ -1571,6 +1578,7 @@ void ui_init(int w, int h)
 		root = mk_box(scr, w, h, PAL.bg, 0);
 	}
 	lv_obj_set_style_bg_color(root, PAL.bg, 0);
+	texture_apply(root, (texture_t)SETTINGS.texture);    /* redrawn in the accent colour */
 	status_bar();
 	body = mk_box(root, w, h, PAL.bg, 0);
 	lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);

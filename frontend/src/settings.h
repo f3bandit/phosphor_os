@@ -8,6 +8,7 @@
 typedef struct {
 	int accent;
 	int clock24;
+	int texture;      /* background texture (texture.h), 0 = none */
 } settings_t;
 
 extern settings_t SETTINGS;
