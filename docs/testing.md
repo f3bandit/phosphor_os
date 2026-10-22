@@ -108,6 +108,11 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Y on the home screen → keyboard; type part of a name, Done → matching games from every system; a name
       with no match says so; B on the keyboard cancels.
 
+## 4d. About this system
+
+- [ ] Settings > About this system: versions match `phosphor.sh check`; MiSTer Linux matches `/MiSTer.version`;
+      SD card, USB/NVMe drives and a network share show with free space; the network address is right.
+
 ## 4c. Screensaver
 
 - [ ] Settings > Screensaver: Never / 5 / 10 / 20 / 30 minutes (left/right), kept after a restart.

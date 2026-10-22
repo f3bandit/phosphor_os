@@ -68,6 +68,8 @@ shell starts it if it isn't running.
 
   ![Favorites](docs/favorites.png)
 
+- **About this system** (Settings): Phosphor's and the library service's versions, which Main and menu core
+  run, MiSTer's Linux version and kernel, free space on the SD card and each drive, network address, uptime.
 - **Screensaver** (Settings): after 5, 10 (default), 20 or 30 idle minutes, or never, the screen goes dark
   with only a dim wordmark that moves every 20 s; any button wakes it without doing anything else.
 - **MiSTer menu and Restart** (Settings): hand the screen to MiSTer's own menu (Launch Phosphor in the
