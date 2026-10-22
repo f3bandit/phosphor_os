@@ -151,6 +151,30 @@ static void axis(dev_t_ *d, int code, int value, unsigned now)
 	if (dir > 0) press(pos, now);
 }
 
+/* front-port controllers: Cross confirms and Circle goes back (the PlayStation way), Square X,
+ * Triangle Y, Start the menu, the left stick moves like the D-pad */
+void input_pad(int port, unsigned b, int lx, int ly, int analog, unsigned now)
+{
+	static unsigned prev[2];
+	static const struct { int bit; pkey_t k; } M[] = {
+		{ 4, K_UP }, { 5, K_RIGHT }, { 6, K_DOWN }, { 7, K_LEFT }, { 14, K_A }, { 13, K_B }, { 15, K_X },
+		{ 12, K_Y }, { 3, K_MENU }, { 0, K_SELECT }, { 10, K_L }, { 11, K_R },
+	};
+	if (port < 0 || port > 1) return;
+	if (analog) {
+		if (lx < 48) b |= 1u << 7;
+		if (lx > 208) b |= 1u << 5;
+		if (ly < 48) b |= 1u << 4;
+		if (ly > 208) b |= 1u << 6;
+	}
+	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) {
+		unsigned bit = 1u << M[i].bit;
+		if ((b & bit) && !(prev[port] & bit)) press(M[i].k, now);
+		else if (!(b & bit) && (prev[port] & bit)) release(M[i].k);
+	}
+	prev[port] = b;
+}
+
 pkey_t input_poll(unsigned now)
 {
 	if (ino_fd >= 0) {

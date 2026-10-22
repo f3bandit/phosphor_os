@@ -26,6 +26,8 @@
 #include <time.h>
 #include <unistd.h>
 
+static void front_pads(uint32_t now);
+
 static uint32_t mono_ms(void)
 {
 	struct timespec ts;
@@ -168,6 +170,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			was_active = 1;
 			lv_obj_invalidate(lv_screen_active());
 		}
+		front_pads(now);
 		pkey_t k;
 		while ((k = input_poll(now)) != KEY_NONE_) ui_key(k);
 		ui_tick();
@@ -176,6 +179,42 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		usleep(wait * 1000);
 	}
 	return 0;
+}
+
+/* the controllers on the front ports (through phosphord and phosphor-main), 60 times a second while
+ * the setting is on; when the ports aren't there, look again every 5 s, and once ask phosphord to
+ * load the Phosphor menu core (stock menu core at boot) */
+static void front_pads(uint32_t now)
+{
+	static uint32_t next;
+	static int asked_load;
+	if (!SETTINGS.front_pads || (int32_t)(now - next) < 0) return;
+	cJSON *r = api_call("{\"cmd\":\"pads\"}");
+	if (!api_ok(r)) {
+		cJSON_Delete(r);
+		next = now + 5000;
+		if (!asked_load && mainlink_connected()) {
+			cJSON *p = api_call("{\"cmd\":\"ports\"}");
+			cJSON *pp = cJSON_GetObjectItem(p, "ports");
+			if (cJSON_IsTrue(cJSON_GetObjectItem(pp, "can_load"))) {
+				asked_load = 1;
+				plog("front ports: loading the Phosphor menu core");
+				cJSON_Delete(api_call("{\"cmd\":\"memcard\",\"do\":\"prepare\"}"));
+			}
+			cJSON_Delete(p);
+		}
+		for (int i = 0; i < 2; i++) input_pad(i, 0, 128, 128, 0, now);
+		return;
+	}
+	next = now + 16;
+	cJSON *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "pads")) {
+		int port = (int)api_num(it, "port", 0) - 1, id = (int)api_num(it, "id", 0);
+		int conn = cJSON_IsTrue(cJSON_GetObjectItem(it, "connected"));
+		input_pad(port, conn ? (unsigned)api_num(it, "buttons", 0) : 0, (int)api_num(it, "lx", 128), (int)api_num(it, "ly", 128),
+			conn && (id == 0x73 || id == 0x53), now);
+	}
+	cJSON_Delete(r);
 }
 
 int main(int argc, char **argv)

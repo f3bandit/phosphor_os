@@ -290,7 +290,13 @@ any other core puts the stock one back. Use a memory card whose saves are backed
       `/media/fat/phosphor/memcards/` and loads as a card in the PSX core (copy it to `saves/PSX/` to try).
 - [ ] Spare card: pick a backup → A (port 1) → it backs up the card first, then writes; the card works in a
       game afterwards. The backup made just before is in the list.
-- [ ] Leave the screen: about 20 s later `ports` (socat) says `"on":false`.
+- [ ] Leave the screen with "Use them to move around Phosphor" Off: about 20 s later `ports` (socat) says `"on":false`.
+- [ ] With it On (default): a PS1 controller in a front port moves around Phosphor (D-pad and left stick,
+      Cross confirm, Circle back, Square X, Triangle Y, Start = Settings, L1/R1 page); held directions repeat;
+      USB/BT controllers still work at the same time. Fresh boot: the shell loads the Phosphor menu core once
+      (MiSTer's menu shows for a moment).
+- [ ] With phosphor-main and the Phosphor menu core installed, leaving a game loads it instead of `menu.rbf`
+      (front ports work right away); deleting `phosphor/cores/menu_phosphor.rbf` brings the stock one back.
 
 ## 17. Safety checks (each time something is installed)
 
