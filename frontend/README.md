@@ -47,6 +47,12 @@ shell starts it if it isn't running.
   last change; "Other network..." for hidden ones.
 - **On-screen keyboard**: D-pad moves, A types, X deletes, Y switches letters / capitals / symbols,
   Start is done, B cancels.
+- **Welcome** (first start of a new install, no `frontend.ini` yet): network (opens WiFi), box art lookup
+  on/off, accent colour, pairing the phone app, cloud saves, then Start. Every step is optional and in
+  Settings later; existing installs never see it.
+
+  ![Welcome](docs/welcome.png)
+
 - **Cloud saves** (Settings): where saves go and when they were last sent; Send now; Get saves back (pick
   a MiSTer, see what would change, then A); storage places (add WebDAV, SFTP or SMB with the on-screen
   keyboard; Google Drive, Dropbox and OneDrive from the phone app); Check the connection.

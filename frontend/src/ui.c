@@ -21,7 +21,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -873,6 +873,16 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 }
 
 static void show_settings(void);
+static void show_welcome(void);
+static int in_setup;              /* the sub-screens go back to the welcome screen, not Settings */
+
+static void back_to_settings(int sel)
+{
+	if (in_setup) { show_welcome(); return; }
+	show_settings();
+	set_list.sel = sel;
+	vlist_refresh(&set_list);
+}
 
 static void settings_change(int dir)
 {
@@ -1464,9 +1474,7 @@ static void wifi_key(pkey_t k)
 		toast_show(api_ok(r) ? "Last WiFi change undone" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't undo"));
 		wifi_apply(r);
 	} else if (k == K_B || k == K_MENU) {
-		show_settings();
-		set_list.sel = SET_WIFI;
-		vlist_refresh(&set_list);
+		back_to_settings(SET_WIFI);
 	}
 }
 
@@ -1657,9 +1665,7 @@ static void remote_key(pkey_t k)
 		if (rem_list.sel >= rem_list.count) rem_list.sel = rem_list.count - 1;
 		vlist_refresh(&rem_list);
 	} else if (k == K_B || k == K_MENU) {
-		show_settings();
-		set_list.sel = SET_REMOTE;
-		vlist_refresh(&set_list);
+		back_to_settings(SET_REMOTE);
 	}
 }
 
@@ -1943,9 +1949,7 @@ static void cloud_key(pkey_t k)
 			cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 			return;
 		}
-		show_settings();
-		set_list.sel = SET_CLOUD;
-		vlist_refresh(&set_list);
+		back_to_settings(SET_CLOUD);
 		return;
 	}
 	if (k != K_A) return;
@@ -1988,6 +1992,97 @@ static void cloud_key(pkey_t k)
 	case 1: if (cl.remote[0]) cl_do("devices", NULL); else toast_show("Choose a storage place first"); break;
 	case 2: cl.mode = CL_PLACES; cl_list.sel = 0; cl_list.top = 0; cl_apply(api_call("{\"cmd\":\"cloud\"}")); break;
 	default: if (cl.remote[0]) cl_do("test", NULL); else toast_show("Choose a storage place first"); break;
+	}
+}
+
+/* ---------- Welcome (first start) ----------
+ * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
+ * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
+
+enum { WL_NET, WL_SCRAPE, WL_ACCENT, WL_PHONE, WL_CLOUD, WL_START, WL_COUNT };
+static vlist_t wl_list;
+static char wl_net[120];
+static int wl_scrape = -1;
+static const char *const WL_HINTS[] = { "A", "Choose", "\xE2\x86\x94", "Change", NULL };
+
+static void wl_refresh_net(void)
+{
+	sysinfo_t si;
+	sysinfo_read(&si);
+	cJSON *w = api_call("{\"cmd\":\"wifi\"}");
+	cJSON *st = w ? cJSON_GetObjectItem(w, "status") : NULL;
+	if (st && cJSON_IsTrue(cJSON_GetObjectItem(st, "connected")))
+		snprintf(wl_net, sizeof(wl_net), "WiFi: %s", api_str(st, "ssid") ? api_str(st, "ssid") : "connected");
+	else if (si.ethernet) snprintf(wl_net, sizeof(wl_net), "Ethernet connected");
+	else snprintf(wl_net, sizeof(wl_net), "Not connected");
+	cJSON_Delete(w);
+	cJSON *sc = api_call("{\"cmd\":\"scrape\"}");
+	wl_scrape = sc && api_ok(sc) ? cJSON_IsTrue(cJSON_GetObjectItem(sc, "on")) : -1;
+	cJSON_Delete(sc);
+}
+
+static void wl_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	switch (i) {
+	case WL_NET: snprintf(t, n, "Network"); snprintf(val, vn, "%s  >", wl_net); *dim = 0; break;
+	case WL_SCRAPE: snprintf(t, n, "Get box art and details from the internet"); snprintf(val, vn, "<  %s  >", wl_scrape > 0 ? "On" : "Off"); break;
+	case WL_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
+	case WL_PHONE: snprintf(t, n, "Phosphor app on your phone"); snprintf(val, vn, "optional  >"); break;
+	case WL_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, "optional  >"); break;
+	default: snprintf(t, n, "Start"); snprintf(val, vn, ">"); break;
+	}
+}
+
+static void show_welcome(void)
+{
+	cur = SCR_WELCOME;
+	in_setup = 1;
+	lv_obj_clean(body);
+	screen_title("WELCOME", "Let's set up Phosphor");
+	lv_obj_t *sub = mk_label(body, FONT_SMALL, PAL.dim, "A few things to choose; all of them can be changed later in Settings.");
+	lv_obj_set_pos(sub, S(56), S(186));
+	wl_refresh_net();
+	int keep = wl_list.sel;
+	vlist_create(&wl_list, body, S(56), S(224), S(900), S(380));
+	wl_list.fill = wl_fill;
+	wl_list.count = WL_COUNT;
+	wl_list.sel = keep < WL_COUNT ? keep : 0;
+	wl_list.top = 0;
+	vlist_refresh(&wl_list);
+	footer_set(WL_HINTS);
+}
+
+static void welcome_key(pkey_t k)
+{
+	if (vlist_key(&wl_list, k)) return;
+	int i = wl_list.sel;
+	int change = k == K_LEFT ? -1 : k == K_RIGHT ? 1 : k == K_A ? 1 : 0;
+	if (!change) return;
+	switch (i) {
+	case WL_NET: if (k == K_A) show_wifi(); break;
+	case WL_SCRAPE:
+		cJSON_Delete(api_call("{\"cmd\":\"scrape\",\"on\":%s}", wl_scrape > 0 ? "false" : "true"));
+		wl_refresh_net();
+		vlist_refresh(&wl_list);
+		break;
+	case WL_ACCENT: {
+		int a = ((int)theme_accent() + change + ACCENT_COUNT) % ACCENT_COUNT;
+		theme_set_accent((accent_t)a);
+		SETTINGS.accent = a;
+		settings_save();
+		lv_obj_clean(root);
+		ui_init(W, H);              /* everything picks up the new accent; ui_init shows the welcome again */
+		break;
+	}
+	case WL_PHONE: if (k == K_A) show_remote(); break;
+	case WL_CLOUD: if (k == K_A) show_cloud(); break;
+	default:
+		if (k != K_A) break;
+		SETTINGS.setup_done = 1;
+		settings_save();
+		in_setup = 0;
+		show_home();
+		break;
 	}
 }
 
@@ -2383,6 +2478,9 @@ void ui_key(pkey_t k)
 	case SCR_CLOUD:
 		cloud_key(k);
 		break;
+	case SCR_WELCOME:
+		welcome_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -2475,5 +2573,6 @@ void ui_init(int w, int h)
 	lv_obj_set_hidden(toast, true);
 
 	status_update();
-	show_home();
+	if (SETTINGS.setup_done) show_home();
+	else show_welcome();
 }

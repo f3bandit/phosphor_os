@@ -21,6 +21,7 @@ void settings_load(void)
 	char p[512], line[1400];
 	path(p, sizeof(p));
 	FILE *f = fopen(p, "r");
+	SETTINGS.setup_done = f != NULL;     /* no settings yet: a new install, show the welcome */
 	if (!f) return;
 	while (fgets(line, sizeof(line), f)) {
 		line[strcspn(line, "\r\n")] = 0;
@@ -31,6 +32,7 @@ void settings_load(void)
 		if (!strcmp(k, "accent")) SETTINGS.accent = atoi(v);
 		else if (!strcmp(k, "clock24")) SETTINGS.clock24 = atoi(v);
 		else if (!strcmp(k, "texture")) SETTINGS.texture = atoi(v);
+		else if (!strcmp(k, "setup_done")) SETTINGS.setup_done = atoi(v);
 	}
 	fclose(f);
 }
@@ -52,7 +54,7 @@ void settings_save(void)
 	snprintf(tmp, sizeof(tmp), "%s.tmp", p);
 	FILE *f = fopen(tmp, "w");
 	if (!f) { plog("can't write %s", p); return; }
-	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\n", SETTINGS.accent, SETTINGS.clock24, SETTINGS.texture);
+	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\n", SETTINGS.accent, SETTINGS.clock24, SETTINGS.texture, SETTINGS.setup_done);
 	fclose(f);
 	rename(tmp, p);
 }

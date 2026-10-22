@@ -3,12 +3,13 @@
 #ifndef PHOS_SETTINGS_H
 #define PHOS_SETTINGS_H
 
-#define PHOS_VERSION "0.9.0"
+#define PHOS_VERSION "0.9.1"
 
 typedef struct {
 	int accent;
 	int clock24;
 	int texture;      /* background texture (texture.h), 0 = none */
+	int setup_done;   /* first-start setup finished (a new card shows it; existing installs don't) */
 } settings_t;
 
 extern settings_t SETTINGS;
