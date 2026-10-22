@@ -1,10 +1,10 @@
 # Phosphor system service
 
 `phosphord` owns Phosphor's data: the game library, artwork, play history and favourites. The
-shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
-folders themselves. `phos` talks to it from the command line.
+shell (frontend) and the phone app ask it for everything; neither scans folders itself. `phos` talks to
+it from the command line.
 
-## What it does (0.10.0)
+## What it does (0.12.4)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the
