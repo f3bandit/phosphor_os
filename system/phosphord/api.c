@@ -734,7 +734,7 @@ static char *cmd_set_art(sqlite3 *db, cJSON *req)
 /* values passed to a module script as arguments: never something it could read as an option */
 static int arg_ok(const char *v)
 {
-	return !v || (*v && *v != '-' && !strchr(v, '\n') && strlen(v) < 256);
+	return !v || (*v && *v != '-' && !strpbrk(v, "\n\r\"\\") && strlen(v) < 256);
 }
 
 /* cloud saves (cloud-sync module): status, storage places, and one background job at a time */
@@ -764,12 +764,24 @@ static char *cmd_cloud(cJSON *req)
 		} else if (!strcmp(d, "add")) {
 			const char *type = cJSON_GetStringValue(cJSON_GetObjectItem(req, "type"));
 			if (!name || !*name || !type || !*type) return fail("name and type needed");
+			/* real storage only (never local/alias/union...), and no settings that run a program or read a file */
+			static const char *TYPES[] = { "webdav", "sftp", "smb", "ftp", "drive", "dropbox", "onedrive", "box", "pcloud", "s3", "b2",
+			                               "swift", "mega", "koofr", "seafile", "jottacloud", "hidrive", "yandex", "zoho", "putio",
+			                               "premiumizeme", "sharefile", "googlephotos", NULL };
+			int tok = 0;
+			for (int i = 0; TYPES[i]; i++) if (!strcmp(type, TYPES[i])) tok = 1;
+			if (!tok) return fail("that storage type isn't supported");
 			args[a++] = name;
 			args[a++] = type;
 			cJSON *it, *set = cJSON_GetObjectItem(req, "settings");
 			cJSON_ArrayForEach(it, set) {
 				if (!cJSON_IsString(it) || k >= 20 || a >= 22) continue;
 				if (!it->string[0] || strspn(it->string, "abcdefghijklmnopqrstuvwxyz_0123456789") != strlen(it->string)) return fail("bad setting name");
+				size_t kl = strlen(it->string);
+				if (!strcmp(it->string, "ssh") || !strcmp(it->string, "config") || !strcmp(it->string, "env_auth") || strstr(it->string, "command") ||
+				    (kl > 5 && !strcmp(it->string + kl - 5, "_file")) || (kl > 5 && !strcmp(it->string + kl - 5, "_exec")))
+					return fail("that setting isn't allowed");
+				if (strpbrk(it->valuestring, "\n\r")) return fail("settings are one line each");
 				snprintf(store[k], sizeof(store[k]), "%s=%s", it->string, it->valuestring);
 				args[a++] = store[k++];
 			}
