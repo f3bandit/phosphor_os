@@ -25,6 +25,9 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/kd.h>
 
 static void front_pads(uint32_t now);
 
@@ -126,6 +129,22 @@ static int menu_active(void)
 	return !name[0] || !strcmp(name, "MENU");
 }
 
+/* The Linux console (the login prompt on tty1, kernel messages) draws on the same framebuffer:
+ * switch the shown console to graphics mode so only the shell draws there. Again after Main gives
+ * the screen back to us, since it switches consoles itself. */
+static void console_quiet(void)
+{
+	const char *ttys[] = { "/dev/tty0", "/dev/tty1", NULL };
+	for (int i = 0; ttys[i]; i++) {
+		int fd = open(ttys[i], O_RDWR | O_CLOEXEC);
+		if (fd < 0) continue;
+		if (ioctl(fd, KDSETMODE, KD_GRAPHICS) < 0) plog("console: %s stays in text mode", ttys[i]);
+		close(fd);
+	}
+	int f = open("/sys/class/graphics/fbcon/cursor_blink", O_WRONLY | O_CLOEXEC);
+	if (f >= 0) { if (write(f, "0", 1) < 0) {} close(f); }
+}
+
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
 	lv_tick_set_cb(mono_ms);
@@ -140,6 +159,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
 		usleep(300000);
 	}
+	console_quiet();
 	lv_display_t *d = lv_linux_fbdev_create();
 	if (!d) { plog("can't create the framebuffer display"); return 1; }
 	lv_linux_fbdev_set_file(d, fbdev);
@@ -155,6 +175,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			char cmd[64], err[256];
 			snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
 			if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
+			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 		}
 		int active = menu_active() && !mainlink_hidden();
@@ -169,6 +190,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		if (!was_active) {
 			plog("back in the menu");
 			was_active = 1;
+			console_quiet();
 			ui_activity();
 			lv_obj_invalidate(lv_screen_active());
 		}
