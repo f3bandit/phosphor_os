@@ -68,10 +68,24 @@ thing and no client scans folders itself.
 - **Indexer.** Runs in the background at start and whenever the mount table changes (a USB drive or
   the share appears or goes). Uses size and modified time, so unchanged files are never re-read.
   Files on a drive that's away are marked offline, not forgotten.
-- **Artwork store**: `/media/fat/phosphor/data/art/<system>/<game key>/` with `box.png` (and later
+- **Artwork store**: `/media/fat/phosphor/data/art/<system>/<game key>/` with `box.jpg` (and later
   screenshot, title, logo), stored pre-sized so the ARM side never decodes a huge image.
-- **Scraper**: a background job queue. Sources: libretro thumbnails (no account), ScreenScraper
-  (your account), TheGamesDB. Matched by content identity, cached, works offline afterwards.
+- **Scraper** (phosphord 0.3): a background queue, only while the menu is up, one game at a time,
+  turned on in Settings ("Get box art and details"). Source: libretro, no account needed:
+  - each system's official list (No-Intro for cartridges, Redump for discs) and its details lists
+    (developer, publisher, genre, year, players; PlayStation also has descriptions) are fetched once
+    and kept in the library database;
+  - games are matched by content only: CRC32 for cartridges, product code (+ size) for discs. Redump
+    writes some codes with a letter or several codes per disc, so a code contained in an entry with
+    the same size also matches;
+  - box art from libretro's thumbnails by the official name, stored as 512 px JPEG (~60 KB);
+  - only empty fields are filled: imported or hand-set details win. The title stays the file name;
+    the official name is kept separately;
+  - skipped: games linked to a base game, unidentified games (.chd, discs without a product code),
+    and games already looked up. Not found = left alone (link it with "Based on"), no guessing.
+  - downloads use curl (on MiSTer's Linux) with its certificate bundle. Network trouble pauses it
+    for a few minutes without marking anything.
+  Descriptions for cartridge systems need another source (ScreenScraper or TheGamesDB): not chosen yet.
 - **Importers, run once on request**: bring an existing `gamelist.xml` / Console Mode `media/` art
   into the library when someone moves to Phosphor. After that, only Phosphor's data is read.
 - **Launching** goes through phosphord: it writes the MGL, asks Main to load it and records the

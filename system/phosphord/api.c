@@ -14,7 +14,10 @@
  *   import                                  one-time import of gamelist.xml / media art
  *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
  *   unlink     id                           not based on another game any more
- *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}] */
+ *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
+ *   scrape     [on]                         box art and details: turn on/off; replies on, running,
+ *                                           pending, found, not_found, status
+ *   rescrape   id                           look this game up again */
 #include "api.h"
 #include "art.h"
 #include "cJSON.h"
@@ -24,12 +27,13 @@
 #include "log.h"
 #include "indexer.h"
 #include "play.h"
+#include "scraper.h"
 #include "systems.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define PHOSD_VERSION "0.2.0"
+#define PHOSD_VERSION "0.3.0"
 
 /* games with at least one file that's here right now */
 #define VISIBLE "EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)"
@@ -78,6 +82,7 @@ static const char *scrape_state(sqlite3_stmt *st, int based_col, int key_col, in
 	const char *key = (const char *)sqlite3_column_text(st, key_col);
 	const char *sc = (const char *)sqlite3_column_text(st, scrape_col);
 	if (sc && !strcmp(sc, "miss")) return "not_found";                           /* looked up, unknown: no art */
+	if (sc && !strcmp(sc, "done")) return "found";
 	if (!key || !strncmp(key, "n:", 2)) return "unidentified";                   /* not hashed (yet), or a .chd */
 	return "ready";
 }
@@ -92,7 +97,7 @@ static cJSON *game_json(sqlite3 *db, long long id)
 	        " IFNULL(g.genre, b.genre), IFNULL(g.players, b.players), IFNULL(g.description, b.description),"
 	        " IFNULL(g.art_box, b.art_box),"
 	        " g.favorite, g.play_count, g.play_seconds, g.last_played, IFNULL(g.region, b.region),"
-	        " g.based_on, b.title, g.key, g.scrape"
+	        " g.based_on, b.title, g.key, g.scrape, IFNULL(g.ref_name, b.ref_name)"
 	        " FROM games g LEFT JOIN games b ON b.id = g.based_on WHERE g.id=?", -1, &st, NULL) != SQLITE_OK)
 		return NULL;
 	sqlite3_bind_int64(st, 1, id);
@@ -131,6 +136,7 @@ static cJSON *game_json(sqlite3 *db, long long id)
 		cJSON_AddNullToObject(g, "based_on");
 	}
 	cJSON_AddStringToObject(g, "scrape", scrape_state(st, 15, 17, 18));
+	add_text(g, "official_name", st, 19);
 	sqlite3_finalize(st);
 
 	cJSON *files = cJSON_AddArrayToObject(g, "files");
@@ -412,6 +418,22 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "link")) out = cmd_link(db, req);
 	else if (!strcmp(c->valuestring, "unlink")) out = cmd_unlink(db, req);
 	else if (!strcmp(c->valuestring, "candidates")) out = cmd_candidates(db, req);
+	else if (!strcmp(c->valuestring, "scrape")) {
+		cJSON *on = cJSON_GetObjectItem(req, "on");
+		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
+		scrape_info_t si;
+		scraper_info(db, &si);
+		cJSON *o = ok();
+		cJSON_AddBoolToObject(o, "on", si.on);
+		cJSON_AddBoolToObject(o, "running", si.running);
+		cJSON_AddNumberToObject(o, "pending", si.pending);
+		cJSON_AddNumberToObject(o, "found", si.done);
+		cJSON_AddNumberToObject(o, "not_found", si.missing);
+		cJSON_AddStringToObject(o, "status", si.status);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "rescrape")) {
+		out = scraper_retry(db, req_id(req)) == 0 ? reply(ok()) : fail("no such game");
+	}
 	else if (!strcmp(c->valuestring, "launch")) {
 		char err[300];
 		out = play_launch(db, req_id(req), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);

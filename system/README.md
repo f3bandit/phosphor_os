@@ -4,7 +4,7 @@
 shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
 folders themselves. `phos` talks to it from the command line.
 
-## What it does (0.2.0)
+## What it does (0.3.0)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the
@@ -17,7 +17,11 @@ folders themselves. `phos` talks to it from the command line.
   game; renamed or moved files keep their history and links.
 - **Based on**: a hack, mod or translation can point to its base game and then shows the base's
   art and details under its own name. Suggestions rank the system's games by title likeness.
-- **Artwork store** in `/media/fat/phosphor/data/art/<system>/<game>/box.png`, scaled down to
+- **Box art and details** from libretro (no account), in the background while the menu is up, when
+  turned on: official No-Intro/Redump lists matched by CRC32 / product code, covers from libretro's
+  thumbnails, developer/publisher/genre/year/players (and PlayStation descriptions). Only empty
+  fields are filled; linked, unidentified and already looked up games are skipped.
+- **Artwork store** in `/media/fat/phosphor/data/art/<system>/<game>/box.jpg`, scaled down to
   512 px when stored so the shell never decodes a huge scan.
 - **Import** (`phos import`, run once on request): reads `gamelist.xml` and Console Mode-style
   `media/` folders in the games folders, fills only empty fields (title, description, year,
@@ -28,9 +32,8 @@ folders themselves. `phos` talks to it from the command line.
 - **API** on `/tmp/phosphor/phosphord.sock`: one JSON request per line, one JSON reply per line.
   Sleeps in `poll()`; wakes every 2 s only to keep play time.
 
-Next: the scraper (libretro thumbnails, ScreenScraper, TheGamesDB) as a background queue, using
-the identities and the `scrape` state (it skips linked and unrecognised games); product codes from
-inside .chd files.
+Next: descriptions for cartridge systems (ScreenScraper or TheGamesDB), product codes from inside
+.chd files.
 
 ## API
 
@@ -40,10 +43,12 @@ inside .chd files.
 | `{"cmd":"categories"}` | `[{id, name, games}]` |
 | `{"cmd":"systems", "category":1, "all":false}` | `[{id, name, category, games, core}]` |
 | `{"cmd":"games", "system":"SNES", "offset":0, "limit":100}` | `{total, games:[{id, title, favorite, linked}]}` in natural order |
-| `{"cmd":"game", "id":3}` | title, details, art (the base game's where it has none), play history, `based_on` `{id, title}`, `scrape`, files with CRC32 and serial |
+| `{"cmd":"game", "id":3}` | title, details, art (the base game's where it has none), play history, `based_on` `{id, title}`, `scrape` (ready, found, not_found, linked, unidentified), `official_name`, files with CRC32 and serial |
 | `{"cmd":"link", "id":3, "base":7}` | game 3 is based on game 7 (same system); replies with the game |
 | `{"cmd":"unlink", "id":3}` | not based on another game any more |
 | `{"cmd":"candidates", "id":3, "q":"mario", "limit":200}` | games 3 could be based on, most alike first: `{total, current, games:[{id, title, score}]}` |
+| `{"cmd":"scrape", "on":true}` | box art and details on/off (`on` optional): `{on, running, pending, found, not_found, status}` |
+| `{"cmd":"rescrape", "id":3}` | look game 3 up again |
 | `{"cmd":"last"}` | the last game played, or null |
 | `{"cmd":"launch", "id":3}` | starts it |
 | `{"cmd":"favorite", "id":3, "on":true}` | |

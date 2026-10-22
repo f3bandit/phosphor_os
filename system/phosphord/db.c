@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCHEMA_VERSION 2
+#define SCHEMA_VERSION 3
 
 static const char *SCHEMA =
 	"CREATE TABLE IF NOT EXISTS systems ("
@@ -52,6 +52,18 @@ static const char *MIGRATE_2 =
 	"ALTER TABLE games ADD COLUMN scrape TEXT;"
 	"CREATE INDEX IF NOT EXISTS games_based_on ON games(based_on);"
 	"CREATE INDEX IF NOT EXISTS files_ident ON files(ident, online);";
+
+/* 3: libretro's game lists (official names, details) and which entry a game matched */
+static const char *MIGRATE_3 =
+	"CREATE TABLE IF NOT EXISTS ref ("
+	"  id INTEGER PRIMARY KEY, lrsys TEXT NOT NULL, name TEXT NOT NULL, crc TEXT, serial TEXT, size INTEGER,"
+	"  description TEXT, developer TEXT, publisher TEXT, genre TEXT, year TEXT, players TEXT);"
+	"CREATE INDEX IF NOT EXISTS ref_crc ON ref(crc);"
+	"CREATE INDEX IF NOT EXISTS ref_serial ON ref(serial);"
+	"CREATE INDEX IF NOT EXISTS ref_name ON ref(lrsys, name);"
+	"ALTER TABLE games ADD COLUMN ref_id INTEGER;"
+	"ALTER TABLE games ADD COLUMN ref_name TEXT;"
+	"CREATE INDEX IF NOT EXISTS games_scrape ON games(scrape);";
 
 /* natural order: "Quest 2" before "Quest 10"; case doesn't matter */
 int natcmp(const char *a, const char *b)
@@ -154,6 +166,7 @@ sqlite3 *db_open(void)
 	if (ver < SCHEMA_VERSION) {
 		if (ver < 1 && db_exec(db, SCHEMA) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		if (ver < 2 && db_exec(db, MIGRATE_2) != SQLITE_OK) { sqlite3_close(db); return NULL; }
+		if (ver < 3 && db_exec(db, MIGRATE_3) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		char v[64];
 		snprintf(v, sizeof(v), "PRAGMA user_version=%d", SCHEMA_VERSION);
 		db_exec(db, v);

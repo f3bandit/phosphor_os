@@ -823,7 +823,14 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_ACCENT, SET_CLOCK, SET_RESCAN, SET_ABOUT, SET_COUNT };
+enum { SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_RESCAN, SET_ABOUT, SET_COUNT };
+static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
+
+static void scrape_refresh(void)
+{
+	cJSON_Delete(scrape_state);
+	scrape_state = api_call("{\"cmd\":\"scrape\"}");
+}
 
 static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
@@ -831,6 +838,23 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	switch (i) {
 	case SET_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
 	case SET_CLOCK: snprintf(t, n, "Clock"); snprintf(val, vn, "<  %s  >", SETTINGS.clock24 ? "24-hour" : "12-hour"); break;
+	case SET_SCRAPE: {
+		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
+		snprintf(t, n, "Get box art and details");
+		snprintf(val, vn, "<  %s  >", on ? "On" : "Off");
+		break;
+	}
+	case SET_SCRAPE_INFO: {
+		*dim = 1;
+		if (!api_ok(scrape_state)) { snprintf(t, n, "Box art: phosphord isn't answering"); break; }
+		int found = (int)api_num(scrape_state, "found", 0), nf = (int)api_num(scrape_state, "not_found", 0);
+		int pend = (int)api_num(scrape_state, "pending", 0);
+		const char *st = api_str(scrape_state, "status");
+		snprintf(t, n, "%s", st ? st : "");
+		if (pend) snprintf(val, vn, "%d found  \xC2\xB7  %d to go", found, pend);
+		else snprintf(val, vn, "%d found  \xC2\xB7  %d not found", found, nf);
+		break;
+	}
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_ABOUT: snprintf(t, n, "Phosphor"); snprintf(val, vn, "%s", PHOS_VERSION); break;
 	}
@@ -852,6 +876,11 @@ static void settings_change(int dir)
 		show_settings();
 		set_list.sel = keep;
 		vlist_refresh(&set_list);
+	} else if (set_list.sel == SET_SCRAPE) {
+		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
+		cJSON_Delete(scrape_state);
+		scrape_state = api_call("{\"cmd\":\"scrape\",\"on\":%s}", on ? "false" : "true");
+		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_CLOCK) {
 		SETTINGS.clock24 = !SETTINGS.clock24;
 		settings_save();
@@ -863,6 +892,7 @@ static void settings_change(int dir)
 static void show_settings(void)
 {
 	cur = SCR_SETTINGS;
+	scrape_refresh();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Settings");
 	vlist_create(&set_list, body, S(56), S(176), S(760), S(440));
@@ -933,6 +963,7 @@ void ui_tick(void)
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
+		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
 		cJSON *r = api_call("{\"cmd\":\"status\"}");
 		int g = r ? (int)api_num(r, "generation", -1) : -1;
 		cJSON_Delete(r);

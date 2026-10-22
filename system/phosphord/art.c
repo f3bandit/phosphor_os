@@ -1,7 +1,7 @@
 /* phosphord: the artwork store.
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  *
- * data/art/<system>/<game folder>/box.png. Images are scaled down once, when they're stored, so
+ * data/art/<system>/<game folder>/box.jpg. Images are scaled down once, when they're stored, so
  * the shell never has to decode a 2000-pixel scan on the ARM. The game folder name is the game's
  * identity key made file-system safe, so it stays the same when files move between drives. */
 #include "art.h"
@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_HDR
@@ -79,17 +80,29 @@ int art_store_box(const char *system_id, const char *game_key, const char *src, 
 		if (!s) return -1;
 		px = s;
 	}
+	/* JPEG: a 512 px cover is ~60 KB instead of ~500 KB as PNG (a whole library: ~100 MB, not ~1 GB).
+	 * Transparent edges are laid on the shell's dark panel colour first. */
+	for (long i = 0; i < (long)nw * nh; i++) {
+		unsigned char *p = px + i * 4;
+		int a = p[3];
+		if (a == 255) continue;
+		static const int bg[3] = { 24, 24, 28 };
+		for (int c = 0; c < 3; c++) p[c] = (unsigned char)((p[c] * a + bg[c] * (255 - a)) / 255);
+		p[3] = 255;
+	}
 	char folder[300], dir[1024], out[1100];
 	safe_name(game_key, folder, sizeof(folder));
-	snprintf(rel, reln, "%s/%s/box.png", system_id, folder);
+	snprintf(rel, reln, "%s/%s/box.jpg", system_id, folder);
 	snprintf(dir, sizeof(dir), "%s/art/%s/%s", p_data(), system_id, folder);
 	mkdirs(dir);
-	snprintf(out, sizeof(out), "%s/box.png.tmp", dir);
-	int ok = stbi_write_png(out, nw, nh, 4, px, nw * 4);
+	snprintf(out, sizeof(out), "%s/box.jpg.tmp", dir);
+	int ok = stbi_write_jpg(out, nw, nh, 4, px, 85);
 	free(px);
 	if (!ok) { plog("art: can't write %s", out); return -1; }
 	char final_[1100];
-	snprintf(final_, sizeof(final_), "%s/box.png", dir);
+	snprintf(final_, sizeof(final_), "%s/box.jpg", dir);
 	rename(out, final_);
+	snprintf(final_, sizeof(final_), "%s/box.png", dir);
+	unlink(final_);                                  /* from an earlier version */
 	return 0;
 }
