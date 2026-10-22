@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCHEMA_VERSION 1
+#define SCHEMA_VERSION 2
 
 static const char *SCHEMA =
 	"CREATE TABLE IF NOT EXISTS systems ("
@@ -43,6 +43,15 @@ static const char *SCHEMA =
 	"CREATE INDEX IF NOT EXISTS files_root ON files(root);"
 	"CREATE INDEX IF NOT EXISTS games_system ON games(system_id);"
 	"CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);";
+
+/* 2: identity work done per file; a game can be "based on" another (a hack, a mod, a translation)
+ * and then borrows its art and details; scrape remembers a lookup that found nothing */
+static const char *MIGRATE_2 =
+	"ALTER TABLE files ADD COLUMN ident INTEGER NOT NULL DEFAULT 0;"
+	"ALTER TABLE games ADD COLUMN based_on INTEGER REFERENCES games(id) ON DELETE SET NULL;"
+	"ALTER TABLE games ADD COLUMN scrape TEXT;"
+	"CREATE INDEX IF NOT EXISTS games_based_on ON games(based_on);"
+	"CREATE INDEX IF NOT EXISTS files_ident ON files(ident, online);";
 
 /* natural order: "Quest 2" before "Quest 10"; case doesn't matter */
 int natcmp(const char *a, const char *b)
@@ -143,7 +152,8 @@ sqlite3 *db_open(void)
 		sqlite3_finalize(st);
 	}
 	if (ver < SCHEMA_VERSION) {
-		if (db_exec(db, SCHEMA) != SQLITE_OK) { sqlite3_close(db); return NULL; }
+		if (ver < 1 && db_exec(db, SCHEMA) != SQLITE_OK) { sqlite3_close(db); return NULL; }
+		if (ver < 2 && db_exec(db, MIGRATE_2) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		char v[64];
 		snprintf(v, sizeof(v), "PRAGMA user_version=%d", SCHEMA_VERSION);
 		db_exec(db, v);

@@ -5,6 +5,7 @@
  *   status bar (wordmark, share/ethernet/WiFi/Bluetooth, clock)
  *   Home: category shelf + "pick up where you left off"
  *   Systems in a category -> games of a system (virtual list + details)
+ *     Y: "Based on" picker, for a hack/mod/translation to use its original's art and description
  *   Settings (Menu button)
  *   footer: what the buttons do here */
 #include "ui.h"
@@ -488,7 +489,7 @@ static void show_systems(category_t c)
 
 /* ---------- Games of a system ---------- */
 
-typedef struct { long long id; char *title; } game_item_t;
+typedef struct { long long id; char *title; int linked; } game_item_t;
 static game_item_t *games;
 static int ngames;
 static char games_sys[24];
@@ -520,6 +521,7 @@ static void load_games(const char *sys)
 		cJSON_ArrayForEach(it, arr) {
 			games[ngames].id = (long long)api_num(it, "id", -1);
 			games[ngames].title = strdup(api_str(it, "title") ? api_str(it, "title") : "");
+			games[ngames].linked = cJSON_IsTrue(cJSON_GetObjectItem(it, "linked"));
 			ngames++;
 		}
 	}
@@ -568,9 +570,14 @@ static void game_detail(void)
 	const cJSON *d = detail;
 	lv_label_set_text(g_title, d && api_str(d, "title") ? api_str(d, "title") : g->title);
 
-	/* 1997 · Publisher · 1-2 players · Genre */
-	char info[256] = "", players[32] = "";
-	const char *parts[4] = { NULL };
+	/* Based on X · 1997 · Publisher · 1-2 players · Genre */
+	char info[400] = "", players[32] = "", based[300] = "";
+	const char *parts[5] = { NULL };
+	cJSON *bo = d ? cJSON_GetObjectItem(d, "based_on") : NULL;
+	if (cJSON_IsObject(bo) && api_str(bo, "title")) {
+		snprintf(based, sizeof(based), "Based on %s", api_str(bo, "title"));
+		parts[4] = based;
+	}
 	if (d) {
 		parts[0] = api_str(d, "year");
 		parts[1] = api_str(d, "publisher") ? api_str(d, "publisher") : api_str(d, "developer");
@@ -578,7 +585,9 @@ static void game_detail(void)
 		if (pl) { snprintf(players, sizeof(players), "%s player%s", pl, strcmp(pl, "1") ? "s" : ""); parts[2] = players; }
 		parts[3] = api_str(d, "genre");
 	}
-	for (int i = 0; i < 4; i++) {
+	static const int order[5] = { 4, 0, 1, 2, 3 };
+	for (int o = 0; o < 5; o++) {
+		int i = order[o];
 		if (!parts[i] || !*parts[i]) continue;
 		if (info[0]) strncat(info, "  \xC2\xB7  ", sizeof(info) - strlen(info) - 1);
 		strncat(info, parts[i], sizeof(info) - strlen(info) - 1);
@@ -610,6 +619,8 @@ static void game_detail(void)
 	art_timer = lv_timer_create(art_load, 120, NULL);
 	lv_timer_set_repeat_count(art_timer, 1);
 }
+
+static void games_hints(void);
 
 static void show_games(const char *sys_id, const char *sys_name, int cat)
 {
@@ -679,8 +690,134 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 
 	vlist_refresh(&game_list);
 	game_detail();
-	static const char *const hints[] = { "A", "Play", "B", "Back", "L", "Page up", "R", "Page down", NULL };
+	games_hints();
+}
+
+static void games_hints(void)
+{
+	static const char *const hints[] = { "A", "Play", "B", "Back", "Y", "Based on", "L", "Page up", "R", "Page down", NULL };
 	footer_set(hints);
+}
+
+/* ---------- "Based on" picker ----------
+ * A hack, mod or translation can point at the game it was made from, and then shows that game's
+ * box art and description under its own name. Most alike titles come first. */
+
+typedef struct { long long id; char *title; } pick_item_t;
+static pick_item_t *picks;
+static int npicks, pick_unlink;         /* pick_unlink: row 0 is "Not based on another game" */
+static long long pick_current = -1;
+static lv_obj_t *pick_panel;
+static vlist_t pick_list;
+
+static void picker_free(void)
+{
+	for (int i = 0; i < npicks; i++) free(picks[i].title);
+	free(picks);
+	picks = NULL;
+	npicks = 0;
+}
+
+static void pick_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	if (pick_unlink && i == 0) { snprintf(t, n, "Not based on another game"); *dim = 1; return; }
+	pick_item_t *p = &picks[i - pick_unlink];
+	snprintf(t, n, "%s", p->title);
+	if (p->id == pick_current) snprintf(val, vn, "current");
+}
+
+static int picker_open(void) { return pick_panel != NULL; }
+
+static void picker_close(void)
+{
+	if (pick_panel) lv_obj_delete(pick_panel);
+	pick_panel = NULL;
+	picker_free();
+	games_hints();
+}
+
+static void picker_show(void)
+{
+	if (!ngames) return;
+	game_item_t *g = &games[game_list.sel];
+	cJSON *r = api_call("{\"cmd\":\"candidates\",\"id\":%lld,\"limit\":500}", g->id);
+	if (!api_ok(r)) { cJSON_Delete(r); toast_show("Couldn't load the game list"); return; }
+	picker_free();
+	cJSON *arr = cJSON_GetObjectItem(r, "games");
+	int n = cJSON_GetArraySize(arr);
+	picks = calloc((size_t)(n ? n : 1), sizeof(*picks));
+	cJSON *it;
+	cJSON_ArrayForEach(it, arr) {
+		picks[npicks].id = (long long)api_num(it, "id", -1);
+		picks[npicks].title = strdup(api_str(it, "title") ? api_str(it, "title") : "");
+		npicks++;
+	}
+	pick_current = (long long)api_num(r, "current", -1);
+	pick_unlink = pick_current >= 0;
+	cJSON_Delete(r);
+	if (!npicks && !pick_unlink) { picker_free(); toast_show("No other games for this system yet"); return; }
+
+	int pw = S(760), ph = S(560), pad = S(30);
+	pick_panel = mk_box(root, pw, ph, PAL.panel, S(18));
+	lv_obj_set_style_border_width(pick_panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(pick_panel, PAL.acc, 0);
+	lv_obj_set_style_shadow_width(pick_panel, S(40), 0);
+	lv_obj_set_style_shadow_color(pick_panel, lv_color_black(), 0);
+	lv_obj_set_style_shadow_opa(pick_panel, LV_OPA_60, 0);
+	lv_obj_align(pick_panel, LV_ALIGN_CENTER, 0, -S(10));
+	lv_obj_t *h = mk_label(pick_panel, FONT_TITLE, PAL.text, "Based on");
+	lv_obj_set_pos(h, pad, pad);
+	char sub[400];
+	snprintf(sub, sizeof(sub), "Pick the game \"%s\" was made from. It will use that game's box art and description, and keep its own name.", g->title);
+	lv_obj_t *sl = mk_label(pick_panel, FONT_SMALL, PAL.dim, sub);
+	lv_label_set_long_mode(sl, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(sl, pw - 2 * pad);
+	lv_obj_set_pos(sl, pad, pad + S(40));
+	vlist_create(&pick_list, pick_panel, pad - S(6), pad + S(104), pw - 2 * pad + S(12), ph - pad - S(104) - S(20));
+	pick_list.count = npicks + pick_unlink;
+	pick_list.fill = pick_fill;
+	pick_list.top = 0;
+	pick_list.sel = pick_unlink ? 1 : 0;              /* start on the most alike game */
+	if (pick_unlink && npicks)
+		for (int i = 0; i < npicks; i++) if (picks[i].id == pick_current) pick_list.sel = i + 1;
+	if (pick_list.sel >= pick_list.count) pick_list.sel = 0;
+	vlist_refresh(&pick_list);
+	lv_obj_move_foreground(pick_panel);
+	static const char *const hints[] = { "A", "Use this game", "B", "Cancel", "L", "Page up", "R", "Page down", NULL };
+	footer_set(hints);
+}
+
+static void picker_choose(void)
+{
+	long long id = games[game_list.sel].id;
+	cJSON *r;
+	char msg[400];
+	if (pick_unlink && pick_list.sel == 0) {
+		r = api_call("{\"cmd\":\"unlink\",\"id\":%lld}", id);
+		snprintf(msg, sizeof(msg), "Not based on another game any more");
+	} else {
+		pick_item_t *p = &picks[pick_list.sel - pick_unlink];
+		r = api_call("{\"cmd\":\"link\",\"id\":%lld,\"base\":%lld}", id, p->id);
+		snprintf(msg, sizeof(msg), "Uses the art and description of %s", p->title);
+	}
+	if (!api_ok(r)) snprintf(msg, sizeof(msg), "%s", r && api_str(r, "error") ? api_str(r, "error") : "Couldn't change it");
+	cJSON_Delete(r);
+	picker_close();
+	/* the list marks linked games: reload it, staying on this game */
+	int keep = game_list.sel;
+	load_games(games_sys);
+	game_list.count = ngames;
+	game_list.sel = keep;
+	vlist_refresh(&game_list);
+	game_detail();
+	toast_show(msg);
+}
+
+static void picker_key(pkey_t k)
+{
+	if (vlist_key(&pick_list, k)) return;
+	if (k == K_A) picker_choose();
+	else if (k == K_B || k == K_Y) picker_close();
 }
 
 /* ---------- Settings ---------- */
@@ -761,7 +898,9 @@ void ui_key(pkey_t k)
 		else if (k == K_B) show_home();
 		break;
 	case SCR_GAMES:
+		if (picker_open()) { picker_key(k); break; }
 		if (vlist_key(&game_list, k)) game_detail();
+		else if (k == K_Y && ngames) picker_show();
 		else if (k == K_A && ngames) play_id(games[game_list.sel].id);
 		else if (k == K_B) {
 			int keep = 0;
@@ -806,6 +945,14 @@ void ui_tick(void)
 				sys_list.count = nsys;
 				vlist_refresh(&sys_list);
 				sys_detail();
+			} else if (!first && cur == SCR_GAMES && !picker_open()) {
+				/* copies of a game found on two drives may have become one: stay on the same game */
+				long long keep = ngames ? games[game_list.sel].id : -1;
+				load_games(games_sys);
+				game_list.count = ngames;
+				for (int i = 0; i < ngames; i++) if (games[i].id == keep) game_list.sel = i;
+				vlist_refresh(&game_list);
+				game_detail();
 			}
 		}
 	}

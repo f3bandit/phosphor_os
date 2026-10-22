@@ -39,16 +39,29 @@ thing and no client scans folders itself.
   - `systems`: id, name, category.
   - `games`: system, identity key, title, region, year, developer, publisher, genre, players,
     description, box art, favourite, play count, play time, last played.
-  - `files`: path, root (SD / USB n / share), size, modified time, CRC32 or disc serial, online.
-- **Identity by content.** Each game is matched by content: CRC32 for cartridge images, the
-  disc serial for CDs (No-Intro / Redump data). Renaming or moving a file keeps its art, details
-  and history. Until a file is hashed, its name stands in.
+  - `files`: path, root (SD / USB n / share), size, modified time, CRC32, disc serial, online.
+- **Identity by content.** Each file is identified in the background (only while the menu is up,
+  never while a core is running from the same drive):
+  - cartridges and computer files: CRC32 of the ROM data the way No-Intro counts it (iNES/FDS,
+    SNES copier, Atari 7800 and Lynx headers left out; N64 read in .z64 byte order);
+  - discs (.cue/.bin, .iso): CRC32 of the data track, because mods and patched discs usually keep
+    the original's product code. The product code (PlayStation SYSTEM.CNF, Saturn and Mega-CD
+    headers) is kept separately for looking the game up;
+  - .chd: the SHA-1 of the original data stored in the .chd header, so nothing is decompressed;
+  - arcade: the MAME set name in the .mra.
+  Copies of the same game on the SD card, a USB drive and the share become one game with several
+  files (favourite, play history and details are combined). Renaming or moving a file keeps its
+  art, details, history and links. Until a file is identified, its name stands in.
 - **Based on (hacks, translations, mods).** A game can point to the base game it was made from
-  (`based_on`). It then shows the base game's box art and description, while its own title stays the
-  file name, so the user still sees which version it is. Its own art or description, if added, wins.
-  Linked from the games list (Y → "Based on…"): a window lists the system's games, closest name
-  first. The scraper skips linked games (they use the base game's art) and skips games it doesn't
-  recognise rather than guessing. Links are kept by game identity, so they survive renames and moves.
+  (`based_on`). It then shows the base game's box art and description (and year, publisher and so
+  on), while its own title stays the file name, so the user still sees which version it is. Its own
+  art or description, if added, wins. Linked from the games list (Y → "Based on"): a window lists
+  the system's games, the most alike title first, with "Not based on another game" to undo. Links
+  don't chain: linking to a hack links to that hack's base. A base game with linked games is kept
+  even when its own file goes.
+- **What the scraper does with each game** (`scrape` in the API): `ready` (identified, look it up),
+  `linked` (skip: uses its base's art), `unidentified` (no content identity yet: not looked up, no
+  guessing by name), `not_found` (looked up and not recognised: left alone rather than guessing).
   Later: a base game can be one from the No-Intro/Redump title list that isn't in the library.
 - **Indexer.** Runs in the background at start and whenever the mount table changes (a USB drive or
   the share appears or goes). Uses size and modified time, so unchanged files are never re-read.
