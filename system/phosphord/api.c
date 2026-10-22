@@ -731,6 +731,12 @@ static char *cmd_set_art(sqlite3 *db, cJSON *req)
 	return cmd_game(db, id);
 }
 
+/* values passed to a module script as arguments: never something it could read as an option */
+static int arg_ok(const char *v)
+{
+	return !v || (*v && *v != '-' && !strchr(v, '\n') && strlen(v) < 256);
+}
+
 /* cloud saves (cloud-sync module): status, storage places, and one background job at a time */
 static char *cmd_cloud(cJSON *req)
 {
@@ -741,6 +747,10 @@ static char *cmd_cloud(cJSON *req)
 		int a = 0, k = 0;
 		const char *from = cJSON_GetStringValue(cJSON_GetObjectItem(req, "from"));
 		const char *name = cJSON_GetStringValue(cJSON_GetObjectItem(req, "name"));
+		const char *type_ = cJSON_GetStringValue(cJSON_GetObjectItem(req, "type"));
+		const char *folder_ = cJSON_GetStringValue(cJSON_GetObjectItem(req, "folder"));
+		if ((from && !arg_ok(from)) || (name && !arg_ok(name)) || (type_ && !arg_ok(type_)) || (folder_ && !arg_ok(folder_)))
+			return fail("that name isn't allowed");
 		if (!strcmp(d, "pull") || !strcmp(d, "preview")) {
 			if (from && *from) { args[a++] = "--from"; args[a++] = from; }
 			if (cJSON_IsTrue(cJSON_GetObjectItem(req, "force"))) args[a++] = "--force";
@@ -814,6 +824,8 @@ static char *cmd_backup(cJSON *req)
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 	if (d && *d) {
 		const char *only = cJSON_GetStringValue(cJSON_GetObjectItem(req, "only"));
+		const char *bname = cJSON_GetStringValue(cJSON_GetObjectItem(req, "name"));
+		if ((bname && !arg_ok(bname)) || (only && !arg_ok(only))) return fail("that name isn't allowed");
 		int r = backup_start(d, cJSON_GetStringValue(cJSON_GetObjectItem(req, "name")), only);
 		if (r == -2) return fail("do: now, preview or restore (with name)");
 		if (r == 1) return fail("A backup or restore is already running; try again in a moment");

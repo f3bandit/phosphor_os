@@ -479,6 +479,10 @@ static void do_api(req_t *r, const char *body)
 	int allowed = 0;
 	for (int i = 0; cmd && ALLOWED[i]; i++) if (!strcmp(cmd, ALLOWED[i])) allowed = 1;
 	if (!j || !cmd) { cJSON_Delete(j); respond_error(r->fd, 400, "send a JSON command: {\"cmd\":...}"); return; }
+	/* one "cmd" only (cJSON matches keys without case): no doubt about which one phosphord runs */
+	int ncmd = 0;
+	for (cJSON *it = j->child; it; it = it->next) if (it->string && !strcasecmp(it->string, "cmd")) ncmd++;
+	if (ncmd != 1) { cJSON_Delete(j); respond_error(r->fd, 400, "one \"cmd\" only"); return; }
 	if (!allowed) { cJSON_Delete(j); respond_error(r->fd, 403, "that command only works on the MiSTer itself"); return; }
 	/* "diag" may look, not make support bundles (they hold system details) */
 	cJSON_DeleteItemFromObject(j, "bundle");
