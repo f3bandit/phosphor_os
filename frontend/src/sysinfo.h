@@ -12,7 +12,4 @@ typedef struct {
 
 void sysinfo_read(sysinfo_t *s);
 
-/* mounts_changed: true once after /proc/self/mounts changes (a share or drive came or went) */
-int mounts_changed(void);
-
 #endif

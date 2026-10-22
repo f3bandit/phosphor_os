@@ -5,8 +5,6 @@
  * ("share=1,eth=0,wifi=2,bt=2") overrides it for screenshots. */
 #include "sysinfo.h"
 #include <dirent.h>
-#include <fcntl.h>
-#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -129,22 +127,4 @@ void sysinfo_read(sysinfo_t *s)
 	fake_value("eth", &s->ethernet);
 	fake_value("wifi", &s->wifi);
 	fake_value("bt", &s->bt);
-}
-
-int mounts_changed(void)
-{
-	static int fd = -1;
-	if (fd < 0) {
-		fd = open("/proc/self/mounts", O_RDONLY);
-		if (fd < 0) return 0;
-		return 0;
-	}
-	/* the kernel flags POLLPRI on this file when the mount table changes */
-	struct pollfd p = { .fd = fd, .events = POLLPRI };
-	if (poll(&p, 1, 0) > 0 && (p.revents & (POLLPRI | POLLERR))) {
-		close(fd);
-		fd = open("/proc/self/mounts", O_RDONLY);
-		return 1;
-	}
-	return 0;
 }

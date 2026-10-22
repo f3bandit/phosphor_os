@@ -19,9 +19,15 @@ target_include_directories(lvgl PUBLIC ${LVGL_DIR} ${CMAKE_CURRENT_SOURCE_DIR} $
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_compile_options(lvgl PRIVATE -w)
 
+# cJSON (MIT) is shared with the system service
+set(CJSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../system/third_party/cjson)
+add_library(cjson STATIC ${CJSON_DIR}/cJSON.c)
+target_include_directories(cjson PUBLIC ${CJSON_DIR})
+target_compile_options(cjson PRIVATE -w)
+
 file(GLOB FONT_SOURCES CONFIGURE_DEPENDS fonts/*.c)
 file(GLOB APP_SOURCES CONFIGURE_DEPENDS src/*.c)
 add_executable(phosphor ${APP_SOURCES} ${FONT_SOURCES})
-target_link_libraries(phosphor PRIVATE lvgl m pthread)
+target_link_libraries(phosphor PRIVATE lvgl cjson m pthread)
 target_compile_options(phosphor PRIVATE -Wall -Wextra -Wno-unused-parameter)
 set_source_files_properties(${FONT_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")

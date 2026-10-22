@@ -12,7 +12,7 @@
  *
  * While a game runs (MiSTer's /tmp/CORENAME is not MENU) the frontend sleeps and ignores input. */
 #include "input.h"
-#include "library.h"
+#include "api.h"
 #include "log.h"
 #include "settings.h"
 #include "theme.h"
@@ -65,10 +65,15 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 	lv_display_set_buffers(d, malloc(bsz), NULL, bsz, LV_DISPLAY_RENDER_MODE_FULL);
 	lv_display_set_flush_cb(d, shot_flush);
 
+	/* wait for phosphord to finish its first scan, so counts are real */
+	for (int i = 0; i < 100; i++) {
+		cJSON *r = api_call("{\"cmd\":\"status\"}");
+		int busy = !r || cJSON_IsTrue(cJSON_GetObjectItem(r, "indexing")) || api_num(r, "generation", 0) < 1;
+		cJSON_Delete(r);
+		if (!busy) break;
+		usleep(100000);
+	}
 	ui_init(w, h);
-	library_scan_start();
-	/* let the background scan finish so counts are real */
-	for (int i = 0; i < 300 && library_scan_generation() < NSYSTEMS; i++) { usleep(10000); advance(10); ui_tick(); }
 	advance(300);
 	ui_tick();
 	if (keys && *keys) {
@@ -128,7 +133,6 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 	plog("screen %dx%d on %s", w, h, fbdev);
 	input_init();
 	ui_init(w, h);
-	library_scan_start();
 
 	int was_active = 1;
 	for (;;) {
@@ -178,6 +182,5 @@ int main(int argc, char **argv)
 	lv_init();
 	settings_load();
 	theme_init((accent_t)SETTINGS.accent);
-	library_init();
 	return snap ? run_snapshot(snap, keys, w, h) : run_fbdev(fb, fb_mode, fb_rb);
 }
