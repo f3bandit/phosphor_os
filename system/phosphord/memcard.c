@@ -48,6 +48,7 @@ static pthread_mutex_t slk = PTHREAD_MUTEX_INITIALIZER;     /* the job state */
 static pthread_cond_t wake = PTHREAD_COND_INITIALIZER;
 static int mfd = -1;
 static int ports_on;
+static volatile int loading;    /* the Phosphor menu core is being loaded: answer from what's known */
 static time_t last_use;
 static ports_state_t st;
 static char want_job[16], want_name[128];
@@ -176,13 +177,18 @@ static int prepare_locked(char *err, size_t n, int may_load)
 		rbf_path(rbf, sizeof(rbf));
 		snprintf(line, sizeof(line), "launch %s", rbf);
 		plog("front ports: loading the Phosphor menu core");
-		cJSON *j = m_json_locked(line, 3000);
+		cJSON *j = m_json_locked(line, 1500);
 		cJSON_Delete(j);
 		m_close();                                /* Main restarts with the new core */
+		/* the connection isn't held while waiting: the API keeps answering (from what's known) */
+		loading = 1;
 		for (int i = 0; i < 40 && !s.available; i++) {
+			pthread_mutex_unlock(&mlk);
 			usleep(250000);
+			pthread_mutex_lock(&mlk);
 			look_locked(&s);
 		}
+		loading = 0;
 		if (!s.available) { snprintf(err, n, "The Phosphor menu core didn't start"); return -1; }
 	}
 	if (!ports_on) {
@@ -212,6 +218,7 @@ int ports_prepare(char *err, size_t n)
 
 char *ports_pads(char *err, size_t n)
 {
+	if (loading) { snprintf(err, n, "Loading the Phosphor menu core"); return NULL; }
 	pthread_mutex_lock(&mlk);
 	char *r = NULL;
 	if (!prepare_locked(err, n, 0)) {
@@ -225,6 +232,7 @@ char *ports_pads(char *err, size_t n)
 int ports_pad_analog(int port, char *err, size_t n)
 {
 	if (port != 1 && port != 2) { snprintf(err, n, "port is 1 or 2"); return -1; }
+	if (loading) { snprintf(err, n, "Loading the Phosphor menu core"); return -1; }
 	pthread_mutex_lock(&mlk);
 	int r = prepare_locked(err, n, 0);
 	if (!r) {
@@ -357,8 +365,11 @@ static void finish(int ok, const char *msg, const char *file)
 	if (ok) st.done = st.total;
 	snprintf(st.message, sizeof(st.message), "%s", msg);
 	if (file) snprintf(st.file, sizeof(st.file), "%s", file);
+	char job[16];
+	snprintf(job, sizeof(job), "%s", st.job);
+	int port = st.port;
 	pthread_mutex_unlock(&slk);
-	plog("memory card %s, port %d: %s", st.job, st.port, msg);
+	plog("memory card %s, port %d: %s", job, port, msg);
 }
 
 static void run_job(const char *job, int port, const char *name)
@@ -498,9 +509,12 @@ int memcard_job(const char *what, int port, const char *name, char *err, size_t 
 void memcard_state(ports_state_t *s)
 {
 	ports_state_t look = { 0 };
-	pthread_mutex_lock(&mlk);
-	look_locked(&look);
-	pthread_mutex_unlock(&mlk);
+	static ports_state_t last;            /* while loading (or busy), the last answer */
+	if (!loading && pthread_mutex_trylock(&mlk) == 0) {
+		look_locked(&look);
+		pthread_mutex_unlock(&mlk);
+		last = look;
+	} else look = last;
 	pthread_mutex_lock(&slk);
 	*s = st;
 	pthread_mutex_unlock(&slk);

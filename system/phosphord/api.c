@@ -49,8 +49,8 @@
  *                                           controller in pairing mode (MiSTer's btctl), up to 90 s
  *   ports      [prepare]                   the front ports (phosphor-main + the Phosphor menu core):
  *                                           {main_api, available, can_load, in_game, on}; prepare loads
- *                                           the Phosphor menu core if needed (menu only) and turns them on
- *                                           (waits for it; memcard do:prepare does it in the background)
+ *                                           the Phosphor menu core if needed (menu only) and turns them on,
+ *                                           in the background (same as memcard do:prepare)
  *   pads                                    both controllers: {on, pads:[{port, connected, id, buttons,
  *                                           rx, ry, lx, ly}]} (turns the ports on)
  *   pad_analog port                         switch that DualShock to analog
@@ -866,7 +866,11 @@ static cJSON *ports_json(const ports_state_t *s)
 static char *cmd_ports(cJSON *req)
 {
 	char err[200];
-	if (cJSON_IsTrue(cJSON_GetObjectItem(req, "prepare")) && ports_prepare(err, sizeof(err))) return fail(err);
+	/* loading the menu core takes seconds: done by the card job thread, not here */
+	if (cJSON_IsTrue(cJSON_GetObjectItem(req, "prepare"))) {
+		int r = memcard_job("prepare", 1, NULL, err, sizeof(err));
+		if (r < 0) return fail(err);
+	}
 	ports_state_t s;
 	memcard_state(&s);
 	cJSON *o = ok();
