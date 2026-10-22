@@ -11,6 +11,8 @@ Legend: **[ ]** not tested yet · **[~]** partly tested on the SS1 · **[x]** do
 - [ ] Back up the SD card (or at least `/media/fat/MiSTer.ini`, `linux/`, `ConsoleMode/`, `Scripts/`).
 - [ ] Phosphor Link connects (`phosphor-link status`) and the Claude app sees it.
 - [ ] Note the stock state for comparison: `phosphor-link run "bash diag.sh report"` (diag module).
+- [ ] After installing or flashing: `/media/fat/phosphor/phosphor.sh check` gives a one-screen summary (what
+      runs, what answers: phosphord, the shell, Phosphor's Main, front ports, Bluetooth, WiFi, logs).
 
 ## Installing for the tests
 
