@@ -43,6 +43,9 @@
  *   backup     [do: now|preview|restore] [name] [only: "saves|savestates"]
  *                                           snapshots (backup-agent module): {installed, status{...},
  *                                           snapshots:[{name, kb, when, reason}], job{name,busy,ok,output,at}}
+ *   cores      [do: update]                cores, filters and the rest with MiSTer's own downloader
+ *                                           (Scripts/update.sh), only when asked: {available, busy,
+ *                                           worked, at, line}
  *   bluetooth  [do: pair|cancel|forget|disconnect] [mac]
  *                                           {present, devices:[{mac, name, connected, input, icon}],
  *                                           pairing{busy, ok, at, found, message}}; pair looks for a
@@ -74,6 +77,7 @@
 #include "backup.h"
 #include "memcard.h"
 #include "bt.h"
+#include "cores.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -1074,7 +1078,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	cJSON *req = cJSON_Parse(request);
 	if (!req) return fail("not JSON");
 	cJSON *c = cJSON_GetObjectItem(req, "cmd");
-	char *out;
+	char *out = NULL;
 	if (!cJSON_IsString(c)) out = fail("cmd missing");
 	else if (!strcmp(c->valuestring, "status")) out = cmd_status(db);
 	else if (!strcmp(c->valuestring, "categories")) out = cmd_categories(db);
@@ -1103,6 +1107,24 @@ char *api_handle(sqlite3 *db, const char *request)
 	}
 	else if (!strcmp(c->valuestring, "memcard")) out = cmd_memcard(req);
 	else if (!strcmp(c->valuestring, "bluetooth")) out = cmd_bluetooth(req);
+	else if (!strcmp(c->valuestring, "cores")) {
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+		if (d && !strcmp(d, "update")) {
+			int r = cores_update();
+			if (r < 0) out = fail("MiSTer's updater (Scripts/update.sh) isn't on the SD card");
+		}
+		if (!out) {
+			cores_state_t s;
+			cores_state(&s);
+			cJSON *o = ok();
+			cJSON_AddBoolToObject(o, "available", s.available);
+			cJSON_AddBoolToObject(o, "busy", s.busy);
+			cJSON_AddBoolToObject(o, "worked", s.ok);
+			cJSON_AddNumberToObject(o, "at", (double)s.at);
+			cJSON_AddStringToObject(o, "line", s.line);
+			out = reply(o);
+		}
+	}
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));

@@ -187,8 +187,13 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
 - [ ] Optional: put a `wpa_supplicant.conf` on it → WiFi works after the install.
 - [ ] Boot: Phosphor install screen shows on HDMI (the SS1's video path), card is expanded, it restarts
       by itself (under ~2 minutes).
-- [ ] After that restart it boots into Phosphor: MiSTer's menu shows for a few seconds, then the Welcome
-      screen (first start). Every later boot goes straight to the library.
+- [ ] After that restart it boots into Phosphor: no MiSTer file browser or OSD first (MiSTer's background at
+      most), no login prompt or console text over Phosphor, then the Welcome screen (first start). Every later
+      boot goes straight to the library.
+- [ ] `MiSTer.ini` has `main=phosphor/bin/MiSTer_phosphor`; `phosphor/logs/firstboot.log` shows the five modules
+      installed; Settings > Backups and Cloud saves are not "Not installed"; Screen filters lists MiSTer's filters.
+- [ ] Welcome > Get cores and filters → MiSTer's downloader runs (latest line shown), Phosphor stays usable; when
+      it's done the library shelf finds cores (systems show "core installed").
 - [ ] `ps` shows `MiSTer_phosphor`, not `MiSTer`; `/media/fat/MiSTer` is unchanged (same size as MiSTer's).
 - [ ] Quit the shell (`killall phosphor`) → MiSTer's menu; OSD > Launch Phosphor brings it back.
 - [ ] Settings > MiSTer menu → MiSTer's own menu (file browser, OSD); controllers don't move anything in

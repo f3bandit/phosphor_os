@@ -52,6 +52,21 @@ switch_main() {
 
 case "${1:-status}" in
 	boot)
+		# a new card: the modules, once, from the Phosphor release kept next to this script
+		if [ -f "$ROOT/firstboot" ]; then
+			tb="$(ls -t "$ROOT"/phosphor-*-armhf.tar.gz 2>/dev/null | head -1)"
+			w="$TMP/firstboot"
+			rm -rf "$w"; mkdir -p "$w"
+			if [ -n "$tb" ] && tar xzf "$tb" -C "$w" 2>> "$ROOT/logs/firstboot.log"; then
+				for m in $(cat "$ROOT/firstboot"); do
+					s="$(ls "$w"/*/modules/"$m"/install.sh 2>/dev/null | head -1)"
+					[ -n "$s" ] || continue
+					PHOSPHOR_ROOT="$ROOT" bash "$s" >> "$ROOT/logs/firstboot.log" 2>&1 && echo "module $m installed" >> "$ROOT/logs/firstboot.log"
+				done
+				rm -f "$ROOT/firstboot"
+			fi
+			rm -rf "$w"
+		fi
 		# Phosphor's Main is already the system's (main= in MiSTer.ini); without it, swap now
 		start_service
 		pidof MiSTer_phosphor > /dev/null || switch_main

@@ -901,6 +901,40 @@ static void picker_key(pkey_t k)
 	else if (k == K_B || k == K_Y) picker_close();
 }
 
+/* MiSTer's downloader (phosphord "cores"): shared by the Welcome screen and Settings */
+static struct { int available, busy, worked, ran; char line[200]; } cr;
+static void cores_refresh(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"cores\"}");
+	if (api_ok(r)) {
+		int was = cr.busy;
+		cr.available = cJSON_IsTrue(cJSON_GetObjectItem(r, "available"));
+		cr.busy = cJSON_IsTrue(cJSON_GetObjectItem(r, "busy"));
+		cr.worked = cJSON_IsTrue(cJSON_GetObjectItem(r, "worked"));
+		cr.ran = api_num(r, "at", 0) > 0;
+		snprintf(cr.line, sizeof(cr.line), "%s", api_str(r, "line") ? api_str(r, "line") : "");
+		if (was && !cr.busy) toast_show(cr.worked ? "Cores and filters are in" : "The downloader stopped: see Settings > Get cores");
+	}
+	cJSON_Delete(r);
+}
+static void cores_value(char *val, size_t vn)
+{
+	if (!cr.available) snprintf(val, vn, "MiSTer's updater not found");
+	else if (cr.busy) snprintf(val, vn, "%.60s", cr.line[0] ? cr.line : "Working...");
+	else if (cr.ran) snprintf(val, vn, "%s  >", cr.worked ? "Done" : "Didn't finish, try again");
+	else snprintf(val, vn, "Not yet  >");
+}
+static void cores_start(int have_net)
+{
+	if (cr.busy) { toast_show("The downloader is already running"); return; }
+	if (!have_net) { toast_show("Connect to a network first"); return; }
+	cJSON *r = api_call("{\"cmd\":\"cores\",\"do\":\"update\"}");
+	if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
+	else toast_show("Getting cores: this takes a while, Phosphor stays usable");
+	cJSON_Delete(r);
+	cores_refresh();
+}
+
 /* ---------- Restart (A twice) ---------- */
 
 static uint32_t restart_asked;
@@ -926,7 +960,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_CORES, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -973,6 +1007,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
+	case SET_CORES: snprintf(t, n, "Get or update cores (MiSTer's downloader)"); cores_value(val, vn); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_MISTER: snprintf(t, n, "MiSTer menu"); snprintf(val, vn, ">"); break;
 	case SET_RESTART: snprintf(t, n, "Restart"); break;
@@ -2800,10 +2835,11 @@ static void about_key(pkey_t k)
  * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
  * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
 
-enum { WL_NET, WL_SCRAPE, WL_ACCENT, WL_PHONE, WL_CLOUD, WL_START, WL_COUNT };
+enum { WL_NET, WL_CORES, WL_SCRAPE, WL_ACCENT, WL_PHONE, WL_CLOUD, WL_START, WL_COUNT };
 static vlist_t wl_list;
 static char wl_net[120];
 static int wl_scrape = -1;
+
 static const char *const WL_HINTS[] = { "A", "Choose", "\xE2\x86\x94", "Change", NULL };
 
 static void wl_refresh_net(void)
@@ -2817,6 +2853,7 @@ static void wl_refresh_net(void)
 	else if (si.ethernet) snprintf(wl_net, sizeof(wl_net), "Ethernet connected");
 	else snprintf(wl_net, sizeof(wl_net), "Not connected");
 	cJSON_Delete(w);
+	cores_refresh();
 	cJSON *sc = api_call("{\"cmd\":\"scrape\"}");
 	wl_scrape = sc && api_ok(sc) ? cJSON_IsTrue(cJSON_GetObjectItem(sc, "on")) : -1;
 	cJSON_Delete(sc);
@@ -2826,6 +2863,7 @@ static void wl_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	switch (i) {
 	case WL_NET: snprintf(t, n, "Network"); snprintf(val, vn, "%s  >", wl_net); *dim = 0; break;
+	case WL_CORES: snprintf(t, n, "Get cores and filters (MiSTer's downloader)"); cores_value(val, vn); break;
 	case WL_SCRAPE: snprintf(t, n, "Get box art and details from the internet"); snprintf(val, vn, "<  %s  >", wl_scrape > 0 ? "On" : "Off"); break;
 	case WL_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
 	case WL_PHONE: snprintf(t, n, "Phosphor app on your phone"); snprintf(val, vn, "optional  >"); break;
@@ -2861,6 +2899,7 @@ static void welcome_key(pkey_t k)
 	if (!change) return;
 	switch (i) {
 	case WL_NET: if (k == K_A) show_wifi(); break;
+	case WL_CORES: if (k == K_A) { cores_start(strcmp(wl_net, "Not connected") != 0); vlist_refresh(&wl_list); } break;
 	case WL_SCRAPE:
 		cJSON_Delete(api_call("{\"cmd\":\"scrape\",\"on\":%s}", wl_scrape > 0 ? "false" : "true"));
 		wl_refresh_net();
@@ -3404,6 +3443,16 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
 			else if (set_list.sel == SET_ABOUT) show_about();
+			else if (set_list.sel == SET_CORES && k == K_A) {
+				sysinfo_t si;
+				sysinfo_read(&si);
+				cJSON *w = api_call("{\"cmd\":\"wifi\"}");
+				cJSON *ws = w ? cJSON_GetObjectItem(w, "status") : NULL;
+				int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(ws, "connected"));
+				cJSON_Delete(w);
+				cores_start(net);
+				vlist_refresh(&set_list);
+			}
 			else if (set_list.sel == SET_MISTER && k == K_A) {
 				if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
@@ -3433,7 +3482,8 @@ void ui_tick(void)
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
-		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_WELCOME && cr.busy) { cores_refresh(); vlist_refresh(&wl_list); }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
 		if (cur == SCR_PORTS && pt.busy) pt_apply(api_call("{\"cmd\":\"memcard\"}"));
