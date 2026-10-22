@@ -13,6 +13,7 @@
 #define STBI_NO_STDIO
 #define STBI_NO_LINEAR
 #define STBI_NO_HDR
+#define STBI_MAX_DIMENSIONS 4096     /* stored covers are 512 px; anything bigger isn't ours */
 #include "stb_image.h"
 
 #define MAX_FILE (4 * 1024 * 1024)
