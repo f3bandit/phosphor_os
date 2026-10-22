@@ -4,7 +4,7 @@
 shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
 folders themselves. `phos` talks to it from the command line.
 
-## What it does (0.8.0)
+## What it does (0.8.1)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the

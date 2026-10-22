@@ -162,7 +162,19 @@ From the PC (same network), with curl; the commands are in `docs/remote-api.md`.
 - [ ] Reboot: still on, device still paired (`phosphor/config/remote.ini` has hashes, not tokens).
 - [ ] While a game runs, the remote API still answers and doesn't slow the game.
 
-## 9. Safety checks (each time something is installed)
+## 9. Claude library tools (Phosphor Link 0.2, Claude desktop app on the PC)
+
+Replace `phosphor-link.exe` with 0.2.0 (quit Claude first), restart Claude.
+
+- [ ] Ask Claude to pair: it asks for the address and code from the TV; pairing works.
+- [ ] "How's my library?" → library_status numbers match the TV.
+- [ ] "Find games without box art and fix three of them": Claude checks CRC/product code, finds the right
+      region's front cover, uploads it; the covers show on the TV.
+- [ ] "Fill in the details for <game>": description in its own words, year/developer/publisher correct.
+- [ ] A hack (e.g. an FFT TLW version): Claude links it to the original instead of copying art.
+- [ ] Forget the PC on the TV → the next tool call says to pair again.
+
+## 10. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

@@ -157,12 +157,13 @@ func (m *mcpServer) handle(req rpcReq) {
 			"serverInfo":      map[string]any{"name": "phosphor-link", "version": version},
 			"instructions": "Tools for a MiSTer FPGA (DE10-Nano, SuperStation One) reached through the SuperStation One dock's " +
 				"USB-C debug port (serial console) or SSH. Commands run as root. The SD card is /media/fat. " +
-				"Phosphor OS lives in /media/fat/phosphor; its diagnostics: bash /media/fat/phosphor/modules/diag/diag.sh",
+				"Phosphor OS lives in /media/fat/phosphor; its diagnostics: bash /media/fat/phosphor/modules/diag/diag.sh" +
+				libraryInstructions,
 		})
 	case "ping":
 		reply(map[string]any{})
 	case "tools/list":
-		reply(map[string]any{"tools": tools})
+		reply(map[string]any{"tools": append(append([]tool{}, tools...), libraryTools...)})
 	case "tools/call":
 		var p struct {
 			Name      string         `json:"name"`
@@ -170,6 +171,14 @@ func (m *mcpServer) handle(req rpcReq) {
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			fail(-32602, "bad parameters")
+			return
+		}
+		if strings.HasPrefix(p.Name, "library_") {
+			if p.Arguments == nil {
+				p.Arguments = map[string]any{}
+			}
+			blocks, isErr := libTool(p.Name, p.Arguments)
+			reply(map[string]any{"content": blocks, "isError": isErr})
 			return
 		}
 		text, isErr := m.call(p.Name, p.Arguments)

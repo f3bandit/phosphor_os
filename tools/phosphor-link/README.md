@@ -52,6 +52,30 @@ backed up first). Quit Claude completely (from the tray too) and open it again. 
 | `reboot` | Reboots and returns the whole boot log, then logs in again |
 | `disconnect` | Closes the connection |
 
+### Library tools (box art and details, over the home network)
+
+These don't use the debug port: they reach Phosphor's remote access on port 8767 (Settings > Remote
+access on the MiSTer, phosphord 0.8.1 or later). Pair once: turn remote access on, choose
+**Pair a device**, and tell Claude the address and the 6-digit code from the TV. The device key is kept in
+your settings folder (`%APPDATA%\PhosphorLink\library.json` on Windows), not next to the program.
+
+| Tool | What it does |
+|---|---|
+| `library_pair` | Pairs this PC with the MiSTer (address + code from the TV) |
+| `library_status` | Game count, scraper state, how many games miss art or details or weren't found |
+| `library_systems` / `library_games` | Lists; `library_games` filters (`missing_art`, `missing_details`, `not_found`, `linked`, `unidentified`) and searches titles |
+| `library_game` | One game: details, files with CRC32 and product code, Based on, scrape state |
+| `library_edit` | Changes title, description, year, developer, publisher, genre, players, region |
+| `library_set_art` | Box art from a file on the PC or a direct image link |
+| `library_get_art` | Shows the current box art (Claude sees the picture) |
+| `library_candidates` / `library_link` / `library_unlink` | "Based on" links for hacks, mods and translations |
+| `library_rescrape` | Asks the MiSTer's scraper to look a game up again |
+
+Claude also gets working rules with the tools: identify the exact release from CRC32 / product code
+first, use the front cover of that region (official scan or libretro-thumbnails), write descriptions in
+its own words, link hacks to their originals, don't overwrite what's already there without asking, and
+show a plan before changing many games. Try: *"Find my PlayStation games without box art and fix them."*
+
 `phosphor-link uninstall-claude` removes it again (also with a backup).
 
 ## Commands
@@ -85,5 +109,6 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
-0.1.3 (up-to-date crypto/ssh and Go, no known vulnerabilities). Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
+0.2.0: library tools (tested against phosphord's remote access in the sandbox, not yet on the SS1).
+0.1.3: up-to-date crypto/ssh and Go, no known vulnerabilities. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
 the pretend console with heavy mid-line noise, a stopped U-Boot and reboots.
