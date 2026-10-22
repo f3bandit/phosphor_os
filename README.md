@@ -14,17 +14,14 @@ through every MiSTer update.
 | Frontend | The interface: library shelf, game details, settings, in-game sheet | `frontend/` |
 | Main fork | MiSTer Main with a small local API for the frontend (launch, pause, snapshots, pads, memory cards) | separate private repo `phosphor-main` (GPL-3.0, published at release) |
 | Menu core fork | MiSTer's menu core plus SNAC controller and PS1 memory card logic, so those screens need no core swap | separate private repo `phosphor-menu` (GPL-3.0, published at release) |
-| Modules | One-job ARM programs that start on an event or on request, then exit | `modules/` |
+| Modules | One-job ARM programs that start on an event or on request, then exit | separate private repo [`phosphor-modules`](https://github.com/f3bandit/phosphor-modules) |
 | Mockups | Design explorations | `mockups/` |
 
-## Modules (planned)
+## Modules
 
-| Module | Job | Starts when |
-|---|---|---|
-| `cifs-helper` | Mount network shares as soon as the network is up; retry; health check; boot log | DHCP bound (WiFi or Ethernet) |
-| `backup-agent` | Save and settings backups | A game exits, or on a schedule |
-| `health-watch` | SD free space, NVMe temperature, brownouts | On a timer that sleeps between checks |
-| `update-guard` | Checks before Linux or frontend updates | Before an update runs |
+The modules live in [`phosphor-modules`](https://github.com/f3bandit/phosphor-modules) so they can be
+installed on their own (SS1 Tool can offer them to stock MiSTer users) and released separately.
+First one: `cifs-helper`.
 
 ## Rules
 
