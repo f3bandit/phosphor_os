@@ -56,6 +56,16 @@ data class BackupState(
     val job: String, val busy: Boolean, val jobOk: Boolean, val output: String, val at: Long,
 )
 
+data class Pad(val port: Int, val connected: Boolean, val id: Int, val buttons: Int, val lx: Int, val ly: Int, val rx: Int, val ry: Int)
+
+data class CardBackup(val name: String, val bytes: Long, val at: Long)
+
+data class CardState(
+    val mainApi: Boolean, val available: Boolean, val canLoad: Boolean, val inGame: Boolean, val on: Boolean,
+    val job: String, val port: Int, val busy: Boolean, val jobOk: Boolean, val done: Int, val total: Int,
+    val message: String, val file: String, val backups: List<CardBackup>,
+)
+
 data class CloudPlace(val name: String, val type: String, val inUse: Boolean)
 
 data class CloudState(
@@ -190,6 +200,34 @@ class PhosphorApi(val address: String, private val token: String?) {
             job = j.optString("name"), busy = j.optBoolean("busy"), jobOk = j.optBoolean("ok"), output = j.optString("output"), at = j.optLong("at"),
         )
     }
+
+    /** memory cards on the front ports (phosphor-main + the Phosphor menu core); what: backup, restore
+     *  (backs the card up first), check, prepare (loads the Phosphor menu core, menu only) */
+    suspend fun memcard(what: String? = null, port: Int? = null, name: String? = null): CardState {
+        val r = cmd(obj("cmd" to "memcard", "do" to what, "port" to port, "name" to name))
+        val p = r.optJSONObject("ports") ?: JSONObject()
+        val j = r.optJSONObject("job") ?: JSONObject()
+        val ba = r.optJSONArray("backups") ?: JSONArray()
+        return CardState(
+            mainApi = p.optBoolean("main_api"), available = p.optBoolean("available"), canLoad = p.optBoolean("can_load"),
+            inGame = p.optBoolean("in_game"), on = p.optBoolean("on"),
+            job = j.optString("name"), port = j.optInt("port"), busy = j.optBoolean("busy"), jobOk = j.optBoolean("ok"),
+            done = j.optInt("done"), total = j.optInt("total", 1), message = j.optString("message"), file = j.optString("file"),
+            backups = (0 until ba.length()).map { ba.getJSONObject(it) }.map { CardBackup(it.optString("name"), it.optLong("bytes"), it.optLong("at")) },
+        )
+    }
+
+    /** both front-port controllers, live (turns the ports on; never loads the menu core) */
+    suspend fun pads(): List<Pad> {
+        val r = cmd(obj("cmd" to "pads"))
+        val a = r.optJSONArray("pads") ?: JSONArray()
+        return (0 until a.length()).map { a.getJSONObject(it) }.map {
+            Pad(it.optInt("port"), it.optBoolean("connected"), it.optInt("id"), it.optInt("buttons"),
+                it.optInt("lx"), it.optInt("ly"), it.optInt("rx"), it.optInt("ry"))
+        }
+    }
+
+    suspend fun padAnalog(port: Int) { cmd(obj("cmd" to "pad_analog", "port" to port)) }
 
     /** the game's box art (JPEG), or null when it has none */
     suspend fun art(id: Long): ByteArray? = withContext(Dispatchers.IO) {

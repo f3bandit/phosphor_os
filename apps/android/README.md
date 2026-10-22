@@ -18,7 +18,13 @@ links and start games on the TV, over the home network. Android 8 and later.
    - **Play on TV** starts the game; **Favorite** marks it.
 4. **Settings > Backups**: the MiSTer's snapshots (on its SD card, NVMe or NAS); back up now; pick one to
    see its saves, then Restore saves or Everything.
-5. **Settings > Cloud saves**: send now, get saves back (pick a MiSTer, see what would change), add a
+5. **Settings > Controllers & memory cards** (0.4): the SuperStation One's front-port controllers live,
+   switch DualShocks to analog, back up the memory card in port 1 or 2, put a backup back on a card (the card
+   is backed up first). Needs phosphor-main and phosphord 0.11.1 on the MiSTer.
+
+   ![Controllers & memory cards](docs/14-cards.png)
+
+6. **Settings > Cloud saves**: send now, get saves back (pick a MiSTer, see what would change), add a
    storage place: WebDAV, SFTP, SMB, or Google Drive / Dropbox / OneDrive by pasting the sign-in token from
    `rclone authorize` on a PC. Passwords and tokens go only to the MiSTer; WiFi, Bluetooth pairings and
    passwords are never sent to the cloud.
