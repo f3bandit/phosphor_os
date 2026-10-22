@@ -43,6 +43,13 @@ thing and no client scans folders itself.
 - **Identity by content.** Each game is matched by content: CRC32 for cartridge images, the
   disc serial for CDs (No-Intro / Redump data). Renaming or moving a file keeps its art, details
   and history. Until a file is hashed, its name stands in.
+- **Based on (hacks, translations, mods).** A game can point to the base game it was made from
+  (`based_on`). It then shows the base game's box art and description, while its own title stays the
+  file name, so the user still sees which version it is. Its own art or description, if added, wins.
+  Linked from the games list (Y → "Based on…"): a window lists the system's games, closest name
+  first. The scraper skips linked games (they use the base game's art) and skips games it doesn't
+  recognise rather than guessing. Links are kept by game identity, so they survive renames and moves.
+  Later: a base game can be one from the No-Intro/Redump title list that isn't in the library.
 - **Indexer.** Runs in the background at start and whenever the mount table changes (a USB drive or
   the share appears or goes). Uses size and modified time, so unchanged files are never re-read.
   Files on a drive that's away are marked offline, not forgotten.

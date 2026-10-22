@@ -15,6 +15,9 @@ Each step is useful on its own; later steps reuse earlier ones.
 | 9 | **In-menu WiFi** | Scan networks with signal strength, band and security; connect, forget, reorder; all from the menu with a controller | Uses `wpa_supplicant`/`iw` like SS1 Tool's WiFi page; on-screen keyboard for passwords. |
 | 10 | **Status bar** | Top right, beside the clock: network share, Ethernet, WiFi (signal bars), Bluetooth (with count of connected controllers) | Live from `/sys/class/net`, `iw`, BlueZ and `/proc/self/mounts` (event-driven, no polling loop). Dim = off/disconnected, bright = active; tap through to the matching settings page. |
 
+Library next steps: content identity (CRC32 / disc serial against No-Intro and Redump), "Based on…"
+links for hacks and mods (use the base game's art and description), scraper queue.
+
 Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API; the frontend
 MVP (library shelf, game list, launch, settings, mount-change rescan); the in-game sheet (HDMI/scaler
 first, OSD fallback for direct-video analog).
