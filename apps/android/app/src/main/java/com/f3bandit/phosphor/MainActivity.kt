@@ -101,35 +101,20 @@ fun PhosphorApp(model: AppModel) {
     }
 }
 
-const val BuildConfigVersion = "0.6.0"
+const val BuildConfigVersion = "0.6.1"
 
 @Composable
 fun BluetoothRoute(model: AppModel, nav: NavHostController) {
     val api = model.api ?: return
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
     var st by remember { mutableStateOf<BtState?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var pick by remember { mutableStateOf<BtDevice?>(null) }
-    fun handle(s: BtState, wasBusy: Boolean) {
-        st = s
-        if (wasBusy && !s.busy && s.message.isNotEmpty()) Toast.makeText(ctx, s.message, Toast.LENGTH_LONG).show()
-    }
     LaunchedEffect(api.address) {
         while (true) {
-            val was = st?.busy == true
-            try { handle(api.bluetooth(), was); error = null } catch (e: Exception) { error = model.handle(e) }
+            try { st = api.bluetooth(); error = null } catch (e: Exception) { error = model.handle(e) }
             delay(if (st?.busy == true) 800 else 3000)
         }
     }
-    fun run(what: String, mac: String? = null) = scope.launch {
-        try { st = api.bluetooth(what, mac); error = null } catch (e: Exception) { error = model.handle(e) }
-    }
-    BluetoothContent(st, error, pick,
-        onPair = { run("pair") }, onCancel = { run("cancel") }, onPick = { pick = it },
-        onDisconnect = { pick?.let { run("disconnect", it.mac) }; pick = null },
-        onForget = { pick?.let { run("forget", it.mac) }; pick = null },
-        onBack = { if (pick != null) pick = null else nav.popBackStack() })
+    BluetoothContent(st, error, onBack = { nav.popBackStack() })
 }
 
 @Composable

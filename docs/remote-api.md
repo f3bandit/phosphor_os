@@ -63,6 +63,7 @@ Paired devices may use:
 | `launch` `{"id":20}`, `favorite` `{"id":20,"on":true}`, `last`, `rescan` | remote control |
 | `video`, `video_files` | screen filters per system |
 | `backup` | snapshots on the MiSTer's drives: list, back up now, preview and restore (all or only saves) |
+| `bluetooth` | the paired controllers, read only: pairing, disconnecting and forgetting only from the MiSTer itself |
 | `memcard`, `pads`, `pad_analog`, `ports` | front ports (phosphor-main + the Phosphor menu core): memory card backups and putting one back (the card is backed up first), controllers live. `memcard {"do":"prepare"}` loads the Phosphor menu core, from the menu only |
 | `cloud` | cloud saves: status, storage places, send now, preview and get saves back, add a storage place (passwords and sign-in tokens go only to the MiSTer) |
 | `diag` | read the latest checks (`run` starts them; support bundles only from the MiSTer) |
