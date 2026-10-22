@@ -230,6 +230,7 @@ int remote_forget(const char *id)
 
 typedef struct {
 	int fd;
+	long long deadline_ms;     /* the whole request must arrive by then: a slow client can't hold the server */
 	char head[HEAD_MAX + 1];
 	size_t hlen, body_off;     /* body bytes already read start at head + body_off */
 	char method[8], path[256];
@@ -237,6 +238,29 @@ typedef struct {
 	int chunked, expect;
 	char auth[160];
 } req_t;
+
+static long long now_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* recv, but never past the request's deadline */
+static ssize_t rx(req_t *r, void *buf, size_t n)
+{
+	for (;;) {
+		long long left = r->deadline_ms - now_ms();
+		if (left <= 0) { errno = ETIMEDOUT; return -1; }
+		struct pollfd p = { r->fd, POLLIN, 0 };
+		int k = poll(&p, 1, (int)(left > 5000 ? 5000 : left));
+		if (k < 0) { if (errno == EINTR) continue; return -1; }
+		if (k == 0) continue;
+		ssize_t got = recv(r->fd, buf, n, 0);
+		if (got < 0 && errno == EINTR) continue;
+		return got;
+	}
+}
 
 static int send_all(int fd, const void *p, size_t n)
 {
@@ -293,8 +317,7 @@ static int read_head(req_t *r)
 	r->hlen = 0;
 	for (;;) {
 		if (r->hlen >= HEAD_MAX) return 413;
-		ssize_t n = recv(r->fd, r->head + r->hlen, HEAD_MAX - r->hlen, 0);
-		if (n < 0 && errno == EINTR) continue;
+		ssize_t n = rx(r, r->head + r->hlen, HEAD_MAX - r->hlen);
 		if (n <= 0) return -1;
 		r->hlen += (size_t)n;
 		r->head[r->hlen] = 0;
@@ -342,8 +365,7 @@ static int read_body(req_t *r, char *buf, int out)
 	while (got < want) {
 		size_t chunk = want - got;
 		if (out >= 0 && chunk > sizeof(tmp)) chunk = sizeof(tmp);
-		ssize_t n = recv(r->fd, out >= 0 ? tmp : buf + got, chunk, 0);
-		if (n < 0 && errno == EINTR) continue;
+		ssize_t n = rx(r, out >= 0 ? tmp : buf + got, chunk);
 		if (n <= 0) return -1;
 		if (out >= 0 && write(out, tmp, (size_t)n) != n) return -1;
 		got += (size_t)n;
@@ -484,8 +506,8 @@ static void do_api(req_t *r, const char *body)
 	for (cJSON *it = j->child; it; it = it->next) if (it->string && !strcasecmp(it->string, "cmd")) ncmd++;
 	if (ncmd != 1) { cJSON_Delete(j); respond_error(r->fd, 400, "one \"cmd\" only"); return; }
 	if (!allowed) { cJSON_Delete(j); respond_error(r->fd, 403, "that command only works on the MiSTer itself"); return; }
-	/* "diag" may look, not make support bundles (they hold system details) */
-	cJSON_DeleteItemFromObject(j, "bundle");
+	/* "diag" may look, not make support bundles (they hold system details); every "bundle" key, any case */
+	while (cJSON_GetObjectItem(j, "bundle")) cJSON_DeleteItemFromObject(j, "bundle");
 	char *s = cJSON_PrintUnformatted(j);
 	cJSON_Delete(j);
 	char *out = s ? forward(s) : NULL;
@@ -522,10 +544,16 @@ static void do_art_get(req_t *r, long id)
 	int fd = open(real, O_RDONLY | O_CLOEXEC);
 	struct stat sb;
 	if (fd < 0 || fstat(fd, &sb) || sb.st_size > ART_BODY_MAX) { if (fd >= 0) close(fd); respond_error(r->fd, 404, "no box art"); return; }
-	char *buf = malloc((size_t)sb.st_size);
-	ssize_t n = buf ? read(fd, buf, (size_t)sb.st_size) : -1;
+	char *buf = malloc((size_t)sb.st_size + 1);
+	ssize_t n = 0;
+	while (buf && n < sb.st_size) {
+		ssize_t k = read(fd, buf + n, (size_t)(sb.st_size - n));
+		if (k < 0 && errno == EINTR) continue;
+		if (k <= 0) break;
+		n += k;
+	}
 	close(fd);
-	if (n != sb.st_size) { free(buf); respond_error(r->fd, 500, "couldn't read the art"); return; }
+	if (!buf || n != sb.st_size) { free(buf); respond_error(r->fd, 500, "couldn't read the art"); return; }
 	respond(r->fd, 200, "image/jpeg", buf, (size_t)n);
 	free(buf);
 }
@@ -533,6 +561,7 @@ static void do_art_get(req_t *r, long id)
 static void do_art_put(req_t *r, long id)
 {
 	if (r->clen > ART_BODY_MAX) { respond_error(r->fd, 413, "image too big (16 MB at most)"); return; }
+	r->deadline_ms = now_ms() + 30000 + r->clen / 50;   /* body: 30 s plus 20 s a MB (slow WiFi) */
 	char tmp[PATH_MAX];
 	snprintf(tmp, sizeof(tmp), "%s/remote-art.XXXXXX", p_tmp());
 	int fd = mkstemp(tmp);
@@ -559,6 +588,7 @@ static void handle(int fd)
 	req_t *r = calloc(1, sizeof(*r));
 	if (!r) { close(fd); return; }
 	r->fd = fd;
+	r->deadline_ms = now_ms() + 10000;                   /* headers: 10 s */
 	struct timeval tv = { 15, 0 };
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -594,6 +624,7 @@ static void handle(int fd)
 	}
 	if (r->clen < 0) { respond_error(fd, 411, "send Content-Length"); goto done; }
 	if (r->clen > API_BODY_MAX) { respond_error(fd, 413, "request too big"); goto done; }
+	r->deadline_ms = now_ms() + 30000;                   /* body: 30 s */
 	char *body = malloc((size_t)r->clen + 1);
 	if (!body || read_body(r, body, -1)) { free(body); goto done; }
 	if (is_pair) do_pair(r, body);

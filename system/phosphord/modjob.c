@@ -61,7 +61,7 @@ char *modjob_run(modjob_t *m, const char *const *args, int limit, int *rc)
 	envp[e] = NULL;
 
 	int po[2];
-	if (pipe(po)) return strdup("Couldn't start it");
+	if (pipe2(po, O_CLOEXEC)) return strdup("Couldn't start it");      /* dup2 in the child clears CLOEXEC on 1 and 2 */
 	fcntl(po[0], F_SETFL, O_NONBLOCK);
 	posix_spawn_file_actions_t fa;
 	posix_spawn_file_actions_init(&fa);
@@ -81,6 +81,7 @@ char *modjob_run(modjob_t *m, const char *const *args, int limit, int *rc)
 	if (r) { close(po[0]); return strdup("Couldn't start it"); }
 	size_t cap = 8192, len = 0;
 	char *buf = malloc(cap);
+	if (!buf) { kill(-pid, SIGKILL); waitpid(pid, NULL, 0); close(po[0]); return NULL; }
 	time_t end = time(NULL) + limit;
 	int st = 0;
 	for (;;) {
@@ -88,8 +89,9 @@ char *modjob_run(modjob_t *m, const char *const *args, int limit, int *rc)
 		if (n > 0) {
 			len += (size_t)n;
 			if (len + 2048 > cap) {
-				if (cap < (1 << 20)) { cap *= 2; buf = realloc(buf, cap); }
-				else len = 0;          /* very long output: keep the end */
+				char *nb = cap < (1 << 20) ? realloc(buf, cap * 2) : NULL;
+				if (nb) { buf = nb; cap *= 2; }
+				else len = 0;          /* very long output (or no memory): keep the end */
 			}
 			continue;
 		}
@@ -119,6 +121,7 @@ static void *worker(void *arg)
 	work_t *w = arg;
 	int rc;
 	char *o = modjob_run(w->m, (const char *const *)w->argv, w->limit, &rc);
+	if (!o) o = strdup("Out of memory");
 	pthread_mutex_lock(&w->m->lk);
 	free(w->m->out);
 	w->m->out = o;
@@ -141,6 +144,12 @@ int modjob_start(modjob_t *m, const char *job, const char *const *args, int limi
 	snprintf(m->job, sizeof(m->job), "%s", job);
 	pthread_mutex_unlock(&m->lk);
 	work_t *w = calloc(1, sizeof(*w));
+	if (!w) {
+		pthread_mutex_lock(&m->lk);
+		m->busy = 0;
+		pthread_mutex_unlock(&m->lk);
+		return -1;
+	}
 	w->m = m;
 	w->limit = limit;
 	snprintf(w->job, sizeof(w->job), "%s", job);
