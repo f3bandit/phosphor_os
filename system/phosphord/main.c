@@ -8,6 +8,7 @@
  * and keeps play time. Sleeps in poll() between events. */
 #include "api.h"
 #include "remote.h"
+#include "memcard.h"
 #include "db.h"
 #include "indexer.h"
 #include "log.h"
@@ -121,6 +122,7 @@ int main(int argc, char **argv)
 	indexer_start();
 	scraper_start();
 	remote_start();
+	memcard_start();
 
 	int mfd = open("/proc/self/mounts", O_RDONLY);
 	plog("ready on %s", p_socket());

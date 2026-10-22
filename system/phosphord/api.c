@@ -43,6 +43,17 @@
  *   backup     [do: now|preview|restore] [name] [only: "saves|savestates"]
  *                                           snapshots (backup-agent module): {installed, status{...},
  *                                           snapshots:[{name, kb, when, reason}], job{name,busy,ok,output,at}}
+ *   ports      [prepare]                   the front ports (phosphor-main + the Phosphor menu core):
+ *                                           {main_api, available, can_load, in_game, on}; prepare loads
+ *                                           the Phosphor menu core if needed (menu only) and turns them on
+ *                                           (waits for it; memcard do:prepare does it in the background)
+ *   pads                                    both controllers: {on, pads:[{port, connected, id, buttons,
+ *                                           rx, ry, lx, ly}]} (turns the ports on)
+ *   pad_analog port                         switch that DualShock to analog
+ *   memcard    [do: backup|restore|check|prepare] [port] [name]
+ *                                           memory cards: {ports{...}, job{name, port, busy, ok, done,
+ *                                           total, message, file}, backups:[{name, bytes, at}]};
+ *                                           restore backs the card up first
  *   remote     [on] [do: pair|stop|forget] [id]
  *                                           remote access (local socket only): {on, port, listening,
  *                                           error, addresses, pairing{code, seconds}|null, paired,
@@ -57,6 +68,7 @@
 #include "remote.h"
 #include "cloud.h"
 #include "backup.h"
+#include "memcard.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -831,6 +843,78 @@ static char *cmd_cloud(cJSON *req)
 }
 
 /* snapshots (backup-agent module): list, back up now, preview and restore (everything or only saves) */
+static cJSON *ports_json(const ports_state_t *s)
+{
+	cJSON *p = cJSON_CreateObject();
+	cJSON_AddBoolToObject(p, "main_api", s->main_api);
+	cJSON_AddBoolToObject(p, "available", s->available);
+	cJSON_AddBoolToObject(p, "can_load", s->can_load);
+	cJSON_AddBoolToObject(p, "in_game", s->in_game);
+	cJSON_AddBoolToObject(p, "on", s->on);
+	return p;
+}
+
+static char *cmd_ports(cJSON *req)
+{
+	char err[200];
+	if (cJSON_IsTrue(cJSON_GetObjectItem(req, "prepare")) && ports_prepare(err, sizeof(err))) return fail(err);
+	ports_state_t s;
+	memcard_state(&s);
+	cJSON *o = ok();
+	cJSON_AddItemToObject(o, "ports", ports_json(&s));
+	return reply(o);
+}
+
+static char *cmd_pads(void)
+{
+	char err[200];
+	char *r = ports_pads(err, sizeof(err));
+	if (!r) return fail(err);
+	cJSON *j = cJSON_Parse(r);
+	free(r);
+	if (!j || !cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"))) { cJSON_Delete(j); return fail("Main didn't answer"); }
+	return reply(j);
+}
+
+static char *cmd_memcard(cJSON *req)
+{
+	char err[200];
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) {
+		cJSON *pt = cJSON_GetObjectItem(req, "port");
+		int r = memcard_job(d, cJSON_IsNumber(pt) ? pt->valueint : 0, cJSON_GetStringValue(cJSON_GetObjectItem(req, "name")), err, sizeof(err));
+		if (r == 1) return fail("A memory card job is already running; try again when it's done");
+		if (r < 0) return fail(err);
+	}
+	ports_state_t s;
+	memcard_state(&s);
+	cJSON *o = ok();
+	cJSON_AddItemToObject(o, "ports", ports_json(&s));
+	cJSON *j = cJSON_AddObjectToObject(o, "job");
+	cJSON_AddStringToObject(j, "name", s.job);
+	cJSON_AddNumberToObject(j, "port", s.port);
+	cJSON_AddBoolToObject(j, "busy", s.busy);
+	cJSON_AddBoolToObject(j, "ok", s.ok);
+	cJSON_AddNumberToObject(j, "done", s.done);
+	cJSON_AddNumberToObject(j, "total", s.total);
+	cJSON_AddStringToObject(j, "message", s.message);
+	cJSON_AddStringToObject(j, "file", s.file);
+	cJSON *arr = cJSON_AddArrayToObject(o, "backups");
+	char *list = memcard_list(), *save = NULL;
+	for (char *line = list ? strtok_r(list, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char name[128];
+		long bytes, at;
+		if (sscanf(line, "%127[^\t]\t%ld\t%ld", name, &bytes, &at) != 3) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "name", name);
+		cJSON_AddNumberToObject(x, "bytes", (double)bytes);
+		cJSON_AddNumberToObject(x, "at", (double)at);
+		cJSON_AddItemToArray(arr, x);
+	}
+	free(list);
+	return reply(o);
+}
+
 static char *cmd_backup(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -957,6 +1041,14 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
 	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
+	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
+	else if (!strcmp(c->valuestring, "pads")) out = cmd_pads();
+	else if (!strcmp(c->valuestring, "pad_analog")) {
+		cJSON *pt = cJSON_GetObjectItem(req, "port");
+		char err[200];
+		out = ports_pad_analog(cJSON_IsNumber(pt) ? pt->valueint : 0, err, sizeof(err)) ? fail(err) : reply(ok());
+	}
+	else if (!strcmp(c->valuestring, "memcard")) out = cmd_memcard(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
