@@ -22,8 +22,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
+#include <sys/statvfs.h>
+#include <sys/utsname.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -972,7 +975,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_MISTER: snprintf(t, n, "MiSTer menu"); snprintf(val, vn, ">"); break;
 	case SET_RESTART: snprintf(t, n, "Restart"); break;
-	case SET_ABOUT: snprintf(t, n, "Phosphor"); snprintf(val, vn, "%s", PHOS_VERSION); break;
+	case SET_ABOUT: snprintf(t, n, "About this system"); snprintf(val, vn, "Phosphor %s  >", PHOS_VERSION); break;
 	}
 }
 
@@ -2678,6 +2681,120 @@ static void bt_key(pkey_t k)
 	bt_apply(api_call("{\"cmd\":\"bluetooth\"}"));
 }
 
+/* ---------- About this system ----------
+ * Versions (Phosphor, its service, MiSTer's Linux, which Main), storage with free space, network
+ * addresses and uptime: what support needs, on one page. */
+
+static vlist_t ab_list;
+static char ab_t[24][64], ab_v[24][96];
+static int ab_n;
+
+static void ab_add(const char *t, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void ab_add(const char *t, const char *fmt, ...)
+{
+	if (ab_n >= 24) return;
+	snprintf(ab_t[ab_n], sizeof(ab_t[0]), "%s", t);
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(ab_v[ab_n], sizeof(ab_v[0]), fmt, ap);
+	va_end(ap);
+	ab_n++;
+}
+
+static void ab_size(char *out, size_t n, unsigned long long b)
+{
+	if (b >= 1000ull * 1000 * 1000 * 1000) snprintf(out, n, "%.1f TB", b / 1e12);
+	else if (b >= 1000ull * 1000 * 1000) snprintf(out, n, "%.1f GB", b / 1e9);
+	else snprintf(out, n, "%llu MB", b / 1000000ull);
+}
+
+static void ab_disk(const char *label, const char *path)
+{
+	struct statvfs v;
+	if (statvfs(path, &v)) return;
+	char fr[24], tot[24];
+	ab_size(fr, sizeof(fr), (unsigned long long)v.f_bavail * v.f_frsize);
+	ab_size(tot, sizeof(tot), (unsigned long long)v.f_blocks * v.f_frsize);
+	ab_add(label, "%s free of %s", fr, tot);
+}
+
+static void ab_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	(void)dim;
+	snprintf(t, n, "%s", ab_t[i]);
+	snprintf(val, vn, "%s", ab_v[i]);
+}
+
+static void show_about(void)
+{
+	cur = SCR_ABOUT;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "About this system");
+	ab_n = 0;
+	ab_add("Phosphor", "%s", PHOS_VERSION);
+	cJSON *r = api_call("{\"cmd\":\"status\"}");
+	ab_add("Library service", "%s", api_ok(r) && api_str(r, "version") ? api_str(r, "version") : "not answering");
+	if (api_ok(r)) ab_add("Games", "%d", (int)api_num(r, "games", 0));
+	cJSON_Delete(r);
+	ab_add("MiSTer's Main", "%s", mainlink_connected() ? "Phosphor's (with its API)" : "MiSTer's own");
+	r = api_call("{\"cmd\":\"ports\"}");
+	cJSON *pp = api_ok(r) ? cJSON_GetObjectItem(r, "ports") : NULL;
+	ab_add("Menu core", "%s", cJSON_IsTrue(cJSON_GetObjectItem(pp, "available")) ? "Phosphor's (front ports)" : "MiSTer's own");
+	cJSON_Delete(r);
+	char ver[32] = "";
+	FILE *f = fopen("/MiSTer.version", "r");
+	if (f) { if (!fgets(ver, sizeof(ver), f)) ver[0] = 0; fclose(f); ver[strcspn(ver, "\r\n")] = 0; }
+	ab_add("MiSTer Linux", "%s", ver[0] ? ver : "unknown");
+	struct utsname u;
+	if (!uname(&u)) ab_add("Kernel", "%s", u.release);
+
+	const char *fat = getenv("PHOS_FAT");
+	ab_disk("SD card", fat && *fat ? fat : "/media/fat");
+	f = fopen("/proc/mounts", "r");
+	if (f) {
+		char line[512], dev[160], mnt[200];
+		while (fgets(line, sizeof(line), f)) {
+			if (sscanf(line, "%159s %199s", dev, mnt) != 2 || strncmp(mnt, "/media/", 7) || !strcmp(mnt, "/media/fat")) continue;
+			char lab[64];
+			if (!strncmp(mnt, "/media/usb", 10)) snprintf(lab, sizeof(lab), "%s %.40s", strstr(dev, "nvme") ? "NVMe" : "USB drive", mnt + 10);
+			else if (strstr(mnt, "cifs")) snprintf(lab, sizeof(lab), "Network share");
+			else snprintf(lab, sizeof(lab), "%.60s", mnt + 7);
+			ab_disk(lab, mnt);
+		}
+		fclose(f);
+	}
+	r = api_call("{\"cmd\":\"remote\"}");
+	cJSON *a = api_ok(r) ? cJSON_GetObjectItem(r, "addresses") : NULL, *it;
+	char ips[96] = "";
+	cJSON_ArrayForEach(it, a) if (cJSON_IsString(it)) {
+		if (ips[0]) strncat(ips, ", ", sizeof(ips) - strlen(ips) - 1);
+		strncat(ips, it->valuestring, sizeof(ips) - strlen(ips) - 1);
+	}
+	ab_add("Network", "%s", ips[0] ? ips : "not connected");
+	cJSON_Delete(r);
+	double up = 0;
+	f = fopen("/proc/uptime", "r");
+	if (f) { if (fscanf(f, "%lf", &up) != 1) up = 0; fclose(f); }
+	long m = (long)up / 60;
+	if (m >= 60 * 24) ab_add("Up for", "%ld d %ld h", m / 1440, m / 60 % 24);
+	else ab_add("Up for", "%ld h %ld m", m / 60, m % 60);
+
+	vlist_create(&ab_list, body, S(56), S(176), S(900), S(460));
+	ab_list.fill = ab_fill;
+	ab_list.sel = 0;
+	ab_list.top = 0;
+	ab_list.count = ab_n;
+	vlist_refresh(&ab_list);
+	static const char *const hints[] = { "B", "Back", NULL };
+	footer_set(hints);
+}
+
+static void about_key(pkey_t k)
+{
+	if (vlist_key(&ab_list, k)) return;
+	if (k == K_B || k == K_MENU) back_to_settings(SET_ABOUT);
+}
+
 /* ---------- Welcome (first start) ----------
  * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
  * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
@@ -3269,6 +3386,9 @@ void ui_key(pkey_t k)
 	case SCR_BT:
 		bt_key(k);
 		break;
+	case SCR_ABOUT:
+		about_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -3282,6 +3402,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
+			else if (set_list.sel == SET_ABOUT) show_about();
 			else if (set_list.sel == SET_MISTER && k == K_A) {
 				if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
