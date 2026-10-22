@@ -6,10 +6,8 @@
 #   install.sh --boot      also start phosphord (library service, not the shell) at boot,
 #                          through a marked block in linux/user-startup.sh
 #
-# Nothing outside /media/fat/phosphor is changed, except Scripts/phosphor.sh (a menu entry that starts
-# Phosphor: System Settings > Scripts; never replaces a file that isn't Phosphor's) and user-startup.sh
-# with --boot (backed up first). uninstall.sh takes both out again. Console Mode and MiSTer's settings
-# are not touched.
+# Nothing outside /media/fat/phosphor is changed, except user-startup.sh with --boot (backed up
+# first; uninstall.sh takes the block out again). Console Mode and MiSTer's settings are not touched.
 # Reinstalling keeps the library, art, settings and logs.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -44,15 +42,6 @@ if [ -f "$HERE/cores/menu_phosphor.rbf" ]; then
 fi
 cp "$HERE/phosphor.sh" "$HERE/uninstall.sh" "$ROOT/" && chmod 755 "$ROOT/phosphor.sh" "$ROOT/uninstall.sh"
 cp "$HERE/VERSION" "$ROOT/VERSION"
-# menu entry: System Settings > Scripts > phosphor
-ENTRY="$FAT/Scripts/phosphor.sh"
-if [ -f "$HERE/menu-entry.sh" ]; then
-	if [ ! -e "$ENTRY" ] || grep -q "^# phosphor: menu entry" "$ENTRY"; then
-		mkdir -p "$FAT/Scripts" && cp "$HERE/menu-entry.sh" "$ENTRY" && chmod 755 "$ENTRY" && echo "menu entry: Scripts > phosphor"
-	else
-		echo "Scripts/phosphor.sh exists and isn't Phosphor's: left as it is (no menu entry)"
-	fi
-fi
 # example settings: only when there isn't one already
 for f in "$HERE"/config/*.ini; do
 	[ -e "$f" ] || continue
