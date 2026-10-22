@@ -11,6 +11,10 @@ A ready-to-flash image: stock MiSTer (the MiSTer-devel release) with Phosphor al
 3. Put the card in and power on. The install screen shows while the card is expanded to its full size
    and MiSTer and Phosphor are copied onto it (a few minutes); then it restarts into MiSTer.
 
+It also carries MiSTer's video filters, shadow masks, gamma tables and presets (MiSTer-devel's repos), and
+installs every Phosphor module on the first boot. Cores come from MiSTer's own downloader, from the Welcome
+screen's "Get cores and filters" (or Settings) once there's a network.
+
 Afterwards it boots into Phosphor: its library service, Phosphor's Main (MiSTer's Main plus Phosphor's
 API, run in place of `/media/fat/MiSTer`, which isn't replaced) and the shell, from the block "phosphor"
 in `linux/user-startup.sh`. MiSTer's own menu is still there (quit the shell, or Launch Phosphor in the

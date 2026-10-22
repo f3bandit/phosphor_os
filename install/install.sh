@@ -76,6 +76,22 @@ if [ "$BOOT" != 0 ]; then
 	else echo "phosphord will start at boot (block \"$TAG\" in $STARTUP)"; fi
 fi
 
+# booting into Phosphor: every module too, since Settings uses them (Backups, Cloud saves, shares,
+# health, update safety). On the MiSTer now; for an SD card image, on its first boot (they change
+# files inside Linux too, which only exist there)
+MODS="cifs-helper backup-agent health-watch update-guard cloud-sync"
+if [ "$BOOT" = 2 ]; then
+	if [ -n "${PHOS_FAT_TARGET:-}" ]; then
+		echo "$MODS" > "$ROOT/firstboot"
+		echo "modules: installed on the first boot"
+	else
+		for m in $MODS; do
+			[ -x "$HERE/modules/$m/install.sh" ] || continue
+			PHOSPHOR_ROOT="$ROOT" "$HERE/modules/$m/install.sh" > /dev/null 2>&1 && echo "module $m installed" || echo "note: module $m didn't install" >&2
+		done
+	fi
+fi
+
 # Phosphor's Main as the system's Main: MiSTer's Main hands over to whatever main= names, at once
 if [ "$BOOT" = 2 ] && [ -f "$ROOT/bin/MiSTer_phosphor" ]; then
 	INI="$FAT/MiSTer.ini"

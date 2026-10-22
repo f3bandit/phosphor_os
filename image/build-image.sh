@@ -106,6 +106,16 @@ PHOS_FAT="$WORK/rel/files" PHOS_FAT_TARGET=/media/fat bash "$PDIR/install.sh" --
 grep -q '^# phosphor: BEGIN' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block missing" >&2; exit 1; }
 grep -q ' /media/fat/phosphor/phosphor.sh boot' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
 grep -q "^main=phosphor/bin/MiSTer_phosphor" "$WORK/rel/files/MiSTer.ini" || { echo "MiSTer.ini main= missing" >&2; exit 1; }
+grep -q "cloud-sync" "$WORK/rel/files/phosphor/firstboot" || { echo "first-boot module list missing" >&2; exit 1; }
+# MiSTer's video filters, shadow masks, gamma tables and presets (MiSTer-devel), so Screen filters works
+# from the start; the downloader keeps them current later
+say "MiSTer's filters"
+for r in Filters_MiSTer ShadowMasks_MiSTer Presets_MiSTer; do
+	[ -d "$CACHE/$r/.git" ] || git clone -q --depth 1 "https://github.com/MiSTer-devel/$r" "$CACHE/$r"
+done
+cp -r "$CACHE/Filters_MiSTer/Filters" "$CACHE/Filters_MiSTer/Filters_Audio" "$CACHE/Filters_MiSTer/Gamma" "$WORK/rel/files/"
+cp -r "$CACHE/ShadowMasks_MiSTer/Shadow_Masks" "$WORK/rel/files/"
+cp -r "$CACHE/Presets_MiSTer/Presets" "$WORK/rel/files/"
 # the Phosphor release itself, so modules can be installed later without downloading anything
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
 
