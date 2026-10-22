@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--bg:#0e0e10;--panel:#17171b;--line:#2a2a31;--text:#ece8e1;--dim:#8d8a85;--acc:#ffb347}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1280px;height:720px;background:var(--bg);color:var(--text);font-family:Inter,sans-serif;overflow:hidden;position:relative}
+.mono{font-family:"DejaVu Sans Mono",monospace;letter-spacing:.18em}
+#boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#050506;z-index:20}
+#bootline{position:absolute;left:50%;top:50%;height:2px;background:var(--acc);box-shadow:0 0 18px var(--acc),0 0 40px rgba(255,179,71,.5);transform:translate(-50%,-50%)}
+#bootlogo{font-size:42px;color:var(--acc);text-shadow:0 0 22px rgba(255,179,71,.6)}
+header{position:absolute;top:0;left:0;right:0;height:72px;display:flex;align-items:center;padding:0 56px;justify-content:space-between}
+.word{font-size:18px;color:var(--acc)}
+.status{display:flex;gap:22px;color:var(--dim);font-size:15px;align-items:center}
+.status b{color:var(--text);font-weight:500}
+.sec{position:absolute;left:56px;top:104px;font-size:13px;color:var(--dim)}
+#shelf{position:absolute;top:140px;left:0;height:300px;width:100%}
+.card{position:absolute;top:0;width:200px;height:250px;border-radius:18px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transform-origin:center center}
+.card svg{width:72px;height:72px;stroke:var(--dim);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.card .nm{font-size:17px;font-weight:500;color:var(--dim)}
+.card .ct{font-size:12px;color:#5c5a57}
+.card.on{border-color:var(--acc);background:#1d1a16}
+.card.on svg{stroke:var(--acc)}
+.card.on .nm{color:var(--text)}
+.shim{position:absolute;inset:0;border-radius:18px;background:repeating-linear-gradient(0deg,rgba(255,179,71,.05) 0 2px,transparent 2px 4px);pointer-events:none}
+#cont{position:absolute;left:56px;right:56px;top:470px;height:120px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;padding:0 28px;gap:24px}
+.art{width:72px;height:88px;border-radius:8px;background:linear-gradient(160deg,#3b2a1a,#1b1b22);border:1px solid #3a3530;display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:24px}
+.ct1{font-size:12px;color:var(--dim);margin-bottom:6px}.ct2{font-size:22px;font-weight:600}.ct3{font-size:13px;color:var(--dim);margin-top:6px}
+.pill{margin-left:auto;border:1px solid var(--acc);color:var(--acc);border-radius:999px;padding:8px 18px;font-size:14px}
+footer{position:absolute;bottom:0;left:0;right:0;height:64px;display:flex;align-items:center;gap:28px;padding:0 56px;color:var(--dim);font-size:14px}
+.btn{display:inline-flex;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--dim);align-items:center;justify-content:center;font-size:11px;margin-right:8px;color:var(--text)}
+#sheet{position:absolute;left:0;right:0;bottom:0;height:330px;background:#141418;border-top:1px solid var(--line);border-radius:22px 22px 0 0;padding:26px 56px;z-index:10}
+#dim{position:absolute;inset:0;background:#000;z-index:9}
+.sh-t{font-size:13px;color:var(--dim);margin-bottom:18px}
+.row{display:flex;gap:14px}
+.opt{flex:1;height:96px;border-radius:14px;border:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;justify-content:center;padding:0 20px;gap:6px}
+.opt b{font-size:17px;font-weight:600}.opt span{font-size:12px;color:var(--dim)}
+.opt.on{border-color:var(--acc)}.opt.on b{color:var(--acc)}
+.slots{display:flex;gap:12px;margin-top:18px}
+.slot{width:150px;height:84px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,#1f1f26,#121216);font-size:11px;color:var(--dim);padding:8px}
+.slot.on{border-color:var(--acc);color:var(--acc)}
+</style></head><body>
+<div id="boot"><div id="bootline"></div><div id="bootlogo" class="mono">PHOSPHOR</div></div>
+<header><div class="word mono">PHOSPHOR</div><div class="status"><span>Network share <b>connected</b></span><span>8:41 PM</span></div></header>
+<div class="sec mono">LIBRARY</div>
+<div id="shelf"></div>
+<div id="cont"><div class="art">&#9673;</div><div><div class="ct1 mono">PICK UP WHERE YOU LEFT OFF</div><div class="ct2">Sky Runner</div><div class="ct3">Disc system · 3 h 12 m played · Snapshot 2 min ago</div></div><div class="pill">Resume</div></div>
+<footer><span><span class="btn">A</span>Open</span><span><span class="btn">B</span>Back</span><span><span class="btn">&#9776;</span>Settings</span><span><span class="btn">Y</span>Memory Cards</span></footer>
+<div id="dim"></div>
+<div id="sheet"><div class="sh-t mono">SKY RUNNER — PAUSED</div>
+ <div class="row"><div class="opt on"><b>Resume</b><span>Back to the game</span></div><div class="opt"><b>Snapshots</b><span>Save or load a moment</span></div><div class="opt"><b>Display</b><span>Scaling, filters, CRT</span></div><div class="opt"><b>Controllers</b><span>Front ports, USB, Bluetooth</span></div><div class="opt"><b>Quit</b><span>Return to Library</span></div></div>
+ <div class="slots"><div class="slot on">Slot 1 · 2 min ago</div><div class="slot">Slot 2 · yesterday</div><div class="slot">Slot 3 · empty</div></div>
+</div>
+<script>
+const SYS=[["Disc",'<circle cx="36" cy="36" r="26"/><circle cx="36" cy="36" r="6"/>'],
+["Cartridge",'<rect x="16" y="10" width="40" height="52" rx="4"/><rect x="24" y="18" width="24" height="16"/><path d="M22 54h28"/>'],
+["Handheld",'<rect x="20" y="6" width="32" height="60" rx="6"/><rect x="26" y="13" width="20" height="18"/><circle cx="31" cy="46" r="3"/><circle cx="43" cy="44" r="3"/>'],
+["Arcade",'<path d="M20 64V20l8-12h16l8 12v44z"/><rect x="26" y="20" width="20" height="16"/><circle cx="30" cy="48" r="3"/><path d="M42 44v8"/>'],
+["Computer",'<rect x="10" y="12" width="52" height="34" rx="3"/><path d="M26 58h20M36 46v12"/>'],
+["Ports",'<path d="M18 26h36v28H18z"/><path d="M28 26V16h16v10"/><path d="M28 40h16"/>']];
+const COUNT=[214,388,152,96,61,7];
+const shelf=document.getElementById('shelf');
+SYS.forEach((s,i)=>{const c=document.createElement('div');c.className='card';c.innerHTML=`<svg viewBox="0 0 72 72">${s[1]}</svg><div class="nm">${s[0]}</div><div class="ct">${COUNT[i]} games</div><div class="shim"></div>`;shelf.appendChild(c)});
+const cards=[...shelf.children];
+const ease=x=>1-Math.pow(1-x,3);
+function render(f){
+ // frames: 0-11 boot, 12-55 shelf moves, 56-71 sheet up
+ const boot=document.getElementById('boot'),bl=document.getElementById('bootline'),logo=document.getElementById('bootlogo');
+ if(f<12){boot.style.display='flex';const p=f/11;bl.style.width=(Math.min(1,p*1.6)*900)+'px';bl.style.opacity=p<.7?1:1-(p-.7)/.3;logo.style.opacity=p<.45?0:Math.min(1,(p-.45)/.3);boot.style.opacity=f<10?1:1-(f-9)/3}else boot.style.display='none';
+ // selection position (float)
+ let sel=0;
+ if(f>=16&&f<24)sel=ease((f-16)/8);else if(f>=24&&f<32)sel=1;else if(f>=32&&f<40)sel=1+ease((f-32)/8);else if(f>=40)sel=2;
+ if(f>=44&&f<52)sel=2-ease((f-44)/8);else if(f>=52)sel=1;
+ cards.forEach((c,i)=>{const d=i-sel,ad=Math.abs(d);const sc=1.18-Math.min(ad,1)*0.18;const x=640+d*236-100;c.style.left=x+'px';c.style.transform=`scale(${sc})`;c.style.opacity=Math.max(.35,1-ad*.28);c.classList.toggle('on',ad<.5);c.querySelector('.shim').style.opacity=ad<.5?(.6+.4*Math.sin(f*.9)):0});
+ // sheet
+ const sh=document.getElementById('sheet'),dm=document.getElementById('dim');
+ if(f>=56){const p=ease(Math.min(1,(f-56)/7));sh.style.transform=`translateY(${(1-p)*340}px)`;dm.style.opacity=.55*p}else{sh.style.transform='translateY(400px)';dm.style.opacity=0}
+}
+window.render=render;render(20);
+</script></body></html>
