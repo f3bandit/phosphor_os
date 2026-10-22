@@ -20,7 +20,7 @@
 #include <string.h>
 #include <time.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -107,7 +107,11 @@ static void footer_set(const char *const *hints)
 		lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
 		lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 		lv_obj_set_style_pad_column(item, S(8), 0);
-		lv_obj_t *btn = mk_box(item, S(24), S(24), PAL.bg, LV_RADIUS_CIRCLE);
+		/* one character (or symbol): a circle; a word like SELECT: a pill */
+		int chars = 0;
+		for (const unsigned char *c = (const unsigned char *)hints[i]; *c; c++) if ((*c & 0xC0) != 0x80) chars++;
+		lv_obj_t *btn = mk_box(item, chars > 1 ? LV_SIZE_CONTENT : S(24), S(24), PAL.bg, LV_RADIUS_CIRCLE);
+		if (chars > 1) lv_obj_set_style_pad_hor(btn, S(8), 0);
 		lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
 		lv_obj_set_style_border_width(btn, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(btn, PAL.dim, 0);
@@ -823,7 +827,7 @@ static void picker_key(pkey_t k)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_ACCENT, SET_CLOCK, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_DIAG, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 
 static void scrape_refresh(void)
@@ -856,6 +860,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		break;
 	}
 	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
+	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_ABOUT: snprintf(t, n, "Phosphor"); snprintf(val, vn, "%s", PHOS_VERSION); break;
@@ -1128,6 +1133,333 @@ static void diag_key(pkey_t k)
 	}
 }
 
+/* ---------- on-screen keyboard ----------
+ * For WiFi passwords and names, with a controller: D-pad moves, A types, X deletes, Y switches
+ * letters / capitals / symbols, Start is done, B cancels. Works over any screen. */
+
+#define OSK_COLS 10
+#define OSK_ROWS 5          /* 4 rows of characters + the action row */
+static const char *const OSK_LAYOUT[3][4] = {
+	{ "1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm,.-" },
+	{ "1234567890", "QWERTYUIOP", "ASDFGHJKL\"", "ZXCVBNM;:_" },
+	{ "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/?", "~`  " },
+};
+/* action row: Shift, Space, Delete, Done (each spans several columns) */
+enum { OA_SHIFT, OA_SPACE, OA_DEL, OA_DONE, OA_COUNT };
+static const int OA_START[OA_COUNT] = { 0, 2, 7, 9 }, OA_SPAN[OA_COUNT] = { 2, 5, 2, 1 };
+static const char *const OA_NAME[OA_COUNT] = { "Shift", "Space", "Delete", "Done" };
+
+static struct {
+	lv_obj_t *panel, *field, *cell[4][OSK_COLS], *act[OA_COUNT], *hint;
+	int open, layer, row, col, masked, max;
+	char text[80];
+	void (*done)(const char *text);    /* NULL text: cancelled */
+	const char *const *prev_hints;
+} osk;
+
+static void osk_draw(void)
+{
+	for (int r = 0; r < 4; r++)
+		for (int c = 0; c < OSK_COLS; c++) {
+			const char *row = OSK_LAYOUT[osk.layer][r];
+			char ch[2] = { c < (int)strlen(row) ? row[c] : ' ', 0 };
+			lv_label_set_text(lv_obj_get_child(osk.cell[r][c], 0), ch);
+			int on = osk.row == r && osk.col == c;
+			lv_obj_set_style_bg_color(osk.cell[r][c], on ? PAL.acc : PAL.panel_on, 0);
+			lv_obj_set_style_text_color(lv_obj_get_child(osk.cell[r][c], 0), on ? PAL.bg : PAL.text, 0);
+		}
+	for (int a = 0; a < OA_COUNT; a++) {
+		int on = osk.row == 4 && osk.col >= OA_START[a] && osk.col < OA_START[a] + OA_SPAN[a];
+		lv_obj_set_style_bg_color(osk.act[a], on ? PAL.acc : PAL.panel_on, 0);
+		lv_obj_set_style_text_color(lv_obj_get_child(osk.act[a], 0), on ? PAL.bg : PAL.text, 0);
+	}
+	lv_label_set_text(lv_obj_get_child(osk.act[OA_SHIFT], 0), osk.layer == 0 ? "ABC" : osk.layer == 1 ? "#+=" : "abc");
+	char shown[100];
+	size_t n = strlen(osk.text);
+	if (osk.masked) { memset(shown, '*', n); shown[n] = 0; }
+	else snprintf(shown, sizeof(shown), "%s", osk.text);
+	strncat(shown, "_", sizeof(shown) - strlen(shown) - 1);
+	lv_label_set_text(osk.field, shown);
+}
+
+static void osk_close(const char *result)
+{
+	osk.open = 0;
+	if (osk.panel) lv_obj_delete(osk.panel);
+	osk.panel = NULL;
+	if (osk.prev_hints) footer_set(osk.prev_hints);
+	void (*cb)(const char *) = osk.done;
+	osk.done = NULL;
+	if (cb) cb(result);
+}
+
+static void osk_open(const char *title, const char *hint, int masked, int max, void (*done)(const char *), const char *const *back_hints)
+{
+	memset(osk.text, 0, sizeof(osk.text));
+	osk.open = 1; osk.layer = 0; osk.row = 1; osk.col = 0; osk.masked = masked;
+	osk.max = max < (int)sizeof(osk.text) - 1 ? max : (int)sizeof(osk.text) - 1;
+	osk.done = done;
+	osk.prev_hints = back_hints;
+	int cw = S(62), ch = S(52), gap = S(8), pad = S(30);
+	int pw = pad * 2 + OSK_COLS * cw + (OSK_COLS - 1) * gap, ph = S(150) + OSK_ROWS * (ch + gap) + S(20);
+	osk.panel = mk_box(root, pw, ph, PAL.panel, S(18));
+	lv_obj_set_style_border_width(osk.panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(osk.panel, PAL.acc, 0);
+	lv_obj_align(osk.panel, LV_ALIGN_CENTER, 0, -S(10));
+	lv_obj_t *h = mk_label(osk.panel, FONT_TITLE, PAL.text, title);
+	lv_obj_set_pos(h, pad, pad - S(6));
+	osk.hint = mk_label(osk.panel, FONT_SMALL, PAL.dim, hint);
+	lv_obj_set_pos(osk.hint, pad, pad + S(28));
+	lv_obj_t *fb = mk_box(osk.panel, pw - 2 * pad, S(46), PAL.bg, S(10));
+	lv_obj_set_pos(fb, pad, pad + S(56));
+	osk.field = mk_label(fb, FONT_NAME, PAL.text, "_");
+	lv_obj_align(osk.field, LV_ALIGN_LEFT_MID, S(14), 0);
+	int y0 = pad + S(118);
+	for (int r = 0; r < 4; r++)
+		for (int c = 0; c < OSK_COLS; c++) {
+			lv_obj_t *b = mk_box(osk.panel, cw, ch, PAL.panel_on, S(8));
+			lv_obj_set_pos(b, pad + c * (cw + gap), y0 + r * (ch + gap));
+			lv_obj_t *l = mk_label(b, FONT_NAME, PAL.text, "");
+			lv_obj_center(l);
+			osk.cell[r][c] = b;
+		}
+	for (int a = 0; a < OA_COUNT; a++) {
+		lv_obj_t *b = mk_box(osk.panel, OA_SPAN[a] * cw + (OA_SPAN[a] - 1) * gap, ch, PAL.panel_on, S(8));
+		lv_obj_set_pos(b, pad + OA_START[a] * (cw + gap), y0 + 4 * (ch + gap));
+		lv_obj_t *l = mk_label(b, FONT_BODY, PAL.text, OA_NAME[a]);
+		lv_obj_center(l);
+		osk.act[a] = b;
+	}
+	lv_obj_move_foreground(osk.panel);
+	static const char *const hints[] = { "A", "Type", "X", "Delete", "Y", "ABC / #+=", "\xE2\x89\xA1", "Done", "B", "Cancel", NULL };
+	footer_set(hints);
+	osk_draw();
+}
+
+static void osk_type(char c)
+{
+	size_t n = strlen(osk.text);
+	if ((int)n < osk.max) { osk.text[n] = c; osk.text[n + 1] = 0; }
+}
+
+static int osk_key(pkey_t k)
+{
+	if (!osk.open) return 0;
+	switch (k) {
+	case K_UP: osk.row = (osk.row + OSK_ROWS - 1) % OSK_ROWS; break;
+	case K_DOWN: osk.row = (osk.row + 1) % OSK_ROWS; break;
+	case K_LEFT:
+		if (osk.row == 4) { int a = 0; for (int i = 0; i < OA_COUNT; i++) if (osk.col >= OA_START[i]) a = i; osk.col = OA_START[(a + OA_COUNT - 1) % OA_COUNT]; }
+		else osk.col = (osk.col + OSK_COLS - 1) % OSK_COLS;
+		break;
+	case K_RIGHT:
+		if (osk.row == 4) { int a = 0; for (int i = 0; i < OA_COUNT; i++) if (osk.col >= OA_START[i]) a = i; osk.col = OA_START[(a + 1) % OA_COUNT]; }
+		else osk.col = (osk.col + 1) % OSK_COLS;
+		break;
+	case K_A:
+		if (osk.row < 4) {
+			const char *row = OSK_LAYOUT[osk.layer][osk.row];
+			if (osk.col < (int)strlen(row) && row[osk.col] != ' ') osk_type(row[osk.col]);
+		} else {
+			int a = 0;
+			for (int i = 0; i < OA_COUNT; i++) if (osk.col >= OA_START[i]) a = i;
+			if (a == OA_SHIFT) osk.layer = (osk.layer + 1) % 3;
+			else if (a == OA_SPACE) osk_type(' ');
+			else if (a == OA_DEL) { size_t n = strlen(osk.text); if (n) osk.text[n - 1] = 0; }
+			else { char t[80]; snprintf(t, sizeof(t), "%s", osk.text); osk_close(t); return 1; }
+		}
+		break;
+	case K_X: { size_t n = strlen(osk.text); if (n) osk.text[n - 1] = 0; break; }
+	case K_Y: osk.layer = (osk.layer + 1) % 3; break;
+	case K_MENU: { char t[80]; snprintf(t, sizeof(t), "%s", osk.text); osk_close(t); return 1; }
+	case K_B: osk_close(NULL); return 1;
+	default: break;
+	}
+	osk_draw();
+	return 1;
+}
+
+/* ---------- WiFi ----------
+ * Networks in range (strongest first), saved ones marked; A joins (asks for the password when
+ * needed), X forgets, Y scans again, Select undoes the last change. phosphord writes MiSTer's
+ * wpa_supplicant.conf (backed up first) and makes wpa_supplicant read it again. */
+
+typedef struct { char ssid[40]; int signal, bands, saved, current, inrange; char security[16]; } wnet_t;
+static wnet_t wnets[64];
+static int nwnets, wscanning;
+static vlist_t wifi_list;
+static lv_obj_t *wifi_head, *wifi_sub;
+static char wifi_pending[40];        /* network waiting for its password */
+static int wifi_other;               /* "Other network": name typed first */
+static const char *const WIFI_HINTS[] = { "A", "Join", "X", "Forget", "Y", "Scan", "SELECT", "Undo", "B", "Back", NULL };
+
+static const char *signal_word(int dbm) { return dbm >= -55 ? "Strong" : dbm >= -67 ? "Good" : dbm >= -75 ? "Fair" : "Weak"; }
+
+static void wifi_apply(cJSON *r)
+{
+	if (!api_ok(r)) {
+		lv_label_set_text(wifi_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		cJSON_Delete(r);
+		return;
+	}
+	cJSON *st = cJSON_GetObjectItem(r, "status");
+	char head[160], sub[200];
+	if (!cJSON_IsTrue(cJSON_GetObjectItem(st, "present"))) {
+		snprintf(head, sizeof(head), "No WiFi adapter found");
+		snprintf(sub, sizeof(sub), "Plug in a USB WiFi adapter, or use Ethernet.");
+	} else if (cJSON_IsTrue(cJSON_GetObjectItem(st, "connected"))) {
+		int sig = (int)api_num(st, "signal", 0), fq = (int)api_num(st, "freq", 0);
+		snprintf(head, sizeof(head), "Connected to %s", api_str(st, "ssid") ? api_str(st, "ssid") : "");
+		snprintf(sub, sizeof(sub), "%s signal (%d dBm)  \xC2\xB7  %s GHz%s%s", signal_word(sig), sig, fq >= 5000 ? "5" : "2.4",
+		         api_str(st, "ip") && *api_str(st, "ip") ? "  \xC2\xB7  " : "", api_str(st, "ip") ? api_str(st, "ip") : "");
+	} else {
+		snprintf(head, sizeof(head), "Not connected");
+		snprintf(sub, sizeof(sub), "Pick a network and press A.");
+	}
+	wscanning = cJSON_IsTrue(cJSON_GetObjectItem(r, "scanning"));
+	if (wscanning) snprintf(sub + strlen(sub), sizeof(sub) - strlen(sub), "%sLooking for networks...", sub[0] ? "  \xC2\xB7  " : "");
+	lv_label_set_text(wifi_head, head);
+	lv_label_set_text(wifi_sub, sub);
+	nwnets = 0;
+	cJSON *it;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "networks")) {
+		if (nwnets >= 63) break;
+		wnet_t *w = &wnets[nwnets++];
+		memset(w, 0, sizeof(*w));
+		snprintf(w->ssid, sizeof(w->ssid), "%s", api_str(it, "ssid") ? api_str(it, "ssid") : "");
+		snprintf(w->security, sizeof(w->security), "%s", api_str(it, "security") ? api_str(it, "security") : "");
+		w->signal = (int)api_num(it, "signal", -100);
+		w->bands = (int)api_num(it, "bands", 0);
+		w->saved = cJSON_IsTrue(cJSON_GetObjectItem(it, "saved"));
+		w->current = cJSON_IsTrue(cJSON_GetObjectItem(it, "current"));
+		w->inrange = 1;
+	}
+	/* saved networks that aren't in range right now */
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "saved")) {
+		const char *ss = api_str(it, "ssid");
+		int seen = 0;
+		for (int i = 0; i < nwnets; i++) if (ss && !strcmp(wnets[i].ssid, ss)) seen = 1;
+		if (seen || !ss || nwnets >= 63) continue;
+		wnet_t *w = &wnets[nwnets++];
+		memset(w, 0, sizeof(*w));
+		snprintf(w->ssid, sizeof(w->ssid), "%s", ss);
+		w->saved = 1;
+	}
+	cJSON_Delete(r);
+	wifi_list.count = nwnets + 1;                 /* + "Other network..." */
+	vlist_refresh(&wifi_list);
+}
+
+static void wifi_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	if (i == nwnets) { snprintf(t, n, "Other network..."); snprintf(val, vn, "hidden name"); *dim = 1; return; }
+	wnet_t *w = &wnets[i];
+	snprintf(t, n, "%s", w->ssid);
+	if (w->current) snprintf(val, vn, "Connected  \xC2\xB7  %s", signal_word(w->signal));
+	else if (!w->inrange) { snprintf(val, vn, "Saved  \xC2\xB7  not in range"); *dim = 1; }
+	else snprintf(val, vn, "%s%s  \xC2\xB7  %s%s", w->saved ? "Saved  \xC2\xB7  " : "",
+	              !strcmp(w->security, "open") ? "Open" : !strcmp(w->security, "wpa3") ? "WPA3" : !strcmp(w->security, "enterprise") ? "Enterprise" : "Secured",
+	              signal_word(w->signal), w->bands == 3 ? "  \xC2\xB7  2.4 + 5 GHz" : w->bands == 2 ? "  \xC2\xB7  5 GHz" : "");
+}
+
+static void wifi_send(const char *ssid, const char *password, int hidden)
+{
+	cJSON *req = cJSON_CreateObject();
+	cJSON_AddStringToObject(req, "cmd", "wifi");
+	cJSON_AddStringToObject(req, "do", "connect");
+	cJSON_AddStringToObject(req, "ssid", ssid);
+	if (password) cJSON_AddStringToObject(req, "password", password);
+	if (hidden) cJSON_AddBoolToObject(req, "hidden", 1);
+	char *body = cJSON_PrintUnformatted(req);
+	cJSON_Delete(req);
+	cJSON *r = api_call("%s", body);
+	free(body);
+	if (api_ok(r)) { char m[120]; snprintf(m, sizeof(m), "Joining %s...", ssid); toast_show(m); }
+	else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't join");
+	wifi_apply(r);
+}
+
+static void wifi_password_done(const char *pw)
+{
+	if (cur != SCR_WIFI) return;
+	if (!pw) { footer_set(WIFI_HINTS); return; }
+	wifi_send(wifi_pending, pw, wifi_other);
+	wifi_other = 0;
+}
+
+static void wifi_name_done(const char *name)
+{
+	if (!name || !*name) { footer_set(WIFI_HINTS); wifi_other = 0; return; }
+	snprintf(wifi_pending, sizeof(wifi_pending), "%s", name);
+	osk_open("Password", "Leave it empty for an open network, then Done.", 0, 63, wifi_password_done, WIFI_HINTS);
+}
+
+static void show_wifi(void)
+{
+	cur = SCR_WIFI;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "WiFi");
+	wifi_head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(wifi_head, S(56), S(178));
+	wifi_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(wifi_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(wifi_sub, W - S(112), S(22));
+	lv_obj_set_pos(wifi_sub, S(56), S(208));
+	vlist_create(&wifi_list, body, S(56), S(244), S(900), S(380));
+	wifi_list.fill = wifi_fill;
+	wifi_list.sel = 0;
+	wifi_list.top = 0;
+	wifi_list.count = 0;
+	wifi_apply(api_call("{\"cmd\":\"wifi\",\"do\":\"scan\"}"));
+	footer_set(WIFI_HINTS);
+}
+
+static void wifi_key(pkey_t k)
+{
+	if (vlist_key(&wifi_list, k)) return;
+	int i = wifi_list.sel;
+	if (k == K_A) {
+		if (i == nwnets) {                        /* Other network... */
+			wifi_other = 1;
+			osk_open("Network name", "Type the network's name exactly, then Done.", 0, 32, wifi_name_done, WIFI_HINTS);
+			return;
+		}
+		if (i > nwnets) return;
+		wnet_t *w = &wnets[i];
+		if (!strcmp(w->security, "wpa3") || !strcmp(w->security, "enterprise")) {
+			toast_show(!strcmp(w->security, "wpa3") ? "WPA3-only networks aren't supported yet" : "Enterprise (802.1X) networks aren't supported");
+			return;
+		}
+		if (w->saved || !strcmp(w->security, "open")) { wifi_send(w->ssid, NULL, 0); return; }
+		snprintf(wifi_pending, sizeof(wifi_pending), "%s", w->ssid);
+		wifi_other = 0;
+		char hint[120];
+		snprintf(hint, sizeof(hint), "Password for %s", w->ssid);
+		osk_open("Password", hint, 0, 63, wifi_password_done, WIFI_HINTS);
+	} else if (k == K_X && i < nwnets && wnets[i].saved) {
+		cJSON *req = cJSON_CreateObject();
+		cJSON_AddStringToObject(req, "cmd", "wifi");
+		cJSON_AddStringToObject(req, "do", "forget");
+		cJSON_AddStringToObject(req, "ssid", wnets[i].ssid);
+		char *b = cJSON_PrintUnformatted(req);
+		cJSON_Delete(req);
+		cJSON *r = api_call("%s", b);
+		free(b);
+		toast_show(api_ok(r) ? "Forgotten (SELECT undoes it)" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't forget it"));
+		wifi_apply(r);
+	} else if (k == K_Y) {
+		wifi_apply(api_call("{\"cmd\":\"wifi\",\"do\":\"scan\"}"));
+	} else if (k == K_SELECT) {
+		cJSON *r = api_call("{\"cmd\":\"wifi\",\"do\":\"undo\"}");
+		toast_show(api_ok(r) ? "Last WiFi change undone" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't undo"));
+		wifi_apply(r);
+	} else if (k == K_B || k == K_MENU) {
+		show_settings();
+		set_list.sel = SET_WIFI;
+		vlist_refresh(&set_list);
+	}
+}
+
 /* ---------- navigation ---------- */
 
 void ui_rescan(void)
@@ -1137,6 +1469,7 @@ void ui_rescan(void)
 
 void ui_key(pkey_t k)
 {
+	if (osk_key(k)) return;
 	switch (cur) {
 	case SCR_HOME:
 		if (k == K_LEFT) shelf_go(home.sel - 1);
@@ -1170,6 +1503,9 @@ void ui_key(pkey_t k)
 	case SCR_DIAG:
 		diag_key(k);
 		break;
+	case SCR_WIFI:
+		wifi_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -1177,6 +1513,7 @@ void ui_key(pkey_t k)
 			if (set_list.sel == SET_RESCAN && k == K_A) { ui_rescan(); toast_show("Looking for games..."); }
 			else if (set_list.sel == SET_SOURCES) show_sources();
 			else if (set_list.sel == SET_DIAG) show_diag();
+			else if (set_list.sel == SET_WIFI) show_wifi();
 			else settings_change(1);
 		}
 		else if (k == K_B || k == K_MENU) show_home();
@@ -1196,6 +1533,7 @@ void ui_tick(void)
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); vlist_refresh(&set_list); }
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
+		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
 		cJSON *r = api_call("{\"cmd\":\"status\"}");
 		int g = r ? (int)api_num(r, "generation", -1) : -1;
 		cJSON_Delete(r);

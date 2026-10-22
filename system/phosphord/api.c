@@ -18,6 +18,10 @@
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
  *   rescrape   id                           look this game up again
+ *   wifi       [do: scan|connect|forget|up|down|undo] [ssid] [password] [hidden]
+ *                                           {status{...}, scanning, networks:[{ssid, signal, bands,
+ *                                           secure, saved}], saved:[{ssid, open}]}; passwords are
+ *                                           never sent back
  *   diag       [run] [bundle]               whole-system checks (diag module), in the background:
  *                                           {installed, busy, at, summary{level,text}, results:[{area,
  *                                           key, level, message}], bundle}; run/bundle start them
@@ -28,6 +32,7 @@
 #include "cJSON.h"
 #include "db.h"
 #include "diag.h"
+#include "wifi.h"
 #include "ident.h"
 #include "importer.h"
 #include "log.h"
@@ -39,7 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PHOSD_VERSION "0.5.0"
+#define PHOSD_VERSION "0.6.0"
 
 /* games with at least one file that's here right now */
 #define VISIBLE "EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)"
@@ -408,6 +413,68 @@ static char *cmd_candidates(sqlite3 *db, cJSON *req)
 	return reply(o);
 }
 
+static char *cmd_wifi(cJSON *req)
+{
+	const char *act = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *ssid = cJSON_GetStringValue(cJSON_GetObjectItem(req, "ssid"));
+	const char *pass = cJSON_GetStringValue(cJSON_GetObjectItem(req, "password"));
+	int hidden = cJSON_IsTrue(cJSON_GetObjectItem(req, "hidden"));
+	char err[200] = "";
+	int rc = 0;
+	if (act && !strcmp(act, "scan")) wifi_scan_start();
+	else if (act && !strcmp(act, "connect")) rc = wifi_connect(ssid, pass, hidden, err, sizeof(err));
+	else if (act && !strcmp(act, "forget")) rc = wifi_forget(ssid ? ssid : "", err, sizeof(err));
+	else if (act && (!strcmp(act, "up") || !strcmp(act, "down"))) rc = wifi_move(ssid ? ssid : "", !strcmp(act, "up") ? -1 : 1, err, sizeof(err));
+	else if (act && !strcmp(act, "undo")) rc = wifi_undo(err, sizeof(err));
+	else if (act) return fail("unknown wifi action");
+	if (rc) return fail(err);
+
+	wifi_status_t st;
+	wifi_status(&st);
+	cJSON *o = ok(), *s = cJSON_AddObjectToObject(o, "status");
+	cJSON_AddStringToObject(s, "iface", st.iface);
+	cJSON_AddBoolToObject(s, "present", st.present);
+	cJSON_AddBoolToObject(s, "connected", st.connected);
+	cJSON_AddStringToObject(s, "ssid", st.ssid);
+	cJSON_AddNumberToObject(s, "signal", st.signal);
+	cJSON_AddNumberToObject(s, "freq", st.freq);
+	cJSON_AddStringToObject(s, "ip", st.ip);
+	cJSON_AddBoolToObject(s, "supplicant", st.supplicant);
+	wifi_saved_t sv[WIFI_SAVED_MAX];
+	int ns = wifi_saved(sv, WIFI_SAVED_MAX);
+	cJSON *sa = cJSON_AddArrayToObject(o, "saved");
+	for (int i = 0; i < ns; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "ssid", sv[i].ssid);
+		cJSON_AddBoolToObject(x, "open", sv[i].open);
+		cJSON_AddItemToArray(sa, x);
+	}
+	wifi_net_t nets[WIFI_MAX];
+	int busy = 0;
+	time_t at = 0;
+	char serr[160];
+	int nn = wifi_scan_results(nets, WIFI_MAX, &busy, &at, serr, sizeof(serr));
+	cJSON_AddBoolToObject(o, "scanning", busy);
+	if (at) cJSON_AddNumberToObject(o, "scanned_at", (double)at);
+	else cJSON_AddNullToObject(o, "scanned_at");
+	if (serr[0]) cJSON_AddStringToObject(o, "scan_error", serr);
+	cJSON *na = cJSON_AddArrayToObject(o, "networks");
+	for (int i = 0; i < nn; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "ssid", nets[i].ssid);
+		cJSON_AddNumberToObject(x, "signal", nets[i].signal);
+		cJSON_AddNumberToObject(x, "bands", nets[i].bands);
+		cJSON_AddBoolToObject(x, "secure", nets[i].secure);
+		cJSON_AddStringToObject(x, "security", nets[i].enterprise ? "enterprise" : nets[i].wpa3 && !nets[i].psk ? "wpa3" : nets[i].secure ? "wpa" : "open");
+		int saved = 0;
+		for (int k = 0; k < ns; k++) if (!strcmp(sv[k].ssid, nets[i].ssid)) saved = 1;
+		cJSON_AddBoolToObject(x, "saved", saved);
+		cJSON_AddBoolToObject(x, "current", st.connected && !strcmp(st.ssid, nets[i].ssid));
+		cJSON_AddItemToArray(na, x);
+	}
+	return reply(o);
+}
+
 /* diag --kv lines: "area.key=level|message", "summary=level|text" */
 static char *cmd_diag(cJSON *req)
 {
@@ -465,6 +532,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "unlink")) out = cmd_unlink(db, req);
 	else if (!strcmp(c->valuestring, "candidates")) out = cmd_candidates(db, req);
 	else if (!strcmp(c->valuestring, "diag")) out = cmd_diag(req);
+	else if (!strcmp(c->valuestring, "wifi")) out = cmd_wifi(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
