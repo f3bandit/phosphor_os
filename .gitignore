@@ -1,0 +1,39 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Go
+/bin/
+*.exe
+*.test
+*.out
+
+# Rust
+target/
+**/*.rs.bk
+
+# Node (tools, mockups)
+node_modules/
+
+# Quartus (FPGA builds)
+db/
+incremental_db/
+output_files/
+simulation/
+greybox_tmp/
+*.qws
+*.rpt
+*.summary
+*.smsg
+*.done
+*.sof
+*.rbf
+!releases/*.rbf
+
+# Build artifacts
+dist/
+*.zip
