@@ -11,6 +11,7 @@
 #include "ui.h"
 #include <unistd.h>
 #include "mainlink.h"
+#include "input.h"
 #include "icons.h"
 #include "api.h"
 #include "log.h"
@@ -3423,6 +3424,8 @@ void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
 	saver_tick(now);
+	const char *note = input_notice();
+	if (note) toast_show(note);
 	if (now - last_status > 2000 || last_status == 0) { status_update(); last_status = now ? now : 1; }
 	/* the controllers on the front ports, live */
 	static uint32_t last_pads;
