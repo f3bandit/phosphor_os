@@ -18,8 +18,9 @@ if [ -f "$STARTUP" ] && grep -q "^# $TAG: BEGIN" "$STARTUP"; then
 	cat "$tmp" > "$STARTUP" && rm -f "$tmp"
 	echo "boot entry removed from $STARTUP"
 fi
-rm -f "$ROOT/bin/phosphor" "$ROOT/bin/phosphord" "$ROOT/bin/phos" "$ROOT/phosphor.sh" "$ROOT/VERSION"
+rm -f "$ROOT/bin/phosphor" "$ROOT/bin/phosphord" "$ROOT/bin/phos" "$ROOT/phosphor.sh" "$ROOT/VERSION" "$ROOT/bin/MiSTer_phosphor" "$ROOT/cores/menu_phosphor.rbf"
 rmdir "$ROOT/bin" 2>/dev/null
+rmdir "$ROOT/cores" 2>/dev/null
 rm -f /tmp/phosphor/phosphord.sock
 if [ "${1:-}" = "--all" ]; then
 	rm -rf "$ROOT"
