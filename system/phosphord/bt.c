@@ -196,8 +196,11 @@ static void *pair_thread(void *arg)
 	st.at = time(NULL);
 	if (ok) snprintf(st.message, sizeof(st.message), "Paired %s", name[0] ? name : mac);
 	else snprintf(st.message, sizeof(st.message), "%s", outcome);
+	char logmsg[160];
+	snprintf(logmsg, sizeof(logmsg), "%s", st.message);
 	pthread_mutex_unlock(&lk);
-	plog("bluetooth: %s", st.message);
+	plog("bluetooth: %s", logmsg);
+	bt_refresh_soon();
 	return NULL;
 }
 
@@ -238,7 +241,67 @@ void bt_state(bt_state_t *s)
 	s->present = adapter_present();
 }
 
+static int read_devices(bt_dev_t *out, int max);
+
+/* the list comes from bluetoothctl (a second or more with many devices): it's kept, refreshed in the
+ * background every few seconds while something asks for it, so the API never waits on it */
+static bt_dev_t cache[BT_MAX];
+static int ncache, refreshing;
+static time_t cached_at;
+
+static void *refresh_thread(void *arg)
+{
+	(void)arg;
+	bt_dev_t tmp[BT_MAX];
+	int n = read_devices(tmp, BT_MAX);
+	pthread_mutex_lock(&lk);
+	memcpy(cache, tmp, sizeof(tmp[0]) * (size_t)n);
+	ncache = n;
+	cached_at = time(NULL);
+	refreshing = 0;
+	pthread_mutex_unlock(&lk);
+	return NULL;
+}
+
+static void refresh_start(void)
+{
+	/* lk held */
+	if (refreshing) return;
+	refreshing = 1;
+	pthread_t t;
+	if (pthread_create(&t, NULL, refresh_thread, NULL)) { refreshing = 0; return; }
+	pthread_detach(t);
+}
+
+void bt_refresh_soon(void)
+{
+	pthread_mutex_lock(&lk);
+	cached_at = 0;
+	refresh_start();
+	pthread_mutex_unlock(&lk);
+}
+
 int bt_devices(bt_dev_t *out, int max)
+{
+	int first = 0;
+	pthread_mutex_lock(&lk);
+	if (time(NULL) - cached_at >= 3) { first = !cached_at && !ncache; refresh_start(); }
+	pthread_mutex_unlock(&lk);
+	if (first) for (int i = 0; i < 40; i++) {        /* the very first time: wait a little for it */
+		pthread_mutex_lock(&lk);
+		int busy = refreshing;
+		pthread_mutex_unlock(&lk);
+		if (!busy) break;
+		usleep(50000);
+	}
+	pthread_mutex_lock(&lk);
+	int n = ncache < max ? ncache : max;
+	memcpy(out, cache, sizeof(out[0]) * (size_t)n);
+	pthread_mutex_unlock(&lk);
+	return n;
+}
+
+static int read_devices(bt_dev_t *out, int max)
 {
 	if (!adapter_present()) return 0;
 	const char *a1[] = { bluetoothctl(), "paired-devices", NULL };
@@ -292,6 +355,14 @@ static int btctl_mac(const char *cmd, const char *mac, char *err, size_t n)
 	if (!out) { snprintf(err, n, "MiSTer's Bluetooth tool (btctl) isn't there"); return -1; }
 	plog("bluetooth %s %s: %s", cmd, up, out);
 	free(out);
+	/* what the screen shows next: the list again, now (forget/disconnect are quick) */
+	bt_dev_t tmp[BT_MAX];
+	int k = read_devices(tmp, BT_MAX);
+	pthread_mutex_lock(&lk);
+	memcpy(cache, tmp, sizeof(tmp[0]) * (size_t)k);
+	ncache = k;
+	cached_at = time(NULL);
+	pthread_mutex_unlock(&lk);
 	return 0;
 }
 

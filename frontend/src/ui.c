@@ -2289,10 +2289,10 @@ enum { PT_BACKUP1, PT_BACKUP2, PT_ANALOG, PT_INPUT, PT_FIRST_FILE };
 static struct {
 	int mode, busy, job_ok, available, can_load, main_api, in_game, done, total, loading;
 	char job[16], message[200];
-	char names[80][64];
+	char names[80][128];
 	long long at[80];
 	int nfiles;
-	char pick[64];
+	char pick[128];
 	char pad[2][160];
 	int pad_id[2], pad_conn[2];
 } pt;

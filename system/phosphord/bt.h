@@ -23,7 +23,8 @@ typedef struct {
 } bt_state_t;
 
 void bt_state(bt_state_t *s);
-int bt_devices(bt_dev_t *out, int max);            /* paired devices */
+int bt_devices(bt_dev_t *out, int max);            /* paired devices (kept list, refreshed in the background) */
+void bt_refresh_soon(void);
 int bt_pair_start(void);                           /* background, up to 90 s; 1 if already pairing, -1 no adapter */
 void bt_pair_cancel(void);
 int bt_forget(const char *mac, char *err, size_t n);
