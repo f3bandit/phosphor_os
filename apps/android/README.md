@@ -27,7 +27,9 @@ links and start games on the TV, over the home network. Android 8 and later.
    Home (0.6) also has Favorites and Recently played.
 6. **Settings > Bluetooth** (0.6.1): the controllers paired with the MiSTer and whether they're connected.
    Pairing, disconnecting and forgetting are done on the TV only. Pairings stay on the MiSTer.
-7. **Settings > Cloud saves**: send now, get saves back (pick a MiSTer, see what would change), add a
+7. **Settings > Screen filters** and **Diagnostics** (0.7): filters, scanlines, shadow masks, gamma and presets
+   per system (backed up on the MiSTer before each change; Undo); the latest whole-system checks and Check now.
+8. **Settings > Cloud saves**: send now, get saves back (pick a MiSTer, see what would change), add a
    storage place: WebDAV, SFTP, SMB, or Google Drive / Dropbox / OneDrive by pasting the sign-in token from
    `rclone authorize` on a PC. Passwords and tokens go only to the MiSTer; WiFi, Bluetooth pairings and
    passwords are never sent to the cloud.

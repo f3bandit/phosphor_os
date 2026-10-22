@@ -70,6 +70,17 @@ data class BtDevice(val mac: String, val name: String, val connected: Boolean, v
 
 data class BtState(val present: Boolean, val devices: List<BtDevice>, val busy: Boolean, val ok: Boolean, val at: Long, val found: String, val message: String)
 
+/** one system's screen filters (values are file paths relative to MiSTer's folders, null = off) */
+data class VideoSys(
+    val system: String, val name: String, val custom: Boolean,
+    val filter: String?, val vertical: String?, val scanlines: String?, val interlace: String?,
+    val maskmode: String, val mask: String?, val gamma: String?,
+)
+
+data class DiagItem(val area: String, val key: String, val level: String, val message: String)
+
+data class DiagState(val installed: Boolean, val busy: Boolean, val at: Long, val level: String, val summary: String, val error: String, val items: List<DiagItem>)
+
 data class CloudPlace(val name: String, val type: String, val inUse: Boolean)
 
 data class CloudState(
@@ -243,6 +254,43 @@ class PhosphorApi(val address: String, private val token: String?) {
             present = r.optBoolean("present"),
             devices = (0 until a.length()).map { a.getJSONObject(it) }.map { BtDevice(it.optString("mac"), it.optString("name"), it.optBoolean("connected"), it.optBoolean("input")) },
             busy = p.optBoolean("busy"), ok = p.optBoolean("ok"), at = p.optLong("at"), found = p.optString("found"), message = p.optString("message"),
+        )
+    }
+
+    private fun parseVideo(v: JSONObject) = VideoSys(
+        v.optString("system"), v.optString("name"), v.optBoolean("custom"),
+        v.str("filter"), v.str("vertical"), v.str("scanlines"), v.str("interlace"),
+        v.optString("maskmode", "off"), v.str("mask"), v.str("gamma"),
+    )
+
+    /** every system with an installed core and its screen filters */
+    suspend fun videoSystems(): List<VideoSys> {
+        val a = cmd(obj("cmd" to "video")).optJSONArray("systems") ?: JSONArray()
+        return (0 until a.length()).map { parseVideo(a.getJSONObject(it)) }
+    }
+
+    /** change one setting (what: filter|vertical|scanlines|interlace|mask|maskmode|gamma; value null = off),
+     *  or apply a preset, or undo the last change. The MiSTer backs the files up first. */
+    suspend fun video(system: String, what: String? = null, value: String? = null, preset: String? = null, undo: Boolean = false): VideoSys {
+        val set = if (what != null) JSONObject().put(what, value ?: "off") else null
+        val r = cmd(obj("cmd" to "video", "system" to system, "set" to set, "preset" to preset, "undo" to if (undo) true else null))
+        return parseVideo(r.getJSONObject("video"))
+    }
+
+    /** kind: filters, masks, gamma, presets */
+    suspend fun videoFiles(kind: String): List<String> {
+        val a = cmd(obj("cmd" to "video_files", "kind" to kind)).optJSONArray("files") ?: JSONArray()
+        return (0 until a.length()).map { a.getString(it) }
+    }
+
+    suspend fun diag(run: Boolean = false): DiagState {
+        val r = cmd(obj("cmd" to "diag", "run" to if (run) true else null))
+        val sm = r.optJSONObject("summary") ?: JSONObject()
+        val a = r.optJSONArray("results") ?: JSONArray()
+        return DiagState(
+            r.optBoolean("installed"), r.optString("busy").isNotEmpty(), if (r.isNull("at")) 0 else r.optLong("at"),
+            sm.optString("level"), sm.optString("text"), r.optString("error"),
+            (0 until a.length()).map { a.getJSONObject(it) }.map { DiagItem(it.optString("area"), it.optString("key"), it.optString("level"), it.optString("message")) },
         )
     }
 

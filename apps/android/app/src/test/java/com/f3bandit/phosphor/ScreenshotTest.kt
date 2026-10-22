@@ -12,6 +12,10 @@ import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.BackupsContent
 import com.f3bandit.phosphor.ui.CardsContent
 import com.f3bandit.phosphor.ui.BluetoothContent
+import com.f3bandit.phosphor.ui.DiagContent
+import com.f3bandit.phosphor.ui.VideoListContent
+import com.f3bandit.phosphor.ui.VideoSysContent
+import com.f3bandit.phosphor.ui.VIDEO_SLOTS
 import com.f3bandit.phosphor.ui.BasedOnContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
@@ -118,4 +122,15 @@ class ScreenshotTest {
     private val bt = BtState(true, listOf(BtDevice("11:22:33:44:55:66", "8BitDo Pro 2", true, true), BtDevice("AA:BB:CC:11:22:33", "DualSense Wireless Controller", false, true)), false, false, 0, "", "")
     @Test fun bluetooth() = shot("17-bluetooth") { BluetoothContent(bt, null, {}) }
     @Test fun bluetoothPairing() = shot("18-bluetooth-pairing") { BluetoothContent(bt.copy(busy = true, message = "Pairing...", found = "Xbox Wireless Controller"), null, {}) }
+    private val vids = listOf(
+        VideoSys("SNES", "Super NES", true, "Scaling/Pixelated.txt", null, "Scanlines/Scanlines_50.txt", null, "1x", "Shadow_Masks/Trinitron.txt", "Gamma/NTSC.txt"),
+        VideoSys("PSX", "PlayStation", false, null, null, null, null, "off", null, null))
+    @Test fun video() = shot("19-video") { VideoListContent(vids, null, {}, {}) }
+    @Test fun videoSys() = shot("20-video-system") { VideoSysContent(vids[0], null, null, null, {}, {}, {}, {}, {}) }
+    @Test fun videoPick() = shot("21-video-pick") { VideoSysContent(vids[0], null, VIDEO_SLOTS[2], listOf("Scanlines/Scanlines_25.txt", "Scanlines/Scanlines_50.txt", "Scanlines/Scanlines_75.txt"), {}, {}, {}, {}, {}) }
+    @Test fun diag() = shot("22-diag") {
+        DiagContent(DiagState(true, false, 1792690000, "warn", "2 things to look at", "", listOf(
+            DiagItem("storage", "sd", "ok", "SD card: 9.3 GB free"), DiagItem("storage", "fsck", "warn", "SD card wasn't shut down cleanly last time"),
+            DiagItem("network", "wifi", "ok", "WiFi connected (strong)"), DiagItem("cores", "menu", "warn", "menu.rbf is older than the MiSTer release"))), null, {}, {})
+    }
 }

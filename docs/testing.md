@@ -155,6 +155,9 @@ Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also kee
 - [ ] A on a controller → A Disconnect (it reconnects when turned on again) / X Forget (gone from the list; MiSTer's
       OSD no longer knows it either).
 - [ ] The status bar's Bluetooth count matches the connected controllers.
+- [ ] Phone app 0.7 > Settings > Screen filters: a system's page shows the same values as on the TV; change
+      Scanlines, start that core → it's there; Undo puts it back. Presets apply.
+- [ ] Phone app 0.7 > Settings > Diagnostics: same results as on the TV; Check now runs them.
 - [ ] Phone app 0.6.1 > Settings > Bluetooth: same list, read only (pairing only on the TV); a remote `{"cmd":"bluetooth","do":"pair"}` doesn't start pairing.
 
 ## 6. Screen filters (Settings > Screen filters)
