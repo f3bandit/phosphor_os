@@ -1,0 +1,44 @@
+# Phosphor for Android: tests (screenshots of every screen) and APKs.
+# Debug APK always; the release APK is signed only when the signing secrets are set
+# (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD).
+name: Android app
+on:
+  push:
+    paths: ["apps/android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test and build
+        run: ./gradlew --console=plain testDebugUnitTest assembleDebug assembleRelease
+      - name: Sign the release APK
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        if: ${{ env.KS != '' }}
+        run: |
+          echo "$KS" | base64 -d > /tmp/release.jks
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
+          "$BT/apksigner" sign --ks /tmp/release.jks --ks-pass env:KS_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS \
+            --out app/build/outputs/apk/release/phosphor-release.apk /tmp/aligned.apk
+          rm -f /tmp/release.jks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phosphor-android
+          path: |
+            apps/android/app/build/outputs/apk/debug/app-debug.apk
+            apps/android/app/build/outputs/apk/release/*.apk
+            apps/android/app/build/screenshots/*.png

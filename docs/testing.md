@@ -174,7 +174,23 @@ Replace `phosphor-link.exe` with 0.2.0 (quit Claude first), restart Claude.
 - [ ] A hack (e.g. an FFT TLW version): Claude links it to the original instead of copying art.
 - [ ] Forget the PC on the TV → the next tool call says to pair again.
 
-## 10. Safety checks (each time something is installed)
+## 10. Phosphor for Android (Pixel 10)
+
+Install `phosphor-android-0.1.0-debug.apk` (allow installing from the file manager). Phone on the same WiFi.
+
+- [ ] Connect: the MiSTer shows up under "On this WiFi" (or type the address); pairing with the TV's code works;
+      wrong code shows "wrong code".
+- [ ] Home: game count, "Needs attention" numbers match the TV; systems list.
+- [ ] A system's games: covers load while scrolling; search and the filter chips.
+- [ ] Game: details and files; Play on TV starts it; Favorite shows on the TV.
+- [ ] Change box art from a phone photo → shows in the app and on the TV.
+- [ ] Edit details, save → shows on the TV; clearing a field clears it.
+- [ ] Based on: link a hack to its original, then remove the link.
+- [ ] Forget the phone on the TV (X) → the app goes back to pairing on its next call.
+- [ ] Close and reopen the app: still paired (key kept encrypted).
+- [ ] Dark status/navigation bars, text readable, big font setting doesn't break layouts.
+
+## 11. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,
