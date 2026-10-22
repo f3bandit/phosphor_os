@@ -382,13 +382,14 @@ fun BasedOnContent(title: String, current: String?, query: String, results: List
 // ---------- Settings ----------
 
 @Composable
-fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}) {
+fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}, onBackups: () -> Unit = {}) {
     Screen("Settings", "Phosphor app", onBack = onBack) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
             Label("MiSTer")
             Card {
                 Row2("Paired with", value = address)
                 Row2("Cloud saves", value = "›", onClick = onCloud)
+                Row2("Backups", value = "›", onClick = onBackups)
                 Row2("Forget this MiSTer", value = "›", accent = true, onClick = onForget)
             }
             Text("To remove this phone on the MiSTer too: Settings › Remote access, select the phone, press X.", style = T.small)

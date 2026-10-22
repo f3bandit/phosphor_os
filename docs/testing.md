@@ -226,7 +226,17 @@ Rename `/media/fat/phosphor/config/frontend.ini` (or use the SD card image) and 
 - [ ] Start → library; restarting the shell goes straight to the library.
 - [ ] An existing install (frontend.ini present) never shows Welcome.
 
-## 14. Safety checks (each time something is installed)
+## 14. Backups screens (TV and phone; backup-agent module 0.2)
+
+Set the backup folder to the NVMe first (`DEST` in `phosphor/config/backup-agent.ini`).
+
+- [ ] TV, Settings > Backups: list with date, reason (After SNES, Daily, ...) and size; Back up now adds one.
+- [ ] Pick one: the saves in it are listed; A restores saves only (WiFi/settings unchanged), a "Before a restore" backup appears.
+- [ ] X (Everything) puts settings back too; restoring the "Before a restore" one undoes it.
+- [ ] While a game runs, a restore is refused.
+- [ ] Phone, Settings > Backups: same list; Back up now; Restore saves / Everything.
+
+## 15. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

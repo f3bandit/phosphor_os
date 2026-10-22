@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.activity.ComponentActivity
 import android.graphics.Canvas
 import com.f3bandit.phosphor.ui.AddForm
+import com.f3bandit.phosphor.ui.BackupsContent
 import com.f3bandit.phosphor.ui.BasedOnContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
@@ -97,4 +98,12 @@ class ScreenshotTest {
     @Test fun cloudMain() = cloudShot("9-cloud", cloud, CloudMode.MAIN)
     @Test fun cloudPreview() = cloudShot("10-cloud-preview", cloud, CloudMode.PREVIEW, listOf("Would get (2):", "  saves/SNES/Zelda.sav", "  saves/PSX/Final Fantasy Tactics (USA).mcd"))
     @Test fun cloudAdd() = cloudShot("11-cloud-add", cloud, CloudMode.ADD, form = AddForm(kind = "drive"))
+
+    private val snaps = listOf(Snapshot("snap-1", "2026-10-22 12:25", "exit-SNES", 812), Snapshot("snap-2", "2026-10-22 08:00", "daily", 804),
+        Snapshot("snap-3", "2026-10-21 21:12", "pre-restore", 790))
+    private val backups = BackupState(true, "/media/usb0/phosphor-snapshots", "", snaps, "", false, true, "", 0)
+    @Test fun backupsList() = shot("12-backups") { BackupsContent(backups, null, null, emptyList(), {}, {}, {}, {}, {}) }
+    @Test fun backupsPreview() = shot("13-backups-restore") {
+        BackupsContent(backups, null, snaps[0], listOf("saves/SNES/Super Metroid (USA).sav", "saves/PSX/Final Fantasy Tactics (USA).mcd"), {}, {}, {}, {}, {})
+    }
 }

@@ -40,6 +40,9 @@
  *              [settings{}] [folder] [force]
  *                                           cloud saves (cloud-sync module): {installed, status{...},
  *                                           remotes:[{name,type,in_use}], job{name,busy,ok,output,at}}
+ *   backup     [do: now|preview|restore] [name] [only: "saves|savestates"]
+ *                                           snapshots (backup-agent module): {installed, status{...},
+ *                                           snapshots:[{name, kb, when, reason}], job{name,busy,ok,output,at}}
  *   remote     [on] [do: pair|stop|forget] [id]
  *                                           remote access (local socket only): {on, port, listening,
  *                                           error, addresses, pairing{code, seconds}|null, paired,
@@ -53,6 +56,7 @@
 #include "video.h"
 #include "remote.h"
 #include "cloud.h"
+#include "backup.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -804,6 +808,68 @@ static char *cmd_cloud(cJSON *req)
 	return reply(o);
 }
 
+/* snapshots (backup-agent module): list, back up now, preview and restore (everything or only saves) */
+static char *cmd_backup(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) {
+		const char *only = cJSON_GetStringValue(cJSON_GetObjectItem(req, "only"));
+		int r = backup_start(d, cJSON_GetStringValue(cJSON_GetObjectItem(req, "name")), only);
+		if (r == -2) return fail("do: now, preview or restore (with name)");
+		if (r == 1) return fail("A backup or restore is already running; try again in a moment");
+		if (r < 0) return fail("The backup-agent module isn't installed");
+	}
+	backup_state_t bs;
+	backup_state(&bs);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", bs.installed);
+	cJSON *st = cJSON_AddObjectToObject(o, "status");
+	char *save = NULL;
+	for (char *line = bs.status ? strtok_r(bs.status, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		cJSON_AddStringToObject(st, line, eq + 1);
+	}
+	cJSON *arr = cJSON_AddArrayToObject(o, "snapshots");
+	save = NULL;
+	for (char *line = bs.list ? strtok_r(bs.list, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *tab = strchr(line, '\t');
+		if (!tab || strncmp(line, "snap-", 5)) continue;
+		*tab = 0;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "name", line);
+		cJSON_AddNumberToObject(x, "kb", atoi(tab + 1));
+		/* snap-YYYYMMDD-HHMMSS[-N]-reason.tar.gz */
+		int y, mo, dd, h, mi, se;
+		if (sscanf(line, "snap-%4d%2d%2d-%2d%2d%2d", &y, &mo, &dd, &h, &mi, &se) == 6) {
+			char when[32];
+			snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d", y, mo, dd, h, mi);
+			cJSON_AddStringToObject(x, "when", when);
+		}
+		const char *rs = line + 5 + 15;                         /* after "snap-YYYYMMDD-HHMMSS" */
+		if (*rs == '-') rs++;
+		while (*rs >= '0' && *rs <= '9') rs++;                  /* a "-2" for two in the same second */
+		if (*rs == '-') rs++;
+		char reason[64];
+		snprintf(reason, sizeof(reason), "%s", rs);
+		char *dot = strstr(reason, ".tar.gz");
+		if (dot) *dot = 0;
+		cJSON_AddStringToObject(x, "reason", reason);
+		cJSON_AddItemToArray(arr, x);
+	}
+	cJSON *j = cJSON_AddObjectToObject(o, "job");
+	cJSON_AddStringToObject(j, "name", bs.job);
+	cJSON_AddBoolToObject(j, "busy", bs.busy);
+	cJSON_AddBoolToObject(j, "ok", bs.ok);
+	cJSON_AddStringToObject(j, "output", bs.output ? bs.output : "");
+	cJSON_AddNumberToObject(j, "at", (double)bs.at);
+	free(bs.status);
+	free(bs.list);
+	free(bs.output);
+	return reply(o);
+}
+
 static char *cmd_remote(cJSON *req)
 {
 	cJSON *on = cJSON_GetObjectItem(req, "on");
@@ -866,6 +932,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
 	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
+	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
