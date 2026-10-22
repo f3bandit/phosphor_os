@@ -1,1 +1,4 @@
 commit a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d (Mon Oct 19 04:32:24 2026 -0700)
+
+Local change: stb_image_write.h stbiw__jpg_writeBits shifts bitBuf as unsigned and keeps the low 24 bits
+(same output; removes a signed-shift overflow found by fuzzing with UBSan).

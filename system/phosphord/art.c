@@ -14,8 +14,16 @@
 #include <unistd.h>
 
 #define STB_IMAGE_IMPLEMENTATION
+/* box art comes from the internet and from phones: only the formats covers use (less decoder to attack),
+ * and no picture bigger than covers ever are (a small file can claim a huge size) */
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_ONLY_BMP
+#define STBI_ONLY_GIF
 #define STBI_NO_HDR
 #define STBI_NO_LINEAR
+#define STBI_MAX_DIMENSIONS 8192
+#define ART_MAX_PIXELS (5000L * 5000L)   /* 100 MB decoded at most */
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -64,6 +72,14 @@ static unsigned char *downscale(const unsigned char *in, int w, int h, int nw, i
 int art_store_box(const char *system_id, const char *game_key, const char *src, char *rel, size_t reln)
 {
 	int w, h, n;
+	if (!stbi_info(src, &w, &h, &n)) {
+		plog("art: can't read %s (%s)", src, stbi_failure_reason());
+		return -1;
+	}
+	if (w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS) {
+		plog("art: %s is %dx%d: too big for box art", src, w, h);
+		return -1;
+	}
 	unsigned char *px = stbi_load(src, &w, &h, &n, 4);
 	if (!px) {
 		plog("art: can't read %s (%s)", src, stbi_failure_reason());
