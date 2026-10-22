@@ -4,7 +4,7 @@
 shell (frontend), and later SS1 Tool and the phone app, ask it for everything; none of them scan
 folders themselves. `phos` talks to it from the command line.
 
-## What it does (0.5.0)
+## What it does (0.6.0)
 
 - **Library database** in `/media/fat/phosphor/data/library.db` (SQLite): systems, games, files.
 - **Indexer** in the background at start and whenever the mount table changes (a USB drive or the
@@ -22,6 +22,10 @@ folders themselves. `phos` talks to it from the command line.
   ScreenScraper, IGDB (keys in `config/scraper.ini`). Matched by content (CRC32 / product code /
   set name), never by file name; only empty fields are filled; linked, unidentified and already
   looked up games are skipped.
+- **WiFi**: scan (iw, in the background), join (password stored as a WPA key from wpa_passphrase),
+  forget, order, undo, on MiSTer's own `linux/wpa_supplicant.conf` (backed up before every change,
+  last 10 kept) and wpa_supplicant (told to reread it with SIGHUP, or started as MiSTer starts it).
+  WPA2/WPA mixed and open networks; WPA3-only and enterprise networks are refused for now.
 - **Diagnostics**: runs the diag module (`phosphor/modules/diag/diag.sh --kv`) in the background
   (killed after 3 minutes), keeps the last results, and makes the support bundle on request.
 - **Artwork store** in `/media/fat/phosphor/data/art/<system>/<game>/box.jpg`, scaled down to
@@ -52,6 +56,7 @@ untested); a refresh of the downloaded lists now and then.
 | `{"cmd":"candidates", "id":3, "q":"mario", "limit":200}` | games 3 could be based on, most alike first: `{total, current, games:[{id, title, score}]}` |
 | `{"cmd":"scrape", "on":true}` | box art and details on/off (`on` optional): `{on, running, pending, found, not_found, status}` |
 | `{"cmd":"rescrape", "id":3}` | look game 3 up again |
+| `{"cmd":"wifi", "do":"scan\|connect\|forget\|up\|down\|undo", "ssid":"...", "password":"...", "hidden":false}` | `{status{present, connected, ssid, signal, freq, ip, supplicant}, scanning, networks:[{ssid, signal, bands, security, saved, current}], saved:[{ssid, open}]}`; passwords never come back |
 | `{"cmd":"diag", "run":true, "bundle":true}` | whole-system checks: `{installed, busy, at, summary{level, text}, results:[{area, key, level, message}], bundle, error}`; run/bundle start them in the background |
 | `{"cmd":"scrape_sources", "order":["libretro",...], "off":["igdb"]}` | sources in order `[{id, name, on, ready, needs}]`; with order/off saves them |
 | `{"cmd":"last"}` | the last game played, or null |

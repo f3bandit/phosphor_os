@@ -95,7 +95,23 @@ Run from `/tmp` first (nothing written to the SD card), then installed.
 - [ ] Starting a game: shell sleeps, ignores input; back in the menu: wakes up.
 - [ ] Memory and CPU while idle (should be near zero) and while scrolling.
 
-## 5. Safety checks (each time something is installed)
+## 5. WiFi (Settings > WiFi)
+
+Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also keeps the last 10 in
+`phosphor/data/backup/wifi/`). Have an Ethernet cable or the debug port ready in case WiFi drops.
+
+- [ ] Screen shows the current network, signal, band, IP; the list groups the mesh's access points.
+- [ ] Join a saved network (A) → stays/reconnects; dhcpcd gets an address.
+- [ ] Join a new WPA2 network with the on-screen keyboard; the file has `psk=<64 hex>`, not the password.
+- [ ] Wrong password → doesn't connect; SELECT (undo) puts the old file back and WiFi reconnects.
+- [ ] Forget a network (X), then undo (SELECT).
+- [ ] "Other network..." for a hidden network (`scan_ssid=1`).
+- [ ] Open network (e.g. phone hotspot without password).
+- [ ] WPA3-only network → says it isn't supported (no change made).
+- [ ] wpa_supplicant not running (e.g. after `killall wpa_supplicant`) → joining starts it the way MiSTer does.
+- [ ] On-screen keyboard with each controller: D-pad, A types, X deletes, Y switches layers, Start = Done, B cancels.
+
+## 6. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

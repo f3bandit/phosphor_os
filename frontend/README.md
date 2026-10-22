@@ -37,6 +37,11 @@ shell starts it if it isn't running.
 - **Settings**: accent colour (Amber, Red, Green, Blue, Purple), 12/24-hour clock, get box art and
   details (on/off, with progress: found, to go, not found), box art sources (on/off and order:
   A toggles, Y/X move up/down), look for games again, Diagnostics.
+- **WiFi** (Settings): networks in range (mesh access points grouped, strongest first) and saved ones;
+  A joins (asks for the password on the on-screen keyboard), X forgets, Y scans, SELECT undoes the
+  last change; "Other network..." for hidden ones.
+- **On-screen keyboard**: D-pad moves, A types, X deletes, Y switches letters / capitals / symbols,
+  Start is done, B cancels.
 - **Diagnostics** (Settings): the diag module's checks of the whole system, problems first, then
   warnings, then everything that's fine. Y checks again; X saves a report for support (a .tar.gz in
   `phosphor/logs`, passwords removed). Saved in `/media/fat/phosphor/config/frontend.ini`.
