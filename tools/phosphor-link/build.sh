@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Windows and Linux versions (macOS needs cgo for USB port details: build it on a Mac) into dist/. Needs Go 1.24+.
+# Builds Windows and Linux versions (macOS needs cgo for USB port details: build it on a Mac) into dist/. Needs Go 1.26+ (go.mod pins toolchain go1.27.3).
 set -e
 cd "$(dirname "$0")"
 mkdir -p dist
