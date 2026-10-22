@@ -9,16 +9,14 @@
  *   footer: what the buttons do here */
 #include "ui.h"
 #include "icons.h"
-#include "library.h"
+#include "api.h"
 #include "log.h"
-#include "meta.h"
 #include "settings.h"
 #include "sysinfo.h"
 #include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
 
 typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS } screen_t;
@@ -260,10 +258,44 @@ static void shelf_go(int sel)
 	home.sel = sel;
 }
 
+/* ---------- data from phosphord ---------- */
+
+static int cat_count[CAT_COUNT];
+static cJSON *last_game;          /* {"id","title","system_name","category",...} or NULL */
+
+static void load_home_data(void)
+{
+	for (int c = 0; c < CAT_COUNT; c++) cat_count[c] = -1;
+	cJSON *r = api_call("{\"cmd\":\"categories\"}");
+	if (api_ok(r)) {
+		cJSON *it;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "categories")) {
+			int id = (int)api_num(it, "id", -1);
+			if (id >= 0 && id < CAT_COUNT) cat_count[id] = (int)api_num(it, "games", 0);
+		}
+	}
+	cJSON_Delete(r);
+	cJSON_Delete(last_game);
+	last_game = NULL;
+	r = api_call("{\"cmd\":\"last\"}");
+	if (api_ok(r) && cJSON_IsObject(cJSON_GetObjectItem(r, "game")))
+		last_game = cJSON_DetachItemFromObject(r, "game");
+	cJSON_Delete(r);
+}
+
+static void play_id(long long id)
+{
+	cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
+	if (!r) toast_show("The system service isn't responding");
+	else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start the game");
+	else toast_show("Starting...");
+	cJSON_Delete(r);
+}
+
 static void home_counts(void)
 {
 	for (int c = 0; c < CAT_COUNT; c++) {
-		int n = library_category_count((category_t)c);
+		int n = cat_count[c];
 		char t[48];
 		if (n < 0) snprintf(t, sizeof(t), "Looking...");
 		else snprintf(t, sizeof(t), "%d game%s", n, n == 1 ? "" : "s");
@@ -273,10 +305,12 @@ static void home_counts(void)
 
 static void home_continue(void)
 {
-	if (SETTINGS.last_title[0]) {
-		lv_label_set_text(home.cont_title, SETTINGS.last_title);
-		char sub[128];
-		snprintf(sub, sizeof(sub), "%s", SETTINGS.last_system_name);
+	if (last_game) {
+		lv_label_set_text(home.cont_title, api_str(last_game, "title") ? api_str(last_game, "title") : "");
+		char sub[160];
+		long secs = (long)api_num(last_game, "play_seconds", 0);
+		if (secs >= 60) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  %ld h %ld m played", api_str(last_game, "system_name"), secs / 3600, secs / 60 % 60);
+		else snprintf(sub, sizeof(sub), "%s", api_str(last_game, "system_name"));
 		lv_label_set_text(home.cont_sub, sub);
 	} else {
 		lv_label_set_text(home.cont_title, "Nothing yet");
@@ -287,6 +321,7 @@ static void home_continue(void)
 static void show_home(void)
 {
 	cur = SCR_HOME;
+	load_home_data();
 	lv_obj_clean(body);
 	lv_obj_t *sec = mk_label(body, FONT_LABEL, PAL.dim, "LIBRARY");
 	lv_obj_set_style_text_letter_space(sec, S(3), 0);
@@ -312,16 +347,27 @@ static void show_home(void)
 	lv_obj_set_style_border_width(cont, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(cont, PAL.line, 0);
 	lv_obj_set_pos(cont, S(56), S(470));
-	lv_obj_t *art = mk_box(cont, S(72), S(88), lv_color_hex(0x2a2119), S(8));
+	int aw = S(72), ah = S(88);
+	lv_obj_t *art = mk_box(cont, aw, ah, lv_color_hex(0x2a2119), S(8));
 	lv_obj_set_style_border_width(art, 1, 0);
 	lv_obj_set_style_border_color(art, lv_color_hex(0x3a3530), 0);
+	lv_obj_set_style_clip_corner(art, true, 0);
 	lv_obj_align(art, LV_ALIGN_LEFT_MID, S(28), 0);
-	icon_t last_icon = ICON_DISC;
-	for (int i = 0; i < NSYSTEMS; i++)
-		if (!strcmp(SYSTEMS[i].id, SETTINGS.last_system)) last_icon = CAT_ICON[SYSTEMS[i].cat];
-	lv_obj_t *aic = icon_create(art, last_icon, S(34));
-	lv_obj_set_style_text_color(aic, PAL.acc, 0);
-	lv_obj_center(aic);
+	const char *last_art = last_game ? api_str(last_game, "art") : NULL;
+	if (last_art) {
+		static char src[1100];
+		snprintf(src, sizeof(src), "A:%s", last_art);
+		lv_obj_t *img = lv_image_create(art);
+		lv_obj_set_size(img, aw, ah);
+		lv_image_set_inner_align(img, LV_IMAGE_ALIGN_COVER);
+		lv_image_set_src(img, src);
+		lv_obj_center(img);
+	} else {
+		int cat = last_game ? (int)api_num(last_game, "category", 0) : 0;
+		lv_obj_t *aic = icon_create(art, CAT_ICON[cat >= 0 && cat < CAT_COUNT ? cat : 0], S(34));
+		lv_obj_set_style_text_color(aic, PAL.acc, 0);
+		lv_obj_center(aic);
+	}
 	lv_obj_t *l1 = mk_label(cont, FONT_LABEL, PAL.dim, "PICK UP WHERE YOU LEFT OFF");
 	lv_obj_set_style_text_letter_space(l1, S(3), 0);
 	lv_obj_set_pos(l1, S(124), S(28));
@@ -330,7 +376,7 @@ static void show_home(void)
 	home.cont_sub = mk_label(cont, FONT_SMALL, PAL.dim, "");
 	lv_obj_set_pos(home.cont_sub, S(124), S(80));
 	home.cont = cont;
-	if (SETTINGS.last_title[0]) {
+	if (last_game) {
 		lv_obj_t *pill = mk_box(cont, LV_SIZE_CONTENT, S(36), PAL.panel, LV_RADIUS_CIRCLE);
 		lv_obj_set_style_border_width(pill, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(pill, PAL.acc, 0);
@@ -343,23 +389,41 @@ static void show_home(void)
 
 	static const char *const hints_last[] = { "A", "Open", "X", "Play last", "\xE2\x89\xA1", "Settings", NULL };
 	static const char *const hints[] = { "A", "Open", "\xE2\x89\xA1", "Settings", NULL };
-	footer_set(SETTINGS.last_title[0] ? hints_last : hints);
+	footer_set(last_game ? hints_last : hints);
 }
 
 /* ---------- Systems in a category ---------- */
 
-static int sys_idx[64], nsys;
+typedef struct { char id[24], name[48]; int games, core; } sys_item_t;
+static sys_item_t sys_items[64];
+static int nsys;
 static category_t sys_cat;
 static vlist_t sys_list;
 static lv_obj_t *sys_detail_name, *sys_detail_count, *sys_detail_core;
 
+static void load_systems(category_t c)
+{
+	nsys = 0;
+	cJSON *r = api_call("{\"cmd\":\"systems\",\"category\":%d}", (int)c);
+	if (api_ok(r)) {
+		cJSON *it;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "systems")) {
+			if (nsys >= 64) break;
+			sys_item_t *s = &sys_items[nsys++];
+			snprintf(s->id, sizeof(s->id), "%s", api_str(it, "id") ? api_str(it, "id") : "");
+			snprintf(s->name, sizeof(s->name), "%s", api_str(it, "name") ? api_str(it, "name") : "");
+			s->games = (int)api_num(it, "games", 0);
+			s->core = cJSON_IsTrue(cJSON_GetObjectItem(it, "core"));
+		}
+	}
+	cJSON_Delete(r);
+}
+
 static void sys_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	game_system_t *s = &SYSTEMS[sys_idx[i]];
-	snprintf(t, n, "%s", s->name);
-	if (s->count < 0) snprintf(val, vn, "...");
-	else snprintf(val, vn, "%d", s->count);
-	*dim = s->count == 0;
+	snprintf(t, n, "%s", sys_items[i].name);
+	snprintf(val, vn, "%d", sys_items[i].games);
+	*dim = !sys_items[i].core;
 }
 
 static void sys_detail(void)
@@ -370,13 +434,12 @@ static void sys_detail(void)
 		lv_label_set_text(sys_detail_core, "");
 		return;
 	}
-	game_system_t *s = &SYSTEMS[sys_idx[sys_list.sel]];
+	sys_item_t *s = &sys_items[sys_list.sel];
 	lv_label_set_text(sys_detail_name, s->name);
 	char t[64];
-	if (s->count < 0) snprintf(t, sizeof(t), "Looking for games...");
-	else snprintf(t, sizeof(t), "%d game%s", s->count, s->count == 1 ? "" : "s");
+	snprintf(t, sizeof(t), "%d game%s", s->games, s->games == 1 ? "" : "s");
 	lv_label_set_text(sys_detail_count, t);
-	lv_label_set_text(sys_detail_core, s->core_found ? "" : "Core not installed");
+	lv_label_set_text(sys_detail_core, s->core ? "" : "Core not installed");
 }
 
 static void screen_title(const char *label, const char *title)
@@ -392,9 +455,9 @@ static void show_systems(category_t c)
 {
 	cur = SCR_SYSTEMS;
 	sys_cat = c;
+	load_systems(c);
 	lv_obj_clean(body);
 	screen_title("LIBRARY", category_name(c));
-	nsys = library_category_systems(c, sys_idx, 64);
 	vlist_create(&sys_list, body, S(56), S(176), S(640), S(440));
 	sys_list.count = nsys;
 	sys_list.fill = sys_fill;
@@ -425,13 +488,43 @@ static void show_systems(category_t c)
 
 /* ---------- Games of a system ---------- */
 
-static game_system_t *games_sys;
-static game_t *games;
+typedef struct { long long id; char *title; } game_item_t;
+static game_item_t *games;
 static int ngames;
+static char games_sys[24];
+static int games_cat;
 static vlist_t game_list;
 static lv_obj_t *g_art, *g_noart, *g_title, *g_info, *g_desc, *g_where;
 static lv_timer_t *art_timer;
 static char art_src[1100];
+static cJSON *detail;
+static int info_y, desc_h;          /* the description moves up when there are no details */             /* the selected game's details */
+
+static void free_games(void)
+{
+	for (int i = 0; i < ngames; i++) free(games[i].title);
+	free(games);
+	games = NULL;
+	ngames = 0;
+}
+
+static void load_games(const char *sys)
+{
+	free_games();
+	cJSON *r = api_call("{\"cmd\":\"games\",\"system\":\"%s\"}", sys);
+	if (api_ok(r)) {
+		cJSON *arr = cJSON_GetObjectItem(r, "games");
+		int n = cJSON_GetArraySize(arr);
+		games = calloc((size_t)(n ? n : 1), sizeof(*games));
+		cJSON *it;
+		cJSON_ArrayForEach(it, arr) {
+			games[ngames].id = (long long)api_num(it, "id", -1);
+			games[ngames].title = strdup(api_str(it, "title") ? api_str(it, "title") : "");
+			ngames++;
+		}
+	}
+	cJSON_Delete(r);
+}
 
 static void game_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
@@ -439,34 +532,26 @@ static void game_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	snprintf(t, n, "%s", games[i].title);
 }
 
-static const char *where_label(const char *path)
-{
-	if (!strncmp(path, "/media/usb", 10)) return "USB / NVMe drive";
-	if (strstr(path, "/cifs/")) return "Network share";
-	return "SD card";
-}
-
 /* box art loads a moment after the selection settles, so scrolling through a list stays quick */
 static void art_load(lv_timer_t *t)
 {
 	(void)t;
 	art_timer = NULL;
-	if (cur != SCR_GAMES || !ngames) return;
-	const meta_t *m = meta_for(games[game_list.sel].path);
-	if (m->image) {
-		snprintf(art_src, sizeof(art_src), "A:%s", m->image);   /* LVGL's file driver letter */
+	if (cur != SCR_GAMES || !detail) return;
+	const char *art = api_str(detail, "art");
+	if (art) {
+		snprintf(art_src, sizeof(art_src), "A:%s", art);   /* LVGL's file driver letter */
 		lv_image_set_src(g_art, art_src);
 		lv_obj_set_hidden(g_art, false);
 		lv_obj_set_hidden(g_noart, true);
-	} else {
-		lv_obj_set_hidden(g_art, true);
-		lv_obj_set_hidden(g_noart, false);
 	}
 }
 
 static void game_detail(void)
 {
 	if (art_timer) { lv_timer_delete(art_timer); art_timer = NULL; }
+	cJSON_Delete(detail);
+	detail = NULL;
 	if (!ngames) {
 		lv_label_set_text(g_title, "No games found");
 		lv_label_set_text(g_info, "");
@@ -476,48 +561,67 @@ static void game_detail(void)
 		lv_obj_set_hidden(g_noart, false);
 		return;
 	}
-	game_t *g = &games[game_list.sel];
-	const meta_t *m = meta_for(g->path);
-	lv_label_set_text(g_title, m->name ? m->name : g->title);
+	game_item_t *g = &games[game_list.sel];
+	cJSON *r = api_call("{\"cmd\":\"game\",\"id\":%lld}", g->id);
+	if (api_ok(r)) detail = cJSON_DetachItemFromObject(r, "game");
+	cJSON_Delete(r);
+	const cJSON *d = detail;
+	lv_label_set_text(g_title, d && api_str(d, "title") ? api_str(d, "title") : g->title);
 
 	/* 1997 · Publisher · 1-2 players · Genre */
-	char info[256] = "";
-	const char *parts[] = { m->date, m->publisher ? m->publisher : m->developer, NULL, m->genre };
-	char players[32] = "";
-	if (m->players) { snprintf(players, sizeof(players), "%s player%s", m->players, strcmp(m->players, "1") ? "s" : ""); parts[2] = players; }
+	char info[256] = "", players[32] = "";
+	const char *parts[4] = { NULL };
+	if (d) {
+		parts[0] = api_str(d, "year");
+		parts[1] = api_str(d, "publisher") ? api_str(d, "publisher") : api_str(d, "developer");
+		const char *pl = api_str(d, "players");
+		if (pl) { snprintf(players, sizeof(players), "%s player%s", pl, strcmp(pl, "1") ? "s" : ""); parts[2] = players; }
+		parts[3] = api_str(d, "genre");
+	}
 	for (int i = 0; i < 4; i++) {
 		if (!parts[i] || !*parts[i]) continue;
 		if (info[0]) strncat(info, "  \xC2\xB7  ", sizeof(info) - strlen(info) - 1);
 		strncat(info, parts[i], sizeof(info) - strlen(info) - 1);
 	}
 	lv_label_set_text(g_info, info);
-	lv_label_set_text(g_desc, m->desc ? m->desc : "");
+	lv_obj_set_hidden(g_info, !info[0]);
+	lv_obj_set_y(g_desc, info[0] ? info_y + S(28) : info_y);
+	lv_obj_set_height(g_desc, info[0] ? desc_h : desc_h + S(28));
+	const char *desc = d ? api_str(d, "description") : NULL;
+	lv_label_set_text(g_desc, desc ? desc : "");
 
-	const char *base = strrchr(g->path, '/');
-	char where[600];
-	snprintf(where, sizeof(where), "%s  \xC2\xB7  %s", where_label(g->path), base ? base + 1 : g->path);
+	/* where the file is: SD card · name.ext */
+	char where[600] = "";
+	cJSON *files = d ? cJSON_GetObjectItem(d, "files") : NULL;
+	cJSON *f0 = cJSON_GetArrayItem(files, 0);
+	if (f0) {
+		const char *p = api_str(f0, "path"), *base = p ? strrchr(p, '/') : NULL;
+		snprintf(where, sizeof(where), "%s  \xC2\xB7  %s%s", api_str(f0, "where"), base ? base + 1 : (p ? p : ""),
+		         cJSON_IsTrue(cJSON_GetObjectItem(f0, "online")) ? "" : "  (not connected)");
+	}
 	lv_label_set_text(g_where, where);
 
 	/* keep the old art up until the new one is ready, unless this game has none */
-	if (!m->image) { lv_obj_set_hidden(g_art, true); lv_obj_set_hidden(g_noart, false); }
+	if (!d || !api_str(d, "art")) {
+		lv_obj_set_hidden(g_art, true);
+		lv_obj_set_hidden(g_noart, false);
+		return;
+	}
 	art_timer = lv_timer_create(art_load, 120, NULL);
 	lv_timer_set_repeat_count(art_timer, 1);
 }
 
-static void show_games(game_system_t *s)
+static void show_games(const char *sys_id, const char *sys_name, int cat)
 {
 	cur = SCR_GAMES;
-	games_sys = s;
+	snprintf(games_sys, sizeof(games_sys), "%s", sys_id);
+	games_cat = cat;
 	if (art_timer) { lv_timer_delete(art_timer); art_timer = NULL; }
-	if (games) library_free_games(games, ngames);
-	games = library_games(s, &ngames);
-	char dirs[16][512];
-	int nd = library_system_dirs(s, dirs, 16);
-	meta_load(s->id, dirs, nd);
+	load_games(sys_id);
 	lv_obj_clean(body);
 	char label[96];
-	spaced_caps(label, sizeof(label), category_name(s->cat));
-	screen_title(label, s->name);
+	spaced_caps(label, sizeof(label), category_name((category_t)cat));
+	screen_title(label, sys_name);
 	vlist_create(&game_list, body, S(56), S(176), S(560), S(440));
 	game_list.count = ngames;
 	game_list.fill = game_fill;
@@ -539,7 +643,7 @@ static void show_games(game_system_t *s)
 	lv_obj_set_hidden(g_art, true);
 	g_noart = mk_box(panel, iw, ah, lv_color_mix(PAL.panel, PAL.bg, 128), S(10));
 	lv_obj_set_pos(g_noart, pad, pad);
-	lv_obj_t *nic = icon_create(g_noart, CAT_ICON[s->cat], S(64));
+	lv_obj_t *nic = icon_create(g_noart, CAT_ICON[cat >= 0 && cat < CAT_COUNT ? cat : 0], S(64));
 	lv_obj_set_style_text_color(nic, PAL.line, 0);
 	lv_obj_center(nic);
 
@@ -553,8 +657,10 @@ static void show_games(game_system_t *s)
 	lv_label_set_long_mode(g_info, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(g_info, iw, S(20));
 	lv_obj_set_pos(g_info, pad, y);
+	info_y = y;
 	y += S(28);
 	int bottom = S(34);
+	desc_h = ph - y - bottom - S(8);
 	g_desc = mk_label(panel, FONT_SMALL, PAL.dim, "");
 	lv_label_set_long_mode(g_desc, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_style_text_line_space(g_desc, S(3), 0);
@@ -568,25 +674,13 @@ static void show_games(game_system_t *s)
 	char cnt[48];
 	snprintf(cnt, sizeof(cnt), "%d game%s", ngames, ngames == 1 ? "" : "s");
 	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.dim, cnt);
-	lv_obj_align(c, LV_ALIGN_TOP_LEFT, S(56) + S(560) - S(10) - lv_obj_get_width(c), S(134));
 	lv_obj_update_layout(c);
-	lv_obj_set_x(c, S(56) + S(560) - S(10) - lv_obj_get_width(c));
+	lv_obj_set_pos(c, S(56) + S(560) - S(10) - lv_obj_get_width(c), S(134));
 
 	vlist_refresh(&game_list);
 	game_detail();
 	static const char *const hints[] = { "A", "Play", "B", "Back", "L", "Page up", "R", "Page down", NULL };
 	footer_set(hints);
-}
-
-static void play(game_system_t *s, game_t *g)
-{
-	char err[256];
-	if (library_launch(s, g, err, sizeof(err)) != 0) {
-		toast_show(err);
-		return;
-	}
-	settings_set_last(s, g);
-	toast_show("Starting...");
 }
 
 /* ---------- Settings ---------- */
@@ -648,8 +742,7 @@ static void show_settings(void)
 
 void ui_rescan(void)
 {
-	for (int i = 0; i < NSYSTEMS; i++) SYSTEMS[i].count = -1;
-	library_scan_start();
+	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
 }
 
 void ui_key(pkey_t k)
@@ -660,23 +753,24 @@ void ui_key(pkey_t k)
 		else if (k == K_RIGHT) shelf_go(home.sel + 1);
 		else if (k == K_A) show_systems((category_t)home.sel);
 		else if (k == K_MENU) show_settings();
-		else if (k == K_X && SETTINGS.last_title[0]) {
-			game_system_t *s = NULL;
-			for (int i = 0; i < NSYSTEMS; i++) if (!strcmp(SYSTEMS[i].id, SETTINGS.last_system)) s = &SYSTEMS[i];
-			game_t g = { SETTINGS.last_path, SETTINGS.last_title };
-			if (s) play(s, &g);
-		}
+		else if (k == K_X && last_game) play_id((long long)api_num(last_game, "id", -1));
 		break;
 	case SCR_SYSTEMS:
 		if (vlist_key(&sys_list, k)) sys_detail();
-		else if (k == K_A && nsys) show_games(&SYSTEMS[sys_idx[sys_list.sel]]);
+		else if (k == K_A && nsys) show_games(sys_items[sys_list.sel].id, sys_items[sys_list.sel].name, sys_cat);
 		else if (k == K_B) show_home();
 		break;
 	case SCR_GAMES:
 		if (vlist_key(&game_list, k)) game_detail();
-		else if (k == K_A && ngames) play(games_sys, &games[game_list.sel]);
-		else if (k == K_B) { int keep = 0; for (int i = 0; i < nsys; i++) if (&SYSTEMS[sys_idx[i]] == games_sys) keep = i;
-			show_systems(sys_cat); sys_list.sel = keep; vlist_refresh(&sys_list); sys_detail(); }
+		else if (k == K_A && ngames) play_id(games[game_list.sel].id);
+		else if (k == K_B) {
+			int keep = 0;
+			show_systems(sys_cat);
+			for (int i = 0; i < nsys; i++) if (!strcmp(sys_items[i].id, games_sys)) keep = i;
+			sys_list.sel = keep;
+			vlist_refresh(&sys_list);
+			sys_detail();
+		}
 		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
@@ -691,26 +785,29 @@ void ui_key(pkey_t k)
 }
 
 static int last_gen = -1;
-static uint32_t last_status;
+static uint32_t last_status, last_poll;
 
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
 	if (now - last_status > 2000 || last_status == 0) { status_update(); last_status = now ? now : 1; }
-	int g = library_scan_generation();
-	if (g != last_gen) {
-		last_gen = g;
-		if (cur == SCR_HOME) home_counts();
-		else if (cur == SCR_SYSTEMS) {
-			nsys = library_category_systems(sys_cat, sys_idx, 64);
-			sys_list.count = nsys;
-			vlist_refresh(&sys_list);
-			sys_detail();
+	/* the library changed (a scan finished): refresh what's on screen */
+	if (now - last_poll >= 1000 || last_poll == 0) {
+		last_poll = now ? now : 1;
+		cJSON *r = api_call("{\"cmd\":\"status\"}");
+		int g = r ? (int)api_num(r, "generation", -1) : -1;
+		cJSON_Delete(r);
+		if (g != last_gen) {
+			int first = last_gen < 0;
+			last_gen = g;
+			if (!first && cur == SCR_HOME) { load_home_data(); home_counts(); home_continue(); }
+			else if (!first && cur == SCR_SYSTEMS) {
+				load_systems(sys_cat);
+				sys_list.count = nsys;
+				vlist_refresh(&sys_list);
+				sys_detail();
+			}
 		}
-	}
-	if (mounts_changed()) {
-		plog("mounts changed: looking for games again");
-		ui_rescan();
 	}
 }
 

@@ -1,4 +1,4 @@
-/* Phosphor frontend: settings and the last game played (frontend.ini on the SD card).
+/* Phosphor shell: its own settings (frontend.ini on the SD card).
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 #include "settings.h"
 #include "log.h"
@@ -30,10 +30,6 @@ void settings_load(void)
 		const char *k = line, *v = eq + 1;
 		if (!strcmp(k, "accent")) SETTINGS.accent = atoi(v);
 		else if (!strcmp(k, "clock24")) SETTINGS.clock24 = atoi(v);
-		else if (!strcmp(k, "last_system")) snprintf(SETTINGS.last_system, sizeof(SETTINGS.last_system), "%s", v);
-		else if (!strcmp(k, "last_system_name")) snprintf(SETTINGS.last_system_name, sizeof(SETTINGS.last_system_name), "%s", v);
-		else if (!strcmp(k, "last_path")) snprintf(SETTINGS.last_path, sizeof(SETTINGS.last_path), "%s", v);
-		else if (!strcmp(k, "last_title")) snprintf(SETTINGS.last_title, sizeof(SETTINGS.last_title), "%s", v);
 	}
 	fclose(f);
 }
@@ -55,18 +51,7 @@ void settings_save(void)
 	snprintf(tmp, sizeof(tmp), "%s.tmp", p);
 	FILE *f = fopen(tmp, "w");
 	if (!f) { plog("can't write %s", p); return; }
-	fprintf(f, "accent=%d\nclock24=%d\nlast_system=%s\nlast_system_name=%s\nlast_path=%s\nlast_title=%s\n",
-	        SETTINGS.accent, SETTINGS.clock24, SETTINGS.last_system, SETTINGS.last_system_name,
-	        SETTINGS.last_path, SETTINGS.last_title);
+	fprintf(f, "accent=%d\nclock24=%d\n", SETTINGS.accent, SETTINGS.clock24);
 	fclose(f);
 	rename(tmp, p);
-}
-
-void settings_set_last(const game_system_t *s, const game_t *g)
-{
-	snprintf(SETTINGS.last_system, sizeof(SETTINGS.last_system), "%s", s->id);
-	snprintf(SETTINGS.last_system_name, sizeof(SETTINGS.last_system_name), "%s", s->name);
-	snprintf(SETTINGS.last_path, sizeof(SETTINGS.last_path), "%s", g->path);
-	snprintf(SETTINGS.last_title, sizeof(SETTINGS.last_title), "%s", g->title);
-	settings_save();
 }
