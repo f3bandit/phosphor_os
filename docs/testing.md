@@ -12,6 +12,23 @@ Legend: **[ ]** not tested yet · **[~]** partly tested on the SS1 · **[x]** do
 - [ ] Phosphor Link connects (`phosphor-link status`) and the Claude app sees it.
 - [ ] Note the stock state for comparison: `phosphor-link run "bash diag.sh report"` (diag module).
 
+## Installing for the tests
+
+Build: `install/build-release.sh` → `dist/phosphor-<version>-armhf.tar.gz` (~2.3 MB).
+Copy it to the SS1 over the network share (`\\200.200.200.23\sdcard`, Samba is on) or with
+Phosphor Link (`push_file`, ~6 min over the debug port), then on the SS1:
+
+```
+cd /media/fat && tar xzf phosphor-<version>-armhf.tar.gz && phosphor-<version>/install.sh
+/media/fat/phosphor/phosphor.sh service     # phosphord only (library, scraper, diagnostics)
+/media/fat/phosphor/phosphor.sh start       # + the shell (press F9 on a keyboard if not visible)
+/media/fat/phosphor/phosphor.sh status      # stop / log
+```
+
+- [ ] `install.sh` (no boot entry) → only `/media/fat/phosphor` created.
+- [ ] `install.sh --boot` → block "phosphor" in `linux/user-startup.sh`, backup in `phosphor/backup/`; reboot → phosphord running.
+- [ ] `uninstall.sh` → boot block gone, `user-startup.sh` byte-for-byte as before, library kept; `--all` → folder gone.
+
 ## 1. Phosphor Link (PC tool, debug port)
 
 - [x] Connects on COM5, logs in, `status` and `selftest` pass (2026-10-22).
