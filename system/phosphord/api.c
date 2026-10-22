@@ -5,7 +5,9 @@
  *   status                                  version, indexing, scan generation, game count
  *   categories                              [{id,name,games}]
  *   systems    [category] [all]             [{id,name,category,games}]; empty ones only with all
- *   games      system [offset] [limit]      {total, games:[{id,title,favorite}]} in natural order
+ *   games      [system] [filter] [q] [offset] [limit]
+ *                                           {total, games:[{id,title,favorite,linked,system,art,details,scrape}]};
+ *                                           filter: missing_art|missing_details|not_found|linked|unidentified
  *   game       id                           details, art (absolute path), play history, files
  *   last                                    the last game played (same shape as game), or null
  *   launch     id                           start it
@@ -246,27 +248,72 @@ static char *cmd_systems(sqlite3 *db, cJSON *req)
 	return reply(o);
 }
 
+/* games [system] [filter] [q] [offset] [limit]: a system's games, or (with filter or q) games anywhere.
+ * filter: missing_art | missing_details | not_found | linked | unidentified */
 static char *cmd_games(sqlite3 *db, cJSON *req)
 {
-	cJSON *sys = cJSON_GetObjectItem(req, "system");
-	if (!cJSON_IsString(sys)) return fail("system missing");
+	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	const char *filter = cJSON_GetStringValue(cJSON_GetObjectItem(req, "filter"));
+	const char *q = cJSON_GetStringValue(cJSON_GetObjectItem(req, "q"));
+	if (filter && !*filter) filter = NULL;
+	if (q && !*q) q = NULL;
+	if (!sys && !filter && !q) return fail("system missing");
 	cJSON *off = cJSON_GetObjectItem(req, "offset"), *lim = cJSON_GetObjectItem(req, "limit");
 	int offset = cJSON_IsNumber(off) ? off->valueint : 0, limit = cJSON_IsNumber(lim) ? lim->valueint : 100000;
+	const char *fw = "";
+	if (filter) {
+		if (!strcmp(filter, "missing_art")) fw = " AND COALESCE(g.art_box, b.art_box) IS NULL";
+		else if (!strcmp(filter, "missing_details")) fw = " AND COALESCE(g.description, b.description) IS NULL";
+		else if (!strcmp(filter, "not_found")) fw = " AND g.scrape='miss' AND g.based_on IS NULL";
+		else if (!strcmp(filter, "linked")) fw = " AND g.based_on IS NOT NULL";
+		else if (!strcmp(filter, "unidentified")) fw = " AND g.key LIKE 'n:%'";
+		else return fail("filter: missing_art, missing_details, not_found, linked or unidentified");
+	}
+	char where[600];
+	snprintf(where, sizeof(where), " FROM games g LEFT JOIN games b ON b.id=g.based_on WHERE " VISIBLE "%s%s%s",
+	         sys ? " AND g.system_id=?1" : "", fw, q ? " AND g.title LIKE ?2 ESCAPE '\\'" : "");
+	char like[300] = "";
+	if (q) {
+		size_t k = 0;
+		like[k++] = '%';
+		for (const char *c = q; *c && k < sizeof(like) - 3; c++) {
+			if (*c == '%' || *c == '_' || *c == '\\') like[k++] = '\\';
+			like[k++] = *c;
+		}
+		like[k++] = '%';
+		like[k] = 0;
+	}
 	cJSON *o = ok();
-	cJSON_AddNumberToObject(o, "total", system_count(db, sys->valuestring));
-	cJSON *arr = cJSON_AddArrayToObject(o, "games");
 	sqlite3_stmt *st;
-	if (sqlite3_prepare_v2(db, "SELECT g.id, g.title, g.favorite, g.based_on FROM games g WHERE g.system_id=? AND " VISIBLE
-	                           " ORDER BY g.title COLLATE NATSORT LIMIT ? OFFSET ?", -1, &st, NULL) == SQLITE_OK) {
-		sqlite3_bind_text(st, 1, sys->valuestring, -1, SQLITE_STATIC);
-		sqlite3_bind_int(st, 2, limit);
-		sqlite3_bind_int(st, 3, offset);
+	char sql[1200];
+	int total = 0;
+	snprintf(sql, sizeof(sql), "SELECT COUNT(*)%s", where);
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
+		if (sys) sqlite3_bind_text(st, 1, sys, -1, SQLITE_STATIC);
+		if (q) sqlite3_bind_text(st, 2, like, -1, SQLITE_STATIC);
+		if (sqlite3_step(st) == SQLITE_ROW) total = sqlite3_column_int(st, 0);
+		sqlite3_finalize(st);
+	}
+	cJSON_AddNumberToObject(o, "total", total);
+	cJSON *arr = cJSON_AddArrayToObject(o, "games");
+	snprintf(sql, sizeof(sql), "SELECT g.id, g.title, g.favorite, g.based_on, g.system_id,"
+	         " COALESCE(g.art_box, b.art_box) IS NOT NULL, COALESCE(g.description, b.description) IS NOT NULL,"
+	         " g.key, g.scrape%s ORDER BY %sg.title COLLATE NATSORT LIMIT ?3 OFFSET ?4", where, sys ? "" : "g.system_id, ");
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
+		if (sys) sqlite3_bind_text(st, 1, sys, -1, SQLITE_STATIC);
+		if (q) sqlite3_bind_text(st, 2, like, -1, SQLITE_STATIC);
+		sqlite3_bind_int(st, 3, limit);
+		sqlite3_bind_int(st, 4, offset);
 		while (sqlite3_step(st) == SQLITE_ROW) {
 			cJSON *x = cJSON_CreateObject();
 			cJSON_AddNumberToObject(x, "id", (double)sqlite3_column_int64(st, 0));
 			add_text(x, "title", st, 1);
 			cJSON_AddBoolToObject(x, "favorite", sqlite3_column_int(st, 2));
 			cJSON_AddBoolToObject(x, "linked", sqlite3_column_type(st, 3) != SQLITE_NULL);
+			add_text(x, "system", st, 4);
+			cJSON_AddBoolToObject(x, "art", sqlite3_column_int(st, 5));
+			cJSON_AddBoolToObject(x, "details", sqlite3_column_int(st, 6));
+			cJSON_AddStringToObject(x, "scrape", scrape_state(st, 3, 7, 8));
 			cJSON_AddItemToArray(arr, x);
 		}
 		sqlite3_finalize(st);
@@ -600,6 +647,15 @@ static char *cmd_diag(cJSON *req)
 	return reply(o);
 }
 
+static void db_exec_id(sqlite3 *db, const char *sql, long long id)
+{
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return;
+	sqlite3_bind_int64(st, 1, id);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+}
+
 static const char *EDITABLE[] = { "title", "description", "year", "developer", "publisher", "genre", "players", "region", NULL };
 
 static char *cmd_edit(sqlite3 *db, cJSON *req)
@@ -637,6 +693,7 @@ static char *cmd_edit(sqlite3 *db, cJSON *req)
 		sqlite3_step(st);
 		sqlite3_finalize(st);
 	}
+	db_exec_id(db, "UPDATE games SET scrape='done' WHERE id=? AND scrape='miss' AND description IS NOT NULL", id);
 	db_exec(db, "COMMIT");
 	return cmd_game(db, id);
 }
@@ -660,6 +717,7 @@ static char *cmd_set_art(sqlite3 *db, cJSON *req)
 	sqlite3_bind_int64(st, 2, id);
 	sqlite3_step(st);
 	sqlite3_finalize(st);
+	db_exec_id(db, "UPDATE games SET scrape='done' WHERE id=? AND scrape='miss'", id);   /* not "not found" any more */
 	plog("new box art for game %lld", id);
 	return cmd_game(db, id);
 }

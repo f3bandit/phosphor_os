@@ -1,7 +1,7 @@
 # Remote access API
 
 For the Phosphor phone app, a PC app, or the Claude plugin: manage a MiSTer's Phosphor library over the
-home network. phosphord 0.8 and later.
+home network. phosphord 0.8 and later (`games` filters: 0.8.1).
 
 ## Turning it on
 
@@ -55,7 +55,7 @@ Paired devices may use:
 |---|---|
 | `status` | version, indexing, game count, `generation` (changes when the library changes: refresh then) |
 | `categories`, `systems` | the shelf |
-| `games` `{"system":"PSX","offset":0,"limit":100}` | a system's games |
+| `games` `{"system":"PSX","filter":"missing_art","q":"final","offset":0,"limit":100}` | a system's games, or with `filter` (`missing_art`, `missing_details`, `not_found`, `linked`, `unidentified`) / `q` (title search) across all systems; each with `system`, `art`, `details`, `scrape` |
 | `game` `{"id":20}` | details, files, `based_on`, `scrape` state (`found`, `not_found`, `linked`, ...) |
 | `edit` `{"id":20,"set":{"title":"...","description":"...","year":"1996","developer":"...","publisher":"...","genre":"...","players":"1-2","region":"USA"}}` | change details; `""` or `null` clears a field; the title can't be empty. Replies with the game. The scraper never overwrites a field that has a value. |
 | `link` `{"id":21,"base":20}`, `unlink`, `candidates` `{"id":21,"q":"tactics"}` | "Based on": a hack uses its base game's art and details |
