@@ -52,25 +52,31 @@ switch_main() {
 
 case "${1:-status}" in
 	boot)
-		# a new card: the modules, once, from the Phosphor release kept next to this script
-		if [ -f "$ROOT/firstboot" ]; then
-			tb="$(ls -t "$ROOT"/phosphor-*-armhf.tar.gz 2>/dev/null | head -1)"
-			w="$TMP/firstboot"
-			rm -rf "$w"; mkdir -p "$w"
-			if [ -n "$tb" ] && tar xzf "$tb" -C "$w" 2>> "$ROOT/logs/firstboot.log"; then
-				for m in $(cat "$ROOT/firstboot"); do
-					s="$(ls "$w"/*/modules/"$m"/install.sh 2>/dev/null | head -1)"
-					[ -n "$s" ] || continue
-					PHOSPHOR_ROOT="$ROOT" bash "$s" >> "$ROOT/logs/firstboot.log" 2>&1 && echo "module $m installed" >> "$ROOT/logs/firstboot.log"
-				done
-				rm -f "$ROOT/firstboot"
-			fi
-			rm -rf "$w"
-		fi
-		# Phosphor's Main is already the system's (main= in MiSTer.ini); without it, swap now
+		# Phosphor first, so it's on screen within seconds of MiSTer starting
 		start_service
-		pidof MiSTer_phosphor > /dev/null || switch_main
+		pidof MiSTer_phosphor > /dev/null || switch_main      # main= in MiSTer.ini normally does this
 		"$0" start
+		# a new card: the modules, once, in the background from the Phosphor release kept next to this
+		# script, so a first boot isn't held up by them
+		if [ -f "$ROOT/firstboot" ]; then
+			nice -n 10 "$0" firstboot < /dev/null > /dev/null 2>&1 &
+		fi
+		;;
+	firstboot)
+		[ -f "$ROOT/firstboot" ] || exit 0
+		mkdir "$TMP/firstboot.lock" 2>/dev/null || exit 0
+		tb="$(ls -t "$ROOT"/phosphor-*-armhf.tar.gz 2>/dev/null | head -1)"
+		w="$TMP/firstboot"
+		rm -rf "$w"; mkdir -p "$w"
+		if [ -n "$tb" ] && tar xzf "$tb" -C "$w" 2>> "$ROOT/logs/firstboot.log"; then
+			for m in $(cat "$ROOT/firstboot"); do
+				s="$(ls "$w"/*/modules/"$m"/install.sh 2>/dev/null | head -1)"
+				[ -n "$s" ] || continue
+				PHOSPHOR_ROOT="$ROOT" bash "$s" >> "$ROOT/logs/firstboot.log" 2>&1 && echo "module $m installed" >> "$ROOT/logs/firstboot.log"
+			done
+			rm -f "$ROOT/firstboot"
+		fi
+		rm -rf "$w"; rmdir "$TMP/firstboot.lock"
 		;;
 	main)
 		switch_main && echo "Phosphor's Main is running (MiSTer's comes back on the next boot)"
