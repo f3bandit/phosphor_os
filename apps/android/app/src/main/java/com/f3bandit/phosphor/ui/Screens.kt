@@ -205,6 +205,14 @@ fun HomeContent(
                     }
                 }
             }
+            if (status != null) {
+                item {
+                    Card {
+                        Row2("Favorites", value = "›", onClick = { onFilter("favorites", "Favorites") })
+                        Row2("Recently played", value = "›", onClick = { onFilter("recent", "Recently played") })
+                    }
+                }
+            }
             if (systems.isNotEmpty()) {
                 item { Label("Systems", Modifier.padding(top = 8.dp)) }
                 item { Card { systems.forEach { s -> Row2(s.name, value = "${s.games}", onClick = { onSystem(s) }) } } }
@@ -398,7 +406,7 @@ fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBa
             Label("About", Modifier.padding(top = 8.dp))
             Card {
                 Row2("Phosphor for Android", value = version)
-                Row2("Works with", value = "phosphord 0.12.0 or later")
+                Row2("Works with", value = "phosphord 0.12.1 or later")
             }
             Text("The app only talks to your MiSTer, on your home network. It collects nothing and sends nothing anywhere else.\n\n" +
                 "Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).", style = T.small)
