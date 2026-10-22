@@ -113,6 +113,17 @@ Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also kee
 - [ ] wpa_supplicant not running (e.g. after `killall wpa_supplicant`) → joining starts it the way MiSTer does.
 - [ ] On-screen keyboard with each controller: D-pad, A types, X deletes, Y switches layers, Start = Done, B cancels.
 
+## 5b. Bluetooth (Settings > Bluetooth)
+
+- [ ] The list shows the controllers already paired (from MiSTer's own pairing) with Connected / Not connected.
+- [ ] Pair a controller: put one in pairing mode → "Pairing...", "Connecting...", then "Paired <name>"; it works in
+      the shell and in a game. The same controller paired again later works too (MiSTer's tool re-pairs it).
+- [ ] Stop looking while nothing is in pairing mode → "Cancelled"; MiSTer's OSD BT pairing still works afterwards.
+- [ ] A on a controller → A Disconnect (it reconnects when turned on again) / X Forget (gone from the list; MiSTer's
+      OSD no longer knows it either).
+- [ ] The status bar's Bluetooth count matches the connected controllers.
+- [ ] Phone app/remote: `{"cmd":"bluetooth"}` lists them (pairings themselves never leave the SS1).
+
 ## 6. Screen filters (Settings > Screen filters)
 
 Before: copy `/media/fat/config/*_scaler.cfg`, `*_shmask.cfg`, `*_gamma.cfg` somewhere safe.

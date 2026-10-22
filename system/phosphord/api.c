@@ -43,6 +43,10 @@
  *   backup     [do: now|preview|restore] [name] [only: "saves|savestates"]
  *                                           snapshots (backup-agent module): {installed, status{...},
  *                                           snapshots:[{name, kb, when, reason}], job{name,busy,ok,output,at}}
+ *   bluetooth  [do: pair|cancel|forget|disconnect] [mac]
+ *                                           {present, devices:[{mac, name, connected, input, icon}],
+ *                                           pairing{busy, ok, at, found, message}}; pair looks for a
+ *                                           controller in pairing mode (MiSTer's btctl), up to 90 s
  *   ports      [prepare]                   the front ports (phosphor-main + the Phosphor menu core):
  *                                           {main_api, available, can_load, in_game, on}; prepare loads
  *                                           the Phosphor menu core if needed (menu only) and turns them on
@@ -69,6 +73,7 @@
 #include "cloud.h"
 #include "backup.h"
 #include "memcard.h"
+#include "bt.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -876,6 +881,46 @@ static char *cmd_pads(void)
 	return reply(j);
 }
 
+static char *cmd_bluetooth(cJSON *req)
+{
+	char err[200];
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *mac = cJSON_GetStringValue(cJSON_GetObjectItem(req, "mac"));
+	if (d && *d) {
+		if (!strcmp(d, "pair")) {
+			int r = bt_pair_start();
+			if (r < 0) return fail("No Bluetooth adapter");
+		}
+		else if (!strcmp(d, "cancel")) bt_pair_cancel();
+		else if (!strcmp(d, "forget")) { if (bt_forget(mac, err, sizeof(err))) return fail(err); }
+		else if (!strcmp(d, "disconnect")) { if (bt_disconnect(mac, err, sizeof(err))) return fail(err); }
+		else return fail("do: pair, cancel, forget or disconnect");
+	}
+	bt_state_t s;
+	bt_state(&s);
+	bt_dev_t dev[BT_MAX];
+	int n = bt_devices(dev, BT_MAX);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "present", s.present);
+	cJSON *arr = cJSON_AddArrayToObject(o, "devices");
+	for (int i = 0; i < n; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "mac", dev[i].mac);
+		cJSON_AddStringToObject(x, "name", dev[i].name);
+		cJSON_AddBoolToObject(x, "connected", dev[i].connected);
+		cJSON_AddBoolToObject(x, "input", dev[i].input);
+		cJSON_AddStringToObject(x, "icon", dev[i].icon);
+		cJSON_AddItemToArray(arr, x);
+	}
+	cJSON *p = cJSON_AddObjectToObject(o, "pairing");
+	cJSON_AddBoolToObject(p, "busy", s.busy);
+	cJSON_AddBoolToObject(p, "ok", s.ok);
+	cJSON_AddNumberToObject(p, "at", (double)s.at);
+	cJSON_AddStringToObject(p, "found", s.found);
+	cJSON_AddStringToObject(p, "message", s.message);
+	return reply(o);
+}
+
 static char *cmd_memcard(cJSON *req)
 {
 	char err[200];
@@ -1049,6 +1094,7 @@ char *api_handle(sqlite3 *db, const char *request)
 		out = ports_pad_analog(cJSON_IsNumber(pt) ? pt->valueint : 0, err, sizeof(err)) ? fail(err) : reply(ok());
 	}
 	else if (!strcmp(c->valuestring, "memcard")) out = cmd_memcard(req);
+	else if (!strcmp(c->valuestring, "bluetooth")) out = cmd_bluetooth(req);
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
