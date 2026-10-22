@@ -1,0 +1,269 @@
+// Phosphor for Android: navigation and the loaders that connect the screens to the MiSTer.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+package com.f3bandit.phosphor
+
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.f3bandit.phosphor.ui.ArtCache
+import com.f3bandit.phosphor.ui.BasedOnContent
+import com.f3bandit.phosphor.ui.ConnectContent
+import com.f3bandit.phosphor.ui.EditContent
+import com.f3bandit.phosphor.ui.GameContent
+import com.f3bandit.phosphor.ui.GamesContent
+import com.f3bandit.phosphor.ui.HomeContent
+import com.f3bandit.phosphor.ui.PhosphorTheme
+import com.f3bandit.phosphor.ui.SettingsContent
+import com.f3bandit.phosphor.ui.gameValues
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        val store = KeystorePairingStore(applicationContext)
+        setContent {
+            PhosphorTheme {
+                val model: AppModel = viewModel(factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T = AppModel(store) as T
+                })
+                PhosphorApp(model)
+            }
+        }
+    }
+}
+
+private fun enc(s: String) = Uri.encode(s)
+
+@Composable
+fun PhosphorApp(model: AppModel) {
+    val nav = rememberNavController()
+    val paired = model.pairing != null
+    LaunchedEffect(paired) {
+        if (!paired) nav.navigate("connect") { popUpTo(0) }
+    }
+    NavHost(nav, startDestination = if (paired) "home" else "connect") {
+        composable("connect") { ConnectRoute(model) { nav.navigate("home") { popUpTo(0) } } }
+        composable("home") { HomeRoute(model, nav) }
+        composable(
+            "games?system={system}&title={title}&filter={filter}&search={search}",
+            arguments = listOf("system", "title", "filter", "search").map { navArgument(it) { type = NavType.StringType; nullable = true; defaultValue = null } },
+        ) { e ->
+            val a = e.arguments
+            GamesRoute(model, nav, a?.getString("system"), a?.getString("title") ?: "Games", a?.getString("filter"), a?.getString("search") == "1")
+        }
+        composable("game/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> GameRoute(model, nav, e.arguments!!.getLong("id")) }
+        composable("edit/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> EditRoute(model, nav, e.arguments!!.getLong("id")) }
+        composable("based/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> BasedRoute(model, nav, e.arguments!!.getLong("id")) }
+        composable("settings") {
+            SettingsContent(model.pairing?.address ?: "", BuildConfigVersion, onForget = { model.forget() }, onBack = { nav.popBackStack() })
+        }
+    }
+}
+
+const val BuildConfigVersion = "0.1.0"
+
+@Composable
+fun ConnectRoute(model: AppModel, onPaired: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var found by remember { mutableStateOf(listOf<Info>()) }
+    var searching by remember { mutableStateOf(false) }
+    var address by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var round by remember { mutableIntStateOf(0) }
+    LaunchedEffect(round) {
+        val ip = localIPv4(ctx)
+        if (ip == null) { error = "Connect the phone to WiFi (the same network as the MiSTer)"; return@LaunchedEffect }
+        searching = true
+        found = runCatching { PhosphorApi.discover(ip) }.getOrDefault(emptyList())
+        searching = false
+        if (address.isBlank() && found.size == 1) address = found[0].address
+    }
+    ConnectContent(found, searching, address, code, busy, error,
+        onAddress = { address = it; error = null }, onCode = { code = it; error = null },
+        onSearch = { round++ }, onPick = { address = it.address },
+        onPair = {
+            scope.launch {
+                busy = true
+                error = null
+                try { model.pair(address, code); onPaired() } catch (e: Exception) { error = e.message }
+                busy = false
+            }
+        })
+}
+
+@Composable
+fun HomeRoute(model: AppModel, nav: NavHostController) {
+    val api = model.api ?: return
+    var status by remember { mutableStateOf<Status?>(null) }
+    var systems by remember { mutableStateOf(listOf<SystemItem>()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(api.address, model.changes) {
+        var gen = -1
+        while (true) {
+            try {
+                val s = api.status()
+                status = s
+                error = null
+                if (s.generation != gen || systems.isEmpty()) { systems = api.systems(); gen = s.generation }
+            } catch (e: Exception) {
+                error = model.handle(e)
+            }
+            delay(if (status?.let { it.indexing || it.identifying || it.scraperRunning } == true) 3000 else 8000)
+        }
+    }
+    HomeContent(api.address, status, systems, error,
+        onFilter = { f, t -> nav.navigate("games?title=${enc(t)}&filter=$f") },
+        onSystem = { nav.navigate("games?system=${enc(it.id)}&title=${enc(it.name)}") },
+        onSearch = { nav.navigate("games?title=${enc("Search")}&search=1") },
+        onSettings = { nav.navigate("settings") })
+}
+
+@Composable
+fun rememberArt(api: PhosphorApi, id: Long, version: Int): ImageBitmap? {
+    val v by produceState(ArtCache.peek("$id@$version"), api.address, id, version) { value = ArtCache.get(api, id, version) }
+    return v
+}
+
+@Composable
+fun GamesRoute(model: AppModel, nav: NavHostController, system: String?, title: String, startFilter: String?, search: Boolean) {
+    val api = model.api ?: return
+    var filter by remember { mutableStateOf(startFilter) }
+    var query by remember { mutableStateOf("") }
+    var games by remember { mutableStateOf<List<GameItem>?>(null) }
+    var total by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(filter, query, model.changes) {
+        if (query.isNotEmpty()) delay(300)
+        if (system == null && filter == null && query.isBlank()) { games = emptyList(); total = 0; return@LaunchedEffect }
+        try {
+            val (t, list) = api.games(system, filter, query)
+            total = t
+            games = list
+            error = null
+        } catch (e: Exception) { error = model.handle(e) }
+    }
+    GamesContent(title, system == null, filter, query, total, games, error,
+        art = { g -> if (g.art) rememberArt(api, g.id, model.changes) else null },
+        onFilter = { filter = it; games = null }, onQuery = { query = it },
+        onGame = { nav.navigate("game/${it.id}") }, onBack = { nav.popBackStack() })
+}
+
+@Composable
+fun GameRoute(model: AppModel, nav: NavHostController, id: Long) {
+    val api = model.api ?: return
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var game by remember { mutableStateOf<Game?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf<String?>(null) }
+    var artVersion by remember { mutableIntStateOf(0) }
+    LaunchedEffect(id, model.changes) {
+        try { game = api.game(id); error = null } catch (e: Exception) { error = model.handle(e) }
+    }
+    val cover = if (game?.hasArt == true) rememberArt(api, id, model.changes * 1000 + artVersion) else null
+    fun act(what: String, block: suspend () -> Unit) = scope.launch {
+        busy = what
+        error = null
+        try { block() } catch (e: Exception) { error = model.handle(e) }
+        busy = null
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) act("Sending the picture...") {
+            val bytes = loadPhotoForUpload(ctx, uri)
+            game = api.setArt(id, bytes)
+            ArtCache.drop(id)
+            artVersion++
+            model.changes++
+            Toast.makeText(ctx, "Box art changed", Toast.LENGTH_SHORT).show()
+        }
+    }
+    GameContent(game, cover, error, busy,
+        onBack = { nav.popBackStack() },
+        onLaunch = { act("Starting it on the TV...") { api.launch(id); Toast.makeText(ctx, "Starting on the TV", Toast.LENGTH_SHORT).show() } },
+        onFavorite = { game?.let { g -> act("") { api.favorite(id, !g.favorite); game = api.game(id); model.changes++ } } },
+        onEdit = { nav.navigate("edit/$id") },
+        onArt = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        onBasedOn = { nav.navigate("based/$id") },
+        onRescrape = { act("Asking the MiSTer to look it up again...") { api.rescrape(id); Toast.makeText(ctx, "Queued: it fills only empty fields", Toast.LENGTH_SHORT).show() } })
+}
+
+@Composable
+fun EditRoute(model: AppModel, nav: NavHostController, id: Long) {
+    val api = model.api ?: return
+    val scope = rememberCoroutineScope()
+    val values = remember { mutableStateMapOf<String, String>() }
+    var original by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var title by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(id) {
+        try {
+            val g = api.game(id)
+            title = g.title
+            original = gameValues(g)
+            values.putAll(original)
+        } catch (e: Exception) { error = model.handle(e) }
+    }
+    EditContent(title, values, busy, error, onChange = { k, v -> values[k] = v }, onBack = { nav.popBackStack() }, onSave = {
+        val changed = values.filter { (k, v) -> original[k] != v }.mapValues { it.value.trim() }
+        if (changed.isEmpty()) { nav.popBackStack(); return@EditContent }
+        scope.launch {
+            busy = true
+            try { api.edit(id, changed); model.changes++; nav.popBackStack() } catch (e: Exception) { error = model.handle(e) }
+            busy = false
+        }
+    })
+}
+
+@Composable
+fun BasedRoute(model: AppModel, nav: NavHostController, id: Long) {
+    val api = model.api ?: return
+    val scope = rememberCoroutineScope()
+    var game by remember { mutableStateOf<Game?>(null) }
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Candidate>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(id) { try { game = api.game(id) } catch (e: Exception) { error = model.handle(e) } }
+    LaunchedEffect(query) {
+        if (query.isNotEmpty()) delay(300)
+        try { results = api.candidates(id, query); error = null } catch (e: Exception) { error = model.handle(e) }
+    }
+    BasedOnContent(game?.title ?: "", game?.basedOnTitle, query, results, error,
+        onQuery = { query = it },
+        onPick = { c -> scope.launch { try { api.link(id, c.id); model.changes++; nav.popBackStack() } catch (e: Exception) { error = model.handle(e) } } },
+        onUnlink = { scope.launch { try { api.unlink(id); model.changes++; nav.popBackStack() } catch (e: Exception) { error = model.handle(e) } } },
+        onBack = { nav.popBackStack() })
+}

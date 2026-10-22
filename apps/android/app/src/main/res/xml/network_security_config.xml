@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phosphor's remote access is plain HTTP on the home network (like MiSTer's own FTP/SMB):
+     cleartext is allowed for that; everything else the app fetches is HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
