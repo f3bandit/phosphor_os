@@ -105,6 +105,7 @@ PHOS_VER="$(cut -d' ' -f1 "$PDIR/VERSION")"
 PHOS_FAT="$WORK/rel/files" PHOS_FAT_TARGET=/media/fat bash "$PDIR/install.sh" --boot-phosphor
 grep -q '^# phosphor: BEGIN' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block missing" >&2; exit 1; }
 grep -q ' /media/fat/phosphor/phosphor.sh boot' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
+grep -q "^main=phosphor/bin/MiSTer_phosphor" "$WORK/rel/files/MiSTer.ini" || { echo "MiSTer.ini main= missing" >&2; exit 1; }
 # the Phosphor release itself, so modules can be installed later without downloading anything
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
 

@@ -6,8 +6,9 @@
 #   install.sh --boot      also start phosphord (library service, not the shell) at boot,
 #                          through a marked block in linux/user-startup.sh
 #   install.sh --boot-phosphor
-#                          boot into Phosphor: phosphord, Phosphor's Main in place of MiSTer's, the shell
-#                          (the same block; MiSTer's menu is still there: Launch Phosphor, or quit the shell)
+#                          boot into Phosphor: main=phosphor/bin/MiSTer_phosphor in MiSTer.ini (the way
+#                          every MiSTer frontend does it; backed up first, uninstall.sh puts it back),
+#                          phosphord and the shell from the same user-startup.sh block
 #
 # Nothing outside /media/fat/phosphor is changed, except user-startup.sh with --boot (backed up
 # first; uninstall.sh takes the block out again). Console Mode and MiSTer's settings are not touched.
@@ -73,6 +74,30 @@ if [ "$BOOT" != 0 ]; then
 	cat "$tmp" > "$STARTUP" && rm -f "$tmp" && chmod +x "$STARTUP"
 	if [ "$BOOT" = 2 ]; then echo "boots into Phosphor (block \"$TAG\" in $STARTUP)"
 	else echo "phosphord will start at boot (block \"$TAG\" in $STARTUP)"; fi
+fi
+
+# Phosphor's Main as the system's Main: MiSTer's Main hands over to whatever main= names, at once
+if [ "$BOOT" = 2 ] && [ -f "$ROOT/bin/MiSTer_phosphor" ]; then
+	INI="$FAT/MiSTer.ini"
+	mkdir -p "$ROOT/backup"
+	if [ -f "$INI" ]; then
+		grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI" || cp "$INI" "$ROOT/backup/MiSTer.ini.$(date +%Y%m%d-%H%M%S)"
+	else
+		# no MiSTer.ini yet (a new card): start from MiSTer's example, so every other setting is MiSTer's
+		if [ -f "$FAT/MiSTer_example.ini" ]; then cp "$FAT/MiSTer_example.ini" "$INI"; else printf '[MiSTer]\n' > "$INI"; fi
+		: > "$ROOT/backup/MiSTer.ini.created"
+	fi
+	# the main= that was there (in [MiSTer]), for uninstall.sh
+	grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI" || \
+	awk 'BEGIN{s=0} /^[[:space:]]*\[/ {s = (tolower($0) ~ /^[[:space:]]*\[mister\]/)} s && /^[[:space:]]*main[[:space:]]*=/ && !/phosphor\/bin\/MiSTer_phosphor/ {sub(/^[^=]*=[[:space:]]*/,""); sub(/[[:space:]]*;.*$/,""); gsub(/\r/,""); print; exit}' "$INI" > "$ROOT/backup/main.prev"
+	tmp="$(mktemp)"
+	awk 'BEGIN{s=0; done=0}
+		/^[[:space:]]*\[/ { s = (tolower($0) ~ /^[[:space:]]*\[mister\]/); print; if (s && !done) { print "main=phosphor/bin/MiSTer_phosphor"; done=1 }; next }
+		s && /^[[:space:]]*main[[:space:]]*=/ { next }
+		{ print }
+		END { if (!done) { print "[MiSTer]"; print "main=phosphor/bin/MiSTer_phosphor" } }' "$INI" | tr -d '\r' | sed 's/$/\r/' > "$tmp"
+	cat "$tmp" > "$INI" && rm -f "$tmp"
+	echo "MiSTer.ini: main=phosphor/bin/MiSTer_phosphor (before: $(head -1 "$ROOT/backup/main.prev" 2>/dev/null | grep . || echo "MiSTer's own"))"
 fi
 
 echo "Phosphor $(cat "$ROOT/VERSION") installed in $ROOT"
