@@ -36,6 +36,10 @@ done
 if [ -f "$HERE/bin/MiSTer_phosphor" ]; then
 	cp "$HERE/bin/MiSTer_phosphor" "$ROOT/bin/MiSTer_phosphor.new" && chmod 755 "$ROOT/bin/MiSTer_phosphor.new" && mv -f "$ROOT/bin/MiSTer_phosphor.new" "$ROOT/bin/MiSTer_phosphor"
 fi
+# the Phosphor menu core (front ports): only kept here; Phosphor loads it, menu.rbf is never replaced
+if [ -f "$HERE/cores/menu_phosphor.rbf" ]; then
+	mkdir -p "$ROOT/cores" && cp "$HERE/cores/menu_phosphor.rbf" "$ROOT/cores/menu_phosphor.rbf.new" && mv -f "$ROOT/cores/menu_phosphor.rbf.new" "$ROOT/cores/menu_phosphor.rbf"
+fi
 cp "$HERE/phosphor.sh" "$HERE/uninstall.sh" "$ROOT/" && chmod 755 "$ROOT/phosphor.sh" "$ROOT/uninstall.sh"
 cp "$HERE/VERSION" "$ROOT/VERSION"
 # example settings: only when there isn't one already

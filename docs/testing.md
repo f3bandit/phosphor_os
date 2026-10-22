@@ -252,7 +252,31 @@ Only by hand, undone by a reboot. `MiSTer_phosphor` is in `/media/fat/phosphor/b
 - [ ] `echo status | socat - UNIX:/tmp/phosphor-main.sock` (or `nc -U`) answers with the core and owner.
 - [ ] Reboot → stock/Console Mode boot as before (nothing was changed on the card).
 
-## 16. Safety checks (each time something is installed)
+## 16. Front ports in the menu core (phosphor-menu + phosphor-main)
+
+Needs `MiSTer_phosphor` running (section 15) and `menu_phosphor.rbf` in `/media/fat/phosphor/cores/`.
+Nothing on the card is replaced: the Phosphor menu core is loaded by hand, and a reboot or loading
+any other core puts the stock one back. Use a memory card whose saves are backed up.
+
+- [ ] `echo "launch /media/fat/phosphor/cores/menu_phosphor.rbf" | socat - UNIX:/tmp/phosphor-main.sock`
+      → the menu comes back as usual (same look; the shell takes the screen again if it's running).
+- [ ] `ports` → `"available":true,"on":false`. With the stock menu core (after a reboot) → `"available":false`.
+- [ ] With an MT32-pi or MIDI cable (if you have one): works as before while the ports are off.
+- [ ] Keep one socat open (`socat - UNIX:/tmp/phosphor-main.sock`), type `ports on`, then `pads` a few times
+      while pressing buttons and moving the sticks on the controller in port 1, then port 2:
+      buttons and IDs change (65 digital, 115 analog).
+- [ ] `pad_analog 1` with a DualShock in digital mode → `pads` shows 115 and the sticks move.
+- [ ] Unplug a controller → `"connected":false` within a second; plug it back → true.
+- [ ] `card_read 1 0` with a card in port 1 → data starting `4d43` ("MC"). Port without a card → `no card`.
+- [ ] `card_read 1 1023` works; a few hundred reads in a row without errors (no `bad reply`).
+- [ ] Write test on a **spare** card only: `card_read 1 1022`, write back the same data with
+      `card_write 1 1022 <data>` → `ok`; read again → same data. The card still works in a game.
+- [ ] Close the socat (Ctrl+C) → the ports go off by themselves (`ports` from a new socat says `"on":false`).
+- [ ] Load a game core and come back: the ports are off and the menu core is the stock one again
+      unless Phosphor loads it again.
+- [ ] Controllers keep working in the shell the whole time (front ports on or off).
+
+## 17. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,
