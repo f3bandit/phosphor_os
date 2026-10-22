@@ -1,30 +1,35 @@
-# Phosphor OS
+# Phosphor
 
-A console-style frontend for MiSTer FPGA, plus small ARM-side modules that run only when needed.
-Working name; private while in early development.
+Unofficial custom firmware for the SuperStation One, built on mainline MiSTer and its Linux: a
+console-style home screen with your library and box art, the front-port controllers and memory cards,
+Bluetooth, WiFi, saves and screen filters, all with a controller, plus a phone app. Working name;
+private while in development. Not made or supported by MiSTer-devel or the SuperStation One's makers.
 
-Phosphor is built **with** stock MiSTer, not against it: current MiSTer Linux and Main, no
-kernel changes, no `/dev/mem` from the frontend, nothing that polls. It should keep working
-through every MiSTer update.
+Phosphor is built **with** stock MiSTer, not against it: MiSTer-devel's Linux and kernel as they ship,
+nothing replaced on the card, nothing that polls. MiSTer's own menu is always one button away.
 
 ## What it is
 
 | Part | What it does | Where |
 |---|---|---|
-| Shell | The interface: library shelf, game details, settings, in-game sheet | `frontend/` |
-| System service | `phosphord`: library database, indexer, artwork store, play history, launching; `phos` command line | `system/` |
-| Main fork | MiSTer Main with a small local API for the frontend (launch, pause, snapshots, pads, memory cards) | separate private repo `phosphor-main` (GPL-3.0, published at release) |
-| Menu core fork | MiSTer's menu core plus SNAC controller and PS1 memory card logic, so those screens need no core swap | separate private repo `phosphor-menu` (GPL-3.0, published at release) |
-| Modules | One-job ARM programs that start on an event or on request, then exit | separate private repo [`phosphor-modules`](https://github.com/f3bandit/phosphor-modules) |
-| Android app | Phosphor for Android: library, box art, details, Based on, play on TV, over the home network | `apps/android/` |
-| SD card image | Ready-to-flash card: stock MiSTer + Phosphor, built from Mr. Fusion | `image/` |
-| Mockups | Design explorations | `mockups/` |
+| Shell | The interface: library shelf (categories, Favorites, Recently played), search, game details and box art, Settings (WiFi, Bluetooth, controllers and memory cards, screen filters, backups, cloud saves, remote access, screensaver, About), Welcome screen | `frontend/` |
+| System service | `phosphord`: library database, indexer, box art and details from six sources, play history, launching, front ports, Bluetooth, WiFi, remote access for the phone; `phos` command line | `system/` |
+| Main fork | MiSTer Main with a small local API: the shell takes the screen, Launch Phosphor in the OSD, front-port controllers and memory cards, Phosphor's menu core | [`phosphor-main`](https://github.com/f3bandit/phosphor-main), branch `phosphor` (GPL-3.0, published at release) |
+| Menu core fork | MiSTer's menu core plus the front ports (PlayStation controllers and memory cards over SNAC), off until Phosphor asks | [`phosphor-menu`](https://github.com/f3bandit/phosphor-menu), branch `phosphor` (GPL, published at release) |
+| Modules | One-job ARM programs that start on an event or on request, then exit | [`phosphor-modules`](https://github.com/f3bandit/phosphor-modules) |
+| Android app | Phosphor for Android: library, box art from the phone, details, Based on, play on TV, Favorites, memory cards, Bluetooth (read only), backups, cloud saves, screen filters, diagnostics; over the home network | `apps/android/` |
+| SD card image | Ready-to-flash card: MiSTer-devel's release + Phosphor, boots into Phosphor; built from Mr. Fusion | `image/` |
+| Website | The page for phosphor-os.github.io | `site/` |
+| PC tool | Phosphor Link: the SuperStation One's debug port and Claude library tools on a PC | `tools/phosphor-link/` |
+
+Current: Phosphor 0.17.0 (shell), phosphord 0.12.4, Phosphor for Android 0.7.0. Hardware testing:
+[`docs/testing.md`](docs/testing.md).
 
 ## Modules
 
 The modules live in [`phosphor-modules`](https://github.com/f3bandit/phosphor-modules) so they can be
-installed on their own (SS1 Tool can offer them to stock MiSTer users) and released separately.
-First one: `cifs-helper`.
+installed on their own (SS1 Tool can offer them to stock MiSTer users) and released separately:
+cifs-helper, backup-agent, health-watch, diag, cloud-sync, update-guard.
 
 ## Rules
 
@@ -34,7 +39,8 @@ First one: `cifs-helper`.
 - Only MiSTer's own interfaces to the FPGA: `/dev/MiSTer_cmd`, MGL, core-mounted files, and the Main fork's API.
 - Private settings (WiFi networks, Bluetooth pairings, share passwords, keys, device keys) stay on the
   SS1, the NVMe, a NAS or the phone app: never over the internet. Remote access answers the home network
-  only and can't read or change WiFi.
+  only and can't read or change WiFi, Bluetooth pairings or remote access itself.
+- Every change is backed up first and can be undone; nothing installs, updates or changes itself.
 - Original design only: own name, palette, fonts (open licence), icons, sounds and terms.
 
 See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
@@ -43,4 +49,4 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md): use, modify and share for any non-commercial purpose;
 selling it or a product built on it is not permitted. The Main and menu core forks are separate
-repositories under GPL-3.0.
+repositories under the GPL, like MiSTer, and will be public with the first release.
