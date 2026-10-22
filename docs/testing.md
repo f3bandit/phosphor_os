@@ -122,7 +122,7 @@ Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also kee
 - [ ] A on a controller → A Disconnect (it reconnects when turned on again) / X Forget (gone from the list; MiSTer's
       OSD no longer knows it either).
 - [ ] The status bar's Bluetooth count matches the connected controllers.
-- [ ] Phone app/remote: `{"cmd":"bluetooth"}` lists them (pairings themselves never leave the SS1).
+- [ ] Phone app 0.5 > Settings > Bluetooth: same list; Pair a controller from the phone while holding the controller in pairing mode; Forget.
 
 ## 6. Screen filters (Settings > Screen filters)
 

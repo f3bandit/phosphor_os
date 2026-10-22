@@ -66,6 +66,10 @@ data class CardState(
     val message: String, val file: String, val backups: List<CardBackup>,
 )
 
+data class BtDevice(val mac: String, val name: String, val connected: Boolean, val input: Boolean)
+
+data class BtState(val present: Boolean, val devices: List<BtDevice>, val busy: Boolean, val ok: Boolean, val at: Long, val found: String, val message: String)
+
 data class CloudPlace(val name: String, val type: String, val inUse: Boolean)
 
 data class CloudState(
@@ -228,6 +232,19 @@ class PhosphorApi(val address: String, private val token: String?) {
     }
 
     suspend fun padAnalog(port: Int) { cmd(obj("cmd" to "pad_analog", "port" to port)) }
+
+    /** Bluetooth controllers paired with the MiSTer; what: pair (looks for one in pairing mode, up to 90 s),
+     *  cancel, forget, disconnect (with mac) */
+    suspend fun bluetooth(what: String? = null, mac: String? = null): BtState {
+        val r = cmd(obj("cmd" to "bluetooth", "do" to what, "mac" to mac))
+        val p = r.optJSONObject("pairing") ?: JSONObject()
+        val a = r.optJSONArray("devices") ?: JSONArray()
+        return BtState(
+            present = r.optBoolean("present"),
+            devices = (0 until a.length()).map { a.getJSONObject(it) }.map { BtDevice(it.optString("mac"), it.optString("name"), it.optBoolean("connected"), it.optBoolean("input")) },
+            busy = p.optBoolean("busy"), ok = p.optBoolean("ok"), at = p.optLong("at"), found = p.optString("found"), message = p.optString("message"),
+        )
+    }
 
     /** the game's box art (JPEG), or null when it has none */
     suspend fun art(id: Long): ByteArray? = withContext(Dispatchers.IO) {
