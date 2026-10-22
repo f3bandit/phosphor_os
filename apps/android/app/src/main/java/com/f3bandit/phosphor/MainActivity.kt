@@ -35,6 +35,7 @@ import androidx.navigation.navArgument
 import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.ArtCache
 import com.f3bandit.phosphor.ui.BackupsContent
+import com.f3bandit.phosphor.ui.CardsContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
 import com.f3bandit.phosphor.ui.BasedOnContent
@@ -90,14 +91,54 @@ fun PhosphorApp(model: AppModel) {
         composable("based/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> BasedRoute(model, nav, e.arguments!!.getLong("id")) }
         composable("settings") {
             SettingsContent(model.pairing?.address ?: "", BuildConfigVersion, onForget = { model.forget() }, onBack = { nav.popBackStack() },
-                onCloud = { nav.navigate("cloud") }, onBackups = { nav.navigate("backups") })
+                onCloud = { nav.navigate("cloud") }, onBackups = { nav.navigate("backups") }, onCards = { nav.navigate("cards") })
         }
         composable("cloud") { CloudRoute(model, nav) }
         composable("backups") { BackupsRoute(model, nav) }
+        composable("cards") { CardsRoute(model, nav) }
     }
 }
 
-const val BuildConfigVersion = "0.3.0"
+const val BuildConfigVersion = "0.4.0"
+
+@Composable
+fun CardsRoute(model: AppModel, nav: NavHostController) {
+    val api = model.api ?: return
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var st by remember { mutableStateOf<CardState?>(null) }
+    var pads by remember { mutableStateOf(listOf<Pad>()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var pick by remember { mutableStateOf<CardBackup?>(null) }
+    fun handle(s: CardState, wasBusy: Boolean) {
+        st = s
+        if (wasBusy && !s.busy && (s.job != "prepare" || !s.jobOk) && s.message.isNotEmpty())
+            Toast.makeText(ctx, s.message, Toast.LENGTH_LONG).show()
+    }
+    LaunchedEffect(api.address) {
+        var n = 0
+        while (true) {
+            // the card state every 2 s (busy: 0.8 s), the controllers 4 times a second
+            if (n % 8 == 0 || (st?.busy == true && n % 3 == 0)) {
+                val was = st?.busy == true
+                try { handle(api.memcard(), was); error = null } catch (e: Exception) { error = model.handle(e) }
+            }
+            if (st?.available == true) pads = try { api.pads() } catch (e: Exception) { emptyList() }
+            n++
+            delay(250)
+        }
+    }
+    fun start(what: String, port: Int? = null, name: String? = null) = scope.launch {
+        try { st = api.memcard(what, port, name); error = null } catch (e: Exception) { error = model.handle(e) }
+    }
+    CardsContent(st, pads, error, pick,
+        onLoad = { start("prepare") },
+        onBackup = { start("backup", it) },
+        onAnalog = { scope.launch { pads.filter { it.connected && it.id == 0x41 }.forEach { p -> try { api.padAnalog(p.port) } catch (_: Exception) {} } } },
+        onPick = { pick = it },
+        onRestore = { port -> pick?.let { start("restore", port, it.name) }; pick = null },
+        onBack = { if (pick != null) pick = null else nav.popBackStack() })
+}
 
 @Composable
 fun BackupsRoute(model: AppModel, nav: NavHostController) {

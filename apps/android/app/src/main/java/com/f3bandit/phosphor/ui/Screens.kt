@@ -382,7 +382,7 @@ fun BasedOnContent(title: String, current: String?, query: String, results: List
 // ---------- Settings ----------
 
 @Composable
-fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}, onBackups: () -> Unit = {}) {
+fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}, onBackups: () -> Unit = {}, onCards: () -> Unit = {}) {
     Screen("Settings", "Phosphor app", onBack = onBack) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
             Label("MiSTer")
@@ -390,13 +390,14 @@ fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBa
                 Row2("Paired with", value = address)
                 Row2("Cloud saves", value = "›", onClick = onCloud)
                 Row2("Backups", value = "›", onClick = onBackups)
+                Row2("Controllers & memory cards", value = "›", onClick = onCards)
                 Row2("Forget this MiSTer", value = "›", accent = true, onClick = onForget)
             }
             Text("To remove this phone on the MiSTer too: Settings › Remote access, select the phone, press X.", style = T.small)
             Label("About", Modifier.padding(top = 8.dp))
             Card {
                 Row2("Phosphor for Android", value = version)
-                Row2("Works with", value = "phosphord 0.8.1 or later")
+                Row2("Works with", value = "phosphord 0.11.1 or later")
             }
             Text("The app only talks to your MiSTer, on your home network. It collects nothing and sends nothing anywhere else.\n\n" +
                 "Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).", style = T.small)

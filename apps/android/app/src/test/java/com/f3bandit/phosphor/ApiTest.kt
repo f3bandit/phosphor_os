@@ -59,6 +59,22 @@ class ApiTest {
         val bk = api.backup()
         println("backups: installed=${bk.installed} count=${bk.snapshots.size} dest=${bk.dest}")
 
+        // front ports (only with a phosphor-main, real or phosphor-main's fake_main): PHOSPHOR_TEST_MEMCARD=1
+        if (System.getenv("PHOSPHOR_TEST_MEMCARD") != null) {
+            var mc = api.memcard()
+            if (!mc.available) { api.memcard("prepare"); repeat(40) { if (!mc.available || mc.busy) { Thread.sleep(250); mc = api.memcard() } } }
+            assertTrue(mc.available)
+            val pads = api.pads()
+            println("pads: $pads")
+            assertEquals(2, pads.size)
+            val before = mc.backups.size
+            api.memcard("backup", 1)
+            repeat(120) { if (mc.busy || mc.job != "backup") { Thread.sleep(250); mc = api.memcard() } }
+            println("memcard: ${mc.message}")
+            assertTrue(mc.jobOk)
+            assertEquals(before + 1, mc.backups.size)
+        }
+
         val refused = runCatching { api.cmd(JSONObject().put("cmd", "wifi")) }.exceptionOrNull()
         assertTrue(refused is PhosphorError)
         println("wifi refused: ${refused?.message}")

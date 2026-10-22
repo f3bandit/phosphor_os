@@ -49,7 +49,7 @@
 static const char *ALLOWED[] = {
 	"status", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "scrape_sources",
-	"video", "video_files", "diag", "cloud", "backup", NULL,
+	"video", "video_files", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", NULL,
 };
 
 typedef struct {

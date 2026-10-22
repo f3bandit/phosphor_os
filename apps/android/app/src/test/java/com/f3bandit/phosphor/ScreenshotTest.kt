@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import android.graphics.Canvas
 import com.f3bandit.phosphor.ui.AddForm
 import com.f3bandit.phosphor.ui.BackupsContent
+import com.f3bandit.phosphor.ui.CardsContent
 import com.f3bandit.phosphor.ui.BasedOnContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
@@ -106,4 +107,11 @@ class ScreenshotTest {
     @Test fun backupsPreview() = shot("13-backups-restore") {
         BackupsContent(backups, null, snaps[0], listOf("saves/SNES/Super Metroid (USA).sav", "saves/PSX/Final Fantasy Tactics (USA).mcd"), {}, {}, {}, {}, {})
     }
+
+    private val cardFiles = listOf(CardBackup("port1-20261022-133030.mcd", 131072, 1792690230), CardBackup("port2-20261020-091502.mcd", 131072, 1792500902))
+    private val cards = CardState(true, true, false, false, true, "", 0, false, false, 0, 1, "", "", cardFiles)
+    private val padsNow = listOf(Pad(1, true, 0x73, (1 shl 14) or (1 shl 4), 128, 30, 128, 128), Pad(2, true, 0x41, 0, 0, 0, 0, 0))
+    @Test fun cards() = shot("14-cards") { CardsContent(cards, padsNow, null, null, {}, {}, {}, {}, {}, {}) }
+    @Test fun cardsBusy() = shot("15-cards-busy") { CardsContent(cards.copy(busy = true, job = "backup", port = 1, done = 512, total = 1024), padsNow, null, null, {}, {}, {}, {}, {}, {}) }
+    @Test fun cardsPutBack() = shot("16-cards-put-back") { CardsContent(cards, padsNow, null, cardFiles[0], {}, {}, {}, {}, {}, {}) }
 }

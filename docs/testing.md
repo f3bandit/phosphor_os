@@ -189,6 +189,9 @@ Install `phosphor-android-0.1.0-debug.apk` (allow installing from the file manag
 - [ ] Forget the phone on the TV (X) → the app goes back to pairing on its next call.
 - [ ] Close and reopen the app: still paired (key kept encrypted).
 - [ ] Dark status/navigation bars, text readable, big font setting doesn't break layouts.
+- [ ] (0.4) Settings > Controllers & memory cards: with the stock menu core "Turn on the front ports" loads the
+      Phosphor one; the controller lines follow buttons and sticks; Back up port 1 shows progress and the new
+      backup appears; Put back > Port 1 on a spare card works (backed up first).
 
 ## 11. Cloud saves (cloud-sync module)
 
