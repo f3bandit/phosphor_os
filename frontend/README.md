@@ -47,6 +47,11 @@ shell starts it if it isn't running.
   last change; "Other network..." for hidden ones.
 - **On-screen keyboard**: D-pad moves, A types, X deletes, Y switches letters / capitals / symbols,
   Start is done, B cancels.
+- **Screen filters** (Settings): per system, apply a preset or pick each filter, shadow mask and size,
+  and gamma from MiSTer's own folders; shows the next time the core starts; SELECT undoes.
+
+  ![Screen filters](docs/screen-filters.png)
+
 - **Diagnostics** (Settings): the diag module's checks of the whole system, problems first, then
   warnings, then everything that's fine. Y checks again; X saves a report for support (a .tar.gz in
   `phosphor/logs`, passwords removed). Saved in `/media/fat/phosphor/config/frontend.ini`.
