@@ -17,6 +17,7 @@ typedef struct {
 	char type;            /* MGL file type: f (file) or s (storage/disc) */
 	int index;            /* MGL file slot */
 	int delay;            /* MGL delay in seconds */
+	char cfgname[32];     /* core name MiSTer Main uses for config files, if not the core's file name */
 } gsys_t;
 
 extern gsys_t *SYS;

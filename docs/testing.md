@@ -113,7 +113,26 @@ Back up `/media/fat/linux/wpa_supplicant.conf` by hand first (phosphord also kee
 - [ ] wpa_supplicant not running (e.g. after `killall wpa_supplicant`) → joining starts it the way MiSTer does.
 - [ ] On-screen keyboard with each controller: D-pad, A types, X deletes, Y switches layers, Start = Done, B cancels.
 
-## 6. Safety checks (each time something is installed)
+## 6. Screen filters (Settings > Screen filters)
+
+Before: copy `/media/fat/config/*_scaler.cfg`, `*_shmask.cfg`, `*_gamma.cfg` somewhere safe.
+NES already has its own settings (a scanlines file in the vertical slot), so it's a good first test.
+
+- [ ] The list shows each system with an installed core; ones with their own settings show the filter names,
+      the rest say "MiSTer.ini defaults".
+- [ ] NES screen shows the same values the OSD shows for NES now.
+- [ ] Apply a preset (e.g. one in Presets/General Hardware), start the NES core: the OSD's Video processing page
+      shows the preset's filters, and the picture matches.
+- [ ] Change one slot only (e.g. Shadow mask) → the other slots stay as they were.
+- [ ] Set a slot to Off → the OSD shows it off for that core.
+- [ ] Shadow mask size (left/right): off, 1x, 2x, 1x rotated, 2x rotated → matches the OSD.
+- [ ] SELECT (undo) after each change → files go back exactly (compare with the copies); for a system that had
+      no files of its own, undo removes them again.
+- [ ] Change something in the OSD while in a game, back in the menu → Phosphor shows the new values.
+- [ ] Arcade isn't listed (MiSTer keeps arcade settings per game, not per core).
+- [ ] Backups in `phosphor/data/backup/video/`.
+
+## 7. Safety checks (each time something is installed)
 
 - [ ] Console Mode still works exactly as before (no Console Mode files touched).
 - [ ] `MiSTer.ini`, `downloader.ini`, `user-startup.sh`: only changed where an installer said so,

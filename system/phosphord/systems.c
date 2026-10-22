@@ -21,26 +21,26 @@ const char *category_name(category_t c) { return c < CAT_COUNT ? CAT_NAMES[c] : 
 
 static const gsys_t BUILTIN[] = {
 	/* id          name                    category       folders                rbf                                   exts               t  i  d */
-	{ "PSX",       "PlayStation",          CAT_DISC,      "PSX",                 "_Console/PSX",                       "cue|chd|exe",     's', 1, 1 },
-	{ "Saturn",    "Saturn",               CAT_DISC,      "Saturn",              "_Console/Saturn",                    "cue|chd",         's', 0, 1 },
-	{ "MegaCD",    "Mega-CD / Sega CD",    CAT_DISC,      "MegaCD",              "_Console/MegaCD",                    "cue|chd",         's', 0, 1 },
-	{ "TGFX16CD",  "PC Engine CD",         CAT_DISC,      "TGFX16-CD",           "_Console/TurboGrafx16",              "cue|chd",         's', 0, 1 },
-	{ "NES",       "NES / Famicom",        CAT_CARTRIDGE, "NES",                 "_Console/NES",                       "nes|fds|nsf",     'f', 1, 1 },
-	{ "SNES",      "Super NES",            CAT_CARTRIDGE, "SNES",                "_Console/SNES",                      "sfc|smc",         'f', 0, 1 },
-	{ "Genesis",   "Mega Drive / Genesis", CAT_CARTRIDGE, "MegaDrive|Genesis",   "_Console/MegaDrive|_Console/Genesis","md|gen|bin|smd",  'f', 1, 1 },
-	{ "N64",       "Nintendo 64",          CAT_CARTRIDGE, "N64",                 "_Console/N64",                       "n64|z64|v64",     'f', 1, 1 },
-	{ "SMS",       "Master System",        CAT_CARTRIDGE, "SMS",                 "_Console/SMS",                       "sms|sg",          'f', 1, 1 },
-	{ "TGFX16",    "PC Engine",            CAT_CARTRIDGE, "TGFX16",              "_Console/TurboGrafx16",              "pce|sgx",         'f', 1, 1 },
-	{ "ATARI7800", "Atari 7800 / 2600",    CAT_CARTRIDGE, "ATARI7800|ATARI2600", "_Console/Atari7800",                 "a78|a26|bin",     'f', 1, 1 },
-	{ "GAMEBOY",   "Game Boy / Color",     CAT_HANDHELD,  "GAMEBOY|GBC",         "_Console/Gameboy",                   "gb|gbc",          'f', 1, 1 },
-	{ "GBA",       "Game Boy Advance",     CAT_HANDHELD,  "GBA",                 "_Console/GBA",                       "gba",             'f', 1, 1 },
-	{ "GameGear",  "Game Gear",            CAT_HANDHELD,  "GameGear",            "_Console/SMS",                       "gg",              'f', 2, 1 },
-	{ "WonderSwan","WonderSwan",           CAT_HANDHELD,  "WonderSwan",          "_Console/WonderSwan",                "ws|wsc",          'f', 1, 1 },
-	{ "AtariLynx", "Atari Lynx",           CAT_HANDHELD,  "AtariLynx",           "_Console/AtariLynx",                 "lnx",             'f', 1, 1 },
-	{ "Arcade",    "Arcade",               CAT_ARCADE,    "",                    "",                                   "mra",             'f', 0, 0 },
-	{ "C64",       "Commodore 64",         CAT_COMPUTER,  "C64",                 "_Computer/C64",                      "prg|crt|d64|t64", 'f', 1, 1 },
-	{ "MSX",       "MSX",                  CAT_COMPUTER,  "MSX",                 "_Computer/MSX",                      "rom|dsk",         'f', 1, 1 },
-	{ "Atari800",  "Atari 800",            CAT_COMPUTER,  "ATARI800",            "_Computer/Atari800",                 "atr|xex|car|rom", 'f', 1, 1 },
+	{ "PSX",       "PlayStation",          CAT_DISC,      "PSX",                 "_Console/PSX",                       "cue|chd|exe",     's', 1, 1, "" },
+	{ "Saturn",    "Saturn",               CAT_DISC,      "Saturn",              "_Console/Saturn",                    "cue|chd",         's', 0, 1, "" },
+	{ "MegaCD",    "Mega-CD / Sega CD",    CAT_DISC,      "MegaCD",              "_Console/MegaCD",                    "cue|chd",         's', 0, 1, "" },
+	{ "TGFX16CD",  "PC Engine CD",         CAT_DISC,      "TGFX16-CD",           "_Console/TurboGrafx16",              "cue|chd",         's', 0, 1, "" },
+	{ "NES",       "NES / Famicom",        CAT_CARTRIDGE, "NES",                 "_Console/NES",                       "nes|fds|nsf",     'f', 1, 1, "" },
+	{ "SNES",      "Super NES",            CAT_CARTRIDGE, "SNES",                "_Console/SNES",                      "sfc|smc",         'f', 0, 1, "" },
+	{ "Genesis",   "Mega Drive / Genesis", CAT_CARTRIDGE, "MegaDrive|Genesis",   "_Console/MegaDrive|_Console/Genesis","md|gen|bin|smd",  'f', 1, 1, "" },
+	{ "N64",       "Nintendo 64",          CAT_CARTRIDGE, "N64",                 "_Console/N64",                       "n64|z64|v64",     'f', 1, 1, "" },
+	{ "SMS",       "Master System",        CAT_CARTRIDGE, "SMS",                 "_Console/SMS",                       "sms|sg",          'f', 1, 1, "" },
+	{ "TGFX16",    "PC Engine",            CAT_CARTRIDGE, "TGFX16",              "_Console/TurboGrafx16",              "pce|sgx",         'f', 1, 1, "" },
+	{ "ATARI7800", "Atari 7800 / 2600",    CAT_CARTRIDGE, "ATARI7800|ATARI2600", "_Console/Atari7800",                 "a78|a26|bin",     'f', 1, 1, "" },
+	{ "GAMEBOY",   "Game Boy / Color",     CAT_HANDHELD,  "GAMEBOY|GBC",         "_Console/Gameboy",                   "gb|gbc",          'f', 1, 1, "" },
+	{ "GBA",       "Game Boy Advance",     CAT_HANDHELD,  "GBA",                 "_Console/GBA",                       "gba",             'f', 1, 1, "" },
+	{ "GameGear",  "Game Gear",            CAT_HANDHELD,  "GameGear",            "_Console/SMS",                       "gg",              'f', 2, 1, "" },
+	{ "WonderSwan","WonderSwan",           CAT_HANDHELD,  "WonderSwan",          "_Console/WonderSwan",                "ws|wsc",          'f', 1, 1, "" },
+	{ "AtariLynx", "Atari Lynx",           CAT_HANDHELD,  "AtariLynx",           "_Console/AtariLynx",                 "lnx",             'f', 1, 1, "" },
+	{ "Arcade",    "Arcade",               CAT_ARCADE,    "",                    "",                                   "mra",             'f', 0, 0, "" },
+	{ "C64",       "Commodore 64",         CAT_COMPUTER,  "C64",                 "_Computer/C64",                      "prg|crt|d64|t64", 'f', 1, 1, "" },
+	{ "MSX",       "MSX",                  CAT_COMPUTER,  "MSX",                 "_Computer/MSX",                      "rom|dsk",         'f', 1, 1, "" },
+	{ "Atari800",  "Atari 800",            CAT_COMPUTER,  "ATARI800",            "_Computer/Atari800",                 "atr|xex|car|rom", 'f', 1, 1, "" },
 };
 
 const gsys_t *system_by_id(const char *id)
@@ -95,6 +95,7 @@ static void load_ini(void)
 		else if (!strcasecmp(k, "type")) cur->type = (char)tolower((unsigned char)v[0]);
 		else if (!strcasecmp(k, "index")) cur->index = atoi(v);
 		else if (!strcasecmp(k, "delay")) cur->delay = atoi(v);
+		else if (!strcasecmp(k, "cfgname")) snprintf(cur->cfgname, sizeof(cur->cfgname), "%s", v);
 		else if (!strcasecmp(k, "category")) {
 			for (int c = 0; c < CAT_COUNT; c++)
 				if (!strcasecmp(v, CAT_NAMES[c])) cur->cat = (category_t)c;
