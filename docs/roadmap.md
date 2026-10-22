@@ -14,7 +14,7 @@ Each step is useful on its own. Order matters: later steps reuse earlier ones.
 6. **Memory Cards and Controllers screens** over the Main API (no core swap).
 7. **In-game sheet.** HDMI/scaler first; OSD fallback for direct-video analog.
 8. **health-watch and update-guard modules.**
-9. **Release prep.** Name and trademark check, licences, publish the GPL forks.
+9. **Release prep.** Name and trademark check, publish the GPL forks, own downloader database for installs.
 
 ## Open questions
 

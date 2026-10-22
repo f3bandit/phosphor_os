@@ -35,3 +35,9 @@ through every MiSTer update.
 - Original design only: own name, palette, fonts (open licence), icons, sounds and terms.
 
 See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
+
+## Licence
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md): use, modify and share for any non-commercial purpose;
+selling it or a product built on it is not permitted. The Main and menu core forks are separate
+repositories under GPL-3.0.
