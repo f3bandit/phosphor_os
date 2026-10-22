@@ -159,6 +159,26 @@ static void draw_cb(lv_event_t *e)
 			line(&p, 36 + dx * 22, 36 + dy * 22, 36 + dx * 29, 36 + dy * 29);
 		}
 		break;
+	case ICON_STAR: {
+		/* five points, outline */
+		float s[20];
+		for (int i = 0; i < 10; i++) {
+			int a = -90 + i * 36;
+			float r = (i & 1) ? 12.5f : 28.0f;
+			s[2 * i] = 36 + r * (float)lv_trigo_cos(a) / LV_TRIGO_SIN_MAX;
+			s[2 * i + 1] = 38 + r * (float)lv_trigo_sin(a) / LV_TRIGO_SIN_MAX;
+		}
+		poly(&p, s, 10, 1);
+		break;
+	}
+	case ICON_CLOCK:
+		circle(&p, 36, 36, 26, 0);
+		line(&p, 36, 36, 36, 20); line(&p, 36, 36, 47, 42);
+		break;
+	case ICON_SEARCH:
+		circle(&p, 31, 31, 18, 0);
+		line(&p, 44, 44, 58, 58);
+		break;
 	default:
 		break;
 	}
