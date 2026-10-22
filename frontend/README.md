@@ -47,6 +47,9 @@ shell starts it if it isn't running.
   last change; "Other network..." for hidden ones.
 - **On-screen keyboard**: D-pad moves, A types, X deletes, Y switches letters / capitals / symbols,
   Start is done, B cancels.
+- **Cloud saves** (Settings): where saves go and when they were last sent; Send now; Get saves back (pick
+  a MiSTer, see what would change, then A); storage places (add WebDAV, SFTP or SMB with the on-screen
+  keyboard; Google Drive, Dropbox and OneDrive from the phone app); Check the connection.
 - **Remote access** (Settings): on/off, the address, "Pair a device" (shows a 6-digit code for 2 minutes),
   paired devices with when they were last used; X forgets one.
 

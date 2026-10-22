@@ -62,6 +62,7 @@ Paired devices may use:
 | `scrape`, `rescrape` `{"id":20}`, `scrape_sources` | box art and details lookup |
 | `launch` `{"id":20}`, `favorite` `{"id":20,"on":true}`, `last`, `rescan` | remote control |
 | `video`, `video_files` | screen filters per system |
+| `cloud` | cloud saves: status, storage places, send now, preview and get saves back, add a storage place (passwords and sign-in tokens go only to the MiSTer) |
 | `diag` | read the latest checks (`run` starts them; support bundles only from the MiSTer) |
 
 Not allowed remotely: `wifi`, `remote`, `import`, `set_art` with a file path (use `PUT /art`).

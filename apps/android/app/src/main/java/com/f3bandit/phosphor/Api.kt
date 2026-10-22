@@ -49,6 +49,14 @@ data class Status(
     val missingArt: Int, val missingDetails: Int, val notFound: Int,
 )
 
+data class CloudPlace(val name: String, val type: String, val inUse: Boolean)
+
+data class CloudState(
+    val installed: Boolean, val ready: Boolean, val remote: String, val device: String, val lastPush: String,
+    val pending: Boolean, val lastError: String, val places: List<CloudPlace>,
+    val job: String, val busy: Boolean, val jobOk: Boolean, val output: String, val at: Long,
+)
+
 private fun JSONObject.str(k: String): String? = if (isNull(k)) null else optString(k).takeIf { it.isNotEmpty() }
 
 /** One paired MiSTer. Every call does network I/O: call from a coroutine (they switch to Dispatchers.IO). */
@@ -142,6 +150,24 @@ class PhosphorApi(val address: String, private val token: String?) {
     suspend fun candidates(id: Long, q: String?): List<Candidate> {
         val a = cmd(obj("cmd" to "candidates", "id" to id, "q" to q?.takeIf { it.isNotBlank() }, "limit" to 30)).getJSONArray("games")
         return (0 until a.length()).map { a.getJSONObject(it) }.map { Candidate(it.getLong("id"), it.optString("title"), it.optInt("score")) }
+    }
+
+    /** cloud saves (cloud-sync module on the MiSTer); with what, starts a job: setup, add, use, test, push,
+     *  preview, pull, devices. Passwords and sign-in tokens go only to the MiSTer, on the home network. */
+    suspend fun cloud(what: String? = null, extra: Map<String, Any> = emptyMap()): CloudState {
+        val q = obj("cmd" to "cloud", "do" to what)
+        extra.forEach { (k, v) -> q.put(k, if (v is Map<*, *>) JSONObject(v) else v) }
+        val r = cmd(q)
+        val st = r.optJSONObject("status") ?: JSONObject()
+        val j = r.optJSONObject("job") ?: JSONObject()
+        val pa = r.optJSONArray("remotes") ?: JSONArray()
+        return CloudState(
+            installed = r.optBoolean("installed"), ready = st.optString("rclone").isNotEmpty(), remote = st.optString("remote"),
+            device = st.optString("device"), lastPush = st.optString("last_push"), pending = st.optString("pending") == "1",
+            lastError = st.optString("last_error"),
+            places = (0 until pa.length()).map { pa.getJSONObject(it) }.map { CloudPlace(it.optString("name"), it.optString("type"), it.optBoolean("in_use")) },
+            job = j.optString("name"), busy = j.optBoolean("busy"), jobOk = j.optBoolean("ok"), output = j.optString("output"), at = j.optLong("at"),
+        )
     }
 
     /** the game's box art (JPEG), or null when it has none */

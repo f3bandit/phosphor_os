@@ -86,12 +86,13 @@ fun Screen(label: String, title: String, onBack: (() -> Unit)? = null, action: (
 }
 
 @Composable
-fun Field(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, singleLine: Boolean = true, number: Boolean = false, big: Boolean = false) {
+fun Field(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, singleLine: Boolean = true, number: Boolean = false, big: Boolean = false, password: Boolean = false) {
     BasicTextField(
         value = value, onValueChange = onChange, singleLine = singleLine,
         textStyle = if (big) T.heading.copy(fontFamily = Mono, letterSpacing = 8.sp, color = P.acc) else T.body,
         cursorBrush = SolidColor(P.acc),
-        keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
+        keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Number) else if (password) KeyboardOptions(keyboardType = KeyboardType.Password) else KeyboardOptions.Default,
+        visualTransformation = if (password) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(P.panel).border(1.dp, P.line, RoundedCornerShape(12.dp)).padding(14.dp),
         decorationBox = { inner ->
             Box {
@@ -381,12 +382,13 @@ fun BasedOnContent(title: String, current: String?, query: String, results: List
 // ---------- Settings ----------
 
 @Composable
-fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit) {
+fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}) {
     Screen("Settings", "Phosphor app", onBack = onBack) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
             Label("MiSTer")
             Card {
                 Row2("Paired with", value = address)
+                Row2("Cloud saves", value = "›", onClick = onCloud)
                 Row2("Forget this MiSTer", value = "›", accent = true, onClick = onForget)
             }
             Text("To remove this phone on the MiSTer too: Settings › Remote access, select the phone, press X.", style = T.small)
