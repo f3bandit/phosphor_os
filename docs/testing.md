@@ -150,12 +150,16 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
 - [ ] Flash with balenaEtcher (or Raspberry Pi Imager); the PC then shows a `MRFUSION` drive.
 - [ ] Optional: put a `wpa_supplicant.conf` on it → WiFi works after the install.
 - [ ] Boot: Phosphor install screen shows on HDMI (the SS1's video path), card is expanded, it restarts
-      into the MiSTer menu by itself (under ~2 minutes).
+      by itself (under ~2 minutes).
+- [ ] After that restart it boots into Phosphor: MiSTer's menu shows for a few seconds, then the Welcome
+      screen (first start). Every later boot goes straight to the library.
+- [ ] `ps` shows `MiSTer_phosphor`, not `MiSTer`; `/media/fat/MiSTer` is unchanged (same size as MiSTer's).
+- [ ] Quit the shell (`killall phosphor`) → MiSTer's menu; OSD > Launch Phosphor brings it back.
 - [ ] Card in the PC afterwards: one big `MiSTer_Data` exFAT partition, the full size of the card.
 - [ ] `/media/fat/phosphor` is there, `linux/user-startup.sh` has the phosphor block,
       `phosphor.sh status` shows phosphord running after boot.
 - [ ] `update_all` / downloader runs normally afterwards and doesn't remove Phosphor.
-- [ ] `/media/fat/phosphor/uninstall.sh` leaves a stock MiSTer.
+- [ ] `/media/fat/phosphor/uninstall.sh` leaves a stock MiSTer (next boot: MiSTer's Main and menu only).
 - [ ] SS1 specifics after update_all (SS1 cores, dock port, NVMe) work as on a normal stock install.
 
 ## 8. Remote access (Settings > Remote access)
