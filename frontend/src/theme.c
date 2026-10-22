@@ -41,11 +41,14 @@ void theme_init(accent_t a)
 accent_t theme_accent(void) { return cur_accent; }
 const char *theme_accent_name(accent_t a) { return a < ACCENT_COUNT ? ACCENT_NAMES[a] : "?"; }
 
+int theme_big;
+
 void theme_set_scale(int w, int h)
 {
 	int sx = w * 100 / 1280, sy = h * 100 / 720;
 	scale_pct = sx < sy ? sx : sy;
 	if (scale_pct < 50) scale_pct = 50;
+	theme_big = scale_pct >= 125;
 }
 
 int S(int px) { return px * scale_pct / 100; }

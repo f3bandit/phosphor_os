@@ -46,6 +46,7 @@
  *   cores      [do: update]                cores, filters and the rest with MiSTer's own downloader
  *                                           (Scripts/update.sh), only when asked: {available, busy,
  *                                           worked, at, line}
+ *   samba      [on: true|false]            MiSTer's file sharing (Samba): turn on / off; available, on, running
  *   bluetooth  [do: pair|cancel|forget|disconnect] [mac]
  *                                           {present, devices:[{mac, name, connected, input, icon}],
  *                                           pairing{busy, ok, at, found, message}}; pair looks for a
@@ -78,6 +79,7 @@
 #include "memcard.h"
 #include "bt.h"
 #include "cores.h"
+#include "samba.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -1122,6 +1124,20 @@ char *api_handle(sqlite3 *db, const char *request)
 			cJSON_AddBoolToObject(o, "worked", s.ok);
 			cJSON_AddNumberToObject(o, "at", (double)s.at);
 			cJSON_AddStringToObject(o, "line", s.line);
+			out = reply(o);
+		}
+	}
+	else if (!strcmp(c->valuestring, "samba")) {
+		cJSON *on = cJSON_GetObjectItem(req, "on");
+		char err[160] = "";
+		if (cJSON_IsBool(on) && samba_set(cJSON_IsTrue(on), err, sizeof(err)) != 0) out = fail(err);
+		if (!out) {
+			samba_state_t s;
+			samba_state(&s);
+			cJSON *o = ok();
+			cJSON_AddBoolToObject(o, "available", s.available);
+			cJSON_AddBoolToObject(o, "on", s.on);
+			cJSON_AddBoolToObject(o, "running", s.running);
 			out = reply(o);
 		}
 	}

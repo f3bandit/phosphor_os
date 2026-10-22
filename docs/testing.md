@@ -190,6 +190,10 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
 - [ ] After that restart it boots into Phosphor: no MiSTer file browser or OSD first (MiSTer's background at
       most), no login prompt or console text over Phosphor, then the Welcome screen (first start). Every later
       boot goes straight to the library.
+- [ ] Phosphor fills the whole screen (1080p TV: drawn at 1920x1080 with bigger text; 720p: 1280x720), no box
+      in the middle.
+- [ ] Settings > Share the SD card on the network (Samba): On shows \\\\<address>; the PC opens it (root / 1); Off
+      stops it (linux/samba.sh kept in phosphor/backups/samba/).
 - [ ] `MiSTer.ini` has `main=phosphor/bin/MiSTer_phosphor`; `phosphor/logs/firstboot.log` shows the five modules
       installed; Settings > Backups and Cloud saves are not "Not installed"; Screen filters lists MiSTer's filters.
 - [ ] Welcome > Get cores and filters → MiSTer's downloader runs (latest line shown), Phosphor stays usable; when
