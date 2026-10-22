@@ -37,6 +37,10 @@ import com.f3bandit.phosphor.ui.ArtCache
 import com.f3bandit.phosphor.ui.BackupsContent
 import com.f3bandit.phosphor.ui.CardsContent
 import com.f3bandit.phosphor.ui.BluetoothContent
+import com.f3bandit.phosphor.ui.DiagContent
+import com.f3bandit.phosphor.ui.VideoListContent
+import com.f3bandit.phosphor.ui.VideoSlot
+import com.f3bandit.phosphor.ui.VideoSysContent
 import com.f3bandit.phosphor.ui.CloudContent
 import com.f3bandit.phosphor.ui.CloudMode
 import com.f3bandit.phosphor.ui.BasedOnContent
@@ -92,16 +96,77 @@ fun PhosphorApp(model: AppModel) {
         composable("based/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e -> BasedRoute(model, nav, e.arguments!!.getLong("id")) }
         composable("settings") {
             SettingsContent(model.pairing?.address ?: "", BuildConfigVersion, onForget = { model.forget() }, onBack = { nav.popBackStack() },
-                onCloud = { nav.navigate("cloud") }, onBackups = { nav.navigate("backups") }, onCards = { nav.navigate("cards") }, onBluetooth = { nav.navigate("bluetooth") })
+                onCloud = { nav.navigate("cloud") }, onBackups = { nav.navigate("backups") }, onCards = { nav.navigate("cards") }, onBluetooth = { nav.navigate("bluetooth") }, onVideo = { nav.navigate("video") }, onDiag = { nav.navigate("diag") })
         }
         composable("cloud") { CloudRoute(model, nav) }
         composable("backups") { BackupsRoute(model, nav) }
         composable("cards") { CardsRoute(model, nav) }
         composable("bluetooth") { BluetoothRoute(model, nav) }
+        composable("video") { VideoListRoute(model, nav) }
+        composable("video/{sys}", arguments = listOf(navArgument("sys") { type = NavType.StringType })) { e -> VideoSysRoute(model, nav, e.arguments!!.getString("sys")!!) }
+        composable("diag") { DiagRoute(model, nav) }
     }
 }
 
-const val BuildConfigVersion = "0.6.1"
+const val BuildConfigVersion = "0.7.0"
+
+@Composable
+fun VideoListRoute(model: AppModel, nav: NavHostController) {
+    val api = model.api ?: return
+    var list by remember { mutableStateOf<List<VideoSys>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(api.address) { try { list = api.videoSystems(); error = null } catch (e: Exception) { error = model.handle(e) } }
+    VideoListContent(list, error, onPick = { nav.navigate("video/${Uri.encode(it.system)}") }, onBack = { nav.popBackStack() })
+}
+
+@Composable
+fun VideoSysRoute(model: AppModel, nav: NavHostController, sys: String) {
+    val api = model.api ?: return
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var v by remember { mutableStateOf<VideoSys?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf<VideoSlot?>(null) }
+    var choices by remember { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(sys) { try { v = api.videoSystems().firstOrNull { it.system == sys }; error = if (v == null) "No core installed for that system" else null } catch (e: Exception) { error = model.handle(e) } }
+    fun open(slot: VideoSlot) {
+        picking = slot; choices = null
+        scope.launch {
+            choices = try {
+                if (slot.what == "maskmode") listOf("1x", "2x", "1x rotated", "2x rotated") else api.videoFiles(slot.kind)
+            } catch (e: Exception) { error = model.handle(e); emptyList() }
+        }
+    }
+    fun change(block: suspend () -> VideoSys, done: String) = scope.launch {
+        try { v = block(); error = null; Toast.makeText(ctx, done, Toast.LENGTH_SHORT).show() } catch (e: Exception) { error = model.handle(e) }
+    }
+    VideoSysContent(v, error, picking, choices,
+        onSlot = { open(it) },
+        onPresets = { open(VideoSlot("Presets", "preset", "presets")) },
+        onChoose = { c ->
+            val p = picking ?: return@VideoSysContent
+            picking = null
+            if (p.what == "preset") { if (c != null) change({ api.video(sys, preset = c) }, "Preset applied") }
+            else change({ api.video(sys, p.what, c) }, "Saved: shows next time the core starts")
+        },
+        onUndo = { change({ api.video(sys, undo = true) }, "Put back") },
+        onBack = { if (picking != null) picking = null else nav.popBackStack() })
+}
+
+@Composable
+fun DiagRoute(model: AppModel, nav: NavHostController) {
+    val api = model.api ?: return
+    val scope = rememberCoroutineScope()
+    var st by remember { mutableStateOf<DiagState?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(api.address) {
+        while (true) {
+            try { st = api.diag(); error = null } catch (e: Exception) { error = model.handle(e) }
+            delay(if (st?.busy == true) 1500 else 10000)
+        }
+    }
+    DiagContent(st, error, onRun = { scope.launch { try { st = api.diag(run = true) } catch (e: Exception) { error = model.handle(e) } } }, onBack = { nav.popBackStack() })
+}
 
 @Composable
 fun BluetoothRoute(model: AppModel, nav: NavHostController) {

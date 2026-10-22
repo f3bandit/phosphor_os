@@ -390,7 +390,7 @@ fun BasedOnContent(title: String, current: String?, query: String, results: List
 // ---------- Settings ----------
 
 @Composable
-fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}, onBackups: () -> Unit = {}, onCards: () -> Unit = {}, onBluetooth: () -> Unit = {}) {
+fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}, onBackups: () -> Unit = {}, onCards: () -> Unit = {}, onBluetooth: () -> Unit = {}, onVideo: () -> Unit = {}, onDiag: () -> Unit = {}) {
     Screen("Settings", "Phosphor app", onBack = onBack) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
             Label("MiSTer")
@@ -400,6 +400,8 @@ fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBa
                 Row2("Backups", value = "›", onClick = onBackups)
                 Row2("Controllers & memory cards", value = "›", onClick = onCards)
                 Row2("Bluetooth", value = "›", onClick = onBluetooth)
+                Row2("Screen filters", value = "›", onClick = onVideo)
+                Row2("Diagnostics", value = "›", onClick = onDiag)
                 Row2("Forget this MiSTer", value = "›", accent = true, onClick = onForget)
             }
             Text("To remove this phone on the MiSTer too: Settings › Remote access, select the phone, press X.", style = T.small)
