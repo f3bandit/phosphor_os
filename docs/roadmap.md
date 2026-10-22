@@ -13,6 +13,7 @@ Each step is useful on its own; later steps reuse earlier ones.
 | 7 | **Android app integration** | The phone app talks to Phosphor: remote control, library, settings, memory cards, backups | Over the same local API (network-exposed, paired with a code). Fits SS1 Tool for Android or a dedicated companion app. |
 | 8 | **Cloud storage** | Saves and settings synced to the user's own cloud (Google Drive, Dropbox, OneDrive, WebDAV, SMB) | Through a module using rclone (MIT) on the ARM side; no Phosphor-run servers needed. |
 | 9 | **In-menu WiFi** | Scan networks with signal strength, band and security; connect, forget, reorder; all from the menu with a controller | Uses `wpa_supplicant`/`iw` like SS1 Tool's WiFi page; on-screen keyboard for passwords. |
+| 10 | **Status bar** | Top right, beside the clock: network share, Ethernet, WiFi (signal bars), Bluetooth (with count of connected controllers) | Live from `/sys/class/net`, `iw`, BlueZ and `/proc/self/mounts` (event-driven, no polling loop). Dim = off/disconnected, bright = active; tap through to the matching settings page. |
 
 Supporting work along the way: the Main fork (`phosphor-main`, GPL-3.0) with the local API; the frontend
 MVP (library shelf, game list, launch, settings, mount-change rescan); the in-game sheet (HDMI/scaler
