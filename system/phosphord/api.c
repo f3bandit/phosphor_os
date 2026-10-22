@@ -17,7 +17,9 @@
  *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
- *   rescrape   id                           look this game up again */
+ *   rescrape   id                           look this game up again
+ *   scrape_sources [order] [off]            the sources in order: [{id,name,on,ready,needs}];
+ *                                           with order/off (arrays of ids) saves them */
 #include "api.h"
 #include "art.h"
 #include "cJSON.h"
@@ -33,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define PHOSD_VERSION "0.3.0"
+#define PHOSD_VERSION "0.4.0"
 
 /* games with at least one file that's here right now */
 #define VISIBLE "EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)"
@@ -430,6 +432,45 @@ char *api_handle(sqlite3 *db, const char *request)
 		cJSON_AddNumberToObject(o, "found", si.done);
 		cJSON_AddNumberToObject(o, "not_found", si.missing);
 		cJSON_AddStringToObject(o, "status", si.status);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "scrape_sources")) {
+		cJSON *ord = cJSON_GetObjectItem(req, "order"), *off = cJSON_GetObjectItem(req, "off");
+		if (cJSON_IsArray(ord) || cJSON_IsArray(off)) {
+			char o[400] = "", f[400] = "";
+			scrape_source_t cur[16];
+			int n = scraper_sources(cur, 16);
+			cJSON *x;
+			if (cJSON_IsArray(ord)) {
+				cJSON_ArrayForEach(x, ord) if (cJSON_IsString(x)) {
+					if (o[0]) strncat(o, ", ", sizeof(o) - strlen(o) - 1);
+					strncat(o, x->valuestring, sizeof(o) - strlen(o) - 1);
+				}
+			} else {
+				for (int i = 0; i < n; i++) { if (o[0]) strncat(o, ", ", sizeof(o) - strlen(o) - 1); strncat(o, cur[i].id, sizeof(o) - strlen(o) - 1); }
+			}
+			if (cJSON_IsArray(off)) {
+				cJSON_ArrayForEach(x, off) if (cJSON_IsString(x)) {
+					if (f[0]) strncat(f, ", ", sizeof(f) - strlen(f) - 1);
+					strncat(f, x->valuestring, sizeof(f) - strlen(f) - 1);
+				}
+			} else {
+				for (int i = 0; i < n; i++) if (!cur[i].on) { if (f[0]) strncat(f, ", ", sizeof(f) - strlen(f) - 1); strncat(f, cur[i].id, sizeof(f) - strlen(f) - 1); }
+			}
+			if (scraper_set_sources(db, o, f)) { cJSON_Delete(req); return fail("can't save scraper.ini"); }
+		}
+		scrape_source_t ss[16];
+		int n = scraper_sources(ss, 16);
+		cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "sources");
+		for (int i = 0; i < n; i++) {
+			cJSON *x = cJSON_CreateObject();
+			cJSON_AddStringToObject(x, "id", ss[i].id);
+			cJSON_AddStringToObject(x, "name", ss[i].name);
+			cJSON_AddBoolToObject(x, "on", ss[i].on);
+			cJSON_AddBoolToObject(x, "ready", ss[i].ready);
+			if (ss[i].needs) cJSON_AddStringToObject(x, "needs", ss[i].needs);
+			else cJSON_AddNullToObject(x, "needs");
+			cJSON_AddItemToArray(arr, x);
+		}
 		out = reply(o);
 	} else if (!strcmp(c->valuestring, "rescrape")) {
 		out = scraper_retry(db, req_id(req)) == 0 ? reply(ok()) : fail("no such game");

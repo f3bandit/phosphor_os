@@ -23,10 +23,18 @@ add_library(cjson STATIC third_party/cjson/cJSON.c)
 target_include_directories(cjson PUBLIC third_party/cjson)
 target_compile_options(cjson PRIVATE -w)
 
+# libchdr (BSD-3, with LZMA SDK public domain, miniz MIT, zstd BSD): product codes inside .chd discs
+set(CHDR_DIR third_party/libchdr)
+add_library(chdr STATIC ${CHDR_DIR}/unity.c ${CHDR_DIR}/src/libchdr_codec_avhuff.c)   # unity.c leaves avhuff out
+target_include_directories(chdr PUBLIC ${CHDR_DIR}/include ${CHDR_DIR}/deps/miniz-3.1.2
+                           PRIVATE ${CHDR_DIR} ${CHDR_DIR}/deps/lzma-26.02/include ${CHDR_DIR}/deps/zstd-1.5.7)
+target_compile_definitions(chdr PRIVATE Z7_ST _7ZIP_ST ZSTD_DISABLE_ASM)
+target_compile_options(chdr PRIVATE -w -O2)
+
 file(GLOB PHOSD_SOURCES CONFIGURE_DEPENDS phosphord/*.c)
 add_executable(phosphord ${PHOSD_SOURCES})
 target_include_directories(phosphord PRIVATE phosphord third_party/stb)
-target_link_libraries(phosphord PRIVATE sqlite3 cjson pthread m)
+target_link_libraries(phosphord PRIVATE sqlite3 cjson chdr pthread m)
 target_compile_options(phosphord PRIVATE -Wall -Wextra -Wno-unused-parameter)
 set_source_files_properties(phosphord/art.c PROPERTIES COMPILE_OPTIONS "-Wno-sign-compare;-Wno-unused-function")
 

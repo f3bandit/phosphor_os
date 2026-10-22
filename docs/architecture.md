@@ -49,7 +49,8 @@ thing and no client scans folders itself.
     its first megabyte. Under a second per disc; hashing whole discs took ~40 s each over the
     SuperStation's USB, 2-3 hours for a typical library. Size and sample keep mods and patched
     discs (which usually keep the original's product code) apart from the original;
-  - .chd: the SHA-1 of the original data stored in the .chd header, so nothing is decompressed;
+  - .chd: the SHA-1 of the original data stored in the .chd header; the product code is read from the
+    disc inside (libchdr) for lookups;
   - arcade: the MAME set name in the .mra.
   Copies of the same game on the SD card, a USB drive and the share become one game with several
   files (favourite, play history and details are combined). Renaming or moving a file keeps its
@@ -70,22 +71,28 @@ thing and no client scans folders itself.
   Files on a drive that's away are marked offline, not forgotten.
 - **Artwork store**: `/media/fat/phosphor/data/art/<system>/<game key>/` with `box.jpg` (and later
   screenshot, title, logo), stored pre-sized so the ARM side never decodes a huge image.
-- **Scraper** (phosphord 0.3): a background queue, only while the menu is up, one game at a time,
-  turned on in Settings ("Get box art and details"). Source: libretro, no account needed:
-  - each system's official list (No-Intro for cartridges, Redump for discs) and its details lists
-    (developer, publisher, genre, year, players; PlayStation also has descriptions) are fetched once
-    and kept in the library database;
-  - games are matched by content only: CRC32 for cartridges, product code (+ size) for discs. Redump
-    writes some codes with a letter or several codes per disc, so a code contained in an entry with
-    the same size also matches;
-  - box art from libretro's thumbnails by the official name, stored as 512 px JPEG (~60 KB);
-  - only empty fields are filled: imported or hand-set details win. The title stays the file name;
-    the official name is kept separately;
-  - skipped: games linked to a base game, unidentified games (.chd, discs without a product code),
-    and games already looked up. Not found = left alone (link it with "Based on"), no guessing.
-  - downloads use curl (on MiSTer's Linux) with its certificate bundle. Network trouble pauses it
-    for a few minutes without marking anything.
-  Descriptions for cartridge systems need another source (ScreenScraper or TheGamesDB): not chosen yet.
+- **Scraper** (phosphord 0.4): a background queue, only while the menu is up, one game at a time,
+  turned on in Settings ("Get box art and details"). Several sources, asked in the user's order
+  (Settings > Box art sources, saved in `config/scraper.ini`); for each field (description,
+  developer, publisher, genre, year, players, region, box art) the first answer wins, and fields a
+  game already has are never replaced. The title stays the file name.
+
+  | Source | Account | Matched by | Gives |
+  |---|---|---|---|
+  | libretro | none | CRC32 / product code (+ size) against No-Intro & Redump | official name, details, PlayStation descriptions, box art |
+  | ArcadeDB | none | MAME set name in the .mra | title, maker, year, genre, players, history, flyer |
+  | LaunchBox | none | official name (from a content match) | descriptions, details, box art |
+  | TheGamesDB | API key | official name | descriptions, year, players, box art |
+  | ScreenScraper | Phosphor's developer id (+ user login) | CRC32 / product code | descriptions, details, box art |
+  | IGDB | Twitch developer app | official name | descriptions, details, cover |
+
+  Nothing is ever looked up by file name: a game nobody recognises by content is "not found" and
+  left alone (link it with "Based on"). libretro's lists and LaunchBox's database (one 110 MB
+  download, read as a stream, only the systems with games kept) are fetched once and kept in the
+  library database. Long imports commit in small batches so identifying and the API never wait.
+  Box art is stored as 512 px JPEG (~60 KB). One unreachable source only delays that game; several
+  failures in a row pause the queue for a few minutes. Changing the sources looks again at games
+  still missing art or a description.
 - **Importers, run once on request**: bring an existing `gamelist.xml` / Console Mode `media/` art
   into the library when someone moves to Phosphor. After that, only Phosphor's data is read.
 - **Launching** goes through phosphord: it writes the MGL, asks Main to load it and records the
