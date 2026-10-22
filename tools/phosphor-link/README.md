@@ -77,7 +77,7 @@ The port runs at 115200 baud, about 11 KB/s raw. Files travel as base64, so expe
 
 ## Building
 
-`./build.sh` (Go 1.24+) builds `dist/phosphor-link.exe` and `dist/phosphor-link-linux`. No cgo.
+`./build.sh` (Go 1.26+; go.mod asks for 1.27.3 and Go fetches it) builds `dist/phosphor-link.exe` and `dist/phosphor-link-linux`. No cgo.
 
 `test/fake_mister.py` is a pretend MiSTer console on a pseudo-terminal: boot log, login, a real
 bash, Main messages dropped in at random (including mid-line), U-Boot stops and reboots. It
@@ -85,5 +85,5 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
-0.1.2. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
+0.1.3 (up-to-date crypto/ssh and Go, no known vulnerabilities). Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
 the pretend console with heavy mid-line noise, a stopped U-Boot and reboots.

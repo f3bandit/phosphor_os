@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const version = "0.1.2"
+const version = "0.1.3"
 
 const usage = `Phosphor Link ` + version + `: reach a MiSTer through the SuperStation One dock's debug port, or SSH.
 

@@ -1,14 +1,13 @@
 module github.com/f3bandit/phosphor_os/tools/phosphor-link
 
-go 1.24.7
+go 1.26.0
+
+toolchain go1.27.3
 
 require (
-	go.bug.st/serial v1.6.4
-	golang.org/x/crypto v0.36.0
-	golang.org/x/term v0.30.0
+	go.bug.st/serial v1.8.0
+	golang.org/x/crypto v0.58.0
+	golang.org/x/term v0.47.0
 )
 
-require (
-	github.com/creack/goselect v0.1.2 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-)
+require golang.org/x/sys v0.49.0 // indirect
