@@ -101,7 +101,7 @@ fun PhosphorApp(model: AppModel) {
     }
 }
 
-const val BuildConfigVersion = "0.5.0"
+const val BuildConfigVersion = "0.6.0"
 
 @Composable
 fun BluetoothRoute(model: AppModel, nav: NavHostController) {
