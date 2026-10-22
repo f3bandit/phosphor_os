@@ -68,6 +68,8 @@ shell starts it if it isn't running.
 
   ![Favorites](docs/favorites.png)
 
+- **MiSTer menu and Restart** (Settings): hand the screen to MiSTer's own menu (Launch Phosphor in the
+  OSD comes back), or restart the system (A twice).
 - **Bluetooth** (Settings): the paired controllers, connected or not; pair a new one (put it in pairing mode;
   MiSTer's own pairing tool does the work, so the OSD and Phosphor share the same pairings); disconnect or
   forget one. Pairings stay on the SD card.
