@@ -83,7 +83,9 @@ async function refreshState() {
 
 /* ---------- focus and navigation ---------- */
 let cur = null;
-function navs() { return [...document.querySelectorAll("[data-nav]")].filter(e => e.offsetParent !== null && !e.closest("[hidden]")); }
+/* a locked window (controller mapping): while it's open only its own controls can be reached */
+let lockwin = null;
+function navs() { return [...document.querySelectorAll("[data-nav]")].filter(e => e.offsetParent !== null && !e.closest("[hidden]") && (!lockwin || lockwin.contains(e))); }
 function focus(el, quiet) {
 	if (!el) return;
 	if (cur) cur.classList.remove("f");
@@ -152,13 +154,14 @@ addEventListener("keydown", e => {
 	if (typing && !["ArrowUp", "ArrowDown", "Escape", "Enter", "Tab"].includes(k)) return;
 	if (typing && k === "Enter" && document.activeElement.matches("textarea")) return;
 	const s = topScr();
+	if (lockwin && !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"].includes(k)) { e.preventDefault(); return; }
 	switch (k) {
 	case "ArrowLeft": move(-1, 0); break;
 	case "ArrowRight": move(1, 0); break;
 	case "ArrowUp": move(0, -1); break;
 	case "ArrowDown": move(0, 1); break;
 	case "Enter": case " ": activate(); break;
-	case "Escape": case "Backspace": if (typing && k === "Backspace") return; if (!(s && s.back && s.back())) back(); break;
+	case "Escape": case "Backspace": if (typing && k === "Backspace") return; if (lockwin) { if (lockwin._esc) lockwin._esc(); break; } if (!(s && s.back && s.back())) back(); break;
 	case "q": case "PageUp": s && s.tab && s.tab(-1); break;
 	case "e": case "PageDown": s && s.tab && s.tab(1); break;
 	case "x": case "X": s && s.x && s.x(); break;
