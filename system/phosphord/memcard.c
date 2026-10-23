@@ -40,7 +40,7 @@
 #define SECTORS 1024
 #define SECTOR 128
 #define CARD_BYTES (SECTORS * SECTOR)
-#define TRIES 4
+#define TRIES 6     /* like SS1 MemCard (the core that backs cards up on its own): 6 tries a sector */
 #define IDLE_OFF_S 20
 
 static pthread_mutex_t mlk = PTHREAD_MUTEX_INITIALIZER;     /* the connection to Main */
@@ -290,10 +290,20 @@ static int card_io(int port, int sec, unsigned char *data, int write)
 	return r;
 }
 
+static int tries_used;       /* how many tries the last card_io_retry took (job thread only) */
+
+static void mark(int sec, char v)
+{
+	pthread_mutex_lock(&slk);
+	if (sec >= 0 && sec < SECTORS) st.map[sec] = v;
+	pthread_mutex_unlock(&slk);
+}
+
 static int card_io_retry(int port, int sec, unsigned char *data, int write)
 {
 	int r = 0;
 	for (int t = 0; t < TRIES; t++) {
+		tries_used = t + 1;
 		r = card_io(port, sec, data, write);
 		if (r == 5) {                            /* Main restarted: the ports again */
 			char err[200];
@@ -304,8 +314,10 @@ static int card_io_retry(int port, int sec, unsigned char *data, int write)
 			if (p) return 4;
 			continue;
 		}
-		if (r == 0 || r == 1 || r == 4) return r;
-		usleep(20000);
+		/* every failure is tried again, "no card" too: on the SS1's front ports a card now and then
+		   misses a command (SS1 MemCard retries any failed sector the same way, 1 ms apart) */
+		if (r == 0 || r == 3 || r == 4) return r;
+		usleep(t < 2 ? 2000 : 20000);
 	}
 	return r;
 }
@@ -329,6 +341,7 @@ static int read_card(int port, unsigned char *buf, char *msg, size_t n, int base
 {
 	for (int s = 0; s < SECTORS; s++) {
 		int r = card_io_retry(port, s, buf + s * SECTOR, 0);
+		mark(s, r ? '3' : tries_used > 1 ? '2' : '1');
 		if (r) { snprintf(msg, n, "%s (sector %d)", io_error(r), s); return -1; }
 		if (s % 32 == 0) progress(base + s, what);
 	}
@@ -432,10 +445,12 @@ static void run_job(const char *job, int port, const char *name)
 					unsigned char back[SECTOR];
 					for (int t = 0; t < 2; t++) {
 						r = card_io_retry(port, s, want + s * SECTOR, 1);
+						if (!r) usleep(5000);      /* a card is busy for a moment after a write (SS1 MemCard waits 5 ms) */
 						if (!r) r = card_io_retry(port, s, back, 0);
 						if (!r && memcmp(back, want + s * SECTOR, SECTOR)) r = 2;
 						if (!r) break;
 					}
+					mark(s, r ? '3' : '5');
 					if (r) bad = s;
 					else written++;
 				}
@@ -508,6 +523,10 @@ int memcard_job(const char *what, int port, const char *name, char *err, size_t 
 	snprintf(st.job, sizeof(st.job), "%s", what);
 	st.port = port;
 	st.done = 0;
+	if (!strcmp(what, "backup") || !strcmp(what, "restore")) {     /* a new map for jobs that read the card */
+		memset(st.map, '0', SECTORS);
+		st.map[SECTORS] = 0;
+	}
 	st.total = (!strcmp(what, "check") || !strcmp(what, "prepare")) ? 1 : !strcmp(what, "backup") ? SECTORS : 2 * SECTORS;
 	st.ok = 0;
 	st.message[0] = st.file[0] = 0;

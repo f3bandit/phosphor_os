@@ -18,6 +18,8 @@ typedef struct {
 	int ok;               /* the last job worked (valid when !busy and job[0]) */
 	char message[200];    /* what happened, for the screen */
 	char file[128];       /* the backup it wrote / the file it restored */
+	char map[1025];       /* one character a sector, like SS1 Tool's card map: 0 not done yet, 1 read OK,
+	                         2 needed a retry, 3 failed, 5 written and checked ("" before the first job) */
 } ports_state_t;
 
 void memcard_start(void);

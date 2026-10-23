@@ -109,8 +109,11 @@ static void status_update(void)
 
 /* ---------- footer: button hints ---------- */
 
+static const char *const *footer_now;
 static void footer_set(const char *const *hints)
 {
+	if (hints == footer_now && lv_obj_get_child_count(footer)) return;     /* the same: nothing to redraw */
+	footer_now = hints;
 	lv_obj_clean(footer);
 	for (int i = 0; hints[i]; i += 2) {
 		lv_obj_t *item = mk_box(footer, LV_SIZE_CONTENT, S(28), PAL.bg, 0);
@@ -2430,6 +2433,81 @@ static struct {
 } pt;
 static vlist_t pt_list;
 static lv_obj_t *pt_head, *pt_padl[2], *pt_sub;
+
+/* the card map, like SS1 Tool's: 32 x 32 blocks, one a sector, filling in as the card is read or written */
+static lv_obj_t *mc_box, *mc_canvas, *mc_title, *mc_count;
+static lv_draw_buf_t *mc_buf;
+static char mc_shown[1025];
+static int mc_cell;
+static const uint32_t MC_COL[6] = { 0x343a50, 0x38c058, 0xe8c030, 0xe84040, 0xd070e8, 0x4a9cf0 };
+static const char *const MC_LEG[] = { "1read OK", "2needed a retry", "3failed", "5written and checked", "0not done yet", NULL };
+
+static void mc_cell_fill(int i, lv_color_t c)
+{
+	int x0 = (i % 32) * mc_cell, y0 = (i / 32) * mc_cell, n = mc_cell - LV_MAX(1, mc_cell / 7);
+	for (int y = 0; y < n; y++) for (int x = 0; x < n; x++) lv_canvas_set_px(mc_canvas, x0 + x, y0 + y, c, LV_OPA_COVER);
+}
+
+static void mc_create(lv_obj_t *parent)
+{
+	mc_cell = LV_MAX(4, S(7));
+	int side = 32 * mc_cell;
+	mc_box = mk_box(parent, side, S(26) + side + S(42) + 5 * S(22) + S(24), PAL.bg, 0);
+	lv_obj_set_style_bg_opa(mc_box, LV_OPA_TRANSP, 0);
+	lv_obj_set_pos(mc_box, W - S(56) - side, S(150));
+	mc_title = mk_label(mc_box, FONT_LABEL, PAL.dim, "MEMORY CARD");
+	lv_obj_set_style_text_letter_space(mc_title, S(2), 0);
+	lv_obj_set_pos(mc_title, 0, 0);
+	if (!mc_buf || (int)mc_buf->header.w != side) {
+		if (mc_buf) lv_draw_buf_destroy(mc_buf);
+		mc_buf = lv_draw_buf_create(side, side, LV_COLOR_FORMAT_RGB565, 0);
+	}
+	mc_canvas = lv_canvas_create(mc_box);
+	lv_canvas_set_draw_buf(mc_canvas, mc_buf);
+	lv_canvas_fill_bg(mc_canvas, PAL.bg, LV_OPA_COVER);
+	lv_obj_set_pos(mc_canvas, 0, S(26));
+	mc_shown[0] = 0;
+	for (int i = 0; i < 1024; i++) mc_cell_fill(i, lv_color_hex(MC_COL[0]));
+	mc_count = mk_label(mc_box, FONT_SMALL, PAL.dim, "No card read yet");
+	lv_obj_set_pos(mc_count, 0, S(26) + side + S(10));
+	for (int k = 0; MC_LEG[k]; k++) {
+		lv_obj_t *sq = mk_box(mc_box, S(10), S(10), lv_color_hex(MC_COL[MC_LEG[k][0] - '0']), S(2));
+		lv_obj_set_pos(sq, 0, S(26) + side + S(42) + k * S(22) + S(4));
+		lv_obj_t *l = mk_label(mc_box, FONT_SMALL, PAL.faint, MC_LEG[k] + 1);
+		lv_obj_set_pos(l, S(18), S(26) + side + S(42) + k * S(22));
+	}
+}
+
+/* only the blocks that changed; the one being worked on blinks in the accent colour */
+static void mc_update(const char *map, int busy)
+{
+	if (!mc_canvas || !map || strlen(map) != 1024) return;
+	int changed = 0, cur = -1, ok = 0, retried = 0, failed = 0, written = 0;
+	if (busy) for (int i = 0; i < 1024; i++) if (map[i] == '0') { cur = i; break; }
+	int blink = (lv_tick_get() / 300) % 2;
+	for (int i = 0; i < 1024; i++) {
+		char v = map[i];
+		ok += v == '1'; retried += v == '2'; failed += v == '3'; written += v == '5';
+		char show = (i == cur) ? (blink ? 'c' : 'C') : v;
+		if (mc_shown[0] && mc_shown[i] == show) continue;
+		lv_color_t c = show == 'c' ? PAL.acc : show == 'C' ? PAL.panel_on : lv_color_hex(MC_COL[(v >= '0' && v <= '5') ? v - '0' : 0]);
+		mc_cell_fill(i, c);
+		changed = 1;
+		if (mc_shown[0]) mc_shown[i] = show;
+	}
+	if (!mc_shown[0]) {
+		for (int i = 0; i < 1024; i++) mc_shown[i] = (i == cur) ? (blink ? 'c' : 'C') : map[i];
+		mc_shown[1024] = 0;
+	}
+	if (changed) lv_obj_invalidate(mc_canvas);
+	char t[120];
+	int done = ok + retried + failed + written;
+	if (!done && !busy) snprintf(t, sizeof(t), "No card read yet");
+	else if (written) snprintf(t, sizeof(t), "%d written%s", written, failed ? "  \xC2\xB7  1 failed" : "");
+	else if (failed) snprintf(t, sizeof(t), "%d / 1024  \xC2\xB7  %d failed", done, failed);
+	else snprintf(t, sizeof(t), "%d / 1024  \xC2\xB7  %d retried", done, retried);
+	lv_label_set_text(mc_count, t);
+}
 static const char *const PT_HINTS[] = { "A", "Choose", "B", "Back", NULL };
 static const char *const PT_CONFIRM_HINTS[] = { "A", "Port 1", "X", "Port 2", "B", "Cancel", NULL };
 
@@ -2507,6 +2585,7 @@ static void pt_apply(cJSON *r)
 	pt.total = (int)api_num(j, "total", 1);
 	snprintf(pt.job, sizeof(pt.job), "%s", api_str(j, "name") ? api_str(j, "name") : "");
 	snprintf(pt.message, sizeof(pt.message), "%s", api_str(j, "message") ? api_str(j, "message") : "");
+	if (cur == SCR_PORTS) mc_update(api_str(j, "map"), pt.busy && strcmp(pt.job, "prepare"));
 	pt.nfiles = 0;
 	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "backups")) {
 		if (pt.nfiles >= 80) break;
@@ -2598,19 +2677,20 @@ static void show_ports(void)
 	screen_title("SETTINGS", "Controllers & memory cards");
 	pt_head = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_label_set_long_mode(pt_head, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_size(pt_head, W - S(112), S(24));
+	lv_obj_set_size(pt_head, S(880), S(24));
 	lv_obj_set_pos(pt_head, S(56), S(178));
 	for (int p = 0; p < 2; p++) {
 		pt_padl[p] = mk_label(body, FONT_BODY, PAL.dim, "");
 		lv_label_set_long_mode(pt_padl[p], LV_LABEL_LONG_MODE_DOTS);
-		lv_obj_set_size(pt_padl[p], W - S(112), S(24));
+		lv_obj_set_size(pt_padl[p], S(880), S(24));
 		lv_obj_set_pos(pt_padl[p], S(56), S(216 + 30 * p));
 	}
 	pt_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
 	lv_label_set_long_mode(pt_sub, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_size(pt_sub, W - S(112), S(22));
+	lv_obj_set_size(pt_sub, S(880), S(22));
 	lv_obj_set_pos(pt_sub, S(56), S(282));
-	vlist_create(&pt_list, body, S(56), S(316), S(900), S(320));
+	vlist_create(&pt_list, body, S(56), S(316), S(880), S(320));
+	mc_create(body);
 	pt_list.fill = pt_fill;
 	pt_list.sel = 0;
 	pt_list.top = 0;
@@ -3576,6 +3656,9 @@ void ui_tick(void)
 	/* the controllers on the front ports, live */
 	static uint32_t last_pads;
 	if (cur == SCR_PORTS && pt.available && now - last_pads >= 100) { last_pads = now; pt_pads(); }
+	/* a card job: the map fills in as it goes */
+	static uint32_t last_mc;
+	if (cur == SCR_PORTS && pt.busy && now - last_mc >= 250) { last_mc = now; pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
@@ -3584,7 +3667,7 @@ void ui_tick(void)
 		else if (cr.busy && cur != SCR_SETTINGS) cores_refresh();     /* the bar, on every screen */
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
-		if (cur == SCR_PORTS && pt.busy) pt_apply(api_call("{\"cmd\":\"memcard\"}"));
+		/* (a card job is followed 4 times a second, below) */
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
