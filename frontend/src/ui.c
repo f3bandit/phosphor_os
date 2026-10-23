@@ -1891,7 +1891,7 @@ static void si_update(void)
 	si_set(si.title, t);
 	char k[SI_ROWS][40], v[SI_ROWS][96];
 	int hi, n = si_state(row, k, v, &hi);
-	if (!n && si_wants_ext(row)) { snprintf(k[0], 40, " "); snprintf(v[0], 96, "%s", si.ext_asked ? "Not answering" : "..."); n = 1; hi = -1; }
+	if (!n && si_wants_ext(row)) { snprintf(k[0], 40, "Status"); snprintf(v[0], 96, "%s", si.ext_asked ? "phosphord isn't answering" : "..."); n = 1; hi = -1; }
 	for (int i = 0; i < SI_ROWS; i++) {
 		lv_obj_set_hidden(si.pair[i], i >= n);
 		if (i >= n) continue;
@@ -1900,7 +1900,7 @@ static void si_update(void)
 		lv_obj_set_style_text_color(si.v[i], i == hi ? PAL.acc : PAL.text, 0);
 	}
 	/* the texture: a piece of the real tile */
-	int sw = row == SET_TEXTURE || row == SET_ACCENT;
+	int sw = (row == SET_TEXTURE && SETTINGS.texture) || row == SET_ACCENT;
 	lv_obj_set_hidden(si.swatch, !sw);
 	if (sw) {
 		const void *tile = row == SET_TEXTURE ? texture_tile() : NULL;
