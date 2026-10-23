@@ -22,6 +22,23 @@ if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/b
 if [ -f ../phosphor-menu/menu_phosphor.rbf ]; then mkdir -p "$D/cores"; cp ../phosphor-menu/menu_phosphor.rbf "$D/cores/"; fi
 for f in "$D"/bin/*; do file "$f" | grep -q "ARM" || { echo "$f isn't an ARM build" >&2; exit 1; }; done
 cp install/install.sh install/uninstall.sh install/phosphor.sh LICENSE.md "$D/"
+# MiSTer's updaters, started from Phosphor: a restore point of MiSTer's system files first (when
+# update-guard is installed), then the updater itself, one after the other in MiSTer's terminal
+mkdir -p "$D/scripts"
+for u in update update_all; do
+	cat > "$D/scripts/$u.sh" <<SH
+#!/bin/bash
+# Phosphor: $u.sh from MiSTer's Scripts folder, after a restore point (update-guard), so nothing
+# copies files in the background while it runs
+G=/media/fat/phosphor/modules/update-guard/update-guard.sh
+if [ -x "\$G" ]; then
+	echo "Phosphor: saving a restore point of MiSTer's system files first..."
+	"\$G" save-point || echo "(couldn't save one; the update goes ahead)"
+	echo
+fi
+cd /media/fat/Scripts && exec ./$u.sh "\$@"
+SH
+done
 cp system/config/systems.ini "$D/config/"
 cat > "$D/config/scraper.ini" <<'INI'
 [sources]
