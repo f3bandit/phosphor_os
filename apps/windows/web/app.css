@@ -129,7 +129,7 @@ h1 { flex: none; font-weight: 600; font-size: 2rem; letter-spacing: -.01em; marg
 /* forms */
 .field { display: grid; gap: .3rem; margin-bottom: .8rem; }
 .field label { font-size: .8125rem; color: var(--dim); }
-input[type=text], input[type=search], textarea { width: 100%; background: #121214; border: 1px solid var(--line); border-radius: .5rem;
+input[type=text], input[type=search], input[type=password], textarea { width: 100%; background: #121214; border: 1px solid var(--line); border-radius: .5rem;
 	padding: .55rem .75rem; color: var(--text); outline: none; user-select: text; }
 input.f, textarea.f, input:focus, textarea:focus { border-color: var(--acc); }
 textarea { min-height: 7rem; resize: vertical; line-height: 1.45; }

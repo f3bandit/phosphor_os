@@ -26,6 +26,7 @@
  *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
+ *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
  *   wifi       [do: scan|connect|forget|up|down|undo] [ssid] [password] [hidden]
  *                                           {status{...}, scanning, networks:[{ssid, signal, bands,
@@ -1383,6 +1384,29 @@ char *api_handle(sqlite3 *db, const char *request)
 			cJSON_AddBoolToObject(x, "ready", ss[i].ready);
 			if (ss[i].needs) cJSON_AddStringToObject(x, "needs", ss[i].needs);
 			else cJSON_AddNullToObject(x, "needs");
+			cJSON_AddItemToArray(arr, x);
+		}
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "scrape_accounts")) {
+		/* set: {sec, key, value}; replies what's set (user names shown, secrets only as set) */
+		cJSON *set = cJSON_GetObjectItem(req, "set");
+		if (cJSON_IsObject(set)) {
+			const char *sec = cJSON_GetStringValue(cJSON_GetObjectItem(set, "sec"));
+			const char *key = cJSON_GetStringValue(cJSON_GetObjectItem(set, "key"));
+			const char *val = cJSON_GetStringValue(cJSON_GetObjectItem(set, "value"));
+			if (!sec || !key || !scraper_account_ok(sec, key)) { cJSON_Delete(req); return fail("not an account setting"); }
+			if (scraper_set_account(sec, key, val ? val : "")) { cJSON_Delete(req); return fail("can't save scraper.ini"); }
+		}
+		scrape_account_t a[SCRAPE_ACCOUNTS];
+		int n = 0;
+		scraper_accounts(a, &n);
+		cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "accounts");
+		for (int i = 0; i < n; i++) {
+			cJSON *x = cJSON_CreateObject();
+			cJSON_AddStringToObject(x, "sec", a[i].sec);
+			cJSON_AddStringToObject(x, "key", a[i].key);
+			cJSON_AddBoolToObject(x, "set", a[i].set);
+			cJSON_AddStringToObject(x, "value", a[i].value);
 			cJSON_AddItemToArray(arr, x);
 		}
 		out = reply(o);
