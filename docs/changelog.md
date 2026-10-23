@@ -3,6 +3,13 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.1
+
+### Changes
+- **Dashboard for Phosphor for Windows:** phosphord answers a read-only `dashboard` request
+  (temperatures, CPU per core, memory, uptime, the running core, drives and their read / write
+  traffic, network addresses and traffic, the busiest processes, and the kernel log's last lines).
+
 ## 0.27.0
 
 ### Fixes
