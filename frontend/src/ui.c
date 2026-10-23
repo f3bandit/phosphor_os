@@ -30,11 +30,9 @@
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <dirent.h>
-#include <vterm.h>
-#include "term.h"
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_TERM, SCR_SCRIPTS } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -918,12 +916,12 @@ static void picker_key(pkey_t k)
 	else if (k == K_B || k == K_Y) picker_close();
 }
 
-/* MiSTer's downloader and Update All: scripts on the SD card, run in Phosphor's terminal window */
+/* MiSTer's downloader and Update All: scripts on the SD card, run the way MiSTer's Scripts menu runs them */
 static const char *fat_dir(void) { const char *f = getenv("PHOS_FAT"); return f && *f ? f : "/media/fat"; }
 static const char *fat_path(char *buf, size_t n, const char *rel) { snprintf(buf, n, "%s/%s", fat_dir(), rel); return buf; }
 static char scripts_dir_buf[320], script_log_buf[320], upd_buf[340], upd_all_buf[340];
 #define SCRIPTS_DIR fat_path(scripts_dir_buf, sizeof(scripts_dir_buf), "Scripts")
-#define SCRIPT_LOG fat_path(script_log_buf, sizeof(script_log_buf), "phosphor/logs/script.log")
+#define SCRIPT_LOG fat_path(script_log_buf, sizeof(script_log_buf), "Scripts/.config/downloader/downloader.log")   /* the downloader's own (Update All runs it too) */
 #define UPDATE_SH fat_path(upd_buf, sizeof(upd_buf), "Scripts/update.sh")
 #define UPDATE_ALL_SH fat_path(upd_all_buf, sizeof(upd_all_buf), "Scripts/update_all.sh")
 static struct { int available, all_available; } cr;
@@ -935,14 +933,14 @@ static void cores_refresh(void)
 static void cores_value(char *val, size_t vn)
 {
 	if (!cr.available) snprintf(val, vn, "MiSTer's updater not found");
-	else if (term_running()) snprintf(val, vn, "Running...");
+	else if (mainlink_script_running()) snprintf(val, vn, "Running...");
 	else snprintf(val, vn, ">");
 }
-static void show_term(const char *script, const char *title);
+static void run_script(const char *path);
 static int cores_start_job(int have_net, int all)
 {
 	if (!have_net) { toast_show("Connect to a network first"); return 0; }
-	show_term(all ? UPDATE_ALL_SH : UPDATE_SH, all ? "Update All" : "MiSTer's downloader");
+	run_script(all ? UPDATE_ALL_SH : UPDATE_SH);
 	return 1;
 }
 static void cores_start(int have_net) { cores_start_job(have_net, 0); }
@@ -1073,7 +1071,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		else snprintf(val, vn, ">");
 		break;
 	case SET_SCRIPTS: snprintf(t, n, "Scripts"); snprintf(val, vn, ">"); break;
-	case SET_UPDLOG: snprintf(t, n, "Last script's log"); snprintf(val, vn, ">"); break;
+	case SET_UPDLOG: snprintf(t, n, "Last update's log"); snprintf(val, vn, ">"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_MISTER: snprintf(t, n, "MiSTer menu"); snprintf(val, vn, ">"); break;
 	case SET_RESTART: snprintf(t, n, "Restart"); break;
@@ -1085,103 +1083,24 @@ static void show_settings(void);
 static void show_welcome(void);
 static int in_setup;              /* the sub-screens go back to the welcome screen, not Settings */
 
-/* ---------- Script terminal ----------
- * A script (Update All, MiSTer's downloader, anything in Scripts) runs in a window inside Phosphor:
- * D-pad = arrow keys, A Enter, B Esc, X Backspace, Y types text (keyboard), L/R Page Up/Down,
- * SELECT Tab. Start twice stops it; when it's done, B or Start goes back. Its output is kept in
- * logs/script.log (Settings > Last script's log). */
-static lv_obj_t *term_head;
-static int term_back;              /* came from: 0 Settings, 1 Welcome, 2 Scripts */
-static uint32_t term_stop_asked;
-static char term_title[80];
-static const char *const TERM_HINTS[] = { "A", "Enter", "B", "Esc", "X", "Delete", "Y", "Type", "\xE2\x89\xA1", "Stop", NULL };
-static const char *const TERM_DONE_HINTS[] = { "B", "Back", NULL };
-static void show_scripts(void);
-static void osk_open(const char *title, const char *hint, int masked, int max, void (*done)(const char *), const char *const *back_hints);
-
-static void term_head_update(void)
-{
-	if (!term_head) return;
-	char h[160];
-	if (term_running()) snprintf(h, sizeof(h), "%s  \xC2\xB7  running", term_title);
-	else snprintf(h, sizeof(h), "%s  \xC2\xB7  %s", term_title, term_status() ? "stopped before the end (see the end of its output)" : "done");
-	if (strcmp(lv_label_get_text(term_head), h)) lv_label_set_text(term_head, h);
-}
-
-static void show_term(const char *script, const char *title)
-{
-	if (term_running()) { toast_show("A script is already running"); return; }
-	term_back = cur == SCR_WELCOME ? 1 : cur == SCR_SCRIPTS ? 2 : 0;
-	cur = SCR_TERM;
-	lv_obj_clean(body);
-	screen_title(term_back == 1 ? "WELCOME" : "SETTINGS", title);
-	snprintf(term_title, sizeof(term_title), "%s", title);
-	term_head = mk_label(body, FONT_SMALL, PAL.dim, "");
-	lv_obj_set_pos(term_head, S(56), S(176));
-	lv_obj_t *frame = mk_box(body, W - S(112), H - S(212) - S(84), lv_color_hex(0x000000), S(10));
-	lv_obj_set_pos(frame, S(56), S(206));
-	/* the bigger font when 24 lines fit (what most scripts expect), else the smaller one */
-	int th = H - S(212) - S(84) - S(24);
-	const lv_font_t *tf = th / lv_font_get_line_height(FONT_WORD) >= 24 ? FONT_WORD : FONT_LABEL;
-	lv_obj_t *cv = term_create(frame, W - S(112) - S(24), th, tf);
-	lv_obj_center(cv);
-	term_stop_asked = 0;
-	footer_set(TERM_HINTS);
-	if (term_start(script, SCRIPT_LOG)) { toast_show("Couldn't start it"); footer_set(TERM_DONE_HINTS); }
-	term_head_update();
-}
-
-static void term_typed(const char *text) { if (text) term_text(text); footer_set(term_running() ? TERM_HINTS : TERM_DONE_HINTS); }
-
-static void show_welcome(void);
+/* ---------- Running a script ----------
+ * Update All, MiSTer's downloader and anything in Scripts run the way MiSTer's Scripts menu runs them:
+ * Phosphor's Main shows MiSTer's own terminal (controllers as its keys, Update All's settings work
+ * the same), and gives the screen back after "Press any key to continue". Phosphor draws nothing
+ * and reads nothing meanwhile (main.c). */
 static void back_to_settings(int sel);
-static void term_leave(void)
+static void show_scripts(void);
+static void run_script(const char *path)
 {
-	term_forget();
-	term_head = NULL;
-	if (term_back == 1) show_welcome();
-	else if (term_back == 2) show_scripts();
-	else back_to_settings(SET_CORES);
+	if (mainlink_script_running()) { toast_show("A script is already running"); return; }
+	if (mainlink_script(path)) toast_show("Scripts need Phosphor's Main (phosphor-main)");
 }
 
-static void term_key_in(pkey_t k)
+void ui_script_done(int status)
 {
-	if (!term_running()) {
-		if (k == K_B || k == K_MENU || k == K_A) term_leave();
-		return;
-	}
-	switch (k) {
-	case K_UP: term_key(VTERM_KEY_UP); break;
-	case K_DOWN: term_key(VTERM_KEY_DOWN); break;
-	case K_LEFT: term_key(VTERM_KEY_LEFT); break;
-	case K_RIGHT: term_key(VTERM_KEY_RIGHT); break;
-	case K_A: term_key(VTERM_KEY_ENTER); break;
-	case K_B: term_key(VTERM_KEY_ESCAPE); break;
-	case K_X: term_key(VTERM_KEY_BACKSPACE); break;
-	case K_L: term_key(VTERM_KEY_PAGEUP); break;
-	case K_R: term_key(VTERM_KEY_PAGEDOWN); break;
-	case K_SELECT: term_key(VTERM_KEY_TAB); break;
-	case K_Y: osk_open("Type", "Sent to the script as typed (A in the window is Enter).", 0, 78, term_typed, TERM_HINTS); break;
-	case K_MENU: {
-		uint32_t now = lv_tick_get();
-		if (!term_stop_asked || now - term_stop_asked > 4000) { term_stop_asked = now ? now : 1; toast_show("Press Start again to stop the script"); }
-		else { term_stop_asked = 0; term_stop(); toast_show("Stopped"); }
-		break;
-	}
-	default: break;
-	}
-}
-
-/* called every frame */
-static void term_tick(void)
-{
-	if (cur != SCR_TERM) { if (term_running()) term_poll(); return; }
-	int was = term_running();
-	term_poll();
-	if (was && !term_running()) { footer_set(TERM_DONE_HINTS); cores_refresh(); }
-	static uint32_t last;
-	uint32_t now = lv_tick_get();
-	if (now - last > 500) { last = now; term_head_update(); }
+	cores_refresh();
+	if (cur == SCR_SETTINGS) vlist_refresh(&set_list);
+	toast_show(status ? "The script ended with an error (Settings > Last update's log)" : "Done");
 }
 
 /* ---------- Scripts (everything in /media/fat/Scripts) ---------- */
@@ -1210,7 +1129,7 @@ static void show_scripts(void)
 	}
 	if (d) closedir(d);
 	qsort(sc_names, (size_t)sc_n, sizeof(sc_names[0]), sc_cmp);
-	lv_obj_t *sub = mk_label(body, FONT_SMALL, PAL.dim, sc_n ? "The scripts in the SD card's Scripts folder. They run in a window here; their output is kept for Settings > Last script's log." : "There are no scripts in the SD card's Scripts folder.");
+	lv_obj_t *sub = mk_label(body, FONT_SMALL, PAL.dim, sc_n ? "The scripts in the SD card's Scripts folder. They run in MiSTer's terminal, as from MiSTer's Scripts menu." : "There are no scripts in the SD card's Scripts folder.");
 	lv_obj_set_pos(sub, S(56), S(176));
 	vlist_create(&sc_list, body, S(56), S(210), S(1000), S(420));
 	sc_list.count = sc_n;
@@ -1226,15 +1145,14 @@ static void scripts_key(pkey_t k)
 	if (vlist_key(&sc_list, k)) return;
 	if (k == K_B || k == K_MENU) { back_to_settings(SET_SCRIPTS); return; }
 	if (k == K_A && sc_n) {
-		char path[460], title[96];
+		char path[460];
 		snprintf(path, sizeof(path), "%s/%s", SCRIPTS_DIR, sc_names[sc_list.sel]);
-		snprintf(title, sizeof(title), "%.*s", (int)(strlen(sc_names[sc_list.sel]) - 3), sc_names[sc_list.sel]);
-		show_term(path, title);
+		run_script(path);
 	}
 }
 
-/* ---------- Last script's log ----------
- * What the last script printed (logs/script.log), cleaned up. Up/Down scroll, L/R a page, B back. */
+/* ---------- Last update's log ----------
+ * The downloader's own log (Update All runs the downloader too), cleaned up. Up/Down scroll, L/R a page, B back. */
 static lv_obj_t *log_box, *log_lab;
 static const char *const LOG_HINTS[] = { "\xE2\x86\x91\xE2\x86\x93", "Scroll", "L/R", "Page", "B", "Back", NULL };
 
@@ -1242,7 +1160,7 @@ static const char *const LOG_HINTS[] = { "\xE2\x86\x91\xE2\x86\x93", "Scroll", "
 static char *log_clean(size_t max)
 {
 	FILE *f = fopen(SCRIPT_LOG, "rb");
-	if (!f) return strdup("(no script has run yet)");
+	if (!f) return strdup("(no update has run yet)");
 	fseek(f, 0, SEEK_END);
 	long size = ftell(f), from = size > (long)max ? size - (long)max : 0;
 	fseek(f, from, SEEK_SET);
@@ -1274,7 +1192,7 @@ static void show_log(void)
 {
 	cur = SCR_LOG;
 	lv_obj_clean(body);
-	screen_title("SETTINGS", "Last script's log");
+	screen_title("SETTINGS", "Last update's log");
 	log_box = lv_obj_create(body);
 	lv_obj_remove_style_all(log_box);
 	lv_obj_set_size(log_box, W - S(112), H - S(180) - S(84));
@@ -3826,9 +3744,6 @@ void ui_key(pkey_t k)
 	case SCR_LOG:
 		log_key(k);
 		break;
-	case SCR_TERM:
-		term_key_in(k);
-		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
@@ -3876,7 +3791,6 @@ static uint32_t last_status, last_poll;
 
 int ui_max_sleep(void)
 {
-	if (cur == SCR_TERM && term_running()) return 16;        /* the script's output as it comes */
 	if (cur == SCR_PORTS) return 100;                         /* the card map follows a job */
 	return 500;                                               /* status bar, clock, spinners: twice a second */
 }
@@ -3884,7 +3798,6 @@ int ui_max_sleep(void)
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
-	term_tick();
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);

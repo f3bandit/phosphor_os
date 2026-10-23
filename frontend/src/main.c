@@ -209,17 +209,19 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 			redraw_at = now + 700;      /* Main may still be setting the video up: draw it all again */
+			int st = mainlink_script_result();
+			if (st >= 0) ui_script_done(st);
 		}
 		if (redraw_at && (int)(now - redraw_at) >= 0) {
 			redraw_at = 0;
 			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 		}
-		int active = menu_active() && !mainlink_hidden();
+		int active = menu_active() && !mainlink_hidden() && !mainlink_script_running();
 		if (!active) {
 			/* a game is running: drain input so nothing happens behind it, and sleep */
 			while (input_poll(now) != KEY_NONE_) {}
-			if (was_active) plog(mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
+			if (was_active) plog(mainlink_script_running() ? "a script has the screen: idle" : mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
 			was_active = 0;
 			usleep(200000);
 			continue;
