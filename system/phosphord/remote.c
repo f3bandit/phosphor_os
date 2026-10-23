@@ -527,6 +527,13 @@ static void do_api(req_t *r, const char *body)
 	while (cJSON_GetObjectItem(j, "bundle")) cJSON_DeleteItemFromObject(j, "bundle");
 	/* "bluetooth" may look, not pair, forget or disconnect: pairing only from the MiSTer itself */
 	if (!strcmp(cmd, "bluetooth")) while (cJSON_GetObjectItem(j, "do")) cJSON_DeleteItemFromObject(j, "do");
+	/* power from afar: shut down, restart (both through the TV's safe stop) and reload the screen */
+	if (!strcmp(cmd, "system")) {
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(j, "do"));
+		if (!d || (strcmp(d, "shutdown") && strcmp(d, "reboot") && strcmp(d, "reload_ui"))) {
+			cJSON_Delete(j); respond_error(r->fd, 403, "only shutdown, reboot or reload_ui from another device"); return;
+		}
+	}
 	/* restore points: look, restore, keep, roll back; deleting them only from the MiSTer itself */
 	if (!strcmp(cmd, "guard")) {
 		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(j, "do"));

@@ -7,6 +7,8 @@
 #   phosphor.sh boot           at boot (install.sh --boot-phosphor): phosphord, Phosphor's Main in place
 #                              of MiSTer's (if it's installed), then the shell
 #   phosphor.sh main           switch to Phosphor's Main now (MiSTer's Main comes back on the next boot)
+#   phosphor.sh safe-stop      before power off / restart: modules stopped, drives flushed and read-only
+#                              (exFAT marked clean, so Windows doesn't ask to scan), each drive's state
 #   phosphor.sh menu-core      put Phosphor's menu core back as menu.rbf (at shutdown, after updates)
 #   phosphor.sh reload         restart the shell (Settings > Reload, the PC app); phosphord keeps running
 #   phosphor.sh stop           stop both
@@ -96,6 +98,39 @@ case "${1:-status}" in
 			rm -f "$ROOT/firstboot"
 		fi
 		rm -rf "$w"; rmdir "$TMP/firstboot.lock"
+		;;
+	safe-stop)
+		# before switching off or restarting (the power window, Settings, the PC app): stop Phosphor's
+		# modules the way a shutdown does (their stop steps, the clean-stop mark, the menu core back), flush
+		# everything, then make every drive read-only, which is when exFAT clears its "dirty" flag (the one
+		# Windows asks to scan for). A plain remount is refused while anything has a file open for writing
+		# (Linux itself runs from linux.img on the card), so then the kernel's emergency remount does it.
+		# Prints one line per drive, path|clean, path|DIRTY, path|n/a; then "done". Nothing is written after.
+		/media/fat/linux/user-startup.sh stop > /dev/null 2>&1
+		sync
+		mounts=""
+		for m in /media/usb[0-9]* /media/fat/cifs /media/fat; do mountpoint -q "$m" 2>/dev/null && mounts="$mounts $m"; done
+		for m in $mounts; do mount -o remount,ro "$m" 2> /dev/null; done
+		sync
+		if grep -E ' /media/(fat|usb[0-9]+) ' /proc/mounts | grep -q ' rw,'; then
+			echo 1 > /proc/sys/kernel/sysrq 2> /dev/null
+			echo s > /proc/sysrq-trigger 2> /dev/null; sleep 1
+			echo u > /proc/sysrq-trigger 2> /dev/null; sleep 2
+		fi
+		echo 3 > /proc/sys/vm/drop_caches 2> /dev/null     # the flags as they are on the card, not cached
+		for m in $mounts; do
+			[ "$m" = /media/fat/cifs ] && continue
+			dev="$(awk -v m="$m" '$2 == m {print $1; exit}' /proc/mounts)"
+			[ "$dev" = /dev/root ] && dev=""
+			st="n/a"
+			if [ -b "$dev" ] && [ "$(dd if="$dev" bs=1 skip=3 count=5 2> /dev/null)" = EXFAT ]; then
+				f="$(dd if="$dev" bs=1 skip=106 count=1 2> /dev/null | od -An -tu1 | tr -d ' ')"
+				st=clean; [ $(( ${f:-0} & 2 )) -ne 0 ] && st=DIRTY; [ $(( ${f:-0} & 4 )) -ne 0 ] && st="MEDIA FAILURE"
+			fi
+			ro=rw; grep -q " $m [^ ]* ro[, ]" /proc/mounts && ro=ro
+			echo "$m|$st|$ro"
+		done
+		echo done
 		;;
 	menu-core)
 		# Phosphor's menu core as menu.rbf again (MiSTer's downloader puts its own back on updates);

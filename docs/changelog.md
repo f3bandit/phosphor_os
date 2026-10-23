@@ -3,6 +3,21 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.3
+
+### Fixes
+- **Windows said the card was dirty after every power-off.** exFAT marks a drive "dirty" while it's
+  in use and only clears it when the drive is made read-only or unmounted; switching off at the power
+  button never did that. Shut down and Restart now make every drive read-only first (modules stopped,
+  everything written; the kernel's emergency remount when something still has a file open), read the
+  flag back, and say how each drive came out.
+
+### Changes
+- **Power window: hold Select** anywhere in Phosphor (about a second; a quick Select is still Select).
+  Shut down safely, Restart, Reload the screen; d-pad or stick to choose, A to do it, B to cancel.
+  Shut down ends on a "Safe to switch off" screen with each drive's state; Settings > Restart and
+  Phosphor for Windows' Shut down and Restart go the same way (the TV shows it).
+
 ## 0.27.2
 
 ### Fixes

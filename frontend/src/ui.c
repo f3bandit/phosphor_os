@@ -1033,6 +1033,7 @@ static void cores_start(int have_net) { cores_start_job(have_net, 0); }
 
 static uint32_t restart_asked;
 
+static void power_run(int restart);
 static void restart_ask(void)
 {
 	uint32_t now = lv_tick_get();
@@ -1043,12 +1044,7 @@ static void restart_ask(void)
 	}
 	restart_asked = 0;
 	plog("restart from Settings");
-	toast_show("Restarting...");
-	lv_refr_now(NULL);
-	sync();
-	if (getenv("PHOS_NO_REBOOT")) return;          /* tests */
-	pid_t pid = fork();
-	if (pid == 0) { execl("/sbin/reboot", "reboot", (char *)NULL); execlp("reboot", "reboot", (char *)NULL); _exit(127); }
+	power_run(1);                                    /* drives made clean first, like the power window */
 }
 
 /* ---------- Settings ---------- */
@@ -4437,6 +4433,211 @@ static void search_open(void)
 	osk_open("Search", "Part of a game's name, then Done.", 0, 40, search_done, SEARCH_BACK_HINTS);
 }
 
+/* ---------- Power: the window (hold Select) and the safe shutdown / restart ----------
+ * Hold Select anywhere in Phosphor: Shut down safely, Restart, Reload the screen. Shut down and Restart
+ * first make every drive read-only through phosphord (phosphor.sh safe-stop), which is when exFAT
+ * clears its dirty flag, so Windows doesn't ask to scan the card afterwards; the screen then says how
+ * each drive came out. Phosphor for Windows' Shut down / Restart land here too (phosphord leaves a
+ * request in /tmp/phosphor/power-request). */
+
+static struct { lv_obj_t *dim, *box, *row[3], *ic[3], *nm[3]; int sel, open; } pm;
+static lv_obj_t *splash;
+static int powering;                        /* a safe stop is under way: nothing else happens */
+
+static void pm_draw(void)
+{
+	for (int i = 0; i < 3; i++) {
+		int on = i == pm.sel;
+		lv_obj_set_style_bg_opa(pm.row[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_style_bg_color(pm.row[i], PAL.panel_on, 0);
+		lv_obj_set_style_border_width(pm.row[i], on ? S(3) : 0, 0);
+		lv_obj_set_style_text_color(pm.ic[i], on ? PAL.acc : PAL.dim, 0);
+		lv_obj_set_style_text_color(pm.nm[i], on ? PAL.text : PAL.dim, 0);
+	}
+}
+
+static void pm_close(void)
+{
+	if (!pm.open) return;
+	lv_obj_delete(pm.dim);
+	memset(&pm, 0, sizeof(pm));
+}
+
+static void pm_open(void)
+{
+	if (pm.open || powering) return;
+	pm.open = 1;
+	pm.sel = 0;
+	pm.dim = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(pm.dim);
+	lv_obj_set_size(pm.dim, W, H);
+	lv_obj_set_style_bg_color(pm.dim, lv_color_hex(0x08080a), 0);
+	lv_obj_set_style_bg_opa(pm.dim, LV_OPA_80, 0);
+	pm.box = mk_box(pm.dim, S(480), LV_SIZE_CONTENT, PAL.panel, S(16));
+	lv_obj_set_style_border_width(pm.box, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(pm.box, PAL.line, 0);
+	lv_obj_set_style_pad_all(pm.box, S(24), 0);
+	lv_obj_set_flex_flow(pm.box, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(pm.box, S(4), 0);
+	lv_obj_center(pm.box);
+	mk_label(pm.box, FONT_TITLE, PAL.text, "Power");
+	lv_obj_t *nt = mk_label(pm.box, FONT_SMALL, PAL.dim, "Saves are written as they happen, so nothing is lost.");
+	lv_obj_set_style_pad_bottom(nt, S(12), 0);
+	static const icon_t IC[3] = { ICON_POWER, ICON_RESTART, ICON_SCREEN };
+	static const char *NM[3] = { "Shut down safely", "Restart", "Reload the screen" };
+	static const char *SUB[3] = { "Switch off when the screen says so", "The SS1 starts again", "Only Phosphor's screen restarts" };
+	for (int i = 0; i < 3; i++) {
+		lv_obj_t *r = mk_box(pm.box, LV_PCT(100), S(60), PAL.panel_on, S(10));
+		lv_obj_set_style_border_side(r, LV_BORDER_SIDE_LEFT, 0);
+		lv_obj_set_style_border_color(r, PAL.acc, 0);
+		lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
+		lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+		lv_obj_set_style_pad_left(r, S(18), 0);
+		lv_obj_set_style_pad_column(r, S(16), 0);
+		pm.row[i] = r;
+		pm.ic[i] = icon_create(r, IC[i], S(28));
+		lv_obj_t *col = mk_box(r, LV_SIZE_CONTENT, LV_SIZE_CONTENT, PAL.panel, 0);
+		lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
+		lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+		pm.nm[i] = mk_label(col, FONT_NAME, PAL.dim, NM[i]);
+		mk_label(col, FONT_SMALL, PAL.faint, SUB[i]);
+	}
+	lv_obj_t *hn = mk_label(pm.box, FONT_SMALL, PAL.dim, "A  Choose        B  Cancel");
+	lv_obj_set_style_pad_top(hn, S(14), 0);
+	pm_draw();
+	plog("power window");
+}
+
+/* the full-screen splash while stopping, and the answer after */
+static lv_obj_t *sp_title, *sp_sub, *sp_ic, *sp_list;
+static void splash_show(int restart)
+{
+	if (splash) lv_obj_delete(splash);
+	splash = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(splash);
+	lv_obj_set_size(splash, W, H);
+	lv_obj_set_style_bg_color(splash, PAL.bg, 0);
+	lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
+	texture_apply(splash, (texture_t)SETTINGS.texture);
+	lv_obj_t *word = mk_label(splash, FONT_WORD, PAL.acc, "PHOSPHOR");
+	lv_obj_set_style_text_letter_space(word, S(3), 0);
+	lv_obj_set_pos(word, S(56), S(38));
+	lv_obj_t *card = mk_box(splash, S(560), LV_SIZE_CONTENT, PAL.panel, S(18));
+	lv_obj_set_style_border_width(card, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(card, PAL.line, 0);
+	lv_obj_set_style_pad_all(card, S(32), 0);
+	lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	lv_obj_set_style_pad_row(card, S(10), 0);
+	lv_obj_center(card);
+	sp_ic = icon_create(card, restart ? ICON_RESTART : ICON_POWER, S(56));
+	lv_obj_set_style_text_color(sp_ic, PAL.acc, 0);
+	sp_title = mk_label(card, FONT_HEADING, PAL.text, restart ? "Restarting" : "Shutting down");
+	sp_sub = mk_label(card, FONT_BODY, PAL.dim, "Writing everything to the drives and marking them clean. Don't switch off yet.");
+	lv_obj_set_width(sp_sub, S(496));
+	lv_label_set_long_mode(sp_sub, LV_LABEL_LONG_WRAP);
+	sp_list = mk_box(card, S(496), LV_SIZE_CONTENT, PAL.panel, 0);
+	lv_obj_set_style_bg_opa(sp_list, LV_OPA_TRANSP, 0);
+	lv_obj_set_flex_flow(sp_list, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(sp_list, S(6), 0);
+	lv_obj_set_style_pad_top(sp_list, S(8), 0);
+}
+
+static void splash_drives(cJSON *r)
+{
+	int bad = 0, any = 0;
+	cJSON *d;
+	cJSON_ArrayForEach(d, cJSON_GetObjectItem(r, "drives")) {
+		const char *p = api_str(d, "path"), *st = api_str(d, "state");
+		if (!p || !st) continue;
+		any = 1;
+		char name[64];
+		if (!strcmp(p, "/media/fat")) snprintf(name, sizeof(name), "SD card");
+		else snprintf(name, sizeof(name), "Drive %s", p + (strncmp(p, "/media/", 7) ? 0 : 7));
+		int clean = !strcmp(st, "clean"), na = !strcmp(st, "n/a");
+		if (!clean && !na) bad = 1;
+		lv_obj_t *row = mk_box(sp_list, LV_PCT(100), S(30), PAL.panel, 0);
+		lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+		lv_obj_t *nm = mk_label(row, FONT_NAME, PAL.text, name);
+		lv_obj_align(nm, LV_ALIGN_LEFT_MID, 0, 0);
+		lv_color_t c = clean ? lv_color_hex(0x5cf08a) : na ? PAL.dim : lv_color_hex(0xff6b5e);
+		lv_obj_t *v = mk_label(row, FONT_NAME, c, clean ? "Clean" : na ? "Done" : !strcmp(st, "DIRTY") ? "Still marked dirty" : st);
+		lv_obj_align(v, LV_ALIGN_RIGHT_MID, 0, 0);
+	}
+	if (!any) lv_label_set_text(sp_sub, "Everything is written to the card.");
+	else if (!bad) lv_label_set_text(sp_sub, "Everything is written and the drives are marked clean: Windows won't ask to scan the card.");
+	else if (bad) lv_label_set_text(sp_sub, "Everything is written, but a drive is still marked dirty: Windows may offer to scan it (nothing is lost).");
+}
+
+static void power_run(int restart)
+{
+	if (powering) return;
+	powering = 1;
+	pm_close();
+	plog("power: %s", restart ? "restart" : "shut down");
+	splash_show(restart);
+	lv_refr_now(NULL);
+	cJSON *r = api_call_slow(90000, "{\"cmd\":\"system\",\"do\":\"safe_stop\"}");
+	if (r && api_ok(r)) splash_drives(r);
+	else lv_label_set_text(sp_sub, "Couldn't check the drives; everything was flushed.");
+	cJSON_Delete(r);
+	if (restart) {
+		lv_label_set_text(sp_title, "Restarting");
+		lv_refr_now(NULL);
+		usleep(1200000);
+		cJSON_Delete(api_call("{\"cmd\":\"system\",\"do\":\"reboot_now\"}"));
+	} else {
+		lv_label_set_text(sp_title, "Safe to switch off");
+		lv_obj_set_style_text_color(sp_title, PAL.acc, 0);
+		icon_set(sp_ic, ICON_CHECK);
+		lv_refr_now(NULL);
+		cJSON_Delete(api_call("{\"cmd\":\"system\",\"do\":\"halt_now\"}"));
+	}
+	lv_refr_now(NULL);
+}
+
+static void pm_choose(void)
+{
+	int s = pm.sel;
+	if (s == 2) {
+		pm_close();
+		cJSON *r = api_call("{\"cmd\":\"system\",\"do\":\"reload_ui\"}");
+		toast_show(api_ok(r) ? "Reloading the screen..." : "Couldn't reload");
+		cJSON_Delete(r);
+		return;
+	}
+	power_run(s == 1);
+}
+
+/* the power window's part of a key press: 1 when it ate it */
+static int pm_key(pkey_t k)
+{
+	if (powering) return 1;
+	if (k == K_POWER) { if (pm.open) pm_close(); else pm_open(); return 1; }
+	if (!pm.open) return 0;
+	if (k == K_UP) pm.sel = (pm.sel + 2) % 3;
+	else if (k == K_DOWN) pm.sel = (pm.sel + 1) % 3;
+	else if (k == K_A) { pm_choose(); return 1; }
+	else if (k == K_B || k == K_MENU) { pm_close(); return 1; }
+	pm_draw();
+	return 1;
+}
+
+/* Phosphor for Windows (or the phone) asked: phosphord left a request */
+static void power_requests(void)
+{
+	if (powering) return;
+	char p[300], what[32] = "";
+	const char *t = getenv("PHOS_TMP");
+	snprintf(p, sizeof(p), "%s/power-request", t && *t ? t : "/tmp/phosphor");
+	FILE *f = fopen(p, "r");
+	if (!f) return;
+	if (!fgets(what, sizeof(what), f)) what[0] = 0;
+	fclose(f);
+	plog("power: asked from another device (%s)", what);
+	power_run(!strncmp(what, "reboot", 6));
+}
+
 /* ---------- Screensaver ----------
  * After the idle time set in Settings the screen goes dark: only the wordmark, dim, moving to a new
  * place every 20 s so nothing stays lit in one spot. Any button wakes it (that press does nothing else). */
@@ -4502,7 +4703,10 @@ void ui_activity(void) { last_input = lv_tick_get(); saver_hide(); }
 
 void ui_key(pkey_t k)
 {
-	if (saver_key()) return;
+	if (powering) return;
+	if (k == K_POWER) saver_hide();
+	else if (saver_key()) return;
+	if (pm_key(k)) return;
 	if (osk_key(k)) return;
 	switch (cur) {
 	case SCR_HOME:
@@ -4650,6 +4854,7 @@ void ui_tick(void)
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
+		power_requests();
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); si_update(); }
 		gd_tick();                                    /* (only while one of its jobs runs) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */

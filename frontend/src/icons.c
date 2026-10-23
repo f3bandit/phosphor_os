@@ -179,6 +179,21 @@ static void draw_cb(lv_event_t *e)
 		circle(&p, 31, 31, 18, 0);
 		line(&p, 44, 44, 58, 58);
 		break;
+	case ICON_POWER:                                     /* the power symbol */
+		arc(&p, 36, 39, 22, 300, 240, p.col);
+		line(&p, 36, 11, 36, 34);
+		break;
+	case ICON_RESTART:                                   /* a circle arrow */
+		arc(&p, 36, 37, 22, 20, 300, p.col);
+		line(&p, 47, 18, 58, 16); line(&p, 47, 18, 50, 28);
+		break;
+	case ICON_SCREEN:                                    /* a screen with a stand */
+		rect(&p, 9, 13, 54, 36, 5);
+		line(&p, 36, 49, 36, 58); line(&p, 24, 59, 48, 59);
+		break;
+	case ICON_CHECK:
+		{ const float k[] = { 20, 38, 31, 49, 53, 25 }; poly(&p, k, 3, 0); }
+		break;
 	default:
 		break;
 	}

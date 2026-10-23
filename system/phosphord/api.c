@@ -30,7 +30,7 @@
  *                                           procs, core; kernel: the kernel log's last lines (read only)
  *   storage    [do: check (test, target) | overlap-remove | overlap-undo]  drives {path,kind,fs,size_kb,free_kb,model,
  *                                           gen,watts}, overlap_tool [paths], last {job,target,busy,ok,at,output}
- *   system     do: reboot|shutdown|reload_ui   restart, shut down cleanly, or restart the shell
+ *   system     do: shutdown|reboot|reload_ui|safe_stop|halt_now|reboot_now   (see the command below)
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
  *   wifi       [do: scan|connect|forget|up|down|undo] [ssid] [password] [hidden]
@@ -1386,27 +1386,75 @@ char *api_handle(sqlite3 *db, const char *request)
 		}
 	}
 	else if (!strcmp(c->valuestring, "system")) {
-		/* do: reboot | shutdown | reload_ui. A second later, so this reply gets out first. Reboot and
-		 * shutdown go through init (rcK: modules stop, the power check marks a clean stop, the card
-		 * is synced); reload_ui restarts the shell only (phosphor.sh reload). */
+		/* do:
+		 *   shutdown | reboot   the TV's shell does it (its power window's safe stop, with the "safe to
+		 *                       switch off" screen): asked through <tmp>/power-request; if the shell isn't
+		 *                       there to take it within 20 s, it's done here (safe stop, then halt / reboot)
+		 *   safe_stop           phosphor.sh safe-stop now: drives flushed and read-only (exFAT clean);
+		 *                       replies drives [{path, state clean|DIRTY|n/a, ro}]. Nothing writes after it.
+		 *   halt_now | reboot_now   after safe_stop (the shell's power window)
+		 *   reload_ui           restarts the shell only (phosphor.sh reload) */
 		const char *act = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
-		char sh[700];
-		if (act && !strcmp(act, "reboot")) snprintf(sh, sizeof(sh), "sleep 1; sync; reboot");
-		else if (act && !strcmp(act, "shutdown")) snprintf(sh, sizeof(sh), "sleep 1; sync; poweroff");
-		else if (act && !strcmp(act, "reload_ui")) snprintf(sh, sizeof(sh), "sleep 1; '%s/phosphor/phosphor.sh' reload", p_fat());
-		else { cJSON_Delete(req); return fail("do: reboot, shutdown or reload_ui"); }
-		plog("system: %s (asked through the API)", act);
-		if (getenv("PHOS_NO_REBOOT") && strcmp(act, "reload_ui")) out = reply(ok());     /* tests */
-		else {
-			pid_t pid = fork();
-			if (pid == 0) {
-				setsid();
-				pid_t q = fork();                   /* not our child: phosphord may be stopped by it */
-				if (q == 0) { execl("/bin/sh", "sh", "-c", sh, (char *)NULL); _exit(127); }
-				_exit(0);
+		char sh[1200], req_path[600];
+		snprintf(req_path, sizeof(req_path), "%s/power-request", p_tmp());
+		const char *ps = "/phosphor/phosphor.sh";
+		int run = 1;
+		if (act && (!strcmp(act, "shutdown") || !strcmp(act, "reboot"))) {
+			FILE *f = fopen(req_path, "w");
+			if (f) { fprintf(f, "%s\n", act); fclose(f); }
+			snprintf(sh, sizeof(sh), "sleep 20; [ -f '%s' ] || exit 0; rm -f '%s'; '%s%s' safe-stop > /dev/null 2>&1; %s",
+			         req_path, req_path, p_fat(), ps, !strcmp(act, "shutdown") ? "halt -f" : "reboot");
+		} else if (act && !strcmp(act, "safe_stop")) {
+			run = 0;
+			unlink(req_path);
+			char cmd[700];
+			snprintf(cmd, sizeof(cmd), "'%s%s' safe-stop 2>&1", p_fat(), ps);
+			plog("system: safe stop (drives read-only from here)");
+			cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "drives");
+			FILE *pp = getenv("PHOS_NO_REBOOT") ? NULL : popen(cmd, "r");
+			char line[400];
+			int done = 0;
+			while (pp && fgets(line, sizeof(line), pp)) {
+				line[strcspn(line, "\r\n")] = 0;
+				if (!strcmp(line, "done")) { done = 1; continue; }
+				char *b1 = strchr(line, '|'), *b2 = b1 ? strchr(b1 + 1, '|') : NULL;
+				if (!b1 || !b2) continue;
+				*b1 = *b2 = 0;
+				cJSON *x = cJSON_CreateObject();
+				cJSON_AddStringToObject(x, "path", line);
+				cJSON_AddStringToObject(x, "state", b1 + 1);
+				cJSON_AddBoolToObject(x, "ro", !strcmp(b2 + 1, "ro"));
+				cJSON_AddItemToArray(arr, x);
 			}
-			if (pid > 0) waitpid(pid, NULL, 0);
-			out = pid > 0 ? reply(ok()) : fail("couldn't start it");
+			if (pp) pclose(pp);
+			if (getenv("PHOS_NO_REBOOT")) {            /* tests: a clean SD card */
+				cJSON *x = cJSON_CreateObject();
+				cJSON_AddStringToObject(x, "path", "/media/fat");
+				cJSON_AddStringToObject(x, "state", "clean");
+				cJSON_AddBoolToObject(x, "ro", 1);
+				cJSON_AddItemToArray(arr, x);
+				done = 1;
+			}
+			cJSON_AddBoolToObject(o, "done", done);
+			out = reply(o);
+		} else if (act && !strcmp(act, "halt_now")) snprintf(sh, sizeof(sh), "sleep 1; halt -f");
+		else if (act && !strcmp(act, "reboot_now")) snprintf(sh, sizeof(sh), "sleep 1; reboot");
+		else if (act && !strcmp(act, "reload_ui")) snprintf(sh, sizeof(sh), "sleep 1; '%s%s' reload", p_fat(), ps);
+		else { cJSON_Delete(req); return fail("do: shutdown, reboot, reload_ui, safe_stop, halt_now or reboot_now"); }
+		if (run) {
+			plog("system: %s", act);
+			if (getenv("PHOS_NO_REBOOT") && strcmp(act, "reload_ui")) out = reply(ok());     /* tests */
+			else {
+				pid_t pid = fork();
+				if (pid == 0) {
+					setsid();
+					pid_t q = fork();                   /* not our child: phosphord may be stopped by it */
+					if (q == 0) { execl("/bin/sh", "sh", "-c", sh, (char *)NULL); _exit(127); }
+					_exit(0);
+				}
+				if (pid > 0) waitpid(pid, NULL, 0);
+				out = pid > 0 ? reply(ok()) : fail("couldn't start it");
+			}
 		}
 	}
 	else if (!strcmp(c->valuestring, "samba")) {
