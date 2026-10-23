@@ -19,7 +19,7 @@ import (
 	"os"
 )
 
-const appVersion = "0.1.2"
+const appVersion = "0.1.3"
 
 //go:embed web
 var webFS embed.FS
@@ -58,7 +58,12 @@ func main() {
 		openWindow(url)
 	}
 	srv := &http.Server{Handler: mux}
-	if err := srv.Serve(ln); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
+	go func() {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}()
+	runTray(url) // the tray icon (Windows): Open Phosphor, Exit. Returns when it's time to quit.
+	os.Remove(instancePath())
 }

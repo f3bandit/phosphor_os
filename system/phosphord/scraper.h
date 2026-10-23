@@ -38,4 +38,11 @@ int scraper_sources(scrape_source_t *out, int max);   /* in the user's order */
  * looked at again */
 int scraper_set_sources(sqlite3 *db, const char *order, const char *off);
 
+/* account keys in scraper.ini (ScreenScraper, TheGamesDB, IGDB): set one, or list what's set */
+typedef struct { char sec[16], key[16], value[128]; int set; } scrape_account_t;
+#define SCRAPE_ACCOUNTS 7
+int scraper_account_ok(const char *sec, const char *key);
+int scraper_set_account(const char *sec, const char *key, const char *val);
+void scraper_accounts(scrape_account_t *out, int *n);
+
 #endif
