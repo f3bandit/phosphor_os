@@ -5,6 +5,7 @@
  * from Main. With the fork, the shell holds the screen while this connection is open: Main's menu
  * ignores the controls, and if the shell stops, Main takes the screen back by itself. */
 #include "mainlink.h"
+#include "input.h"
 #include "log.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -17,7 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 
-static int fd = -1, ever = 0, hidden = 0;
+static int fd = -1, ever = 0, hidden = 0, pads = 0;
 static char lbuf[2048];
 static size_t llen;
 static long long next_try;
@@ -63,6 +64,7 @@ static int take(void)
 	snprintf(a.sun_path, sizeof(a.sun_path), "%s", path());
 	char r[256];
 	if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0 || ask("hello", r, sizeof(r)) || !strstr(r, "\"api\":")
+	    || !((pads = strstr(r, "\"pads\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
@@ -86,6 +88,7 @@ int mainlink_start(void)
 
 int mainlink_connected(void) { return fd >= 0; }
 int mainlink_hidden(void) { return fd >= 0 && hidden; }
+int mainlink_pads(void) { return fd >= 0 && pads; }
 
 int mainlink_give(void)
 {
@@ -109,6 +112,13 @@ int mainlink_poll(void)
 					if (buf[i] != '\n') { if (llen + 1 < sizeof(lbuf)) lbuf[llen++] = buf[i]; continue; }
 					lbuf[llen] = 0;
 					llen = 0;
+					/* a controller button, read by Main with MiSTer's mapping (and repeated by it) */
+					if (!hidden && !strncmp(lbuf, "{\"event\":\"pad\"", 16)) {
+						char b[16] = "";
+						int p = 0;
+						if (sscanf(lbuf, "{\"event\":\"pad\",\"b\":\"%15[a-z]\",\"p\":%d", b, &p) == 2) input_main_pad(b, p);
+						continue;
+					}
 					if (hidden && strstr(lbuf, "\"event\":\"show\"")) {
 						if (send(fd, "screen phosphor\n", 16, MSG_NOSIGNAL) == 16) {
 							hidden = 0;
