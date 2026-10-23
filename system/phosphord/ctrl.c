@@ -691,6 +691,17 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 	const char *lv = cJSON_GetStringValue(cJSON_GetObjectItem(req, "live"));
 	char made[96];
 	unsigned vid = 0, pid = 0;
+	/* tests (snapshots without controllers): PHOS_CTRL_TEST is a file with a whole reply */
+	const char *test = getenv("PHOS_CTRL_TEST");
+	if (test && *test) {
+		FILE *f = fopen(test, "r");
+		char buf[16384];
+		size_t r = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
+		if (f) fclose(f);
+		buf[r] = 0;
+		cJSON *t = cJSON_Parse(buf);
+		if (t) return t;
+	}
 	cJSON *o = cJSON_CreateObject();
 	if (lv) {                                      /* what's pressed now on one controller */
 		int n = pads(P, MAXDEV);
