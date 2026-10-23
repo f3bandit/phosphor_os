@@ -276,13 +276,15 @@ static int pads(pad_t *out, int max)
 /* ---------- which drawing (SS1 Tool's ptPick) ---------- */
 
 static const char *const STYLES[] = { "generic", "xbox", "dualshock", "switchpro", "nes", "snes", "pce", "gen3", "gen6",
-	"neogeo", "jaguar", "saturn", "psx", "n64", "dreamcast", "gamecube", "fight6", "fight8", "leverless", "stick8", "stick6", NULL };
+	"neogeo", "jaguar", "saturn", "psx", "n64", "dreamcast", "gamecube", "fight6", "fight8", "leverless", "stick8", "stick6",
+	"haute42m", NULL };
 
 static int style_ok(const char *s) { for (int i = 0; STYLES[i]; i++) if (!strcmp(STYLES[i], s)) return 1; return 0; }
 
 static const char *style_auto(const pad_t *d)
 {
 	static const struct { const char *re, *style; } AUTO[] = {
+		{ "cosmox.*m ?ultra|m16 ?ultra", "haute42m" },
 		{ "hit ?box|haute|snack ?box|leverless|all.?button|gp2040", "leverless" },
 		{ "arcade|fight ?stick|\\brap\\b|f[35]00|qanba|\\bstick\\b", "stick8" },
 		{ "m30|saturn", "saturn" }, { "genesis|mega ?drive|sega", "gen6" },
