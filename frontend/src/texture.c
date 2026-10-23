@@ -2,18 +2,68 @@
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  *
  * Each texture is one small tile, drawn here in code (anti-aliased lines from distance fields), then
- * repeated across the screen by LVGL. Faint on purpose: the menu should still read as a dark screen.
- * The 8-bit tiles are original pixel art drawn for Phosphor, not graphics from any game. */
+ * repeated across the screen by LVGL: drawn once when it's picked, nothing per frame. Faint on
+ * purpose: the menu should still read as a dark screen. Variants of each shape: packed closer,
+ * bolder lines, filled, or inverted (the colour everywhere but the lines). */
 #include "texture.h"
 #include "theme.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-static const char *NAMES[TEX_COUNT] = { "None", "Zigzag", "X's", "Squares", "Triangles", "Circles", "Hexagons" };
-const char *texture_name(texture_t t) { return t < TEX_COUNT ? NAMES[t] : "?"; }
-
 #define STRENGTH 0.13f      /* how much accent colour a line gets */
+
+typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_CIRCLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID } shape_t;
+enum { M_LINE, M_FILL, M_INVERT };
+
+static const struct {
+	const char *name;
+	shape_t shape;
+	float w, h;          /* tile size in base pixels (1280x720) */
+	float line;          /* line width multiplier */
+	int mode;
+} T[] = {
+	{ "None", 0, 0, 0, 0, 0 },
+	{ "Zigzag", SH_ZIGZAG, 16, 16, 1, M_LINE },
+	{ "X's", SH_X, 40, 40, 1, M_LINE },
+	{ "Squares", SH_SQUARE, 40, 40, 1, M_LINE },
+	{ "Triangles", SH_TRIANGLE, 40, 36, 1, M_LINE },
+	{ "Circles", SH_CIRCLE, 40, 40, 1, M_LINE },
+	{ "Hexagons", SH_HEX, 25.980762f, 45, 1, M_LINE },
+	/* variants (numbers 7 on) */
+	{ "Zigzag, tight", SH_ZIGZAG, 16, 8, 1, M_LINE },
+	{ "Zigzag, bold", SH_ZIGZAG, 16, 16, 2.4f, M_LINE },
+	{ "X's, packed", SH_X, 14, 14, 1, M_LINE },
+	{ "Squares, packed", SH_SQUARE, 17, 17, 1, M_LINE },
+	{ "Squares, filled", SH_SQUARE, 26, 26, 1, M_FILL },
+	{ "Triangles, packed", SH_TRIGRID, 20, 34.641016f, 1, M_LINE },
+	{ "Triangles, bold", SH_TRIANGLE, 40, 36, 2.4f, M_LINE },
+	{ "Circles, packed", SH_CIRCLE, 15, 15, 1, M_LINE },
+	{ "Dots", SH_CIRCLE, 20, 20, 1, M_FILL },
+	{ "Hexagons, bold", SH_HEX, 25.980762f, 45, 2.4f, M_LINE },
+	{ "Honeycomb, inverted", SH_HEX, 25.980762f, 45, 2.0f, M_INVERT },
+	{ "Squares, inverted", SH_SQUARE, 17, 17, 1.6f, M_INVERT },
+	{ "Diamonds", SH_DIAMOND, 40, 40, 1, M_LINE },
+	{ "Diamonds, packed", SH_DIAMOND, 20, 20, 1, M_LINE },
+	{ "Diamonds, filled", SH_DIAMOND, 24, 24, 1, M_FILL },
+	{ "Diamond lattice", SH_DIAGRID, 20, 20, 1, M_LINE },
+	{ "Square grid", SH_GRID, 20, 20, 1, M_LINE },
+	{ "Square grid, bold", SH_GRID, 20, 20, 2.4f, M_LINE },
+};
+const int TEX_COUNT = sizeof(T) / sizeof(T[0]);
+
+/* the order Settings steps through: each shape followed by its variants */
+static const int ORDER[] = { 0, 1, 7, 8, 2, 9, 3, 10, 11, 18, 23, 24, 19, 20, 21, 22, 4, 12, 13, 5, 14, 15, 6, 16, 17 };
+
+const char *texture_name(texture_t t) { return t >= 0 && t < TEX_COUNT ? T[t].name : "?"; }
+
+texture_t texture_step(texture_t t, int dir)
+{
+	int n = (int)(sizeof(ORDER) / sizeof(ORDER[0])), i = 0;
+	while (i < n && ORDER[i] != t) i++;
+	if (i >= n) i = 0;
+	return ORDER[(i + dir + n) % n];
+}
 
 static lv_draw_buf_t *tile;
 
@@ -28,42 +78,41 @@ static float seg(float px, float py, float ax, float ay, float bx, float by)
 	return sqrtf(dx * dx + dy * dy);
 }
 
-/* distance from (x,y) to the shape, in a tile w x h (units: base pixels at 1280x720) */
-static float shape(texture_t t, float x, float y, float w, float h)
+/* signed-ish distance from (x,y) to the shape's outline in a tile w x h (base pixels); *inside is
+ * set for the closed shapes (squares, circles) */
+static float shape(shape_t s, float x, float y, float w, float h, int *inside)
 {
 	float cx = w / 2, cy = h / 2;
-	switch (t) {
-	case TEX_ZIGZAG: {                                   /* tile 16 x 16: /\/\ */
-		float d = seg(x, y, 0, 11, 8, 5);
-		d = fminf(d, seg(x, y, 8, 5, 16, 11));
-		return d;
+	*inside = 0;
+	switch (s) {
+	case SH_ZIGZAG: {                                    /* /\ across the tile, at mid height */
+		float m = h / 2, a = fminf(3, h / 3);
+		return fminf(seg(x, y, 0, m + a, w / 2, m - a), seg(x, y, w / 2, m - a, w, m + a));
 	}
-	case TEX_X: {                                        /* tile 40: an x in the middle */
-		float d = fminf(seg(x, y, cx - 5, cy - 5, cx + 5, cy + 5), seg(x, y, cx + 5, cy - 5, cx - 5, cy + 5));
-		return d;
+	case SH_X:
+		return fminf(seg(x, y, cx - 5, cy - 5, cx + 5, cy + 5), seg(x, y, cx + 5, cy - 5, cx - 5, cy + 5));
+	case SH_SQUARE: {
+		float dx = fabsf(x - cx), dy = fabsf(y - cy), r = 7, m = fmaxf(dx, dy);
+		*inside = m < r;
+		return fabsf(m - r);
 	}
-	case TEX_SQUARES: {
-		float dx = fabsf(x - cx), dy = fabsf(y - cy), r = 7;
-		return fabsf(fmaxf(dx, dy) - r);
-	}
-	case TEX_TRIANGLES: {                                /* outline, pointing up */
+	case SH_TRIANGLE: {                                  /* outline, pointing up */
 		float r = 9;
 		float ax = cx, ay = cy - r, bx = cx - r * 0.866f, by = cy + r * 0.5f, qx = cx + r * 0.866f, qy = by;
 		return fminf(seg(x, y, ax, ay, bx, by), fminf(seg(x, y, bx, by, qx, qy), seg(x, y, qx, qy, ax, ay)));
 	}
-	case TEX_CIRCLES: {
-		float dx = x - cx, dy = y - cy;
-		return fabsf(sqrtf(dx * dx + dy * dy) - 7);
+	case SH_CIRCLE: {
+		float dx = x - cx, dy = y - cy, d = sqrtf(dx * dx + dy * dy), r = fminf(7, fminf(w, h) / 2 - 1.5f);
+		if (w < 18) r = fminf(w, h) / 2 - 1.2f;
+		*inside = d < r;
+		return fabsf(d - r);
 	}
-	case TEX_HEX: {                                      /* honeycomb, pointy-top, R = 15 */
+	case SH_HEX: {                                       /* honeycomb, pointy-top, R = 15 */
 		const float R = 15, W = 1.7320508f * R, H = 3 * R;
-		(void)w; (void)h;
 		float best = 1e9f;
-		/* centres of the hexes around this point */
 		for (int j = -1; j <= 2; j++)
 			for (int i = -1; i <= 2; i++) {
 				float hx = i * W + ((j & 1) ? W / 2 : 0), hy = j * H / 2;
-				/* edges of a pointy-top hex */
 				float vx[6], vy[6];
 				for (int k = 0; k < 6; k++) {
 					float a = (float)(M_PI / 180.0) * (60.0f * k - 30.0f);
@@ -74,19 +123,65 @@ static float shape(texture_t t, float x, float y, float w, float h)
 			}
 		return best;
 	}
-	default: return 1e9f;
+	case SH_TRIGRID: {                                   /* triangles packed edge to edge: three line sets */
+		float d = fminf(fminf(fabsf(y), fabsf(y - h)), fabsf(y - h / 2));   /* tile is two rows tall */
+		/* lines at +-60 degrees through the tile's corners and its bottom middle */
+		const float s3 = 0.8660254f;
+		for (int k = -2; k <= 2; k++) {
+			float ox = k * w;                                /* lines through (ox, h) going up-right / up-left */
+			d = fminf(d, fabsf(s3 * (x - ox) + 0.5f * (y - h)));
+			d = fminf(d, fabsf(s3 * (x - ox) - 0.5f * (y - h)));
+		}
+		return d;
 	}
+	case SH_DIAMOND: {                                   /* a square on its corner */
+		float m = fabsf(x - cx) + fabsf(y - cy), r = fminf(9, fminf(w, h) / 2 - 1.5f);
+		*inside = m < r;
+		return fabsf(m - r) * 0.70710678f;
+	}
+	case SH_DIAGRID:                                     /* diagonal lines both ways: diamonds edge to edge */
+		return 0.70710678f * fminf(fabsf(fmodf(x + y + 4 * w, w) - w / 2), fabsf(fmodf(x - y + 4 * w, w) - w / 2));
+	case SH_GRID:                                        /* squares edge to edge */
+		x = fmodf(x + 4 * w, w);
+		y = fmodf(y + 4 * h, h);
+		return fminf(fminf(x, w - x), fminf(y, h - y));
+	}
+	return 1e9f;
 }
 
-/* 8-bit tiles: original 16 x 16 pixel art (a little gem and dots), drawn 2x */
-static void tile_size(texture_t t, float *w, float *h)
+uint8_t *texture_alpha(texture_t t, float scale, int *pw, int *ph)
 {
-	switch (t) {
-	case TEX_ZIGZAG: *w = 16; *h = 16; break;
-	case TEX_TRIANGLES: *w = 40; *h = 36; break;
-	case TEX_HEX: *w = 1.7320508f * 15; *h = 45; break;
-	default: *w = 40; *h = 40; break;
-	}
+	if (t <= TEX_NONE || t >= TEX_COUNT) return NULL;
+	float bw = T[t].w, bh = T[t].h;
+	*pw = (int)lroundf(bw * scale);
+	*ph = (int)lroundf(bh * scale);
+	if (*pw < 4 || *ph < 4) return NULL;
+	uint8_t *a8 = malloc((size_t)*pw * (size_t)*ph);
+	if (!a8) return NULL;
+	float half = 0.55f * scale * T[t].line;              /* line half width */
+	for (int y = 0; y < *ph; y++)
+		for (int x = 0; x < *pw; x++) {
+			/* sample the base-size tile; wrap so lines crossing the edge join up */
+			float fx = (x + 0.5f) / scale, fy = (y + 0.5f) / scale, d = 1e9f;
+			int in = 0, any_in = 0;
+			for (int oy = -1; oy <= 1; oy++)
+				for (int ox = -1; ox <= 1; ox++) {
+					float dd = shape(T[t].shape, fx + ox * bw, fy + oy * bh, bw, bh, &in);
+					if (dd < d) d = dd;
+					if (in && ox == 0 && oy == 0) any_in = 1;
+				}
+			d *= scale;
+			float line = half + 0.5f - d;                 /* 1 px of soft edge */
+			if (line < 0) line = 0;
+			if (line > 1) line = 1;
+			float a;
+			if (T[t].mode == M_FILL) a = any_in ? 1.0f : line;
+			else if (T[t].mode == M_INVERT) a = 1.0f - line;
+			else a = line;
+			float strength = T[t].mode == M_LINE ? STRENGTH : STRENGTH * 0.75f;   /* areas read stronger than lines */
+			a8[(size_t)y * *pw + x] = (uint8_t)lroundf(a * strength * 255);
+		}
+	return a8;
 }
 
 static void free_tile(void)
@@ -99,36 +194,24 @@ void texture_apply(lv_obj_t *obj, texture_t t)
 {
 	lv_obj_set_style_bg_image_src(obj, NULL, 0);
 	free_tile();
-	if (t == TEX_NONE || t >= TEX_COUNT) return;
 	float scale = S(1000) / 1000.0f;                    /* sizes are for 1280x720 */
 	if (scale < 0.5f) scale = 0.5f;
-	float bw, bh;
-	tile_size(t, &bw, &bh);
-	int pw = (int)lroundf(bw * scale), ph = (int)lroundf(bh * scale);
-	if (pw < 4 || ph < 4) return;
+	int pw, ph;
+	uint8_t *a8 = texture_alpha(t, scale, &pw, &ph);
+	if (!a8) return;
 	tile = lv_draw_buf_create((uint32_t)pw, (uint32_t)ph, LV_COLOR_FORMAT_ARGB8888, 0);
-	if (!tile) return;
+	if (!tile) { free(a8); return; }
 	lv_color_t c = PAL.acc;
-	float half = 0.55f * scale;                          /* line half width */
 	for (int y = 0; y < ph; y++) {
 		uint8_t *row = tile->data + (size_t)y * tile->header.stride;
 		for (int x = 0; x < pw; x++) {
-			float a = 0;
-			/* sample the base-size tile; wrap so lines crossing the edge join up */
-			float fx = (x + 0.5f) / scale, fy = (y + 0.5f) / scale, d = 1e9f;
-			for (int oy = -1; oy <= 1; oy++)
-				for (int ox = -1; ox <= 1; ox++) d = fminf(d, shape(t, fx + ox * bw, fy + oy * bh, bw, bh));
-			d *= scale;
-			a = half + 0.5f - d;                         /* 1 px of soft edge */
-			if (a < 0) a = 0;
-			if (a > 1) a = 1;
-			uint8_t al = (uint8_t)lroundf(a * STRENGTH * 255);
 			row[x * 4 + 0] = c.blue;
 			row[x * 4 + 1] = c.green;
 			row[x * 4 + 2] = c.red;
-			row[x * 4 + 3] = al;
+			row[x * 4 + 3] = a8[(size_t)y * pw + x];
 		}
 	}
+	free(a8);
 	lv_obj_set_style_bg_image_src(obj, tile, 0);
 	lv_obj_set_style_bg_image_tiled(obj, true, 0);
 	lv_obj_set_style_bg_image_opa(obj, LV_OPA_COVER, 0);
