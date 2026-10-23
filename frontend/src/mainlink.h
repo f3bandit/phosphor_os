@@ -16,5 +16,11 @@ int mainlink_give(void);
 int mainlink_hidden(void);
 /* Main sends the controllers' buttons (MiSTer's mapping and repeat); the shell then doesn't read them itself */
 int mainlink_pads(void);
+/* run a script the way MiSTer's Scripts menu does (MiSTer's terminal; the shell steps aside): 0 started.
+ * mainlink_poll returns 1 when it's over and the screen is the shell's again; then
+ * mainlink_script_result() gives its exit status once (-1 if nothing finished) */
+int mainlink_script(const char *path);
+int mainlink_script_running(void);
+int mainlink_script_result(void);
 
 #endif

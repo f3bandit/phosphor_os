@@ -19,12 +19,6 @@ target_include_directories(lvgl PUBLIC ${LVGL_DIR} ${CMAKE_CURRENT_SOURCE_DIR} $
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
 target_compile_options(lvgl PRIVATE -w)
 
-# libvterm (MIT): the terminal window that runs scripts (Update All and the like) inside Phosphor
-set(VTERM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libvterm)
-file(GLOB VTERM_SOURCES ${VTERM_DIR}/src/*.c)
-add_library(vterm STATIC ${VTERM_SOURCES})
-target_include_directories(vterm PUBLIC ${VTERM_DIR}/include)
-target_compile_options(vterm PRIVATE -w -std=c99 -D_XOPEN_SOURCE=700)
 
 # cJSON (MIT) is shared with the system service
 set(CJSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../system/third_party/cjson)
@@ -35,7 +29,7 @@ target_compile_options(cjson PRIVATE -w)
 file(GLOB FONT_SOURCES CONFIGURE_DEPENDS fonts/*.c)
 file(GLOB APP_SOURCES CONFIGURE_DEPENDS src/*.c)
 add_executable(phosphor ${APP_SOURCES} ${FONT_SOURCES})
-target_link_libraries(phosphor PRIVATE lvgl cjson vterm m pthread util)
+target_link_libraries(phosphor PRIVATE lvgl cjson m pthread)
 target_include_directories(phosphor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../system/third_party/stb)
 set_source_files_properties(src/jpeg.c PROPERTIES COMPILE_OPTIONS "-w")
 target_compile_options(phosphor PRIVATE -Wall -Wextra -Wno-unused-parameter)

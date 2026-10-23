@@ -18,7 +18,8 @@
 #include <time.h>
 #include <unistd.h>
 
-static int fd = -1, ever = 0, hidden = 0, pads = 0;
+static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0;
+static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
 static char lbuf[2048];
 static size_t llen;
 static long long next_try;
@@ -65,6 +66,7 @@ static int take(void)
 	char r[256];
 	if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0 || ask("hello", r, sizeof(r)) || !strstr(r, "\"api\":")
 	    || !((pads = strstr(r, "\"pads\":true") != NULL), 1)
+	    || !((scripts = strstr(r, "\"scripts\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
@@ -90,6 +92,25 @@ int mainlink_connected(void) { return fd >= 0; }
 int mainlink_hidden(void) { return fd >= 0 && hidden; }
 int mainlink_pads(void) { return fd >= 0 && pads; }
 int mainlink_fd(void) { return fd; }
+int mainlink_script_running(void) { return script_on; }
+
+int mainlink_script(const char *path)
+{
+	if (fd < 0 || !scripts || hidden || script_on) return -1;
+	char line[600];
+	int n = snprintf(line, sizeof(line), "script %s\n", path);
+	if (n <= 0 || n >= (int)sizeof(line) || send(fd, line, (size_t)n, MSG_NOSIGNAL) != n) return -1;
+	script_on = 1;
+	plog("phosphor-main: running %s", path);
+	return 0;
+}
+
+int mainlink_script_result(void)
+{
+	int r = script_done_status;
+	script_done_status = -1;
+	return r;
+}
 
 int mainlink_give(void)
 {
@@ -121,6 +142,17 @@ int mainlink_poll(void)
 						else input_watch("main", lbuf);                /* not understood: show it in the watch log */
 						continue;
 					}
+					/* a script ran in MiSTer's terminal; it's over (or Main refused it): the screen again */
+					if (script_on && (strstr(lbuf, "\"event\":\"script_done\"") || (!strncmp(lbuf, "{\"ok\":false", 12)))) {
+						int st = 0;
+						const char *q = strstr(lbuf, "\"status\":");
+						if (q) st = atoi(q + 9);
+						else { st = 1; plog("phosphor-main: script refused: %s", lbuf); }
+						script_on = 0;
+						script_done_status = st;
+						retake = 1;
+						continue;
+					}
 					if (hidden && strstr(lbuf, "\"event\":\"show\"")) {
 						if (send(fd, "screen phosphor\n", 16, MSG_NOSIGNAL) == 16) {
 							hidden = 0;
@@ -138,6 +170,7 @@ int mainlink_poll(void)
 			plog("phosphor-main went away; trying again");
 			close(fd);
 			fd = -1;
+			if (script_on) { script_on = 0; script_done_status = 1; }
 			next_try = now_ms() + 2000;
 			return 0;
 		}
