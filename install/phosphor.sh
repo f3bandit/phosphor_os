@@ -50,8 +50,23 @@ switch_main() {
 	return 1
 }
 
+# Phosphor's menu core as menu.rbf: the bootloader loads menu.rbf before Linux starts, and Phosphor's
+# shows black instead of MiSTer's static until Phosphor is on screen. MiSTer's own is kept in
+# phosphor/backup/menu.rbf.mister (uninstall.sh puts it back); an update that brings a new one back is
+# kept there too, and Phosphor's goes in again at the next boot.
+put_menu_core() {
+	ours="$ROOT/cores/menu_phosphor.rbf"; m="$1/menu.rbf"
+	[ -s "$ours" ] || return 0
+	cmp -s "$ours" "$m" 2>/dev/null && return 0
+	mkdir -p "$ROOT/backup"
+	[ -f "$m" ] && cp "$m" "$ROOT/backup/menu.rbf.mister"
+	cp "$ours" "$m.new" && mv -f "$m.new" "$m" && echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
+}
+
 case "${1:-status}" in
 	boot)
+		# MiSTer's downloader may have put its own menu.rbf back: Phosphor's again (for the next boot)
+		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" > /dev/null
 		# Phosphor first, so it's on screen within seconds of MiSTer starting
 		start_service
 		pidof MiSTer_phosphor > /dev/null || switch_main      # main= in MiSTer.ini normally does this

@@ -92,8 +92,22 @@ if [ "$BOOT" = 2 ]; then
 	fi
 fi
 
+# Phosphor's menu core as menu.rbf: the bootloader loads menu.rbf before Linux starts, and Phosphor's
+# shows black instead of MiSTer's static until Phosphor is on screen. MiSTer's own is kept in
+# phosphor/backup/menu.rbf.mister (uninstall.sh puts it back); an update that brings a new one back is
+# kept there too, and Phosphor's goes in again at the next boot.
+put_menu_core() {
+	ours="$ROOT/cores/menu_phosphor.rbf"; m="$1/menu.rbf"
+	[ -s "$ours" ] || return 0
+	cmp -s "$ours" "$m" 2>/dev/null && return 0
+	mkdir -p "$ROOT/backup"
+	[ -f "$m" ] && cp "$m" "$ROOT/backup/menu.rbf.mister"
+	cp "$ours" "$m.new" && mv -f "$m.new" "$m" && echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
+}
+
 # Phosphor's Main as the system's Main: MiSTer's Main hands over to whatever main= names, at once
 if [ "$BOOT" = 2 ] && [ -f "$ROOT/bin/MiSTer_phosphor" ]; then
+	put_menu_core "$FAT"
 	INI="$FAT/MiSTer.ini"
 	mkdir -p "$ROOT/backup"
 	if [ -f "$INI" ]; then

@@ -2424,10 +2424,12 @@ enum { PT_BACKUP1, PT_BACKUP2, PT_ANALOG, PT_INPUT, PT_FIRST_FILE };
 static struct {
 	int mode, busy, job_ok, available, can_load, main_api, in_game, done, total, loading;
 	char job[16], message[200];
-	char names[80][128];
+	char names[80][200];
 	long long at[80];
 	int nfiles;
-	char pick[128];
+	char pick[200];
+	int ask_name, asked;       /* a new card waits for a name; the keyboard was opened for it */
+	char suggest[64];
 	char pad[2][160];
 	int pad_id[2], pad_conn[2];
 } pt;
@@ -2558,12 +2560,41 @@ static void pt_pads(void)
 	}
 }
 
+/* "Card name/2026-10-22_203723.mcd" -> "Card name  ·  Oct 22 2026, 8:37 PM" (old loose files: their own way) */
 static void pt_label_for(const char *name, char *out, size_t n)
 {
+	static const char *const MON[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 	int port, y, mo, d, h, mi;
-	if (sscanf(name, "port%d-%4d%2d%2d-%2d%2d", &port, &y, &mo, &d, &h, &mi) == 6)
-		snprintf(out, n, "Port %d card  \xC2\xB7  %04d-%02d-%02d %02d:%02d", port, y, mo, d, h, mi);
+	const char *sl = strchr(name, '/');
+	if (sl && sscanf(sl + 1, "%4d-%2d-%2d_%2d%2d", &y, &mo, &d, &h, &mi) == 5 && mo >= 1 && mo <= 12) {
+		char t[16];
+		if (SETTINGS.clock24) snprintf(t, sizeof(t), "%02d:%02d", h, mi);
+		else snprintf(t, sizeof(t), "%d:%02d %s", h % 12 ? h % 12 : 12, mi, h < 12 ? "AM" : "PM");
+		snprintf(out, n, "%.*s  \xC2\xB7  %s %d %d, %s", (int)(sl - name), name, MON[mo - 1], d, y, t);
+	}
+	else if (sscanf(name, "port%d-%4d%2d%2d-%2d%2d", &port, &y, &mo, &d, &h, &mi) == 6)
+		snprintf(out, n, "Port %d card (older backup)  \xC2\xB7  %04d-%02d-%02d %02d:%02d", port, y, mo, d, h, mi);
 	else snprintf(out, n, "%s", name);
+}
+
+static void pt_apply(cJSON *r);
+
+/* a card Phosphor hasn't seen: its name, typed on the keyboard (B keeps the suggested one) */
+static void mc_name_done(const char *text)
+{
+	char req[400], esc[200];
+	const char *t = (text && *text) ? text : pt.suggest;
+	size_t k = 0;
+	for (const char *p = t; *p && k + 2 < sizeof(esc); p++) { if (*p == '"' || *p == '\\') esc[k++] = '\\'; esc[k++] = *p; }
+	esc[k] = 0;
+	snprintf(req, sizeof(req), "{\"cmd\":\"memcard\",\"do\":\"name\",\"name\":\"%s\"}", esc);
+	cJSON *r = api_call("%s", req);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering"); cJSON_Delete(r); return; }
+	cJSON *j = cJSON_GetObjectItem(r, "job");
+	toast_show(api_str(j, "message") ? api_str(j, "message") : "Backed up");
+	pt.asked = 0;
+	if (cur == SCR_PORTS) pt_apply(r);
+	else cJSON_Delete(r);
 }
 
 static void pt_apply(cJSON *r)
@@ -2584,6 +2615,8 @@ static void pt_apply(cJSON *r)
 	pt.done = (int)api_num(j, "done", 0);
 	pt.total = (int)api_num(j, "total", 1);
 	snprintf(pt.job, sizeof(pt.job), "%s", api_str(j, "name") ? api_str(j, "name") : "");
+	pt.ask_name = cJSON_IsTrue(cJSON_GetObjectItem(j, "ask_name"));
+	snprintf(pt.suggest, sizeof(pt.suggest), "%s", api_str(j, "suggest") ? api_str(j, "suggest") : "Memory card");
 	snprintf(pt.message, sizeof(pt.message), "%s", api_str(j, "message") ? api_str(j, "message") : "");
 	if (cur == SCR_PORTS) mc_update(api_str(j, "map"), pt.busy && strcmp(pt.job, "prepare"));
 	pt.nfiles = 0;
@@ -2596,8 +2629,16 @@ static void pt_apply(cJSON *r)
 	if (was && !pt.busy) {
 		if (!strcmp(pt.job, "prepare")) pt.loading = 0;
 		if (!strcmp(pt.job, "prepare") && pt.job_ok) pt.available = 1;
-		if (strcmp(pt.job, "prepare") || !pt.job_ok) toast_show(pt.message[0] ? pt.message : pt.job_ok ? "Done" : "That didn't work");
+		if ((strcmp(pt.job, "prepare") || !pt.job_ok) && !pt.ask_name) toast_show(pt.message[0] ? pt.message : pt.job_ok ? "Done" : "That didn't work");
 	}
+	/* a new card: name it (the backup is kept until it has one) */
+	if (pt.ask_name && !pt.asked && !osk.open && cur == SCR_PORTS) {
+		pt.asked = 1;
+		osk_open("Name this memory card", "Phosphor hasn't seen this card before. Next time it knows it by its saves.", 0, 40, mc_name_done, PT_HINTS);
+		snprintf(osk.text, sizeof(osk.text), "%s", pt.suggest);
+		osk_draw();
+	}
+	if (!pt.ask_name) pt.asked = 0;
 	if (!pt_head) return;
 	char h[240], sub[260];
 	if (!pt.main_api) {
@@ -2628,7 +2669,7 @@ static void pt_apply(cJSON *r)
 	lv_label_set_text(pt_head, h);
 	lv_label_set_text(pt_sub, sub);
 	pt_list.count = PT_FIRST_FILE + pt.nfiles;
-	footer_set(pt.mode == PT_CONFIRM ? PT_CONFIRM_HINTS : PT_HINTS);
+	if (!osk.open) footer_set(pt.mode == PT_CONFIRM ? PT_CONFIRM_HINTS : PT_HINTS);     /* the keyboard has its own */
 	vlist_refresh(&pt_list);
 }
 
@@ -2651,7 +2692,6 @@ static void pt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	i -= PT_FIRST_FILE;
 	pt_label_for(pt.names[i], t, n);
 	snprintf(val, vn, "Put back >");
-	*dim = strncmp(pt.names[i], "port", 4) != 0;
 }
 
 static void pt_do(const char *what, int port, const char *name)

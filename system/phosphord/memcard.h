@@ -18,6 +18,8 @@ typedef struct {
 	int ok;               /* the last job worked (valid when !busy and job[0]) */
 	char message[200];    /* what happened, for the screen */
 	char file[128];       /* the backup it wrote / the file it restored */
+	int ask_name;         /* a backup of a card Phosphor hasn't seen is waiting for a name (memcard_name) */
+	char suggest[64];     /* a name to offer ("Memory card 2") */
 	char map[1025];       /* one character a sector, like SS1 Tool's card map: 0 not done yet, 1 read OK,
 	                         2 needed a retry, 3 failed, 5 written and checked ("" before the first job) */
 } ports_state_t;
@@ -33,8 +35,10 @@ int ports_pad_analog(int port, char *err, size_t n);
  * backs the card up first, writes, reads every sector back), "check" (is there a card, formatted?).
  * 0 started, 1 busy, -1 err filled */
 int memcard_job(const char *what, int port, const char *name, char *err, size_t n);
-/* the backups: name\tbytes\tmtime lines, newest first; caller frees */
+/* the backups: card/version.mcd (or an old loose .mcd)\tbytes\tmtime lines, newest first; caller frees */
 char *memcard_list(void);
 const char *memcard_dir(void);
+/* the card that's waiting gets this name (a new card in the library, or another version of one) */
+int memcard_name(const char *name, char *rel, size_t rn, char *err, size_t n);
 
 #endif

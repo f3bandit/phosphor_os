@@ -126,6 +126,7 @@ grep -q '^# phosphor: BEGIN' "$WORK/rel/files/linux/user-startup.sh" || { echo "
 grep -q ' /media/fat/phosphor/phosphor.sh boot' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
 grep -q "^main=phosphor/bin/MiSTer_phosphor" "$WORK/rel/files/MiSTer.ini" || { echo "MiSTer.ini main= missing" >&2; exit 1; }
 grep -q "cloud-sync" "$WORK/rel/files/phosphor/firstboot" || { echo "first-boot module list missing" >&2; exit 1; }
+cmp -s "$WORK/rel/files/menu.rbf" "$WORK/rel/files/phosphor/cores/menu_phosphor.rbf" || { echo "menu.rbf isn't Phosphor's menu core" >&2; exit 1; }
 # MiSTer's video filters, shadow masks, gamma tables and presets (MiSTer-devel), so Screen filters works
 # from the start; the downloader keeps them current later
 say "MiSTer's filters"
