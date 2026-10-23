@@ -226,14 +226,21 @@ ready:
 	return 0;
 }
 
+/* the trip wire: the worker sleeps with no timer while the ports are off, and is woken only when
+ * something asks for the ports (the memory cards screen opening, a card job, a pads read) */
+static void wake_worker(void)
+{
+	pthread_mutex_lock(&slk);
+	pthread_cond_signal(&wake);
+	pthread_mutex_unlock(&slk);
+}
+
 int ports_prepare(char *err, size_t n)
 {
 	pthread_mutex_lock(&mlk);
 	int r = prepare_locked(err, n, 1);
 	pthread_mutex_unlock(&mlk);
-	pthread_mutex_lock(&slk);
-	pthread_cond_signal(&wake);           /* the worker turns them off again after a while */
-	pthread_mutex_unlock(&slk);
+	wake_worker();                        /* it turns them off again once unused */
 	return r;
 }
 
@@ -247,6 +254,7 @@ char *ports_pads(char *err, size_t n)
 		if (!r) snprintf(err, n, "Main didn't answer");
 	}
 	pthread_mutex_unlock(&mlk);
+	wake_worker();
 	return r;
 }
 
@@ -264,6 +272,7 @@ int ports_pad_analog(int port, char *err, size_t n)
 		cJSON_Delete(j);
 	}
 	pthread_mutex_unlock(&mlk);
+	wake_worker();
 	return r;
 }
 
@@ -497,11 +506,11 @@ static void *worker(void *arg)
 		int port;
 		pthread_mutex_lock(&slk);
 		while (!want_job[0]) {
-			/* ports off: nothing to do until a card job comes (from the memory cards screen), so a
-			   look twice a minute is plenty; on: every 2 s, to turn them off once unused */
+			/* ports off: sleep until woken (wake_worker); on: look every 2 s, to turn them off once unused */
+			if (!ports_on) { pthread_cond_wait(&wake, &slk); continue; }
 			struct timespec ts;
 			clock_gettime(CLOCK_REALTIME, &ts);
-			ts.tv_sec += ports_on ? 2 : 30;
+			ts.tv_sec += 2;
 			pthread_cond_timedwait(&wake, &slk, &ts);
 			if (want_job[0]) break;
 			pthread_mutex_unlock(&slk);

@@ -3646,9 +3646,18 @@ static void video_key(pkey_t k)
 
 /* ---------- navigation ---------- */
 
+/* the library is only looked at again while a scan the user started here runs (see ui_tick) */
+static int scan_watch, scan_quiet, scan_gen0 = -1, last_gen = -1;
+
 void ui_rescan(void)
 {
-	cJSON_Delete(api_call("{\"cmd\":\"rescan\",\"identify\":true}"));
+	cJSON *r = api_call("{\"cmd\":\"gen\"}");
+	scan_gen0 = r ? (int)api_num(r, "generation", -1) : -1;
+	cJSON_Delete(r);
+	last_gen = scan_gen0;           /* so the first change shows */
+	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
+	scan_watch = 1;
+	scan_quiet = 0;
 }
 
 /* ---------- lists across systems: favorites, recently played, search ---------- */
@@ -3863,7 +3872,6 @@ void ui_key(pkey_t k)
 	}
 }
 
-static int last_gen = -1;
 static uint32_t last_status, last_poll;
 
 int ui_max_sleep(void)
@@ -3902,9 +3910,16 @@ void ui_tick(void)
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
-		cJSON *r = api_call("{\"cmd\":\"gen\"}");
-		int g = r ? (int)api_num(r, "generation", -1) : -1;
+		/* only while "Look for games" runs: once a second, has it found something new yet? */
+		cJSON *r = scan_watch ? api_call("{\"cmd\":\"gen\"}") : NULL;
+		int g = r ? (int)api_num(r, "generation", -1) : last_gen;
+		int busy = r && (cJSON_IsTrue(cJSON_GetObjectItem(r, "indexing")) || cJSON_IsTrue(cJSON_GetObjectItem(r, "identifying")));
 		cJSON_Delete(r);
+		if (scan_watch) {
+			/* done: not busy twice in a row after the library changed (or 30 s with no answer) */
+			scan_quiet = busy ? 0 : scan_quiet + 1;
+			if ((g != scan_gen0 && scan_quiet >= 2) || scan_quiet >= 30) scan_watch = 0;
+		}
 		if (g != last_gen) {
 			int first = last_gen < 0;
 			last_gen = g;
