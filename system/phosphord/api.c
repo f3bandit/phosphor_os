@@ -26,6 +26,8 @@
  *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
+ *   storage    [do: check (test, target) | overlap-remove | overlap-undo]  drives {path,kind,fs,size_kb,free_kb,model,
+ *                                           gen,watts}, overlap_tool [paths], last {job,target,busy,ok,at,output}
  *   system     do: reboot|shutdown|reload_ui   restart, shut down cleanly, or restart the shell
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
@@ -90,6 +92,7 @@
 #include "bt.h"
 #include "cores.h"
 #include "samba.h"
+#include "storage.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -1094,6 +1097,57 @@ static char *cmd_memcard(cJSON *req)
 	return reply(o);
 }
 
+/* storage: the drives and the last check; do: a check (test, target) or overlap-remove / overlap-undo */
+static char *cmd_storage(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) {
+		const char *test = !strcmp(d, "check") ? cJSON_GetStringValue(cJSON_GetObjectItem(req, "test")) : d;
+		int r = test ? storage_start(test, cJSON_GetStringValue(cJSON_GetObjectItem(req, "target"))) : -2;
+		if (r == -2) return fail("do: check (test, target), overlap-remove or overlap-undo");
+		if (r == 1) return fail("A check is already running; try again when it's done");
+		if (r < 0) return fail("The storage module isn't installed");
+	}
+	storage_state_t ss;
+	storage_state(&ss);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", ss.installed);
+	cJSON *arr = cJSON_AddArrayToObject(o, "drives");
+	char *save = NULL;
+	for (char *line = ss.targets ? strtok_r(ss.targets, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *f[8] = { 0 };
+		int n = 0;
+		for (char *p = line; n < 8; n++) { f[n] = p; char *bar = strchr(p, '|'); if (!bar) { n++; break; } *bar = 0; p = bar + 1; }
+		if (n < 7) continue;
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "path", f[0]);
+		cJSON_AddStringToObject(x, "kind", f[1]);
+		cJSON_AddStringToObject(x, "fs", f[2]);
+		cJSON_AddNumberToObject(x, "size_kb", atof(f[3]));
+		cJSON_AddNumberToObject(x, "free_kb", atof(f[4]));
+		cJSON_AddStringToObject(x, "model", f[5]);
+		cJSON_AddStringToObject(x, "gen", f[6]);
+		cJSON_AddStringToObject(x, "watts", n > 7 && f[7] ? f[7] : "");
+		cJSON_AddItemToArray(arr, x);
+	}
+	cJSON *ov = cJSON_AddArrayToObject(o, "overlap_tool");
+	if (ss.overlap && !strncmp(ss.overlap, "found=", 6)) {
+		char *v = ss.overlap + 6;
+		v[strcspn(v, "\n")] = 0;
+		save = NULL;
+		for (char *t = strtok_r(v, " ", &save); t; t = strtok_r(NULL, " ", &save)) cJSON_AddItemToArray(ov, cJSON_CreateString(t));
+	}
+	cJSON *last = cJSON_AddObjectToObject(o, "last");
+	cJSON_AddStringToObject(last, "job", ss.job);
+	cJSON_AddStringToObject(last, "target", ss.target);
+	cJSON_AddBoolToObject(last, "busy", ss.busy);
+	cJSON_AddBoolToObject(last, "ok", ss.ok);
+	cJSON_AddNumberToObject(last, "at", (double)ss.at);
+	cJSON_AddStringToObject(last, "output", ss.output ? ss.output : "");
+	free(ss.targets); free(ss.overlap); free(ss.output);
+	return reply(o);
+}
+
 static char *cmd_backup(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -1222,6 +1276,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "power")) out = cmd_power(req);
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
+	else if (!strcmp(c->valuestring, "storage")) out = cmd_storage(req);
 	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
 	else if (!strcmp(c->valuestring, "pads")) out = cmd_pads();
 	else if (!strcmp(c->valuestring, "scan_progress")) {   /* for the Looking for games screen, while it runs */

@@ -14,9 +14,10 @@ type config struct {
 	Address  string `json:"address"`        // host:port of the SS1's remote access
 	Name     string `json:"name,omitempty"` // what the SS1 calls itself
 	DeviceID string `json:"device_id,omitempty"`
-	TokenEnc string `json:"token,omitempty"` // the pairing key, protected
-	Accent   string `json:"accent"`          // amber, red, green, blue, purple
-	Texture  int    `json:"texture"`         // the console's texture numbers
+	TokenEnc string `json:"token,omitempty"`    // the pairing key, protected
+	Accent   string `json:"accent"`             // amber, red, green, blue, purple
+	Texture  int    `json:"texture"`            // the console's texture numbers
+	QuietPC  bool   `json:"quiet_pc,omitempty"` // no Windows notifications (still listed in the app)
 }
 
 var (

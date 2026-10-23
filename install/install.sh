@@ -57,12 +57,15 @@ for f in "$HERE"/config/*.ini; do
 	n="${f##*/}"
 	[ -e "$ROOT/config/$n" ] || cp "$f" "$ROOT/config/$n.example"
 done
-# diag (whole-system checks, Settings > Diagnostics) only runs when asked: always installed.
+# diag (whole-system checks, Settings > Diagnostics) and storage (SD / NVMe / USB checks, Settings >
+# Storage) only run when asked: always installed.
 # The other modules change how the MiSTer boots, so they're installed one by one, by hand:
 #   modules/<name>/install.sh  (cifs-helper, backup-agent, health-watch, update-guard, cloud-sync)
-if [ -x "$HERE/modules/diag/install.sh" ]; then
-	PHOSPHOR_ROOT="$ROOT" "$HERE/modules/diag/install.sh" > /dev/null || echo "note: the diag module didn't install" >&2
-fi
+for m in diag storage; do
+	if [ -x "$HERE/modules/$m/install.sh" ]; then
+		PHOSPHOR_ROOT="$ROOT" "$HERE/modules/$m/install.sh" > /dev/null || echo "note: the $m module didn't install" >&2
+	fi
+done
 
 if [ "$BOOT" != 0 ]; then
 	mkdir -p "${STARTUP%/*}"

@@ -51,7 +51,7 @@ static const char *ALLOWED[] = {
 	"status", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"video", "video_files", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
-	"system", "samba", "power", "guard", NULL,
+	"system", "samba", "power", "guard", "storage", NULL,
 };
 
 typedef struct {
@@ -531,6 +531,17 @@ static void do_api(req_t *r, const char *body)
 	if (!strcmp(cmd, "guard")) {
 		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(j, "do"));
 		if (d && !strcasecmp(d, "delete")) { cJSON_Delete(j); respond_error(r->fd, 403, "deleting restore points only works on the MiSTer itself"); return; }
+		/* the network's own settings (dhcpcd.conf, hostname, hosts) are put back only on the MiSTer: remote
+		   access never changes the network */
+		if (d && !strcasecmp(d, "restore")) {
+			cJSON *it;
+			cJSON_ArrayForEach(it, cJSON_GetObjectItem(j, "items")) {
+				const char *v = cJSON_GetStringValue(it);
+				if (v && (strstr(v, "dhcpcd") || strstr(v, "/etc/hostname") || strstr(v, "/etc/hosts") || strstr(v, "network") || strstr(v, "wpa_"))) {
+					cJSON_Delete(j); respond_error(r->fd, 403, "network settings are put back on the MiSTer itself (Settings > Updates)"); return;
+				}
+			}
+		}
 	}
 	char *s = cJSON_PrintUnformatted(j);
 	cJSON_Delete(j);

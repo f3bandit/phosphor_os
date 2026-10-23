@@ -3,6 +3,34 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.0
+
+### Fixes
+- **Box art: Dragon Warrior VII and others weren't found.** Some PlayStation discs boot a file with
+  an extra letter (`SLUSP012.06`), so the product code came out wrong and the lookup gave up. The code
+  is read right now, and codes already read are fixed.
+- **Box art: a file named like the official list is found by its name** when its content doesn't
+  match (another dump, a revision, a disc whose code can't be read): an exact list name, or exactly the
+  same title words with the same disc number, the file's region first. Nothing is guessed.
+- **Box art: a missing picture falls through.** When libretro has no picture under a name, the name
+  with one region and without the disc number is tried, then the next source. Disc 2 and later use
+  Disc 1's picture. A game found without any picture now goes to Match to base games instead of
+  looking done. Everything not found before is looked up again.
+- **Base game suggestions** no longer pair games that only share a number ("Dragon Warrior VII" and
+  "Final Fantasy VII").
+- **Remote access refused PCs on home networks outside the usual ranges** (for example
+  200.200.200.x): devices on the SS1's own network are accepted now.
+
+### Changes
+- **Storage checks on the SS1:** the SD card, NVMe and USB drives (quick check, will Windows
+  complain, speed, drive health, file system check and repair), the PCIe generation of NVMe drives
+  (Gen 4 drives cause trouble in the dock), and removal (with undo) of the faulty overlap fix tool.
+  New `storage` module, always installed.
+- **For Phosphor for Windows:** restart, shut down and reload the TV screen; file sharing on and off;
+  storage checks; box art sources and logins; updates and restore points (network settings are put
+  back only on the SS1 itself, and restore points are deleted only there).
+- `phosphor.sh reload` restarts the TV screen without restarting the SS1.
+
 ## 0.26.6
 
 ### Changes

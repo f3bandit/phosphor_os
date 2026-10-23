@@ -4,6 +4,7 @@
 "use strict";
 
 /* ---------- talking to the app (and through it, the SS1) ---------- */
+const HASH = location.hash.slice(1);      /* the tray asked for a screen: #notifications */
 const KEY = (() => {
 	const k = new URLSearchParams(location.search).get("k");
 	try { if (k) sessionStorage.setItem("k", k); } catch (e) {}
@@ -155,7 +156,7 @@ addEventListener("keydown", e => {
 	case "ArrowUp": move(0, -1); break;
 	case "ArrowDown": move(0, 1); break;
 	case "Enter": case " ": activate(); break;
-	case "Escape": case "Backspace": if (typing && k === "Backspace") return; back(); break;
+	case "Escape": case "Backspace": if (typing && k === "Backspace") return; if (!(s && s.back && s.back())) back(); break;
 	case "q": case "PageUp": s && s.tab && s.tab(-1); break;
 	case "e": case "PageDown": s && s.tab && s.tab(1); break;
 	case "x": case "X": s && s.x && s.x(); break;
@@ -179,7 +180,8 @@ document.addEventListener("mousedown", e => {
 	const el = e.target.closest("[data-nav]");
 	if (el) focus(el);
 });
-$("#conn").addEventListener("click", () => push(S.paired ? AppSettings : Connect, S.paired ? 2 : undefined));
+$("#conn").addEventListener("click", () => (S.paired ? push(AppSettings, "connection") : push(Connect)));
+$("#bell").addEventListener("click", () => push(AppSettings, "notifications"));
 
 /* the controller (the browser's gamepad support): read only while one is plugged in */
 const pad = { held: {}, next: {}, raf: 0 };
@@ -197,7 +199,7 @@ function padLoop() {
 		const now = performance.now(), s = topScr();
 		const act = {
 			up: () => move(0, -1), down: () => move(0, 1), left: () => move(-1, 0), right: () => move(1, 0),
-			a: activate, b: back, x: () => s && s.x && s.x(), y: () => (s && s.y ? s.y() : push(Search)),
+			a: activate, b: () => { if (!(s && s.back && s.back())) back(); }, x: () => s && s.x && s.x(), y: () => (s && s.y ? s.y() : push(Search)),
 			lb: () => s && s.tab && s.tab(-1), rb: () => s && s.tab && s.tab(1), start: () => push(AppSettings),
 		};
 		for (const k in st) {
@@ -317,16 +319,22 @@ class Home {
 		const t = [
 			{ id: "match", b: "Match to base games", s: "…" },
 			{ id: "search", b: "Search", s: "every system" },
-			{ id: "art", b: "Box art & details", s: "next build", off: true },
-			{ id: "settings", b: "Settings", s: "look, connection" },
+			{ id: "art", b: "Box art", s: "sources and logins" },
+			{ id: "settings", b: "Settings", s: "power, storage, look…" },
 		];
-		box.innerHTML = t.map(x => `<div class="tool" data-nav data-id="${x.id}" ${x.off ? 'aria-disabled="true"' : ""}><b>${esc(x.b)}</b><small id="t-${x.id}">${esc(x.s)}</small></div>`).join("");
+		try {                                   /* warnings first, when there are new ones */
+			const p = await api("/api/ping");
+			if (p.unseen) t.unshift({ id: "notes", b: p.warn ? `⚠ ${p.warn} warning${p.warn === 1 ? "" : "s"}` : `${p.unseen} new`, s: "notifications", warn: p.warn > 0 });
+		} catch (e) {}
+		if (!$("#tools")) return;
+		box.innerHTML = t.map(x => `<div class="tool${x.warn ? " alert" : ""}" data-nav data-id="${x.id}"><b>${esc(x.b)}</b><small id="t-${x.id}">${esc(x.s)}</small></div>`).join("");
 		box.querySelectorAll(".tool").forEach(el => (el.onclick = () => {
 			const id = el.dataset.id;
 			if (id === "match") push(Match);
 			else if (id === "search") push(Search);
 			else if (id === "settings") push(AppSettings);
-			else toast("Box art on this PC comes in the next build");
+			else if (id === "art") push(AppSettings, "boxart");
+			else if (id === "notes") push(AppSettings, "notifications");
 		}));
 		try {
 			const j = await ss1({ cmd: "games", filter: "not_found", limit: 1 });
@@ -681,150 +689,7 @@ class Search {
 	}
 }
 
-/* ---------- Settings (this app): look, connection, about ---------- */
-class AppSettings {
-	constructor(tab = 0) { this.t = tab; this.hints = [["A", "Choose"], ["LB/RB", "Tabs"], ["B", "Back"]]; }
-	render(root) { root.append(h(`<div class="sub">${spaced("Settings")}</div><h1>Settings</h1><div id="tb" style="flex:none"></div><div id="body"></div>`)); this.draw(); }
-	tab(d) { this.t = (this.t + d + 4) % 4; this.draw(); }
-	draw() {
-		$("#tb").innerHTML = "";
-		tabs($("#tb"), ["Look", "Box art", "Connection", "About"], this.t, i => { this.t = i; this.draw(); });
-		const b = $("#body");
-		b.innerHTML = ""; cur = null;
-		this.hints = [["A", "Choose"], ["LB/RB", "Tabs"], ["B", "Back"]];
-		setHints(this.hints);
-		[this.look, this.art, this.conn, this.about][this.t].call(this, b);
-		focus($(".tab.on"), true);
-	}
-	async setTheme(p) {
-		Object.assign(S, p);
-		applyTheme();
-		await api("/api/theme", p);
-	}
-	look(b) {
-		b.append(h(`<div class="list" style="flex:1;min-height:0;margin-bottom:1rem"><div class="sub" style="margin-top:.4rem">${spaced("Accent colour")}</div><div class="swatches" id="sw"></div>
-			<div class="sub" style="margin-top:1.4rem">${spaced("Background texture")}</div><div class="tex" id="tx"></div></div>`));
-		for (const [name, col] of Object.entries(ACCENTS)) {
-			const el = h(`<button class="sw${S.accent === name ? " on" : ""}" data-nav title="${name}" style="background:${col}"></button>`).firstChild;
-			el.onclick = async () => { await this.setTheme({ accent: name }); this.draw(); };
-			$("#sw").appendChild(el);
-		}
-		const [r, g, bl] = rgb(ACCENTS[S.accent] || ACCENTS.amber);
-		for (const t of Texture.order) {
-			const url = Texture.tile(t, [r, g, bl], 1);
-			const el = h(`<div class="tx${S.texture === t ? " on" : ""}" data-nav style="${url ? `background-image:url(${url})` : ""}">${esc(Texture.name(t))}</div>`).firstChild;
-			el.onclick = async () => { await this.setTheme({ texture: t }); this.draw(); };
-			$("#tx").appendChild(el);
-		}
-	}
-	/* Box art: the SS1's sources (order, on/off) and their logins; the same settings the TV shows */
-	async art(b) {
-		b.append(h(`<div class="split"><div class="col"><div class="sub">${spaced("Sources, asked in this order")}</div><div class="list" id="srcs"><div class="empty"><span class="spin"></span></div></div>
-			<div class="acts"><button class="btn primary" id="runart" data-nav>Look up box art now</button></div></div>
-			<div class="panel" id="acct"></div></div>`));
-		$("#runart").onclick = async () => { try { await ss1({ cmd: "scrape", on: true }); toast("Looking up box art on the SS1"); } catch (e) { toast(e.message); } };
-		try {
-			const [src, acc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" })]);
-			this.srcs = src.sources; this.acc = acc.accounts;
-		} catch (e) { $("#srcs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-		this.drawSources();
-	}
-	drawSources(keep) {
-		const box = $("#srcs");
-		if (!box) return;
-		box.innerHTML = "";
-		this.srcs.forEach((x, i) => {
-			const a = k => (this.acc.find(q => q.sec === x.id && q.key === k) || {}).set;
-			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" && a("user") ? "Needs a developer id" : "Needs a login";
-			const el = h(`<div class="row src" data-nav><span class="n"><b>${i + 1}. ${esc(x.name)}</b></span><span class="v">${st}</span></div>`).firstChild;
-			el.onclick = () => this.toggleSource(i);
-			el._onfocus = () => { this.si = i; this.drawAccount(x); };
-			box.appendChild(el);
-		});
-		this.hints = [["A", "On / off"], ["X", "Move up"], ["Y", "Move down"], ["LB/RB", "Tabs"], ["B", "Back"]];
-		setHints(this.hints);
-		focus(box.children[Math.min(keep ?? 0, box.children.length - 1)]);
-	}
-	async saveSources(sel) {
-		try {
-			const j = await ss1({ cmd: "scrape_sources", order: this.srcs.map(x => x.id), off: this.srcs.filter(x => !x.on).map(x => x.id) });
-			this.srcs = j.sources;
-		} catch (e) { toast(e.message); }
-		this.drawSources(sel);
-	}
-	toggleSource(i) { this.srcs[i].on = !this.srcs[i].on; this.saveSources(i); }
-	move(d) {
-		if (this.t !== 1 || !cur || !cur.classList.contains("src")) return;
-		const i = this.si, j = i + d;
-		if (j < 0 || j >= this.srcs.length) return;
-		[this.srcs[i], this.srcs[j]] = [this.srcs[j], this.srcs[i]];
-		this.saveSources(j);
-	}
-	x() { this.move(-1); }
-	y() { this.move(1); }
-	drawAccount(x) {
-		const p = $("#acct");
-		const F = {
-			screenscraper: [["user", "User name", "text"], ["password", "Password", "password"], ["devid", "Developer id (only if you have one)", "text"], ["devpassword", "Developer password", "password"]],
-			thegamesdb: [["apikey", "API key (free, from thegamesdb.net)", "password"]],
-			igdb: [["client_id", "Client ID (Twitch developer app)", "text"], ["client_secret", "Client secret", "password"]],
-		}[x.id];
-		const ABOUT = {
-			libretro: "No account. Box art from libretro's thumbnails, matched by each file's content (CRC or product code), then by its exact name.",
-			arcadedb: "No account. Arcade games by their MAME set name.",
-			launchbox: "No account. LaunchBox's games database, downloaded once (about 110 MB) and kept on the SS1.",
-			thegamesdb: "Needs a free API key from thegamesdb.net.",
-			screenscraper: "ScreenScraper only answers programs with a developer id (free on request at screenscraper.fr). Your own free login on top allows more lookups a day.",
-			igdb: "Needs a free Twitch developer app (dev.twitch.tv): its Client ID and secret.",
-		};
-		let html = `<h2>${esc(x.name)}</h2><p class="note">${esc(ABOUT[x.id] || "")}</p>`;
-		if (F) {
-			for (const [k, label, type] of F) {
-				const a = this.acc.find(q => q.sec === x.id && q.key === k) || {};
-				const val = type === "password" ? "" : a.value || "";
-				const ph = type === "password" ? (a.set ? "Saved (type to change)" : "Not set") : "Not set";
-				html += `<div class="field"><label for="ac_${k}">${esc(label)}</label><input id="ac_${k}" type="${type}" data-nav autocomplete="off" placeholder="${esc(ph)}" value="${esc(val)}"></div>`;
-			}
-			html += `<div class="acts"><button class="btn primary" id="acsave" data-nav>Save</button></div><p class="note">Saved on the SS1 (phosphor/config/scraper.ini), sent over your home network only.</p>`;
-		}
-		p.innerHTML = html;
-		if (!F) return;
-		$("#acsave").onclick = async () => {
-			try {
-				for (const [k, , type] of F) {
-					const v = $("#ac_" + k).value;
-					if (type === "password" && !v) continue;        /* empty: keep what's saved */
-					const j = await ss1({ cmd: "scrape_accounts", set: { sec: x.id, key: k, value: v } });
-					this.acc = j.accounts;
-				}
-				const j = await ss1({ cmd: "scrape_sources" });
-				this.srcs = j.sources;
-				toast("Saved on the SS1");
-				this.drawSources(this.si);
-			} catch (e) { toast(e.message); }
-		};
-	}
-	conn(b) {
-		b.append(h(`<div class="split"><div class="list"><dl class="kv" style="max-width:34rem">
-			<dt>SS1</dt><dd>${esc(S.address || "not paired")}</dd><dt>Status</dt><dd>${S.connected ? "connected" : S.paired ? "not answering" : "not paired"}</dd>
-			<dt>Phosphor on the SS1</dt><dd>${esc(S.status ? S.status.version || "" : "")}</dd><dt>Games</dt><dd>${S.status ? n(S.status.games) : ""}</dd></dl>
-			<div class="acts"><button class="btn primary" id="repair" data-nav>Pair again…</button><button class="btn" id="forget" data-nav>Forget this SS1</button></div></div>
-			<div class="panel"><h2>Connection</h2><p class="note">This PC reaches the SS1 over your home network with Phosphor's remote access, paired with a code. The pairing key stays on this PC, protected for your Windows account. Nothing goes over the internet.</p></div></div>`));
-		$("#repair").onclick = () => push(Connect);
-		$("#forget").onclick = async () => {
-			if ($("#forget").dataset.sure !== "1") { $("#forget").dataset.sure = "1"; $("#forget").textContent = "Press again to forget"; return; }
-			await api("/api/forget", {}); await refreshState(); toast("Forgotten. To use it again, pair again."); replace(Connect);
-		};
-	}
-	about(b) {
-		b.append(h(`<div class="panel" style="max-width:46rem"><h2>Phosphor for Windows ${esc(S.appVersion || "")}</h2>
-			<p class="note">The PC companion for Phosphor on the SuperStation One: the library, box art and details, base games, and the SS1's settings, from your PC.</p>
-			<p class="note">Unofficial. Not made or supported by MiSTer-devel or the makers of the SuperStation One. Free for personal, non-commercial use (PolyForm Noncommercial 1.0.0).</p>
-			<p class="note">Closing the window keeps Phosphor in the tray (bottom right, by the clock). To stop it completely:</p>
-			<div class="acts"><button class="btn" id="quit" data-nav>Exit Phosphor</button></div></div>`));
-		$("#quit").onclick = async () => { await api("/api/quit", {}); window.close(); };
-	}
-}
+/* Settings: settings.js */
 
 /* ---------- start ---------- */
 (async () => {
@@ -832,7 +697,11 @@ class AppSettings {
 	await refreshState();
 	applyTheme();
 	replace(S.paired ? Home : Connect);
+	if (S.paired && HASH) goTo(HASH);
 	/* the connection light: every 10 s while the window is in front, never otherwise */
 	setInterval(() => { if (document.visibilityState === "visible" && document.hasFocus()) refreshState(); }, 10000);
+	/* the bell, and a screen the tray asked for: a quick local question every 3 s while shown */
+	bell();
+	setInterval(() => { if (document.visibilityState === "visible") bell(); }, 3000);
 	if ([...(navigator.getGamepads ? navigator.getGamepads() : [])].some(g => g)) pad.raf = requestAnimationFrame(padLoop);
 })();

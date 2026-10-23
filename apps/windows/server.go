@@ -67,6 +67,41 @@ func routes(mux *http.ServeMux) {
 		openFolder(`\\` + host)
 		writeJSON(w, map[string]any{"ok": true})
 	})
+	h("/api/ping", func(w http.ResponseWriter, r *http.Request) { // the page, every few seconds while it's shown
+		warn, all := unseenWarnings()
+		writeJSON(w, map[string]any{"ok": true, "view": takeView(), "warn": warn, "unseen": all})
+	})
+	h("/api/notes", func(w http.ResponseWriter, r *http.Request) { // GET the list; POST {do: seen|clear}
+		if r.Method == http.MethodPost {
+			var req struct{ Do string }
+			_ = readJSON(r, &req)
+			switch req.Do {
+			case "seen":
+				markSeen()
+			case "clear":
+				clearNotes()
+			}
+		}
+		notes.Lock()
+		l := append([]note{}, notes.list...)
+		notes.Unlock()
+		cfgMu.Lock()
+		quiet := cfg.QuietPC
+		cfgMu.Unlock()
+		writeJSON(w, map[string]any{"ok": true, "notes": l, "quiet_pc": quiet})
+	})
+	h("/api/quiet", func(w http.ResponseWriter, r *http.Request) { // Windows notifications on / off
+		var req struct{ Quiet bool }
+		if readJSON(r, &req) != nil {
+			fail(w, "bad request")
+			return
+		}
+		cfgMu.Lock()
+		cfg.QuietPC = req.Quiet
+		cfgMu.Unlock()
+		_ = saveConfig()
+		writeJSON(w, map[string]any{"ok": true})
+	})
 	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
 		writeJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()

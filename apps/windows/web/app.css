@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 /* Phosphor for Windows: the console's look. Laid out on the console's 1280 x 720 grid; 1rem is the
    console's 16 px, scaled to the window. Colours are the shell's palette (theme.c); --acc follows
    the accent setting. */
@@ -154,3 +155,34 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.45; }
 	animation: spin .8s linear infinite; vertical-align: -.15em; margin-right: .5em; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .card { transition: none; } .spin { animation-duration: 2s; } }
+
+/* ---------- Settings: the console's list on the left, a section's tools (with tabs) on the right ---------- */
+.set { display: grid; grid-template-columns: 17rem 1fr; gap: 2rem; flex: 1; min-height: 0; margin-bottom: 1rem; }
+.sl { overflow-y: auto; min-height: 0; }
+.sl .row { height: 2.6rem; }
+.stool { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.stool .tabs { flex: none; }
+.tbody { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.tbody > .split { margin-bottom: 0; }
+.list.grow { flex: 1; min-height: 0; }
+.card2 { display: flex; align-items: center; gap: 1.5rem; padding: 1rem 1.2rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--panel); margin-bottom: .8rem; }
+.card2 > div { flex: 1; }
+.card2 b { display: block; font-weight: 600; font-size: 1.1rem; }
+.card2 small { display: block; color: var(--dim); margin-top: .35rem; font-size: .875rem; line-height: 1.4; }
+.checks { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace; color: var(--dim); background: #0e0e11; border: 1px solid var(--line); border-radius: .5rem; padding: .8rem 1rem; margin: .5rem 0 0; max-height: 22rem; overflow: auto; }
+.good { color: #5cf08a; } .bad { color: #ff6b5e; } .warn { color: var(--acc); }
+.note.bad, .note.warn { margin-top: .6rem; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.row.new .n b { color: var(--text); }
+.row.note-warn .n b { color: var(--acc); }
+.tool.alert { border-color: var(--acc); }
+.tool.alert b { color: var(--acc); }
+.bell { gap: .35rem; }
+.bell svg { width: 1rem; height: 1rem; }
+.bell.warn { color: var(--acc); border-color: var(--acc); }
+.sl .row.sel:not(.f) { color: var(--text); background: rgba(255, 255, 255, .045); }
+.sl .row.sel:not(.f)::before { content: ""; position: absolute; left: .5rem; top: .7rem; bottom: .7rem; width: 3px; border-radius: 2px; background: var(--faint); }
+.tbody .split { grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem); }
+.tbody .split > * { min-width: 0; }
+.tbody .acts { flex-wrap: wrap; }
