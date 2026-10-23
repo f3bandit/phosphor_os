@@ -18,6 +18,16 @@ None of these are limits of Phosphor: it's how MiSTer itself works, and Phosphor
   A core can have its own (Define joystick buttons in that core's menu), which wins for that core.
 - Checked in MiSTer's source (input.cpp, cfg.cpp), not yet tried with two controllers on an SS1.
 
+## FAQ: MiSTer's menu
+
+- **Can I still use MiSTer's own menu?** Yes: Settings > MiSTer menu (OSD). Everything in it works as
+  on stock MiSTer, scripts like Update All included. Launch Phosphor, in its System page, comes back.
+- **A script from MiSTer's menu took minutes to start, or never did (fixed in 0.27.6).** Phosphor's
+  screen puts the Linux console in graphics mode so nothing else draws over it. Linux then refuses to
+  switch to MiSTer's script terminal, and Main waited for the switch forever. Phosphor now hands the
+  console back whenever MiSTer's menu, a game or a script has the screen (and when it stops), and
+  Phosphor's Main puts the console in text mode itself before it switches.
+
 ## Docs: power
 
 - The SS1 needs a solid supply. Use a single-port USB-C PD adapter, 9 V / 3 A or more. Multi-port
@@ -43,3 +53,6 @@ None of these are limits of Phosphor: it's how MiSTer itself works, and Phosphor
 - **Update All and the static between it and Phosphor:** the update replaces menu.rbf; Main loads
   Phosphor's menu core (with its loading screen) wherever it would load menu.rbf.
 - **Main reads MiSTer.ini only when it starts**: changes need a restart.
+- **A Linux console in graphics mode (KD_GRAPHICS) ignores console switches**, and MiSTer's Main waits
+  for the switch with VT_WAITACTIVE, forever. Anything that draws on the framebuffer must put the
+  console back to text mode before another program needs it.
