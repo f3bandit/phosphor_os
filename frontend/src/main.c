@@ -139,7 +139,7 @@ static int menu_active(void)
 /* The Linux console (the login prompt on tty1, kernel messages) draws on the same framebuffer:
  * switch the shown console to graphics mode so only the shell draws there. Again after Main gives
  * the screen back to us, since it switches consoles itself. */
-static void console_quiet(void)
+void console_quiet(void)
 {
 	const char *ttys[] = { "/dev/tty0", "/dev/tty1", NULL };
 	for (int i = 0; ttys[i]; i++) {
@@ -150,6 +150,20 @@ static void console_quiet(void)
 	}
 	int f = open("/sys/class/graphics/fbcon/cursor_blink", O_WRONLY | O_CLOEXEC);
 	if (f >= 0) { if (write(f, "0", 1) < 0) {} close(f); }
+}
+
+/* Before a script runs in MiSTer's terminal: the console back to text mode, or the kernel ignores
+ * Main's switch to tty2 (no switches away from a KD_GRAPHICS console) and Main waits for it forever.
+ * console_quiet() puts it back when the shell has the screen again. */
+void console_text(void)
+{
+	const char *ttys[] = { "/dev/tty0", "/dev/tty1", NULL };
+	for (int i = 0; ttys[i]; i++) {
+		int fd = open(ttys[i], O_RDWR | O_CLOEXEC);
+		if (fd < 0) continue;
+		if (ioctl(fd, KDSETMODE, KD_TEXT) < 0) plog("console: %s stays in graphics mode", ttys[i]);
+		close(fd);
+	}
 }
 
 /* the framebuffer to black, so nothing that was on it (the Linux console's text) shows before the first
