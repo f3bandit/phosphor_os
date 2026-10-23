@@ -48,7 +48,7 @@ list() {
 rollbacks() {
 	local d
 	for d in $(ls -1dt "$ROOT"/backup/versions/*/ 2>/dev/null); do
-		[ -f "$d/VERSION" ] && echo "$(basename "$d")|$(date -r "$d/VERSION" '+%Y-%m-%d %H:%M' 2>/dev/null)"
+		[ -f "$d/VERSION" ] && echo "$(basename "$d")|$(cat "$d/.saved" 2>/dev/null || date -r "$d" '+%Y-%m-%d %H:%M' 2>/dev/null)"
 	done
 }
 
@@ -69,6 +69,7 @@ backup_installed() {
 	[ -d "$ROOT/modules" ] && cp -a "$ROOT/modules" "$d.new/"
 	[ -d "$ROOT/cores" ] && cp -a "$ROOT/cores" "$d.new/"
 	for f in phosphor.sh uninstall.sh update.sh VERSION; do [ -f "$ROOT/$f" ] && cp -a "$ROOT/$f" "$d.new/"; done
+	date '+%Y-%m-%d %H:%M' > "$d.new/.saved"                 # (the SD card's file times can't be trusted)
 	rm -rf "$d" && mv "$d.new" "$d" || return 1
 	# the newest $KEEP versions
 	ls -1dt "$ROOT"/backup/versions/*/ 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do rm -rf "$old"; done
