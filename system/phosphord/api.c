@@ -17,6 +17,7 @@
  *   scan_progress                           {stage listing|identifying|waiting|idle, listed, done, total, system, file,
  *                                            systems:[{name, files, identified}], games}: for the scan screen
  *   gen                                     {generation, indexing, identifying}: cheap "has the library changed?"
+ *   guard [do restore|keep|rollback|delete, items]  updates & restore points (update-guard)
  *   import                                  one-time import of gamelist.xml / media art
  *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
  *   unlink     id                           not based on another game any more
@@ -90,6 +91,7 @@
 #include "importer.h"
 #include "log.h"
 #include "indexer.h"
+#include "guard.h"
 #include "play.h"
 #include "scraper.h"
 #include "systems.h"
@@ -769,6 +771,70 @@ static int arg_ok(const char *v)
 	return !v || (*v && *v != '-' && !strpbrk(v, "\n\r\"\\") && strlen(v) < 256);
 }
 
+/* updates & restore points (update-guard): what a Linux update reset, the restore points, and one
+ * job at a time (restore some settings, keep stock, roll back, delete points) */
+static char *cmd_guard(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) {
+		const char *args[16];
+		int n = 0;
+		cJSON *list = cJSON_GetObjectItem(req, "items"), *it;
+		cJSON_ArrayForEach(it, list) {
+			const char *v = cJSON_GetStringValue(it);
+			if (!v || !arg_ok(v) || n >= 16) return fail("that item isn't allowed");
+			/* settings files are /etc/... or /root/...; points are plain names */
+			if (!strcmp(d, "restore") ? (strncmp(v, "/etc/", 5) && strncmp(v, "/root/", 6)) || strstr(v, "..")
+			                          : strchr(v, '/') != NULL) return fail("that item isn't allowed");
+			args[n++] = v;
+		}
+		int r = guard_start(d, args, n);
+		if (r == -2) return fail("do: restore (items: files), keep, rollback (items: one point) or delete (items: points)");
+		if (r == 1) return fail("Busy with the last one; try again in a moment");
+		if (r < 0) return fail("The update-guard module isn't installed");
+	}
+	guard_state_t gs;
+	guard_state(&gs);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", gs.installed);
+	cJSON *files = cJSON_AddArrayToObject(o, "files"), *points = cJSON_AddArrayToObject(o, "points");
+	char *save = NULL;
+	for (char *line = gs.ui ? strtok_r(gs.ui, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		char *v = eq + 1;
+		if (!strcmp(line, "file")) {
+			char *bar = strchr(v, '|');
+			if (!bar) continue;
+			*bar = 0;
+			cJSON *f = cJSON_CreateObject();
+			cJSON_AddStringToObject(f, "path", v);
+			cJSON_AddBoolToObject(f, "reset", bar[1] == '1');
+			cJSON_AddItemToArray(files, f);
+		} else if (!strcmp(line, "point")) {
+			char *fld[5] = { v, "", "", "", "" };
+			for (int k = 1; k < 5; k++) { char *b = strchr(fld[k - 1], '|'); if (!b) break; *b = 0; fld[k] = b + 1; }
+			cJSON *pt = cJSON_CreateObject();
+			cJSON_AddStringToObject(pt, "name", fld[0]);
+			cJSON_AddStringToObject(pt, "label", fld[1]);
+			cJSON_AddStringToObject(pt, "created", fld[2]);
+			cJSON_AddStringToObject(pt, "linux", fld[3]);
+			cJSON_AddBoolToObject(pt, "complete", !strcmp(fld[4], "yes"));
+			cJSON_AddItemToArray(points, pt);
+		} else if (!strcmp(line, "awaiting")) cJSON_AddBoolToObject(o, "awaiting", *v == '1');
+		else cJSON_AddStringToObject(o, line, v);       /* linux, updated_from, updated_at */
+	}
+	cJSON *j = cJSON_AddObjectToObject(o, "job");
+	cJSON_AddStringToObject(j, "name", gs.job);
+	cJSON_AddBoolToObject(j, "busy", gs.busy);
+	cJSON_AddBoolToObject(j, "ok", gs.ok);
+	cJSON_AddStringToObject(j, "output", gs.output ? gs.output : "");
+	free(gs.ui);
+	free(gs.output);
+	return reply(o);
+}
+
 /* cloud saves (cloud-sync module): status, storage places, and one background job at a time */
 static char *cmd_cloud(cJSON *req)
 {
@@ -1112,6 +1178,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
 	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
+	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
 	else if (!strcmp(c->valuestring, "pads")) out = cmd_pads();

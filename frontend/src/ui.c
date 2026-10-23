@@ -32,7 +32,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -40,7 +40,7 @@ static screen_t cur = SCR_HOME;
 
 /* ---------- status bar ---------- */
 
-static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock;
+static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text;
 
 static void status_bar(void)
 {
@@ -59,6 +59,19 @@ static void status_bar(void)
 	lv_obj_set_style_pad_column(right, S(22), 0);
 	lv_obj_align(right, LV_ALIGN_RIGHT_MID, -S(56), 0);
 
+	/* the notification area: shown only when there's something to look at (Settings > Updates) */
+	sb_alert = mk_box(right, LV_SIZE_CONTENT, S(30), PAL.panel_on, S(15));
+	lv_obj_set_style_border_color(sb_alert, PAL.acc, 0);
+	lv_obj_set_style_border_width(sb_alert, S(1) > 1 ? S(1) : 1, 0);
+	lv_obj_set_style_pad_hor(sb_alert, S(12), 0);
+	lv_obj_set_flex_flow(sb_alert, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(sb_alert, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_column(sb_alert, S(8), 0);
+	lv_obj_t *dot = mk_box(sb_alert, S(10), S(10), PAL.acc, S(5));
+	(void)dot;
+	sb_alert_text = mk_label(sb_alert, FONT_SMALL, PAL.text, "");
+	lv_obj_set_hidden(sb_alert, true);
+
 	int is = S(22);
 	sb_share = icon_create(right, ICON_SHARE, is);
 	sb_eth = icon_create(right, ICON_ETHERNET, is);
@@ -72,6 +85,35 @@ static void status_bar(void)
 	lv_obj_set_style_pad_column(btg, S(2), 0);
 	sb_clock = mk_label(right, FONT_BODY, PAL.text, "");
 	lv_obj_set_style_margin_left(sb_clock, S(6), 0);
+}
+
+/* update-guard's alert: how many settings the last Linux update reset (0: nothing to show) */
+static int guard_resets = -1;
+static void guard_alert_set(int n)
+{
+	guard_resets = n;
+	if (!sb_alert) return;
+	if (n > 0) {
+		char t[64];
+		snprintf(t, sizeof(t), "%d setting%s reset by an update", n, n == 1 ? "" : "s");
+		lv_label_set_text(sb_alert_text, t);
+	}
+	lv_obj_set_hidden(sb_alert, n <= 0);
+}
+static int guard_count(cJSON *g)
+{
+	if (!g || !cJSON_IsTrue(cJSON_GetObjectItem(g, "awaiting"))) return 0;
+	int n = 0;
+	cJSON *f;
+	cJSON_ArrayForEach(f, cJSON_GetObjectItem(g, "files")) if (cJSON_IsTrue(cJSON_GetObjectItem(f, "reset"))) n++;
+	return n;
+}
+/* asked at start-up, after a script, and from the Updates screen: never on a timer */
+static void guard_check(void)
+{
+	cJSON *g = api_call("{\"cmd\":\"guard\"}");
+	if (g && api_ok(g)) guard_alert_set(guard_count(g));
+	cJSON_Delete(g);
 }
 
 static void status_update(void)
@@ -973,7 +1015,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
@@ -1073,6 +1115,11 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		if (!cr.all_available) { *dim = 1; snprintf(val, vn, "Not on the SD card"); }
 		else snprintf(val, vn, ">");
 		break;
+	case SET_GUARD:
+		snprintf(t, n, "Updates & restore points");
+		if (guard_resets > 0) snprintf(val, vn, "%d setting%s reset by an update  >", guard_resets, guard_resets == 1 ? "" : "s");
+		else snprintf(val, vn, ">");
+		break;
 	case SET_SCRIPTS: snprintf(t, n, "Scripts"); snprintf(val, vn, ">"); break;
 	case SET_UPDLOG: snprintf(t, n, "Last update's log"); snprintf(val, vn, ">"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
@@ -1103,8 +1150,315 @@ static void run_script(const char *path)
 void ui_script_done(int status)
 {
 	cores_refresh();
+	guard_check();                 /* a restore point was saved; and the alert may have changed */
 	if (cur == SCR_SETTINGS) vlist_refresh(&set_list);
 	toast_show(status ? "The script ended with an error (Settings > Last update's log)" : "Done");
+}
+
+/* ---------- Updates & restore points (update-guard) ----------
+ * Left: what the last Linux update reset, each setting explained, ticked if it was reset; Restore
+ * ticked / Ignore / Roll back Linux. Right: the restore points (saved when an update is started),
+ * tick one to roll back, or several to delete. Left/Right switch sides, A ticks or presses. Asked
+ * for when the screen opens and while a job runs, never otherwise. */
+#define GD_MAXF 8
+#define GD_MAXP 12
+static struct {
+	cJSON *st;
+	int nf, np, side, sel[2], tick_f[GD_MAXF], tick_p[GD_MAXP], busy_seen, confirm_btn;
+	uint32_t confirm_at;
+	char job_last[24];
+	lv_obj_t *left, *right, *note;
+} gd;
+static const char *const GD_HINTS[] = { "A", "Tick / press", "\xE2\x86\x90\xE2\x86\x92", "Other side", "B", "Back", NULL };
+
+static const struct { const char *path, *name, *what, *who; } GD_FILES[] = {
+	{ "/etc/dhcpcd.conf", "Network address", "A fixed address for the SS1 on your network instead of an automatic one.",
+	  "Only if you set one, e.g. so SS1 Tool or the phone app always finds it." },
+	{ "/root/.ssh/authorized_keys", "SSH keys", "Lets your PC log in to the SS1 without typing a password.",
+	  "Only if you added keys yourself (advanced; SS1 Tool works without them)." },
+	{ "/etc/hostname", "Name on the network", "What the SS1 is called on your network (\"MiSTer\" by default).",
+	  "Only if you renamed it, e.g. to tell two MiSTers apart." },
+	{ "/etc/ssh/sshd_config", "SSH settings", "How remote login works: its port, whether passwords are allowed.",
+	  "Rarely changed. Leave it alone unless you know you edited it." },
+	{ "/etc/hosts", "Known names", "Names the SS1 uses for other machines on your network.",
+	  "Only if you added entries yourself." },
+};
+
+static cJSON *gd_file(int i) { return cJSON_GetArrayItem(cJSON_GetObjectItem(gd.st, "files"), i); }
+static cJSON *gd_point(int i) { return cJSON_GetArrayItem(cJSON_GetObjectItem(gd.st, "points"), i); }
+
+static const char *gd_label(const char *l)
+{
+	if (!l) return "";
+	if (!strcmp(l, "before-update-all")) return "Before Update All";
+	if (!strcmp(l, "before-get-cores")) return "Before Get cores";
+	if (!strcmp(l, "pre-rollback")) return "Before a roll back";
+	if (!strcmp(l, "system")) return "Saved at start-up";
+	if (!strcmp(l, "manual")) return "Saved by hand";
+	return l;
+}
+
+/* "2026-10-23 02:02:43" -> "Oct 23, 2:02 AM" */
+static void gd_when(const char *c, char *o, size_t n)
+{
+	static const char *const M[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+	int y, mo, d, h, mi;
+	if (!c || sscanf(c, "%d-%d-%d %d:%d", &y, &mo, &d, &h, &mi) != 5 || mo < 1 || mo > 12) { snprintf(o, n, "%s", c ? c : ""); return; }
+	if (SETTINGS.clock24) snprintf(o, n, "%s %d, %02d:%02d", M[mo - 1], d, h, mi);
+	else snprintf(o, n, "%s %d, %d:%02d %s", M[mo - 1], d, h % 12 ? h % 12 : 12, mi, h < 12 ? "AM" : "PM");
+}
+
+/* left side: the files, then 3 buttons; right: the points, then 2 buttons */
+static int gd_count(int side) { return side == 0 ? gd.nf + 3 : gd.np + 2; }
+
+static void gd_check(lv_obj_t *par, int x, int y, int on, int focus)
+{
+	lv_obj_t *b = mk_box(par, S(20), S(20), on ? PAL.acc : PAL.bg, S(4));
+	lv_obj_set_style_border_color(b, on || focus ? PAL.acc : PAL.dim, 0);
+	lv_obj_set_style_border_width(b, S(2) > 1 ? S(2) : 1, 0);
+	lv_obj_set_pos(b, x, y);
+	if (on) { lv_obj_t *m = mk_label(b, FONT_SMALL, PAL.bg, "\xE2\x9C\x93"); lv_obj_center(m); }
+}
+
+static void gd_button(lv_obj_t *par, int x, int y, int w, const char *t, int primary, int focus)
+{
+	lv_obj_t *b = mk_box(par, w, S(36), primary ? PAL.acc : PAL.bg, S(7));
+	lv_obj_set_style_border_color(b, focus ? PAL.text : primary ? PAL.acc : PAL.line, 0);
+	lv_obj_set_style_border_width(b, focus ? (S(2) > 1 ? S(2) : 1) : 1, 0);
+	lv_obj_set_pos(b, x, y);
+	lv_obj_t *l = mk_label(b, FONT_NAME, primary ? PAL.bg : PAL.text, t);
+	lv_obj_center(l);
+}
+
+static void gd_draw(void)
+{
+	lv_obj_clean(gd.left);
+	lv_obj_clean(gd.right);
+	cJSON *st = gd.st;
+	int awaiting = cJSON_IsTrue(cJSON_GetObjectItem(st, "awaiting"));
+	char t[200];
+	/* left */
+	lv_obj_t *h = mk_label(gd.left, FONT_LABEL, awaiting ? PAL.acc : PAL.dim, "");
+	if (awaiting) {
+		char when[40];
+		gd_when(api_str(st, "updated_at"), when, sizeof(when));
+		snprintf(t, sizeof(t), "THE LAST LINUX UPDATE  \xC2\xB7  %s \xE2\x86\x92 %s  \xC2\xB7  %s", api_str(st, "updated_from") ? api_str(st, "updated_from") : "?",
+		         api_str(st, "linux") ? api_str(st, "linux") : "?", when);
+	} else snprintf(t, sizeof(t), "YOUR SETTINGS  \xC2\xB7  LINUX %s", api_str(st, "linux") ? api_str(st, "linux") : "?");
+	lv_label_set_text(h, t);
+	lv_obj_t *intro = mk_label(gd.left, FONT_SMALL, PAL.dim, awaiting
+		? "A Linux update replaces MiSTer's system files, so settings stored there go back to stock. Most people never change these: restore only what you set up yourself. Phosphor kept your copies."
+		: "Nothing was reset. Phosphor keeps copies of these settings, in case a Linux update puts them back to stock. Most people never change them.");
+	lv_obj_set_width(intro, S(560));
+	lv_label_set_long_mode(intro, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(intro, 0, S(22));
+	lv_obj_update_layout(intro);
+	int y = S(22) + lv_obj_get_height(intro) + S(16);
+	for (int i = 0; i < gd.nf; i++) {
+		cJSON *f = gd_file(i);
+		const char *path = api_str(f, "path");
+		int reset = cJSON_IsTrue(cJSON_GetObjectItem(f, "reset")), k = -1;
+		for (size_t j = 0; j < sizeof(GD_FILES) / sizeof(GD_FILES[0]); j++) if (path && !strcmp(path, GD_FILES[j].path)) k = (int)j;
+		int focus = gd.side == 0 && gd.sel[0] == i;
+		if (focus) {
+			lv_obj_t *hl = mk_box(gd.left, S(560), S(72), PAL.panel_on, S(7));
+			lv_obj_set_pos(hl, -S(8), y - S(6));
+		}
+		gd_check(gd.left, 0, y, gd.tick_f[i], focus);
+		lv_obj_t *nm = mk_label(gd.left, FONT_NAME, reset ? PAL.text : PAL.dim, k >= 0 ? GD_FILES[k].name : path);
+		lv_obj_set_pos(nm, S(32), y - S(2));
+		lv_obj_t *pl = mk_label(gd.left, FONT_LABEL, PAL.faint, path ? (strrchr(path, '/') + 1) : "");
+		lv_obj_align_to(pl, nm, LV_ALIGN_OUT_RIGHT_MID, S(10), 0);
+		lv_obj_t *stl = mk_label(gd.left, FONT_SMALL, reset ? PAL.acc : PAL.faint, reset ? "Reset by the update" : "Unchanged");
+		lv_obj_set_pos(stl, S(400), y);
+		if (k >= 0) {
+			lv_obj_t *w = mk_label(gd.left, FONT_SMALL, focus ? PAL.text : PAL.dim, GD_FILES[k].what);
+			lv_obj_set_pos(w, S(32), y + S(22));
+			lv_obj_t *wh = mk_label(gd.left, FONT_SMALL, focus ? PAL.dim : PAL.faint, GD_FILES[k].who);
+			lv_obj_set_pos(wh, S(32), y + S(40));
+		}
+		y += S(72);
+	}
+	int by = y + S(6), b = gd.side == 0 ? gd.sel[0] - gd.nf : -1;
+	gd_button(gd.left, 0, by, S(180), "Restore ticked", 1, b == 0);
+	gd_button(gd.left, S(192), by, S(100), "Ignore", 0, b == 1);
+	gd_button(gd.left, S(304), by, S(190), "Roll back Linux\xE2\x80\xA6", 0, b == 2);
+	lv_obj_t *ig = mk_label(gd.left, FONT_SMALL, PAL.dim, "Ignore keeps the stock files and clears the alert; you can still roll back later.\nNetwork and SSH changes apply after a restart.");
+	lv_obj_set_pos(ig, 0, by + S(46));
+	/* right */
+	lv_obj_t *rh = mk_label(gd.right, FONT_LABEL, PAL.dim, "RESTORE POINTS");
+	(void)rh;
+	lv_obj_t *ri = mk_label(gd.right, FONT_SMALL, PAL.dim, gd.np
+		? "Saved each time you start Get cores or Update All. Use one if an\nupdate broke something: a core won't start, the menu misbehaves."
+		: "None yet: one is saved each time you start Get cores or Update All.");
+	lv_obj_set_pos(ri, 0, S(22));
+	y = S(74);
+	int show = gd.np < 5 ? gd.np : 5, from = 0;
+	if (gd.side == 1 && gd.sel[1] < gd.np && gd.sel[1] >= show) from = gd.sel[1] - show + 1;
+	for (int i = from; i < from + show; i++) {
+		cJSON *p = gd_point(i);
+		int focus = gd.side == 1 && gd.sel[1] == i;
+		lv_obj_t *row = mk_box(gd.right, S(540), S(50), focus ? PAL.panel_on : PAL.panel, S(7));
+		lv_obj_set_pos(row, -S(8), y - S(6));
+		gd_check(gd.right, 0, y + S(6), gd.tick_p[i], focus);
+		char when[40];
+		gd_when(api_str(p, "created"), when, sizeof(when));
+		snprintf(t, sizeof(t), "%s  \xC2\xB7  %s", when, gd_label(api_str(p, "label")));
+		lv_obj_t *l1 = mk_label(gd.right, FONT_NAME, PAL.text, t);
+		lv_obj_set_pos(l1, S(32), y - S(3));
+		snprintf(t, sizeof(t), "Linux %s", api_str(p, "linux") ? api_str(p, "linux") : "?");
+		lv_obj_t *l2 = mk_label(gd.right, FONT_SMALL, PAL.dim, t);
+		lv_obj_set_pos(l2, S(32), y + S(21));
+		y += S(56);
+	}
+	by = y + S(6);
+	b = gd.side == 1 ? gd.sel[1] - gd.np : -1;
+	gd_button(gd.right, 0, by, S(190), "Roll back to ticked", 1, b == 0);
+	gd_button(gd.right, S(202), by, S(140), "Delete ticked", 0, b == 1);
+	lv_obj_t *rn = mk_label(gd.right, FONT_SMALL, PAL.dim, "Rolling back puts back MiSTer's Main, menu core and kernel from the\npoint and downloads that Linux version from MiSTer-devel (checked first).\nYour current set is saved as a point first, so it can be undone.");
+	lv_obj_set_pos(rn, 0, by + S(46));
+	/* the last job */
+	cJSON *j = cJSON_GetObjectItem(st, "job");
+	if (cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"))) lv_label_set_text(gd.note, "Working\xE2\x80\xA6 (a roll back may be downloading Linux: a few minutes)");
+	else lv_label_set_text(gd.note, "");
+}
+
+static void gd_load(cJSON *st)
+{
+	cJSON_Delete(gd.st);
+	gd.st = st;
+	gd.nf = cJSON_GetArraySize(cJSON_GetObjectItem(st, "files"));
+	gd.np = cJSON_GetArraySize(cJSON_GetObjectItem(st, "points"));
+	if (gd.nf > GD_MAXF) gd.nf = GD_MAXF;
+	if (gd.np > GD_MAXP) gd.np = GD_MAXP;
+	for (int i = 0; i < gd.nf; i++) gd.tick_f[i] = cJSON_IsTrue(cJSON_GetObjectItem(gd_file(i), "reset"));
+	for (int i = 0; i < gd.np; i++) gd.tick_p[i] = 0;
+	for (int s2 = 0; s2 < 2; s2++) if (gd.sel[s2] >= gd_count(s2)) gd.sel[s2] = gd_count(s2) - 1;
+	guard_alert_set(guard_count(st));
+}
+
+static void show_guard(void)
+{
+	cur = SCR_GUARD;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Updates & restore points");
+	gd.left = mk_box(body, S(580), S(500), PAL.bg, 0);
+	lv_obj_set_pos(gd.left, S(56), S(170));
+	gd.right = mk_box(body, S(560), S(500), PAL.bg, 0);
+	lv_obj_set_pos(gd.right, S(668), S(170));
+	lv_obj_t *div = mk_box(body, S(1) > 0 ? S(1) : 1, S(460), PAL.line, 0);
+	lv_obj_set_pos(div, S(646), S(172));
+	gd.note = mk_label(body, FONT_SMALL, PAL.acc, "");
+	lv_obj_set_pos(gd.note, S(668), S(140));
+	gd.side = 0;
+	gd.sel[0] = gd.sel[1] = 0;
+	gd.st = NULL;
+	gd_load(api_call("{\"cmd\":\"guard\"}"));
+	if (!gd.st || !api_ok(gd.st) || !cJSON_IsTrue(cJSON_GetObjectItem(gd.st, "installed"))) {
+		lv_obj_clean(gd.left);
+		mk_label(gd.left, FONT_BODY, PAL.dim, "The update-guard module isn't installed.");
+	} else gd_draw();
+	footer_set(GD_HINTS);
+}
+
+static void gd_do(const char *what, int side)
+{
+	char body2[2048];
+	int k = snprintf(body2, sizeof(body2), "{\"cmd\":\"guard\",\"do\":\"%s\",\"items\":[", what);
+	int n = 0;
+	if (side == 0) {
+		for (int i = 0; i < gd.nf; i++) if (gd.tick_f[i]) { const char *p = api_str(gd_file(i), "path"); if (p) k += snprintf(body2 + k, sizeof(body2) - k, "%s\"%s\"", n++ ? "," : "", p); }
+	} else if (side == 1) {
+		for (int i = 0; i < gd.np; i++) if (gd.tick_p[i]) { const char *p = api_str(gd_point(i), "name"); if (p) k += snprintf(body2 + k, sizeof(body2) - k, "%s\"%s\"", n++ ? "," : "", p); }
+	}
+	snprintf(body2 + k, sizeof(body2) - k, "]}");
+	cJSON *r = api_call("%s", body2);
+	if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering"); cJSON_Delete(r); return; }
+	snprintf(gd.job_last, sizeof(gd.job_last), "%s", what);
+	gd.busy_seen = 1;
+	gd_load(r);
+	gd_draw();
+}
+
+/* while a job runs (only then): its result once it's done */
+static void gd_tick(void)
+{
+	if (!gd.busy_seen) return;
+	cJSON *r = api_call("{\"cmd\":\"guard\"}");
+	if (!api_ok(r)) { cJSON_Delete(r); return; }
+	cJSON *j = cJSON_GetObjectItem(r, "job");
+	if (cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"))) { cJSON_Delete(r); return; }
+	gd.busy_seen = 0;
+	int okj = cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"));
+	const char *out = api_str(j, "output");
+	char first[160] = "";
+	if (out) {
+		/* the line that says what happened: the last non-empty one that isn't a hint */
+		const char *p = out, *best = NULL;
+		while (*p) {
+			const char *e = strchr(p, '\n');
+			size_t len = e ? (size_t)(e - p) : strlen(p);
+			if (len && strncmp(p, "Undo with", 9) && strncmp(p, "Note:", 5) && strncmp(p, "To undo", 7)) best = p;
+			if (!e) break;
+			p = e + 1;
+		}
+		if (best) { size_t len = strcspn(best, "\n"); snprintf(first, sizeof(first), "%.*s", (int)(len < 150 ? len : 150), best); }
+	}
+	if (!strcmp(gd.job_last, "rollback") && okj) toast_show("Rolled back. Restart to start it (Settings > Restart)");
+	else toast_show(first[0] ? first : okj ? "Done" : "That didn't work");
+	if (cur == SCR_GUARD) { gd_load(r); gd_draw(); } else { guard_alert_set(guard_count(r)); cJSON_Delete(r); }
+}
+
+static int gd_confirm(int btn, const char *msg)
+{
+	uint32_t now = lv_tick_get();
+	if (gd.confirm_btn == btn && now - gd.confirm_at < 4000) { gd.confirm_btn = 0; return 1; }
+	gd.confirm_btn = btn;
+	gd.confirm_at = now ? now : 1;
+	toast_show(msg);
+	return 0;
+}
+
+static void guard_key(pkey_t k)
+{
+	if (!gd.st || !api_ok(gd.st)) { if (k == K_B || k == K_MENU) back_to_settings(SET_GUARD); return; }
+	int *sel = &gd.sel[gd.side], n = gd_count(gd.side);
+	switch (k) {
+	case K_UP: if (*sel > 0) (*sel)--; break;
+	case K_DOWN: if (*sel < n - 1) (*sel)++; break;
+	case K_LEFT: case K_RIGHT: gd.side = !gd.side; if (gd.sel[gd.side] >= gd_count(gd.side)) gd.sel[gd.side] = 0; break;
+	case K_B: case K_MENU: back_to_settings(SET_GUARD); return;
+	case K_A:
+		if (cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(gd.st, "job"), "busy")) || gd.busy_seen) { toast_show("Busy: wait for it to finish"); return; }
+		if (gd.side == 0) {
+			if (*sel < gd.nf) { gd.tick_f[*sel] = !gd.tick_f[*sel]; break; }
+			int b = *sel - gd.nf, any = 0;
+			for (int i = 0; i < gd.nf; i++) any |= gd.tick_f[i];
+			if (b == 0) { if (!any) { toast_show("Tick the settings to bring back first"); return; } gd_do("restore", 0); return; }
+			if (b == 1) { gd_do("keep", -1); return; }
+			gd.side = 1; gd.sel[1] = 0; break;           /* Roll back Linux…: the restore points */
+		} else {
+			if (*sel < gd.np) {
+				gd.tick_p[*sel] = !gd.tick_p[*sel];
+				break;
+			}
+			int b = *sel - gd.np, cnt = 0;
+			for (int i = 0; i < gd.np; i++) cnt += gd.tick_p[i];
+			if (b == 0) {
+				if (cnt != 1) { toast_show(cnt ? "Tick just one point to roll back to" : "Tick the point to roll back to first"); return; }
+				if (!gd_confirm(1, "Press A again to roll back (a restart is needed after)")) return;
+				gd_do("rollback", 1);
+				return;
+			}
+			if (!cnt) { toast_show("Tick the points to delete first"); return; }
+			if (!gd_confirm(2, "Press A again to delete them")) return;
+			gd_do("delete", 1);
+			return;
+		}
+		break;
+	default: return;
+	}
+	gd_draw();
 }
 
 /* ---------- Scripts (everything in /media/fat/Scripts) ---------- */
@@ -3915,6 +4269,9 @@ void ui_key(pkey_t k)
 	case SCR_SCAN:
 		scan_key(k);
 		break;
+	case SCR_GUARD:
+		guard_key(k);
+		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
@@ -3944,6 +4301,7 @@ void ui_key(pkey_t k)
 				if (!cores_start_job(net, set_list.sel == SET_UPDATE_ALL)) vlist_refresh(&set_list);
 			}
 			else if (set_list.sel == SET_SCRIPTS) show_scripts();
+			else if (set_list.sel == SET_GUARD) show_guard();
 			else if (set_list.sel == SET_UPDLOG) show_log();
 			else if (set_list.sel == SET_MISTER && k == K_A) {
 				if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
@@ -3970,6 +4328,7 @@ void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
+	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); } }   /* the alert, once after start-up */
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);
@@ -3984,6 +4343,7 @@ void ui_tick(void)
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); }
+		gd_tick();                                    /* (only while one of its jobs runs) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
