@@ -12,7 +12,10 @@
  *   last                                    the last game played (same shape as game), or null
  *   launch     id                           start it
  *   favorite   id on                        mark or unmark
- *   rescan                                  look for games (list them, then identify them); only ever on request
+ *   rescan [stop:true]                      look for games (list them, then identify them); only ever on request.
+ *                                           stop: stop it (what's done stays)
+ *   scan_progress                           {stage listing|identifying|waiting|idle, listed, done, total, system, file,
+ *                                            systems:[{name, files, identified}], games}: for the scan screen
  *   gen                                     {generation, indexing, identifying}: cheap "has the library changed?"
  *   import                                  one-time import of gamelist.xml / media art
  *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
@@ -1112,6 +1115,39 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
 	else if (!strcmp(c->valuestring, "pads")) out = cmd_pads();
+	else if (!strcmp(c->valuestring, "scan_progress")) {   /* for the Looking for games screen, while it runs */
+		indexer_progress_t pr;
+		indexer_progress(&pr);
+		cJSON *o = ok();
+		cJSON_AddStringToObject(o, "stage", pr.stage == 1 ? "listing" : pr.stage == 2 ? "identifying" : pr.pending ? "waiting" : "idle");
+		cJSON_AddNumberToObject(o, "listed", pr.listed);
+		cJSON_AddNumberToObject(o, "done", pr.done);
+		cJSON_AddNumberToObject(o, "total", pr.total);
+		cJSON_AddStringToObject(o, "system", pr.system);
+		cJSON_AddStringToObject(o, "file", pr.file);
+		cJSON_AddNumberToObject(o, "generation", indexer_generation());
+		cJSON *arr = cJSON_AddArrayToObject(o, "systems");
+		sqlite3_stmt *st;
+		if (sqlite3_prepare_v2(db, "SELECT g.system_id, COUNT(*), SUM(f.ident) FROM files f JOIN games g ON g.id=f.game_id "
+		                           "WHERE f.online=1 GROUP BY g.system_id", -1, &st, NULL) == SQLITE_OK) {
+			while (sqlite3_step(st) == SQLITE_ROW) {
+				const gsys_t *sy = system_by_id((const char *)sqlite3_column_text(st, 0));
+				cJSON *e = cJSON_CreateObject();
+				cJSON_AddStringToObject(e, "name", sy ? sy->name : (const char *)sqlite3_column_text(st, 0));
+				cJSON_AddNumberToObject(e, "files", sqlite3_column_int(st, 1));
+				cJSON_AddNumberToObject(e, "identified", sqlite3_column_int(st, 2));
+				cJSON_AddItemToArray(arr, e);
+			}
+			sqlite3_finalize(st);
+		}
+		int games = 0;
+		if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM games g WHERE " VISIBLE, -1, &st, NULL) == SQLITE_OK) {
+			if (sqlite3_step(st) == SQLITE_ROW) games = sqlite3_column_int(st, 0);
+			sqlite3_finalize(st);
+		}
+		cJSON_AddNumberToObject(o, "games", games);
+		out = reply(o);
+	}
 	else if (!strcmp(c->valuestring, "gen")) {          /* has the library changed? (cheap: no queries) */
 		cJSON *o = ok();
 		cJSON_AddNumberToObject(o, "generation", indexer_generation());
@@ -1230,7 +1266,8 @@ char *api_handle(sqlite3 *db, const char *request)
 		}
 		out = reply(ok());
 	} else if (!strcmp(c->valuestring, "rescan")) {
-		indexer_identify();          /* the user asked: list the games and work out what they are */
+		if (cJSON_IsTrue(cJSON_GetObjectItem(req, "stop"))) indexer_stop();
+		else indexer_identify();     /* the user asked: list the games and work out what they are */
 		out = reply(ok());
 	} else if (!strcmp(c->valuestring, "import")) {
 		import_result_t r = import_existing(db);

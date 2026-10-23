@@ -17,6 +17,8 @@ int ident_file(const gsys_t *sys, const char *path, ident_t *out);
 
 /* Identify files not done yet and give their games an identity (merging copies of the same game
  * found on several drives). Stops early when should_stop() says so. Returns games changed. */
+/* while ident_pending runs: identified so far, of how many, and the system and file it's on */
+void ident_progress(int *done, int *total, char *sys, size_t sn, char *file, size_t fn);
 int ident_pending(sqlite3 *db, int (*should_stop)(void));
 
 /* Title tidied for comparing: lower case, no (tags) or [tags], no hack/patch/translation words */

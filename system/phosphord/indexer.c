@@ -24,6 +24,8 @@
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 static int requested, ident_wanted, busy, identifying, generation;   /* nothing until asked */
+static volatile int stop_req, listed;               /* "stop" from the scan screen; files listed so far */
+static volatile const gsys_t *listing_sys;          /* the system being listed */
 
 void indexer_request(void)
 {
@@ -40,6 +42,25 @@ void indexer_identify(void)
 	ident_wanted = 1;
 	pthread_cond_signal(&cv);
 	pthread_mutex_unlock(&lk);
+}
+
+void indexer_stop(void)
+{
+	pthread_mutex_lock(&lk);
+	stop_req = 1;
+	ident_wanted = 0;
+	pthread_mutex_unlock(&lk);
+}
+
+void indexer_progress(indexer_progress_t *p)
+{
+	memset(p, 0, sizeof(*p));
+	p->stage = busy ? 1 : identifying ? 2 : 0;
+	p->listed = listed;
+	const gsys_t *sy = (const gsys_t *)listing_sys;
+	if (p->stage == 1 && sy) snprintf(p->system, sizeof(p->system), "%s", sy->name);
+	if (p->stage == 2) ident_progress(&p->done, &p->total, p->system, sizeof(p->system), p->file, sizeof(p->file));
+	p->pending = ident_wanted || requested;
 }
 
 int indexer_busy(void) { return busy; }
@@ -62,6 +83,7 @@ static void prep(sqlite3 *db, sqlite3_stmt **st, const char *sql)
 static void file_found(scan_t *s, const char *path, const char *name, const struct stat *stt)
 {
 	s->seen++;
+	listed = s->seen;
 	sqlite3_reset(s->find_file);
 	sqlite3_bind_text(s->find_file, 1, path, -1, SQLITE_STATIC);
 	if (sqlite3_step(s->find_file) == SQLITE_ROW) {
@@ -168,8 +190,10 @@ static void scan(sqlite3 *db)
 	int nr = p_roots(roots, 14);
 	snprintf(roots[nr++], 256, "%s/_Arcade", p_fat());
 
-	for (int i = 0; i < NSYS; i++) {
+	listed = 0;
+	for (int i = 0; i < NSYS && !stop_req; i++) {
 		s.sys = &SYS[i];
+		listing_sys = &SYS[i];
 		db_exec(db, "BEGIN");
 		for (int r = 0; r < nr; r++) {
 			int arcade = !strcmp(SYS[i].id, "Arcade");
@@ -232,7 +256,7 @@ static int menu_up(void)
 	return !core[0] || !strcmp(core, "MENU");
 }
 
-static int ident_should_stop(void) { return requested || !menu_up(); }
+static int ident_should_stop(void) { return requested || stop_req || !menu_up(); }
 
 /* Looks for games only when asked ("Look for games"), like Console Mode: never at start-up, when a
  * drive comes or goes, or on a timer. One request lists the files and then works out what they are.
@@ -252,6 +276,7 @@ static void *thread(void *arg)
 		}
 		int scan_now = requested;
 		requested = 0;
+		if (scan_now) stop_req = 0;
 		busy = scan_now;
 		pthread_mutex_unlock(&lk);
 		if (!db && !(db = db_open())) { busy = 0; ident_wanted = 0; continue; }

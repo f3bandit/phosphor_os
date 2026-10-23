@@ -20,6 +20,7 @@
 #include <libchdr/chd.h>
 #include <libchdr/cdrom.h>
 #include <ctype.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +30,20 @@
 
 #define MAX_HASH_SIZE (1024L * 1024 * 1024)
 
-static int (*stop_cb)(void);   /* set by ident_pending: a game was started, or a rescan asked for */
+static int (*stop_cb)(void);
+/* progress for the scan screen (read from the API thread while identifying runs) */
+static pthread_mutex_t prog_lk = PTHREAD_MUTEX_INITIALIZER;
+static int prog_done, prog_total;
+static char prog_sys[64], prog_file[160];
+void ident_progress(int *done, int *total, char *sys, size_t sn, char *file, size_t fn)
+{
+	pthread_mutex_lock(&prog_lk);
+	*done = prog_done;
+	*total = prog_total;
+	snprintf(sys, sn, "%s", prog_sys);
+	snprintf(file, fn, "%s", prog_file);
+	pthread_mutex_unlock(&prog_lk);
+}   /* set by ident_pending: a game was started, or a rescan asked for */
 
 /* ---------- CRC32 ---------- */
 
@@ -549,6 +563,19 @@ int ident_pending(sqlite3 *db, int (*should_stop)(void))
 		return 0;
 	}
 	sqlite3_prepare_v2(db, "UPDATE files SET crc32=NULLIF(?,''), serial=NULLIF(?,''), ident=1 WHERE id=?", -1, &save, NULL);
+	{
+		sqlite3_stmt *c;
+		int tot = 0;
+		if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM files WHERE ident=0 AND online=1", -1, &c, NULL) == SQLITE_OK) {
+			if (sqlite3_step(c) == SQLITE_ROW) tot = sqlite3_column_int(c, 0);
+			sqlite3_finalize(c);
+		}
+		pthread_mutex_lock(&prog_lk);
+		prog_done = 0;
+		prog_total = tot;
+		prog_sys[0] = prog_file[0] = 0;
+		pthread_mutex_unlock(&prog_lk);
+	}
 	for (;;) {
 		if (should_stop && should_stop()) break;
 		sqlite3_reset(next);
@@ -562,6 +589,13 @@ int ident_pending(sqlite3 *db, int (*should_stop)(void))
 		last = fid;
 		const gsys_t *sys = system_by_id(sysid);
 		if (!sys) continue;
+		{
+			const char *b = strrchr(path, '/');
+			pthread_mutex_lock(&prog_lk);
+			snprintf(prog_sys, sizeof(prog_sys), "%s", sys->name);
+			snprintf(prog_file, sizeof(prog_file), "%s", b ? b + 1 : path);
+			pthread_mutex_unlock(&prog_lk);
+		}
 		ident_t id;
 		if (ident_file(sys, path, &id)) continue;   /* unreadable now: tried again next time */
 		db_exec(db, "BEGIN");
@@ -575,6 +609,9 @@ int ident_pending(sqlite3 *db, int (*should_stop)(void))
 		changed += assign(db, fid, gid, sysid, id.key, path);
 		if (db_exec(db, "COMMIT") != SQLITE_OK) { db_exec(db, "ROLLBACK"); last = fid - 1; break; }
 		done++;
+		pthread_mutex_lock(&prog_lk);
+		prog_done = done;
+		pthread_mutex_unlock(&prog_lk);
 	}
 	sqlite3_finalize(next);
 	sqlite3_finalize(save);
