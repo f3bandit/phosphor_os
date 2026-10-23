@@ -3,6 +3,22 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.7
+
+### Fixes
+- **A script from MiSTer's menu (Update All, say) took minutes to start, or never did.** Phosphor's
+  screen kept the Linux console in graphics mode, and Linux then refused the switch to MiSTer's script
+  terminal while Main waited for it. Phosphor hands the console back whenever MiSTer's menu, a game or
+  a script has the screen, and Phosphor's Main puts it in text mode itself before switching.
+- **Phosphor's loading screen showed behind MiSTer's own menu.** MiSTer's own background is back
+  there; the loading screen only shows while Phosphor has the screen (power-on, between cores).
+- Update Phosphor: the date of a version to roll back to, and the app gets its answer before
+  Phosphor restarts.
+
+### New
+- **Phosphor's wallpaper behind MiSTer's menu** (MiSTer's menu.png), only when there's no menu.png or
+  menu.jpg of your own. Uninstalling takes it away.
+
 ## 0.27.6
 
 ### New
