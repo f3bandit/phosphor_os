@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 16 px
  * Bpp: 4
- * Opts: --no-compress --no-prefilter --bpp 4 --size 16 --font /usr/share/fonts/opentype/inter/Inter-Regular.otf -r 0x20-0x7E,0xA0-0xFF,0x2013-0x2014,0x2018-0x201D,0x2022,0x2026,0x2190-0x2193 --format lvgl --lv-include lvgl.h -o fonts/phos_inter_16.c
+ * Opts: --no-compress --no-prefilter --bpp 4 --size 16 --font /usr/share/fonts/opentype/inter/Inter-Regular.otf -r 0x20-0x7E,0xA0-0xFF,0x2013-0x2014,0x2018-0x201D,0x2022,0x2026,0x203A,0x2190-0x2193,0x2713 --format lvgl --lv-include lvgl.h -o fonts/phos_inter_16.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE
@@ -1683,6 +1683,11 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0xe, 0xc0, 0x5, 0xf6, 0x7e, 0x20, 0xc, 0xa0,
     0x4, 0xe4,
 
+    /* U+203A "›" */
+    0x1e, 0xa0, 0x0, 0x3, 0xf7, 0x0, 0x0, 0x5f,
+    0x50, 0x0, 0x8, 0xf2, 0x0, 0x1d, 0xb0, 0x0,
+    0xbd, 0x10, 0x8, 0xe2, 0x0, 0x18, 0x30, 0x0,
+
     /* U+2190 "←" */
     0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0,
     0x4, 0xf5, 0x0, 0x0, 0x0, 0x0, 0x4, 0xf9,
@@ -1725,7 +1730,16 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0x0, 0xf5, 0x7, 0xf5, 0x2, 0xeb, 0xf, 0x55,
     0xf5, 0x0, 0x2, 0xe8, 0xd6, 0xf5, 0x0, 0x0,
     0x2, 0xef, 0xf6, 0x0, 0x0, 0x0, 0x2, 0xd6,
-    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+
+    /* U+2713 "✓" */
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x20, 0x0, 0x0,
+    0x0, 0x0, 0x2, 0xe7, 0x0, 0x0, 0x0, 0x0,
+    0x2e, 0xb0, 0x0, 0x0, 0x0, 0x2, 0xeb, 0x0,
+    0x1d, 0x50, 0x0, 0x3e, 0xb0, 0x0, 0x8, 0xf5,
+    0x3, 0xeb, 0x0, 0x0, 0x0, 0x8f, 0x8e, 0xb0,
+    0x0, 0x0, 0x0, 0x8, 0xfb, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0x60, 0x0, 0x0, 0x0
 };
 
 
@@ -1935,10 +1949,12 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 9464, .adv_w = 113, .box_w = 6, .box_h = 5, .ofs_x = 1, .ofs_y = 7},
     {.bitmap_index = 9479, .adv_w = 144, .box_w = 5, .box_h = 6, .ofs_x = 2, .ofs_y = 2},
     {.bitmap_index = 9494, .adv_w = 221, .box_w = 12, .box_h = 3, .ofs_x = 1, .ofs_y = 0},
-    {.bitmap_index = 9512, .adv_w = 244, .box_w = 13, .box_h = 11, .ofs_x = 1, .ofs_y = 0},
-    {.bitmap_index = 9584, .adv_w = 214, .box_w = 11, .box_h = 12, .ofs_x = 1, .ofs_y = 0},
-    {.bitmap_index = 9650, .adv_w = 244, .box_w = 12, .box_h = 11, .ofs_x = 2, .ofs_y = 0},
-    {.bitmap_index = 9716, .adv_w = 214, .box_w = 11, .box_h = 13, .ofs_x = 1, .ofs_y = -1}
+    {.bitmap_index = 9512, .adv_w = 98, .box_w = 6, .box_h = 8, .ofs_x = 0, .ofs_y = 1},
+    {.bitmap_index = 9536, .adv_w = 244, .box_w = 13, .box_h = 11, .ofs_x = 1, .ofs_y = 0},
+    {.bitmap_index = 9608, .adv_w = 214, .box_w = 11, .box_h = 12, .ofs_x = 1, .ofs_y = 0},
+    {.bitmap_index = 9674, .adv_w = 244, .box_w = 12, .box_h = 11, .ofs_x = 2, .ofs_y = 0},
+    {.bitmap_index = 9740, .adv_w = 214, .box_w = 11, .box_h = 13, .ofs_x = 1, .ofs_y = -1},
+    {.bitmap_index = 9812, .adv_w = 226, .box_w = 12, .box_h = 9, .ofs_x = 1, .ofs_y = 1}
 };
 
 /*---------------------
@@ -1947,7 +1963,7 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
 
 static const uint16_t unicode_list_3[] = {
     0x0, 0x1, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa,
-    0xf, 0x13, 0x17d, 0x17e, 0x17f, 0x180
+    0xf, 0x13, 0x27, 0x17d, 0x17e, 0x17f, 0x180, 0x700
 };
 
 /*Collect the unicode lists and glyph_id offsets*/
@@ -1966,8 +1982,8 @@ static const lv_font_fmt_txt_cmap_t cmaps[] =
         .unicode_list = NULL, .glyph_id_ofs_list = NULL, .list_length = 0, .type = LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY
     },
     {
-        .range_start = 8211, .range_length = 385, .glyph_id_start = 191,
-        .unicode_list = unicode_list_3, .glyph_id_ofs_list = NULL, .list_length = 14, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
+        .range_start = 8211, .range_length = 1793, .glyph_id_start = 191,
+        .unicode_list = unicode_list_3, .glyph_id_ofs_list = NULL, .list_length = 16, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
     }
 };
 

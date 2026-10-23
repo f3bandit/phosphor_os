@@ -32,7 +32,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -3565,18 +3565,182 @@ static void video_key(pkey_t k)
 
 /* ---------- navigation ---------- */
 
-/* the library is only looked at again while a scan the user started here runs (see ui_tick) */
-static int scan_watch, scan_quiet, scan_gen0 = -1, last_gen = -1;
+/* ---------- Looking for games ----------
+ * "Look for games" takes over the screen until it's done (nothing else runs meanwhile): the step,
+ * the system and file it's on, a bar, and the systems list. B twice stops it (what's identified
+ * stays; the next run carries on). When it's done: "Found N games", then the library. */
+static struct {
+	lv_obj_t *step, *sys, *file, *bar, *count, *eta, *list;
+	int started, seen_busy, quiet, gen0, b_asked_ms, done_at, stop_sent;
+	uint32_t t0, b_asked;
+	int last_done;
+} sc;
+static const char *const SCAN_HINTS[] = { "B", "twice: Stop", NULL };
+static const char *const SCAN_DONE_HINTS[] = { NULL };
 
-void ui_rescan(void)
+static void scan_row(lv_obj_t *list, int y, const char *mark, const char *name, const char *val, int state)
 {
-	cJSON *r = api_call("{\"cmd\":\"gen\"}");
-	scan_gen0 = r ? (int)api_num(r, "generation", -1) : -1;
+	/* state: 2 done, 1 current, 0 waiting */
+	if (state == 1) {
+		lv_obj_t *hl = mk_box(list, S(384), S(34), PAL.panel_on, S(6));
+		lv_obj_set_pos(hl, 0, y - S(5));
+		lv_obj_t *edge = mk_box(hl, S(3), S(26), PAL.acc, 0);
+		lv_obj_set_pos(edge, 0, S(4));
+	}
+	lv_color_t c = state ? PAL.text : PAL.faint;
+	lv_obj_t *m = mk_label(list, FONT_TITLE, state ? PAL.acc : PAL.faint, mark);
+	lv_obj_set_pos(m, S(12), y - S(2));
+	lv_obj_t *n = mk_label(list, FONT_TITLE, c, name);
+	lv_obj_set_pos(n, S(42), y - S(2));
+	lv_obj_t *v = mk_label(list, FONT_BODY, state == 1 ? PAL.acc : state ? PAL.dim : PAL.faint, val);
+	lv_obj_align(v, LV_ALIGN_TOP_RIGHT, -S(14), y);
+}
+
+static void scan_update(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"scan_progress\"}");
+	if (!r) return;
+	const char *stage = api_str(r, "stage");
+	int listing = stage && !strcmp(stage, "listing"), ident = stage && !strcmp(stage, "identifying");
+	int done = (int)api_num(r, "done", 0), total = (int)api_num(r, "total", 0), listed = (int)api_num(r, "listed", 0);
+	const char *cur_sys = api_str(r, "system"), *file = api_str(r, "file");
+	char t[200];
+	if (listing || ident) sc.seen_busy = 1;
+	if (listing) {
+		lv_label_set_text(sc.step, "STEP 1 OF 2  \xC2\xB7  LISTING THE GAME FILES");
+		lv_label_set_text(sc.sys, cur_sys && *cur_sys ? cur_sys : "Looking...");
+		snprintf(t, sizeof(t), "%d files so far", listed);
+		lv_label_set_text(sc.file, t);
+		lv_bar_set_value(sc.bar, 0, LV_ANIM_OFF);
+		lv_label_set_text(sc.count, "");
+		lv_label_set_text(sc.eta, "");
+	} else if (ident) {
+		lv_label_set_text(sc.step, "STEP 2 OF 2  \xC2\xB7  WORKING OUT WHAT EACH GAME IS");
+		lv_label_set_text(sc.sys, cur_sys && *cur_sys ? cur_sys : "");
+		lv_label_set_text(sc.file, file ? file : "");
+		int pct = total ? done * 100 / total : 0;
+		lv_bar_set_value(sc.bar, pct, LV_ANIM_OFF);
+		snprintf(t, sizeof(t), "%d of %d games", done, total);
+		lv_label_set_text(sc.count, t);
+		uint32_t el = (lv_tick_get() - sc.t0) / 1000;
+		if (done >= 5 && done < total) {
+			uint32_t left = (uint32_t)((uint64_t)el * (uint64_t)(total - done) / (uint64_t)done);
+			if (left < 60) snprintf(t, sizeof(t), "%d%%  \xC2\xB7  less than a minute left", pct);
+			else snprintf(t, sizeof(t), "%d%%  \xC2\xB7  about %u minute%s left", pct, (left + 30) / 60, (left + 30) / 60 == 1 ? "" : "s");
+		} else snprintf(t, sizeof(t), "%d%%", pct);
+		lv_label_set_text(sc.eta, t);
+	}
+	/* the systems: done, the one it's on, waiting (a window of 9 around the current one) */
+	lv_obj_clean(sc.list);
+	cJSON *arr = cJSON_GetObjectItem(r, "systems"), *e;
+	int n = cJSON_GetArraySize(arr), curi = -1, i = 0;
+	cJSON_ArrayForEach(e, arr) { const char *nm = api_str(e, "name"); if (cur_sys && nm && !strcmp(nm, cur_sys)) curi = i; i++; }
+	int from = curi > 4 ? curi - 4 : 0;
+	if (from + 9 > n) from = n > 9 ? n - 9 : 0;
+	i = 0;
+	int y = 0;
+	cJSON_ArrayForEach(e, arr) {
+		if (i >= from && i < from + 9) {
+			const char *nm = api_str(e, "name");
+			int f = (int)api_num(e, "files", 0), id = (int)api_num(e, "identified", 0);
+			char v[48];
+			int st;
+			if (i == curi) { st = 1; if (ident) snprintf(v, sizeof(v), "%d of %d", id, f); else snprintf(v, sizeof(v), "%d", f); }
+			else if (listing || id >= f) { st = 2; snprintf(v, sizeof(v), "%d", f); }
+			else { st = 0; snprintf(v, sizeof(v), "waiting"); }
+			scan_row(sc.list, y, st == 2 ? "\xE2\x9C\x93" : st == 1 ? "\xE2\x80\xBA" : "\xC2\xB7", nm ? nm : "", v, st);
+			y += S(40);
+		}
+		i++;
+	}
+	/* finished: quiet twice in a row after it was seen working (or never got going in 20 s) */
+	if (!listing && !ident && !(stage && !strcmp(stage, "waiting"))) {
+		sc.quiet++;
+		if ((sc.seen_busy && sc.quiet >= 2) || sc.quiet >= 20) {
+			int games = (int)api_num(r, "games", 0);
+			snprintf(t, sizeof(t), sc.stop_sent ? "Stopped: %d games so far" : "Found %d games", games);
+			lv_label_set_text(sc.step, "DONE");
+			lv_label_set_text(sc.sys, t);
+			lv_label_set_text(sc.file, "");
+			lv_bar_set_value(sc.bar, 100, LV_ANIM_OFF);
+			lv_label_set_text(sc.count, "");
+			lv_label_set_text(sc.eta, "");
+			footer_set(SCAN_DONE_HINTS);
+			sc.done_at = (int)lv_tick_get() | 1;
+		}
+	} else sc.quiet = 0;
 	cJSON_Delete(r);
-	last_gen = scan_gen0;           /* so the first change shows */
+}
+
+static void show_home(void);
+static void show_scan(void)
+{
+	cur = SCR_SCAN;
+	memset(&sc, 0, sizeof(sc));
+	lv_obj_clean(body);
+	screen_title("LIBRARY", "Looking for games");
+	sc.step = mk_label(body, FONT_LABEL, PAL.acc, "STARTING");
+	lv_obj_set_style_text_letter_space(sc.step, S(1), 0);
+	lv_obj_set_pos(sc.step, S(56), S(200));
+	sc.sys = mk_label(body, FONT_HEADING, PAL.text, "");
+	lv_obj_set_pos(sc.sys, S(56), S(224));
+	sc.file = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(sc.file, S(706));
+	lv_label_set_long_mode(sc.file, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(sc.file, S(56), S(284));
+	sc.bar = lv_bar_create(body);
+	lv_obj_set_size(sc.bar, S(706), S(16));
+	lv_obj_set_pos(sc.bar, S(56), S(346));
+	lv_obj_set_style_bg_color(sc.bar, PAL.line, LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(sc.bar, LV_OPA_COVER, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(sc.bar, PAL.acc, LV_PART_INDICATOR);
+	lv_obj_set_style_radius(sc.bar, S(8), LV_PART_MAIN);
+	lv_obj_set_style_radius(sc.bar, S(8), LV_PART_INDICATOR);
+	lv_bar_set_range(sc.bar, 0, 100);
+	sc.count = mk_label(body, FONT_TITLE, PAL.text, "");
+	lv_obj_set_pos(sc.count, S(56), S(376));
+	sc.eta = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(sc.eta, S(500));
+	lv_obj_set_style_text_align(sc.eta, LV_TEXT_ALIGN_RIGHT, 0);
+	lv_obj_set_pos(sc.eta, S(56 + 706 - 500), S(380));
+	lv_obj_t *note = mk_box(body, S(706), S(100), PAL.bg, S(10));
+	lv_obj_set_style_border_color(note, PAL.line, 0);
+	lv_obj_set_style_border_width(note, S(1) > 0 ? S(1) : 1, 0);
+	lv_obj_set_pos(note, S(56), S(466));
+	lv_obj_t *nt = mk_label(note, FONT_NAME, PAL.text, "Everything else waits until this is done.");
+	lv_obj_set_pos(nt, S(20), S(18));
+	lv_obj_t *nb = mk_label(note, FONT_SMALL, PAL.dim, "Games found so far are kept. If it is stopped or the SS1 is turned off,\nLook for games carries on from where it left off next time.");
+	lv_obj_set_pos(nb, S(20), S(50));
+	lv_obj_t *sl = mk_label(body, FONT_LABEL, PAL.dim, "SYSTEMS");
+	lv_obj_set_style_text_letter_space(sl, S(2), 0);
+	lv_obj_set_pos(sl, S(840), S(166));
+	sc.list = mk_box(body, S(384), S(380), PAL.bg, 0);
+	lv_obj_set_pos(sc.list, S(830), S(200));
+	footer_set(SCAN_HINTS);
+	sc.t0 = lv_tick_get();
 	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
-	scan_watch = 1;
-	scan_quiet = 0;
+	scan_update();
+}
+
+static void scan_key(pkey_t k)
+{
+	if (sc.done_at) return;                      /* "Found N games" is on: it goes to the library itself */
+	if (k != K_B) return;                        /* nothing else until it's done */
+	uint32_t now = lv_tick_get();
+	if (!sc.b_asked || now - sc.b_asked > 4000) { sc.b_asked = now ? now : 1; toast_show("Press B again to stop"); return; }
+	sc.b_asked = 0;
+	sc.stop_sent = 1;
+	cJSON_Delete(api_call("{\"cmd\":\"rescan\",\"stop\":true}"));
+	lv_label_set_text(sc.step, "STOPPING");
+}
+
+static void scan_tick(uint32_t now)
+{
+	static uint32_t last;
+	if (sc.done_at) { if (now - (uint32_t)sc.done_at > 2500) { sc.done_at = 0; show_home(); } return; }
+	if (now - last < 500) return;
+	last = now;
+	scan_update();
 }
 
 /* ---------- lists across systems: favorites, recently played, search ---------- */
@@ -3745,6 +3909,9 @@ void ui_key(pkey_t k)
 	case SCR_LOG:
 		log_key(k);
 		break;
+	case SCR_SCAN:
+		scan_key(k);
+		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
@@ -3752,7 +3919,7 @@ void ui_key(pkey_t k)
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
-			if (set_list.sel == SET_RESCAN) { if (k == K_A) { ui_rescan(); toast_show("Looking for games..."); } }
+			if (set_list.sel == SET_RESCAN) { if (k == K_A) show_scan(); }
 			else if (set_list.sel == SET_SCRAPE) { if (k == K_A) settings_change(0); }
 			else if (set_list.sel == SET_SOURCES) show_sources();
 			else if (set_list.sel == SET_DIAG) show_diag();
@@ -3799,6 +3966,7 @@ int ui_max_sleep(void)
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
+	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);
@@ -3824,35 +3992,6 @@ void ui_tick(void)
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
-		/* only while "Look for games" runs: once a second, has it found something new yet? */
-		cJSON *r = scan_watch ? api_call("{\"cmd\":\"gen\"}") : NULL;
-		int g = r ? (int)api_num(r, "generation", -1) : last_gen;
-		int busy = r && (cJSON_IsTrue(cJSON_GetObjectItem(r, "indexing")) || cJSON_IsTrue(cJSON_GetObjectItem(r, "identifying")));
-		cJSON_Delete(r);
-		if (scan_watch) {
-			/* done: not busy twice in a row after the library changed (or 30 s with no answer) */
-			scan_quiet = busy ? 0 : scan_quiet + 1;
-			if ((g != scan_gen0 && scan_quiet >= 2) || scan_quiet >= 30) scan_watch = 0;
-		}
-		if (g != last_gen) {
-			int first = last_gen < 0;
-			last_gen = g;
-			if (!first && cur == SCR_HOME) { load_home_data(); home_counts(); home_continue(); }
-			else if (!first && cur == SCR_SYSTEMS) {
-				load_systems(sys_cat);
-				sys_list.count = nsys;
-				vlist_refresh(&sys_list);
-				sys_detail();
-			} else if (!first && cur == SCR_GAMES && !picker_open()) {
-				/* copies of a game found on two drives may have become one: stay on the same game */
-				long long keep = ngames ? games[game_list.sel].id : -1;
-				load_games(games_sys);
-				game_list.count = ngames;
-				for (int i = 0; i < ngames; i++) if (games[i].id == keep) game_list.sel = i;
-				vlist_refresh(&game_list);
-				game_detail();
-			}
-		}
 	}
 }
 
