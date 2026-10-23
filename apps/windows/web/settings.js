@@ -250,15 +250,15 @@ class AppSettings {
 	tPower(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list">
-			<div class="card2"><div><b>Restart</b><small>Restarts the SS1. Saves are written as they happen, so nothing is lost; a game that's running is closed.</small></div><button class="btn primary" id="p_reboot" data-nav>Restart</button></div>
-			<div class="card2"><div><b>Shut down</b><small>Stops everything cleanly and marks the drives clean. When the TV goes blank (about 10 seconds), it's safe to switch the SS1 off.</small></div><button class="btn" id="p_off" data-nav>Shut down</button></div>
+			<div class="card2"><div><b>Restart</b><small>The drives are marked clean first, then the SS1 starts again. A game that's running is closed.</small></div><button class="btn primary" id="p_reboot" data-nav>Restart</button></div>
+			<div class="card2"><div><b>Shut down safely</b><small>Writes everything to the drives and marks them clean, so Windows won't ask to scan the card. The TV says when it's safe to switch off.</small></div><button class="btn" id="p_off" data-nav>Shut down</button></div>
 			<div class="card2"><div><b>Reload the TV screen</b><small>Restarts Phosphor's screen on the TV, not the SS1: for when the screen looks stuck. A running game keeps running.</small></div><button class="btn" id="p_ui" data-nav>Reload</button></div>
-			</div><div class="panel"><h2>Power</h2><p class="note">These go through the SS1's own shutdown: modules stop, the SD card is synced, and the power check knows it was a clean stop, not a power cut.</p></div></div>`));
+			</div><div class="panel"><h2>Power</h2><p class="note">The same as holding Select on the SS1: modules stop, everything is written, and the drives are made read-only so they're marked clean. On the SS1 itself, hold Select anywhere in Phosphor for this window.</p></div></div>`));
 		const go = async (what, msg) => {
 			try { await ss1({ cmd: "system", do: what }); toast(msg); setTimeout(refreshState, 4000); } catch (e) { toast(e.message); }
 		};
 		twice($("#p_reboot"), "Press again to restart", () => go("reboot", "Restarting the SS1…"));
-		twice($("#p_off"), "Press again to shut down", () => go("shutdown", "Shutting down: switch it off when the TV goes blank"));
+		twice($("#p_off"), "Press again to shut down", () => go("shutdown", "Shutting down: the TV says when it's safe to switch off"));
 		twice($("#p_ui"), "Press again to reload", () => go("reload_ui", "Reloading the TV screen…"));
 	}
 

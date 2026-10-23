@@ -68,13 +68,30 @@ static unsigned held_since, last_repeat;
 static unsigned holders[K_R + 1];    /* which sources hold each key down */
 static unsigned released_at[K_R + 1];
 static unsigned slots_used;
+/* Select: a tap is Select (sent when it's let go), a hold is the power window */
+#define POWER_HOLD_MS 800
+static unsigned sel_down;               /* when Select went down (0: it isn't) */
+static int sel_fired;                   /* the hold already opened the power window */
+static void sel_press(unsigned now) { if (!sel_down) { sel_down = now ? now : 1; sel_fired = 0; } }
+static void sel_release(void)
+{
+	if (sel_down && !sel_fired) input_push(K_SELECT);
+	sel_down = 0;
+	sel_fired = 0;
+}
+static unsigned now_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (unsigned)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
 
 #define WATCH_LOG "/tmp/phosphor-input.log"
 #define KEYS_FIFO "/tmp/phosphor-keys"
 static int fifo_fd = -1, fifo_keep = -1;
 static char fifo_buf[128];
 static size_t fifo_len;
-static const char *const KNAMES[] = { "-", "up", "down", "left", "right", "a", "b", "x", "y", "start", "select", "l", "r" };
+static const char *const KNAMES[] = { "-", "up", "down", "left", "right", "a", "b", "x", "y", "start", "select", "l", "r", "power" };
 
 void input_watch(const char *src, const char *what)
 {
@@ -133,6 +150,10 @@ void input_main_pad(const char *b, int p)
 	char w[48];
 	snprintf(w, sizeof(w), "%s %s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up");
 	input_watch("main", w);
+	if (!strcmp(b, "select")) {           /* tap or hold (see sel_press) */
+		if (p == 1) sel_press(now_ms()); else if (p == 0) sel_release();
+		return;
+	}
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
 	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) if (!strcmp(b, M[i].n)) { input_push(M[i].k); return; }
 }
@@ -260,6 +281,7 @@ static void press(pkey_t k, int src, unsigned now)
 	if (holders[k]) { holders[k] |= bit; return; }      /* already down from somewhere else */
 	holders[k] = bit;
 	if (released_at[k] && now - released_at[k] < BOUNCE_MS) return;
+	if (k == K_SELECT) { sel_press(now_ms()); return; }
 	input_push(k);
 	if (k == K_UP || k == K_DOWN || k == K_LEFT || k == K_RIGHT) { held = k; held_since = now; last_repeat = now; }
 }
@@ -271,6 +293,7 @@ static void release(pkey_t k, int src, unsigned now)
 	if (holders[k]) return;
 	released_at[k] = now ? now : 1;
 	if (held == k) held = KEY_NONE_;
+	if (k == K_SELECT) sel_release();
 }
 
 static void release_all(int src, unsigned now)
@@ -314,7 +337,7 @@ int input_pollfds(struct pollfd *p, int max)
 	return n;
 }
 
-int input_held(void) { return held != KEY_NONE_ || qh != qt; }
+int input_held(void) { return held != KEY_NONE_ || qh != qt || (sel_down && !sel_fired); }
 
 pkey_t input_poll(unsigned now)
 {
@@ -359,6 +382,7 @@ pkey_t input_poll(unsigned now)
 			i--;
 		}
 	}
+	if (sel_down && !sel_fired && now_ms() - sel_down >= POWER_HOLD_MS) { sel_fired = 1; input_push(K_POWER); }
 	if (held != KEY_NONE_ && now - held_since >= REPEAT_DELAY && now - last_repeat >= REPEAT_RATE) {
 		last_repeat = now;
 		input_push(held);
@@ -366,7 +390,7 @@ pkey_t input_poll(unsigned now)
 	if (qh == qt) return KEY_NONE_;
 	pkey_t k = queue[qh];
 	qh = (qh + 1) % 32;
-	if (k > KEY_NONE_ && k <= K_R) input_watch("shell", KNAMES[k]);
+	if (k > KEY_NONE_ && k <= K_POWER) input_watch("shell", KNAMES[k]);
 	return k;
 }
 
@@ -375,6 +399,7 @@ pkey_t key_from_name(const char *n)
 	static const struct { const char *n; pkey_t k; } T[] = {
 		{ "up", K_UP }, { "down", K_DOWN }, { "left", K_LEFT }, { "right", K_RIGHT }, { "a", K_A }, { "b", K_B },
 		{ "x", K_X }, { "y", K_Y }, { "menu", K_MENU }, { "select", K_SELECT }, { "l", K_L }, { "r", K_R },
+		{ "power", K_POWER },
 	};
 	for (size_t i = 0; i < sizeof(T) / sizeof(T[0]); i++) if (!strcasecmp(n, T[i].n)) return T[i].k;
 	return KEY_NONE_;

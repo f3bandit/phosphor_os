@@ -89,8 +89,8 @@ static int send_all(const char *s, size_t n)
 	return 0;
 }
 
-/* read until a full line, up to 5 s */
-static char *read_line(void)
+/* read until a full line, up to ms */
+static char *read_line(int ms)
 {
 	for (;;) {
 		char *nl = rbuf ? memchr(rbuf, '\n', rlen) : NULL;
@@ -104,7 +104,7 @@ static char *read_line(void)
 			return line;
 		}
 		struct pollfd p = { fd, POLLIN, 0 };
-		if (poll(&p, 1, 5000) <= 0) return NULL;
+		if (poll(&p, 1, ms) <= 0) return NULL;
 		char tmp[16384];
 		ssize_t r = read(fd, tmp, sizeof(tmp));
 		if (r <= 0) return NULL;
@@ -127,7 +127,7 @@ cJSON *api_call(const char *fmt, ...)
 	for (int attempt = 0; attempt < 2; attempt++) {
 		if (ensure() != 0) return NULL;
 		if (send_all(req, (size_t)n) != 0) { hang_up(); continue; }
-		char *line = read_line();
+		char *line = read_line(5000);
 		if (!line) { hang_up(); continue; }
 		cJSON *r = cJSON_Parse(line);
 		free(line);
@@ -163,4 +163,25 @@ int mister_cmd(const char *cmd, char *err, unsigned long errn)
 	close(f);
 	if (w < 0) { snprintf(err, errn, "couldn't send the command to MiSTer (%s)", strerror(errno)); return -1; }
 	return 0;
+}
+
+/* one request that takes a while (the safe stop before switching off): up to ms for the answer, and
+   never sent twice (it isn't something to do again) */
+cJSON *api_call_slow(int ms, const char *fmt, ...)
+{
+	char req[2048];
+	va_list ap;
+	va_start(ap, fmt);
+	int n = vsnprintf(req, sizeof(req) - 2, fmt, ap);
+	va_end(ap);
+	if (n < 0 || n >= (int)sizeof(req) - 2) return NULL;
+	req[n++] = '\n';
+	req[n] = 0;
+	if (ensure() != 0) return NULL;
+	if (send_all(req, (size_t)n) != 0) { hang_up(); return NULL; }
+	char *line = read_line(ms);
+	if (!line) { hang_up(); return NULL; }
+	cJSON *r = cJSON_Parse(line);
+	free(line);
+	return r;
 }

@@ -12,6 +12,9 @@ const char *category_name(category_t c);
  * phosphord can't be reached. Starts phosphord if it isn't running. */
 cJSON *api_call(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
+/* the same for one slow request (up to ms), never retried */
+cJSON *api_call_slow(int ms, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+
 /* reply helpers */
 int api_ok(const cJSON *r);
 const char *api_str(const cJSON *o, const char *key);      /* NULL if missing or null */
