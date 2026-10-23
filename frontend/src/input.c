@@ -68,22 +68,30 @@ static unsigned held_since, last_repeat;
 static unsigned holders[K_R + 1];    /* which sources hold each key down */
 static unsigned released_at[K_R + 1];
 static unsigned slots_used;
-/* Select: a tap is Select (sent when it's let go), a hold is the power window */
-#define POWER_HOLD_MS 800
-static unsigned sel_down;               /* when Select went down (0: it isn't) */
-static int sel_fired;                   /* the hold already opened the power window */
-static void sel_press(unsigned now) { if (!sel_down) { sel_down = now ? now : 1; sel_fired = 0; } }
-static void sel_release(void)
+/* The two centre buttons. Select and Start pressed together (either order) open the power window;
+ * on their own they're Select and Menu, sent when let go so the pair never also does its own thing.
+ * Each can be held from several places at once (MiSTer's Main, the controller read directly, a
+ * keyboard): one press however many report it. */
+enum { CB_SELECT, CB_START };
+#define SRC_MAIN (1u << 31)
+#define SRC_LOCAL (1u << 30)                /* keyboards and controllers read here (holders[] already merges them) */
+static unsigned cb_down[2];             /* which sources hold each one */
+static int cb_combo;                    /* this press of the pair opened the power window */
+static void centre_press(int which, unsigned src)
 {
-	if (sel_down && !sel_fired) input_push(K_SELECT);
-	sel_down = 0;
-	sel_fired = 0;
+	if (cb_down[which] & src) return;
+	unsigned was = cb_down[which];
+	cb_down[which] |= src;
+	if (was) return;                     /* already down from somewhere else */
+	if (cb_down[!which] && !cb_combo) { cb_combo = 1; input_push(K_POWER); }
 }
-static unsigned now_ms(void)
+static void centre_release(int which, unsigned src)
 {
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (unsigned)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+	if (!(cb_down[which] & src)) return;
+	cb_down[which] &= ~src;
+	if (cb_down[which]) return;          /* still held somewhere */
+	if (!cb_combo) input_push(which == CB_SELECT ? K_SELECT : K_MENU);
+	if (!cb_down[CB_SELECT] && !cb_down[CB_START]) cb_combo = 0;
 }
 
 #define WATCH_LOG "/tmp/phosphor-input.log"
@@ -150,8 +158,9 @@ void input_main_pad(const char *b, int p)
 	char w[48];
 	snprintf(w, sizeof(w), "%s %s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up");
 	input_watch("main", w);
-	if (!strcmp(b, "select")) {           /* tap or hold (see sel_press) */
-		if (p == 1) sel_press(now_ms()); else if (p == 0) sel_release();
+	if (!strcmp(b, "select") || !strcmp(b, "start")) {   /* the centre buttons (see centre_press) */
+		int w = b[1] == 'e' ? CB_SELECT : CB_START;
+		if (p == 1) centre_press(w, SRC_MAIN); else if (p == 0) centre_release(w, SRC_MAIN);
 		return;
 	}
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
@@ -281,7 +290,7 @@ static void press(pkey_t k, int src, unsigned now)
 	if (holders[k]) { holders[k] |= bit; return; }      /* already down from somewhere else */
 	holders[k] = bit;
 	if (released_at[k] && now - released_at[k] < BOUNCE_MS) return;
-	if (k == K_SELECT) { sel_press(now_ms()); return; }
+	if (k == K_SELECT || k == K_MENU) { centre_press(k == K_SELECT ? CB_SELECT : CB_START, SRC_LOCAL); return; }
 	input_push(k);
 	if (k == K_UP || k == K_DOWN || k == K_LEFT || k == K_RIGHT) { held = k; held_since = now; last_repeat = now; }
 }
@@ -293,7 +302,7 @@ static void release(pkey_t k, int src, unsigned now)
 	if (holders[k]) return;
 	released_at[k] = now ? now : 1;
 	if (held == k) held = KEY_NONE_;
-	if (k == K_SELECT) sel_release();
+	if (k == K_SELECT || k == K_MENU) centre_release(k == K_SELECT ? CB_SELECT : CB_START, SRC_LOCAL);
 }
 
 static void release_all(int src, unsigned now)
@@ -337,7 +346,7 @@ int input_pollfds(struct pollfd *p, int max)
 	return n;
 }
 
-int input_held(void) { return held != KEY_NONE_ || qh != qt || (sel_down && !sel_fired); }
+int input_held(void) { return held != KEY_NONE_ || qh != qt; }
 
 pkey_t input_poll(unsigned now)
 {
@@ -354,14 +363,15 @@ pkey_t input_poll(unsigned now)
 			if (ev.type == EV_KEY && ev.value != 2) {
 				char w[120];
 				snprintf(w, sizeof(w), "%s key %d %s (%.40s)%s", devs[i].name, ev.code, ev.value ? "down" : "up",
-				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(devs[i].pad && !devs[i].virt && ev.code == BTN_SELECT) ? " ignored: Main sends it" : "");
+				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(devs[i].pad && !devs[i].virt && (ev.code == BTN_SELECT || ev.code == BTN_START)) ? " ignored: Main sends it" : "");
 				input_watch("evdev", w);
 			}
 			if (main_pads && (devs[i].virt || devs[i].pad)) {             /* Main has the controllers... */
-				/* ...but doesn't pass Select on: it's read here (tap: Select, hold: the power window) */
-				if (devs[i].pad && !devs[i].virt && ev.type == EV_KEY && ev.code == BTN_SELECT) {
-					if (ev.value == 1) sel_press(now_ms());
-					else if (ev.value == 0) sel_release();
+				/* ...but doesn't reliably pass Select and Start on: those two are read here as well */
+				if (devs[i].pad && !devs[i].virt && ev.type == EV_KEY && (ev.code == BTN_SELECT || ev.code == BTN_START)) {
+					int w = ev.code == BTN_SELECT ? CB_SELECT : CB_START;
+					if (ev.value == 1) centre_press(w, 1u << devs[i].slot);
+					else if (ev.value == 0) centre_release(w, 1u << devs[i].slot);
 				}
 				continue;
 			}
@@ -384,12 +394,13 @@ pkey_t input_poll(unsigned now)
 			if (newsworthy(devs[i].label)) snprintf(notice, sizeof(notice), "Disconnected: %.80s", devs[i].label);
 			close(devs[i].fd);
 			release_all(devs[i].slot, now);
+			cb_down[CB_SELECT] &= ~(1u << devs[i].slot);      /* (held while it went away: forgotten quietly) */
+			cb_down[CB_START] &= ~(1u << devs[i].slot);
 			slots_used &= ~(1u << devs[i].slot);
 			devs[i] = devs[--ndev];
 			i--;
 		}
 	}
-	if (sel_down && !sel_fired && now_ms() - sel_down >= POWER_HOLD_MS) { sel_fired = 1; input_push(K_POWER); }
 	if (held != KEY_NONE_ && now - held_since >= REPEAT_DELAY && now - last_repeat >= REPEAT_RATE) {
 		last_repeat = now;
 		input_push(held);

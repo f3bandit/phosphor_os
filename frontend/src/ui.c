@@ -4436,8 +4436,8 @@ static void search_open(void)
 	osk_open("Search", "Part of a game's name, then Done.", 0, 40, search_done, SEARCH_BACK_HINTS);
 }
 
-/* ---------- Power: the window (hold Select) and the safe shutdown / restart ----------
- * Hold Select anywhere in Phosphor: Shut down safely, Restart, Reload the screen. Shut down and Restart
+/* ---------- Power: the window (Select + Start) and the safe shutdown / restart ----------
+ * Select + Start together anywhere in Phosphor: Shut down safely, Restart, Reload the screen. Shut down and Restart
  * first make every drive read-only through phosphord (phosphor.sh safe-stop), which is when exFAT
  * clears its dirty flag, so Windows doesn't ask to scan the card afterwards; the screen then says how
  * each drive came out. Phosphor for Windows' Shut down / Restart land here too (phosphord leaves a
