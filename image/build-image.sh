@@ -125,6 +125,7 @@ PHOS_FAT="$WORK/rel/files" PHOS_FAT_TARGET=/media/fat bash "$PDIR/install.sh" --
 grep -q '^# phosphor: BEGIN' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block missing" >&2; exit 1; }
 grep -q ' /media/fat/phosphor/phosphor.sh boot' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
 grep -q "^main=phosphor/bin/MiSTer_phosphor" "$WORK/rel/files/MiSTer.ini" || { echo "MiSTer.ini main= missing" >&2; exit 1; }
+[ -x "$WORK/rel/files/phosphor/bin/phos-nvme" ] || { echo "phos-nvme missing from the image" >&2; exit 1; }
 # the on-request modules are in the image
 for m in diag storage; do
 	[ -x "$WORK/rel/files/phosphor/modules/$m/$m.sh" ] || { echo "module $m isn't in the image" >&2; exit 1; }

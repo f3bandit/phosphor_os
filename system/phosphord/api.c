@@ -28,8 +28,9 @@
  *                                           pending, found, not_found, status
  *   dashboard  [kernel]                     live numbers: temps, cpu, load, uptime, mem, disks, io, ips, net,
  *                                           procs, core; kernel: the kernel log's last lines (read only)
- *   storage    [do: check (test, target) | overlap-remove | overlap-undo]  drives {path,kind,fs,size_kb,free_kb,model,
- *                                           gen,watts}, overlap_tool [paths], last {job,target,busy,ok,at,output}
+ *   storage    [do: check (test, target) | mount (target /dev/sdXN) | overlap-remove | overlap-undo]
+ *                                           drives {path,kind,fs,size_kb,free_kb,model,gen,watts,mounted},
+ *                                           overlap_tool [paths], last {job,target,busy,ok,at,output}
  *   system     do: shutdown|reboot|reload_ui|safe_stop|halt_now|reboot_now   (see the command below)
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
@@ -1107,7 +1108,7 @@ static char *cmd_storage(cJSON *req)
 	if (d && *d) {
 		const char *test = !strcmp(d, "check") ? cJSON_GetStringValue(cJSON_GetObjectItem(req, "test")) : d;
 		int r = test ? storage_start(test, cJSON_GetStringValue(cJSON_GetObjectItem(req, "target"))) : -2;
-		if (r == -2) return fail("do: check (test, target), overlap-remove or overlap-undo");
+		if (r == -2) return fail("do: check (test, target), mount (target /dev/sdXN), overlap-remove or overlap-undo");
 		if (r == 1) return fail("A check is already running; try again when it's done");
 		if (r < 0) return fail("The storage module isn't installed");
 	}
@@ -1118,9 +1119,9 @@ static char *cmd_storage(cJSON *req)
 	cJSON *arr = cJSON_AddArrayToObject(o, "drives");
 	char *save = NULL;
 	for (char *line = ss.targets ? strtok_r(ss.targets, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
-		char *f[8] = { 0 };
+		char *f[9] = { 0 };
 		int n = 0;
-		for (char *p = line; n < 8; n++) { f[n] = p; char *bar = strchr(p, '|'); if (!bar) { n++; break; } *bar = 0; p = bar + 1; }
+		for (char *p = line; n < 9; n++) { f[n] = p; char *bar = strchr(p, '|'); if (!bar) { n++; break; } *bar = 0; p = bar + 1; }
 		if (n < 7) continue;
 		cJSON *x = cJSON_CreateObject();
 		cJSON_AddStringToObject(x, "path", f[0]);
@@ -1131,6 +1132,7 @@ static char *cmd_storage(cJSON *req)
 		cJSON_AddStringToObject(x, "model", f[5]);
 		cJSON_AddStringToObject(x, "gen", f[6]);
 		cJSON_AddStringToObject(x, "watts", n > 7 && f[7] ? f[7] : "");
+		cJSON_AddBoolToObject(x, "mounted", !(n > 8 && f[8] && !strcmp(f[8], "unmounted")));
 		cJSON_AddItemToArray(arr, x);
 	}
 	cJSON *ov = cJSON_AddArrayToObject(o, "overlap_tool");

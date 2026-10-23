@@ -347,6 +347,20 @@ class AppSettings {
 	driveTool(box, d, s) {
 		const L = s.last || {}, mine = L.target === d.path && L.job;
 		const busy = L.busy;
+		if (d.mounted === false) {
+			box.innerHTML = `<dl class="kv"><dt>Drive</dt><dd>${esc((d.kind === "nvme" ? "NVMe" : "USB") + (d.model ? " · " + d.model : ""))}</dd><dt>Size</dt><dd>${gb(d.size_kb)}</dd><dt>File system</dt><dd>${esc(d.fs)}</dd></dl>
+				<p class="note warn">Not mounted: MiSTer can't see the games on it right now. This happens when a check or a hiccup leaves it unmounted.</p>
+				<div class="acts"><button class="btn primary" id="ck_mnt" data-nav${busy ? " disabled" : ""}>Mount it again</button></div>
+				${mine ? `<pre class="out">${busy ? `<span class="spin"></span>` : ""}${resultHTML(L.output)}</pre>` : ""}`;
+			$("#ck_mnt", box).onclick = async () => {
+				try {
+					await ss1({ cmd: "storage", do: "mount", target: d.path });
+					toast("Mounting…");
+					this.every(1500, async () => { const t = await this.storageState(); if (t.last && t.last.busy) return true; this.drawTool(); return false; });
+				} catch (e) { toast(e.message); }
+			};
+			return;
+		}
 		const warnGen = d.gen === "gen4" ? `<p class="note bad">Gen 4 NVMe drive: these cause boot and file system trouble in the SS1 dock. A Gen 3 drive is the safe choice.</p>` : "";
 		const watts = d.watts && Number(d.watts) > 7 ? `<p class="note warn">Rated at ${esc(d.watts)} W: more than the dock likes to give. If the SS1 restarts under load, this drive is a likely cause.</p>` : "";
 		box.innerHTML = `<dl class="kv"><dt>Drive</dt><dd>${esc(d.kind === "sd" ? "SD card" : (d.kind === "nvme" ? "NVMe" : "USB") + (d.model ? " · " + d.model : ""))}</dd><dt>Space</dt><dd>${gb(d.free_kb)} free of ${gb(d.size_kb)}</dd><dt>File system</dt><dd>${esc(d.fs)}</dd>${d.kind === "nvme" ? `<dt>PCIe</dt><dd>${esc({ gen4: "Gen 4", gen3: "Gen 3" }[d.gen] || "not known")}</dd>` : ""}</dl>${warnGen}${watts}
@@ -408,7 +422,7 @@ class AppSettings {
 		if (!ds.length) { l.innerHTML = `<div class="empty">No NVMe or USB drive is plugged in.</div>`; return; }
 		l.innerHTML = "";
 		for (const d of ds) {
-			const el = h(`<div class="row" data-nav><span class="n"><b>${esc(d.kind === "nvme" ? "NVMe" : "USB")}${d.gen === "gen4" ? " ⚠" : ""}</b><small>${esc(d.model || d.path)} · ${gb(d.size_kb)}</small></span></div>`).firstChild;
+			const el = h(`<div class="row" data-nav><span class="n"><b>${esc(d.kind === "nvme" ? "NVMe" : "USB")}${d.gen === "gen4" || d.mounted === false ? " ⚠" : ""}</b><small>${esc(d.mounted === false ? "Not mounted" : d.model || d.path)} · ${gb(d.size_kb)}</small></span></div>`).firstChild;
 			el.classList.add("net");
 			el._onfocus = () => { this.exSel = d.path; this.driveTool($("#exbox"), d, this.st || s); };
 			l.appendChild(el);
