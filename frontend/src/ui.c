@@ -2478,6 +2478,12 @@ static void cl_apply(cJSON *r)
 		char first[160] = "";
 		const char *nl = strchr(out, '\n');
 		snprintf(first, sizeof(first), "%.*s", (int)(nl ? (size_t)(nl - out) : strlen(out)), out);
+		if (!cl.job_ok) {                 /* a failure: the reason is the last line, not "Downloading..." */
+			const char *e = out + strlen(out), *b;
+			while (e > out && (e[-1] == '\n' || e[-1] == ' ')) e--;
+			for (b = e; b > out && b[-1] != '\n'; b--) ;
+			if (e > b) snprintf(first, sizeof(first), "%.*s", (int)(e - b), b);
+		}
 		if (!strcmp(cl.job, "devices") && cl.job_ok) { cl_split_output(out); cl.mode = CL_DEVICES; cl_list.sel = 0; }
 		else if (!strcmp(cl.job, "preview")) { cl_split_output(out); cl.mode = CL_PREVIEW; cl_list.sel = 0; }
 		else if (!strcmp(cl.job, "push")) toast_show(cl.job_ok ? "Saves sent" : "Sending failed");
