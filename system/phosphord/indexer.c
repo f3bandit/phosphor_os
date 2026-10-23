@@ -281,7 +281,9 @@ static void *thread(void *arg)
 		busy = scan_now;
 		pthread_mutex_unlock(&lk);
 		if (!db && !(db = db_open())) { busy = 0; ident_wanted = 0; continue; }
-		if (scan_now || ident_wanted) busy_mark("scan", "Look for games");
+		/* (not for the 30 s look while a game runs: no card writes then) */
+		int marked = scan_now || (ident_wanted && menu_up());
+		if (marked) busy_mark("scan", "Look for games");
 		if (scan_now) {
 			scan(db);
 			busy = 0;
@@ -295,7 +297,7 @@ static void *thread(void *arg)
 			   Look for games. Only a pass cut short (a game started) carries on by itself. */
 			if (!ident_should_stop()) ident_wanted = 0;
 		}
-		busy_clear("scan");
+		if (marked) busy_clear("scan");
 	}
 	return NULL;
 }

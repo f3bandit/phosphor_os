@@ -39,6 +39,7 @@ static int read_boot(const char *p, char *o, size_t n)
 void busy_init(void)
 {
 	char p[600], b[64];
+	boot_id();                 /* read once here, before the threads that mark start */
 	for (int i = 0; MINE[i]; i++) {
 		path(MINE[i], p, sizeof(p));
 		if (!read_boot(p, b, sizeof(b)) && !strcmp(b, boot_id())) unlink(p);
