@@ -168,19 +168,24 @@ addEventListener("keydown", e => {
 	}
 	e.preventDefault();
 });
-/* hover moves the focus only when the mouse itself moved: something drawn under a still pointer
-   (a panel filling in after a link) must not take the focus away from the list */
-let mx = -1, my = -1;
-document.addEventListener("mousemove", e => {
-	if (e.clientX === mx && e.clientY === my) return;
-	mx = e.clientX; my = e.clientY;
-	const el = e.target.closest("[data-nav]");
-	if (el && el !== cur && !el.matches("input, textarea")) focus(el);
-});
+/* the mouse: clicks only, the highlight never follows the pointer. A list row with a panel beside it
+   is chosen by the first click (the panel follows) and opened by a second click or a double-click;
+   everything else (buttons, tiles, tabs) does its thing on the first click. */
+let picked = null;
 document.addEventListener("mousedown", e => {
 	touched = true;
 	const el = e.target.closest("[data-nav]");
-	if (el) focus(el);
+	if (!el) return;
+	picked = el.matches(".row") && el._onfocus && el !== cur ? el : null;   /* rows that drive a panel */
+	focus(el);
+});
+document.addEventListener("click", e => {
+	const el = e.target.closest("[data-nav]");
+	if (el && el === picked) { picked = null; e.stopPropagation(); e.preventDefault(); }
+}, true);
+document.addEventListener("dblclick", e => {
+	const el = e.target.closest(".row[data-nav]");
+	if (el && el === cur) el.click();
 });
 $("#conn").addEventListener("click", () => (S.paired ? push(AppSettings, "connection") : push(Connect)));
 $("#bell").addEventListener("click", () => push(AppSettings, "notifications"));

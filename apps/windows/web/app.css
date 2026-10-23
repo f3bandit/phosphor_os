@@ -216,3 +216,10 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 .ptab td { padding: .25rem .6rem .25rem 0; color: var(--dim); border-bottom: 1px solid #1d1d21; }
 .ptab td:last-child { color: var(--text); }
 @media (max-width: 1100px) { .dash { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* the pointer shows what it's over, without moving the highlight */
+@media (hover: hover) {
+	.row[data-nav]:not(.f):hover, .card[data-nav]:not(.f):hover, .tool[data-nav]:not(.f):hover, .cand[data-nav]:not(.f):hover { background: rgba(255, 255, 255, .04); }
+	.btn:not(.f):not(.primary):hover { border-color: var(--dim); }
+	[data-nav] { cursor: pointer; }
+	input[data-nav], textarea[data-nav] { cursor: text; }
+}
