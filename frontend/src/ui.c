@@ -5258,6 +5258,8 @@ static int saver_key(void)
 static void saver_tick(uint32_t now)
 {
 	if (!last_input) last_input = now ? now : 1;
+	/* mapping, or watching a controller: its buttons go to Main, not here, so they don't count as input */
+	if (cur == SCR_MAP || cur == SCR_CTRL) { last_input = now ? now : 1; if (saver) saver_hide(); return; }
 	if (saver) {
 		if (now - saver_moved >= 20000) { saver_moved = now; saver_move(); }
 		return;
