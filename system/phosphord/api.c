@@ -13,6 +13,7 @@
  *   launch     id                           start it
  *   favorite   id on                        mark or unmark
  *   rescan                                  look for games (list them, then identify them); only ever on request
+ *   gen                                     {generation, indexing, identifying}: cheap "has the library changed?"
  *   import                                  one-time import of gamelist.xml / media art
  *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
  *   unlink     id                           not based on another game any more
@@ -1111,6 +1112,13 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
 	else if (!strcmp(c->valuestring, "pads")) out = cmd_pads();
+	else if (!strcmp(c->valuestring, "gen")) {          /* has the library changed? (cheap: no queries) */
+		cJSON *o = ok();
+		cJSON_AddNumberToObject(o, "generation", indexer_generation());
+		cJSON_AddBoolToObject(o, "indexing", indexer_busy());
+		cJSON_AddBoolToObject(o, "identifying", indexer_identifying());
+		out = reply(o);
+	}
 	else if (!strcmp(c->valuestring, "pad_analog")) {
 		cJSON *pt = cJSON_GetObjectItem(req, "port");
 		char err[200];

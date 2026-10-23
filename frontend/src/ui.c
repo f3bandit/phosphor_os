@@ -3866,6 +3866,13 @@ void ui_key(pkey_t k)
 static int last_gen = -1;
 static uint32_t last_status, last_poll;
 
+int ui_max_sleep(void)
+{
+	if (cur == SCR_TERM && term_running()) return 16;        /* the script's output as it comes */
+	if (cur == SCR_PORTS) return 100;                         /* the card map follows a job */
+	return 500;                                               /* status bar, clock, spinners: twice a second */
+}
+
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
@@ -3895,7 +3902,7 @@ void ui_tick(void)
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
-		cJSON *r = api_call("{\"cmd\":\"status\"}");
+		cJSON *r = api_call("{\"cmd\":\"gen\"}");
 		int g = r ? (int)api_num(r, "generation", -1) : -1;
 		cJSON_Delete(r);
 		if (g != last_gen) {
