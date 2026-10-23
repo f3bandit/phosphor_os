@@ -940,7 +940,10 @@ static void run_script(const char *path);
 static int cores_start_job(int have_net, int all)
 {
 	if (!have_net) { toast_show("Connect to a network first"); return 0; }
-	run_script(all ? UPDATE_ALL_SH : UPDATE_SH);
+	/* through Phosphor's wrapper when it's there: a restore point first, then the updater */
+	char w[400];
+	fat_path(w, sizeof(w), all ? "phosphor/scripts/update_all.sh" : "phosphor/scripts/update.sh");
+	run_script(access(w, X_OK) == 0 ? w : all ? UPDATE_ALL_SH : UPDATE_SH);
 	return 1;
 }
 static void cores_start(int have_net) { cores_start_job(have_net, 0); }
