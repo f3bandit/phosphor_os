@@ -59,7 +59,7 @@
  *   pads                                    both controllers: {on, pads:[{port, connected, id, buttons,
  *                                           rx, ry, lx, ly}]} (turns the ports on)
  *   pad_analog port                         switch that DualShock to analog
- *   memcard    [do: backup|restore|check|prepare] [port] [name]
+ *   memcard    [do: backup|restore|check|prepare|name] [port] [name]   (name: a card waiting for one, see ask_name)
  *                                           memory cards: {ports{...}, job{name, port, busy, ok, done,
  *                                           total, message, file}, backups:[{name, bytes, at}]};
  *                                           restore backs the card up first
@@ -942,9 +942,14 @@ static char *cmd_memcard(cJSON *req)
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 	if (d && *d) {
 		cJSON *pt = cJSON_GetObjectItem(req, "port");
+		if (!strcmp(d, "name")) {
+			char rel[300];
+			if (memcard_name(cJSON_GetStringValue(cJSON_GetObjectItem(req, "name")), rel, sizeof(rel), err, sizeof(err))) return fail(err);
+		} else {
 		int r = memcard_job(d, cJSON_IsNumber(pt) ? pt->valueint : 0, cJSON_GetStringValue(cJSON_GetObjectItem(req, "name")), err, sizeof(err));
 		if (r == 1) return fail("A memory card job is already running; try again when it's done");
 		if (r < 0) return fail(err);
+		}
 	}
 	ports_state_t s;
 	memcard_state(&s);
@@ -960,12 +965,14 @@ static char *cmd_memcard(cJSON *req)
 	cJSON_AddStringToObject(j, "message", s.message);
 	cJSON_AddStringToObject(j, "map", s.map);     /* 1024 characters, see memcard.h ("" before the first card job) */
 	cJSON_AddStringToObject(j, "file", s.file);
+	cJSON_AddBoolToObject(j, "ask_name", s.ask_name);
+	cJSON_AddStringToObject(j, "suggest", s.suggest);
 	cJSON *arr = cJSON_AddArrayToObject(o, "backups");
 	char *list = memcard_list(), *save = NULL;
 	for (char *line = list ? strtok_r(list, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
-		char name[128];
+		char name[256];
 		long bytes, at;
-		if (sscanf(line, "%127[^\t]\t%ld\t%ld", name, &bytes, &at) != 3) continue;
+		if (sscanf(line, "%255[^\t]\t%ld\t%ld", name, &bytes, &at) != 3) continue;
 		cJSON *x = cJSON_CreateObject();
 		cJSON_AddStringToObject(x, "name", name);
 		cJSON_AddNumberToObject(x, "bytes", (double)bytes);

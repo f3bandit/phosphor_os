@@ -21,6 +21,10 @@ if [ -f "$INI" ] && grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI"; then
 	rm -f "$tmp"
 	echo "MiSTer.ini: main= put back (${prev:-the default})"
 fi
+# menu.rbf: MiSTer's back, if Phosphor's is there
+if [ -f "$ROOT/backup/menu.rbf.mister" ] && [ -f "$ROOT/cores/menu_phosphor.rbf" ] && cmp -s "$ROOT/cores/menu_phosphor.rbf" "$FAT/menu.rbf"; then
+	cp "$ROOT/backup/menu.rbf.mister" "$FAT/menu.rbf.new" && mv -f "$FAT/menu.rbf.new" "$FAT/menu.rbf" && echo "menu.rbf: MiSTer's put back"
+fi
 ENTRY="$FAT/Scripts/phosphor.sh"
 if [ -f "$ENTRY" ] && grep -q "^# phosphor: menu entry" "$ENTRY"; then rm -f "$ENTRY" && echo "menu entry removed"; fi
 if [ -f "$STARTUP" ] && grep -q "^# $TAG: BEGIN" "$STARTUP"; then

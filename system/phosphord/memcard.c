@@ -19,6 +19,7 @@
  *   prepare  load the Phosphor menu core if needed and turn the ports on (Main restarts: seconds)
  * Reading the controllers never loads the menu core; only a job does. */
 #include "memcard.h"
+#include "mclib.h"
 #include "cJSON.h"
 #include "log.h"
 #include "paths.h"
@@ -60,12 +61,7 @@ static const char *main_sock(void)
 	return p && *p ? p : "/tmp/phosphor-main.sock";
 }
 
-const char *memcard_dir(void)
-{
-	static char b[512];
-	snprintf(b, sizeof(b), "%s/phosphor/memcards", p_fat());
-	return b;
-}
+const char *memcard_dir(void) { return mclib_dir(); }
 
 static void m_close(void)
 {
@@ -360,36 +356,47 @@ static int read_card(int port, unsigned char *buf, char *msg, size_t n, int base
 	return 0;
 }
 
-static int save_file(const unsigned char *buf, int port, char *name, size_t nn, char *msg, size_t n)
+/* the card a backup belongs to ("card/version.mcd"), for the card that's about to be overwritten when
+   it isn't recognised; an old loose file: "Memory card" */
+static const char *restore_card(const char *rel, char *out, size_t n)
 {
-	if (mkdirs(memcard_dir())) { snprintf(msg, n, "Can't create %.150s", memcard_dir()); return -1; }
-	time_t now = time(NULL);
-	struct tm tm;
-	localtime_r(&now, &tm);
-	char base[64], path[700], tmp[720];
-	strftime(base, sizeof(base), "%Y%m%d-%H%M%S", &tm);
-	for (int i = 0; i < 100; i++) {
-		if (i) snprintf(name, nn, "port%d-%s-%d.mcd", port, base, i);
-		else snprintf(name, nn, "port%d-%s.mcd", port, base);
-		snprintf(path, sizeof(path), "%s/%s", memcard_dir(), name);
-		if (access(path, F_OK)) break;
-	}
-	snprintf(tmp, sizeof(tmp), "%s.part", path);
-	FILE *f = fopen(tmp, "wb");
-	if (!f) { snprintf(msg, n, "Can't write %.150s", path); return -1; }
-	int ok = fwrite(buf, 1, CARD_BYTES, f) == CARD_BYTES;
-	ok = (fflush(f) == 0) && ok;
-	ok = (fsync(fileno(f)) == 0) && ok;
-	ok = (fclose(f) == 0) && ok;
-	if (!ok || rename(tmp, path)) { unlink(tmp); snprintf(msg, n, "Can't write %.150s", path); return -1; }
-	return 0;
+	const char *sl = strchr(rel, '/');
+	if (sl) snprintf(out, n, "%.*s", (int)(sl - rel), rel);
+	else snprintf(out, n, "Memory card");
+	return out;
 }
 
-static int valid_name(const char *name)
+/* a card that wasn't recognised waits here for its name (memcard_name) */
+static unsigned char *pending;
+static int ask_name;
+static char suggest[64];
+
+/* the card read into buf goes into the library: the card it's recognised as, else fallback (NULL: ask
+   for a name). 0 saved (rel, msg), 1 waiting for a name, -1 error (msg) */
+static int keep_card(unsigned char *buf, const char *fallback, char *rel, size_t rn, char *msg, size_t n)
 {
-	size_t n = name ? strlen(name) : 0;
-	if (n < 5 || n > 100 || strchr(name, '/') || name[0] == '.') return 0;
-	return !strcasecmp(name + n - 4, ".mcd");
+	char card[128];
+	double score = mclib_recognise(buf, card, sizeof(card));
+	if (score < 0.5) {
+		if (fallback && *fallback) snprintf(card, sizeof(card), "%s", fallback);
+		else {
+			pthread_mutex_lock(&slk);
+			free(pending);
+			pending = malloc(CARD_BYTES);
+			if (pending) memcpy(pending, buf, CARD_BYTES);
+			ask_name = pending != NULL;
+			mclib_suggest(suggest, sizeof(suggest));
+			pthread_mutex_unlock(&slk);
+			if (!pending) { snprintf(msg, n, "Out of memory"); return -1; }
+			snprintf(msg, n, "A memory card Phosphor hasn't seen before: give it a name");
+			return 1;
+		}
+	}
+	int same = 0;
+	if (mclib_store(card, buf, rel, rn, &same)) { snprintf(msg, n, "Can't write to %.150s", mclib_dir()); return -1; }
+	if (same) snprintf(msg, n, "%.100s: the same as its last backup, nothing new to keep", card);
+	else snprintf(msg, n, "Backed up as %.100s", card);
+	return 0;
 }
 
 static void finish(int ok, const char *msg, const char *file)
@@ -424,15 +431,14 @@ static void run_job(const char *job, int port, const char *name)
 	}
 	else if (!strcmp(job, "backup")) {
 		if (read_card(port, card, msg, sizeof(msg), 0, "Reading the card")) finish(0, msg, NULL);
-		else if (save_file(card, port, file, sizeof(file), msg, sizeof(msg))) finish(0, msg, NULL);
 		else {
-			snprintf(msg, sizeof(msg), "Saved as %s", file);
-			finish(1, msg, file);
+			int k = keep_card(card, NULL, file, sizeof(file), msg, sizeof(msg));
+			finish(k >= 0, msg, k == 0 ? file : NULL);
 		}
 	}
 	else if (!strcmp(job, "restore")) {
-		char path[700];
-		snprintf(path, sizeof(path), "%s/%s", memcard_dir(), name);
+		char path[700], fb[128];
+		snprintf(path, sizeof(path), "%s/%s", mclib_dir(), name);
 		struct stat sb;
 		FILE *f = NULL;
 		want = malloc(CARD_BYTES);
@@ -444,7 +450,7 @@ static void run_job(const char *job, int port, const char *name)
 			fclose(f);
 			/* 1: what's on the card now, kept as a backup */
 			if (read_card(port, card, msg, sizeof(msg), 0, "Backing up the card first")) finish(0, msg, NULL);
-			else if (save_file(card, port, file, sizeof(file), msg, sizeof(msg))) finish(0, msg, NULL);
+			else if (keep_card(card, restore_card(name, fb, sizeof(fb)), file, sizeof(file), msg, sizeof(msg)) != 0) finish(0, msg, NULL);
 			else {
 				pthread_mutex_lock(&slk);
 				snprintf(st.file, sizeof(st.file), "%s", file);
@@ -525,7 +531,7 @@ int memcard_job(const char *what, int port, const char *name, char *err, size_t 
 	if (!what || (strcmp(what, "backup") && strcmp(what, "restore") && strcmp(what, "check") && strcmp(what, "prepare"))) { snprintf(err, n, "do: backup, restore, check or prepare"); return -1; }
 	if (!strcmp(what, "prepare") && !port) port = 1;
 	if (port != 1 && port != 2) { snprintf(err, n, "port is 1 or 2"); return -1; }
-	if (!strcmp(what, "restore") && !valid_name(name)) { snprintf(err, n, "name: one of the backups (.mcd)"); return -1; }
+	if (!strcmp(what, "restore") && !mclib_valid(name)) { snprintf(err, n, "name: one of the backups (.mcd)"); return -1; }
 	pthread_mutex_lock(&slk);
 	if (st.busy || want_job[0]) { pthread_mutex_unlock(&slk); return 1; }
 	snprintf(want_job, sizeof(want_job), "%s", what);
@@ -558,6 +564,8 @@ void memcard_state(ports_state_t *s)
 	} else look = last;
 	pthread_mutex_lock(&slk);
 	*s = st;
+	s->ask_name = ask_name;
+	snprintf(s->suggest, sizeof(s->suggest), "%s", suggest);
 	pthread_mutex_unlock(&slk);
 	s->main_api = look.main_api;
 	s->available = look.available;
@@ -566,44 +574,25 @@ void memcard_state(ports_state_t *s)
 	s->on = look.on;
 }
 
-typedef struct { char name[128]; long size; time_t mt; } ent_t;
-static int by_time(const void *a, const void *b)
-{
-	const ent_t *x = a, *y = b;
-	return (y->mt > x->mt) - (y->mt < x->mt);
-}
+char *memcard_list(void) { return mclib_list(); }
 
-char *memcard_list(void)
+int memcard_name(const char *name, char *rel, size_t rn, char *err, size_t n)
 {
-	DIR *d = opendir(memcard_dir());
-	size_t cap = 16, n = 0;
-	ent_t *e = malloc(cap * sizeof(*e));
-	if (!e) { if (d) closedir(d); return NULL; }
-	struct dirent *de;
-	while (d && (de = readdir(d))) {
-		if (!valid_name(de->d_name)) continue;
-		char p[700];
-		struct stat sb;
-		snprintf(p, sizeof(p), "%s/%s", memcard_dir(), de->d_name);
-		if (stat(p, &sb) || !S_ISREG(sb.st_mode)) continue;
-		if (n == cap) {
-			ent_t *ne = realloc(e, (cap *= 2) * sizeof(*e));
-			if (!ne) break;
-			e = ne;
-		}
-		snprintf(e[n].name, sizeof(e[n].name), "%.127s", de->d_name);
-		e[n].size = (long)sb.st_size;
-		e[n].mt = sb.st_mtime;
-		n++;
-	}
-	if (d) closedir(d);
-	qsort(e, n, sizeof(*e), by_time);
-	char *out = malloc(n * 180 + 1);
-	if (out) {
-		size_t k = 0;
-		out[0] = 0;
-		for (size_t i = 0; i < n; i++) k += (size_t)sprintf(out + k, "%s\t%ld\t%ld\n", e[i].name, e[i].size, (long)e[i].mt);
-	}
-	free(e);
-	return out;
+	char card[80];
+	if (mclib_safe_name(name, card, sizeof(card))) { snprintf(err, n, "Give the card a name"); return -1; }
+	pthread_mutex_lock(&slk);
+	unsigned char *img = pending;
+	pending = NULL;
+	ask_name = 0;
+	pthread_mutex_unlock(&slk);
+	if (!img) { snprintf(err, n, "There's no card waiting for a name"); return -1; }
+	int same = 0, r = mclib_store(card, img, rel, rn, &same);
+	free(img);
+	if (r) { snprintf(err, n, "Can't write to %.150s", mclib_dir()); return -1; }
+	pthread_mutex_lock(&slk);
+	snprintf(st.message, sizeof(st.message), "Backed up as %.100s", card);
+	snprintf(st.file, sizeof(st.file), "%s", rel);
+	pthread_mutex_unlock(&slk);
+	plog("memory card named %s (%s)", card, rel);
+	return 0;
 }

@@ -190,6 +190,11 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
 - [ ] After that restart it boots into Phosphor: no MiSTer file browser or OSD first (MiSTer's background at
       most), no login prompt or console text over Phosphor, then the Welcome screen (first start). Every later
       boot goes straight to the library.
+- [ ] Power on: black (no MiSTer static) until Phosphor is on screen; MiSTer's menu (Settings > MiSTer menu) shows
+      the static. menu.rbf is Phosphor's menu core; MiSTer's is in phosphor/backup/menu.rbf.mister.
+- [ ] Controllers & memory cards > Back up: the card map fills in; a card Phosphor hasn't seen asks for a name
+      (keyboard, "Memory card N" offered); the same card backed up again is recognised (no question), and an
+      unchanged card isn't kept twice. Backups are in phosphor/memcards/<card name>/<date>.mcd (SS1 Tool's layout).
 - [ ] Phosphor fills the whole screen (1080p TV: drawn at 1920x1080 with bigger text; 720p: 1280x720), no box
       in the middle.
 - [ ] Settings > Share the SD card on the network (Samba): On shows \\\\<address>; the PC opens it (root / 1); Off
