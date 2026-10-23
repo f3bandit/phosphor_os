@@ -54,17 +54,10 @@ func routes(mux *http.ServeMux) {
 	})
 	h("/api/theme", apiTheme)
 	h("/api/explore", func(w http.ResponseWriter, r *http.Request) { // the SS1's shared folders in Explorer
-		cfgMu.Lock()
-		host := cfg.Address
-		cfgMu.Unlock()
-		if i := strings.LastIndex(host, ":"); i > 0 {
-			host = host[:i]
-		}
-		if net.ParseIP(host) == nil {
+		if !openShare() {
 			fail(w, "not paired")
 			return
 		}
-		openFolder(`\\` + host)
 		writeJSON(w, map[string]any{"ok": true})
 	})
 	h("/api/ping", func(w http.ResponseWriter, r *http.Request) { // the page, every few seconds while it's shown
@@ -238,4 +231,19 @@ func apiArt(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 	}
+}
+
+// openShare: the SS1's Samba share (\\<its address>) in File Explorer; false when not paired
+func openShare() bool {
+	cfgMu.Lock()
+	host := cfg.Address
+	cfgMu.Unlock()
+	if i := strings.LastIndex(host, ":"); i > 0 {
+		host = host[:i]
+	}
+	if net.ParseIP(host) == nil {
+		return false
+	}
+	openFolder(`\\` + host)
+	return true
 }

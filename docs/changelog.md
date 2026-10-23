@@ -3,9 +3,21 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.1
+## 0.27.2
+
+### Fixes
+- **MiSTer's static after Update All.** The downloader puts MiSTer's own menu core back as
+  `menu.rbf` and then restarts the SS1, and a restart loads `menu.rbf` straight from the card, so
+  the static showed until Phosphor was up. Phosphor's menu core now goes back in at every shutdown
+  (the downloader's restart included) and right after Update / Update All, so the restart shows
+  Phosphor's loading screen. MiSTer's copy is kept in `phosphor/backup/menu.rbf.mister`.
 
 ### Changes
+- **The loading screen:** between cores, video modes and scripts, and while the SS1 starts, the
+  menu core shows the PHOSPHOR wordmark with a scanner bar and NOW LOADING, instead of static.
+- **Home looks like Phosphor for Windows:** the categories in a row from the left, the highlight
+  moving along it and the highlighted card a little bigger; the row slides only when the highlight
+  reaches the right edge (no more centred carousel).
 - **Dashboard for Phosphor for Windows:** phosphord answers a read-only `dashboard` request
   (temperatures, CPU per core, memory, uptime, the running core, drives and their read / write
   traffic, network addresses and traffic, the busiest processes, and the kernel log's last lines).
