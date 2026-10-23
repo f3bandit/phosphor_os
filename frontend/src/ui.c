@@ -318,30 +318,33 @@ static const char *shelf_name(int i) { return i == SH_FAV ? "Favorites" : i == S
 
 static struct {
 	lv_obj_t *card[SHELF_COUNT], *ic[SHELF_COUNT], *nm[SHELF_COUNT], *ct[SHELF_COUNT];
-	int sel;
+	int sel, first;     /* the highlighted card; the first of the five shown */
 	float pos;          /* animated selection position */
 	lv_obj_t *cont, *cont_title, *cont_sub;
 } home;
 
-/* the shelf, laid out like Phosphor for Windows: a row of cards from the left, the highlight moving
- * along it; the highlighted card a little bigger. The row slides only when the highlight would go off
- * the right edge, never to centre it. pos is the animated selection (0..SHELF_COUNT-1). */
+/* the shelf, laid out like Phosphor for Windows: five whole cards in a row from the left, the
+ * highlight moving along them, the highlighted card a little bigger. Moving past the fifth, the first
+ * one goes and the next one comes in (and back the same way); nothing is ever cut off at the edge.
+ * pos is the animated selection (0..SHELF_COUNT-1); home.first the first card shown. */
+#define SHELF_SHOWN 5
 static void shelf_layout(float pos)
 {
 	home.pos = pos;
-	int left = S(56), cw0 = S(200), ch0 = S(250), gap = S(18), step = cw0 + gap;
-	int vis_w = W - 2 * left;
-	int fit = (vis_w + gap) / step;                         /* cards that fit without sliding */
-	int max_scroll = SHELF_COUNT * step - gap - vis_w;
-	float sc = (pos - (fit - 1)) * step;
-	if (sc < 0) sc = 0;
-	if (max_scroll < 0) max_scroll = 0;
-	if (sc > max_scroll) sc = (float)max_scroll;
+	int left = S(56), gap = S(18), vis_w = W - 2 * left;
+	int cw0 = (vis_w - (SHELF_SHOWN - 1) * gap) / SHELF_SHOWN, ch0 = S(250), step = cw0 + gap;
+	if (home.sel < home.first) home.first = home.sel;
+	if (home.sel > home.first + SHELF_SHOWN - 1) home.first = home.sel - (SHELF_SHOWN - 1);
+	if (home.first > SHELF_COUNT - SHELF_SHOWN) home.first = LV_MAX(0, SHELF_COUNT - SHELF_SHOWN);
+	if (home.first < 0) home.first = 0;
 	for (int i = 0; i < SHELF_COUNT; i++) {
+		int shown = i >= home.first && i < home.first + SHELF_SHOWN;
+		lv_obj_set_hidden(home.card[i], !shown);
+		if (!shown) continue;
 		float d = i - pos, ad = d < 0 ? -d : d;
 		float grow = ad < 1 ? 1 - ad : 0;                  /* 1 at the highlighted card */
-		int cw = cw0 + (int)(S(28) * grow), ch = ch0 + (int)(S(36) * grow);
-		int cx = left + i * step + cw0 / 2 - (int)sc;
+		int cw = cw0 + (int)(S(22) * grow), ch = ch0 + (int)(S(32) * grow);
+		int cx = left + (i - home.first) * step + cw0 / 2;
 		lv_obj_set_size(home.card[i], cw, ch);
 		lv_obj_set_pos(home.card[i], cx - cw / 2, S(140) + (ch0 - ch) / 2);
 		lv_obj_set_style_opa(home.card[i], LV_OPA_COVER, 0);
