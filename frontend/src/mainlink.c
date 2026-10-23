@@ -113,10 +113,11 @@ int mainlink_poll(void)
 					lbuf[llen] = 0;
 					llen = 0;
 					/* a controller button, read by Main with MiSTer's mapping (and repeated by it) */
-					if (!hidden && !strncmp(lbuf, "{\"event\":\"pad\"", 16)) {
+					if (!hidden && strstr(lbuf, "\"event\":\"pad\"")) {
 						char b[16] = "";
 						int p = 0;
 						if (sscanf(lbuf, "{\"event\":\"pad\",\"b\":\"%15[a-z]\",\"p\":%d", b, &p) == 2) input_main_pad(b, p);
+						else input_watch("main", lbuf);                /* not understood: show it in the watch log */
 						continue;
 					}
 					if (hidden && strstr(lbuf, "\"event\":\"show\"")) {

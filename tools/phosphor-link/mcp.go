@@ -91,6 +91,14 @@ var tools = []tool{
 	{"reboot", "Reboot the MiSTer and return the full boot log (U-Boot, kernel, Main start), then log in again. Serial only. Nothing is typed until the login prompt, so the boot isn't interrupted.", obj(map[string]any{
 		"timeout_s": num("Seconds to wait for the login prompt (default 180)"),
 	})},
+	{"press", "Press buttons in Phosphor's shell from here, as if on a controller: names in order, comma or space separated (up, down, left, right, a, b, x, y, l, r, select, start). Returns what the shell got (its input watch log for those presses). Needs the Phosphor shell running.", obj(map[string]any{
+		"buttons": str("e.g. \"down, down, a\""),
+		"gap_ms":  num("Pause between presses in ms (default 300)"),
+	}, "buttons")},
+	{"watch_input", "Watch the input the Phosphor shell receives for some seconds (MiSTer Main's controller events, raw controller and keyboard events, front ports, remote presses, and the keys the shell acted on), e.g. while someone presses buttons on the controller. seconds 0 returns the last lines instead.", obj(map[string]any{
+		"seconds": num("How long to watch (default 10, max 50)"),
+		"lines":   num("With seconds 0: how many of the last lines (default 60)"),
+	})},
 	{"disconnect", "Close the connection (kernel messages and the terminal are put back the way they were). The next call reconnects.", obj(map[string]any{})},
 }
 
@@ -318,6 +326,56 @@ func (m *mcpServer) callOn(l Link, name string, a map[string]any) (text string, 
 			return errNotSerial.Error(), true, false
 		}
 		return li.Recent(int(argN(a, "max_bytes", 20000))), false, false
+	case "press":
+		var names []string
+		for _, f := range strings.FieldsFunc(strings.ToLower(argS(a, "buttons", "")), func(r rune) bool { return r == ',' || r == ' ' || r == '\n' || r == '\t' }) {
+			if !validButton[f] {
+				return "unknown button " + f + " (up, down, left, right, a, b, x, y, l, r, select, start)", true, false
+			}
+			names = append(names, f)
+		}
+		if len(names) == 0 || len(names) > 60 {
+			return "give 1 to 60 buttons", true, false
+		}
+		gap := argN(a, "gap_ms", 300)
+		if gap < 50 {
+			gap = 50
+		}
+		if gap > 3000 {
+			gap = 3000
+		}
+		script := fmt.Sprintf(`[ -p %[1]s ] || { echo "the Phosphor shell isn't running (no %[1]s)"; exit 1; }
+m=$( (wc -l < %[2]s) 2>/dev/null || echo 0)
+for k in %[3]s; do echo "$k" > %[1]s; sleep %.3[4]f; done
+sleep 0.4; n=$( (wc -l < %[2]s) 2>/dev/null || echo 0); [ "$n" -lt "$m" ] && m=0
+tail -n +$((m+1)) %[2]s`, keysFifo, watchLog, strings.Join(names, " "), gap/1000)
+		out, rc, err := l.Run(script, secs(30+float64(len(names))*gap/1000))
+		if err != nil {
+			return errOut(err)
+		}
+		return clip(out, maxText), rc != 0, false
+	case "watch_input":
+		d := argN(a, "seconds", 10)
+		if v, ok := a["seconds"].(float64); ok {
+			d = v // 0 is meant: the last lines
+		}
+		if d > 50 {
+			d = 50
+		}
+		var script string
+		if d <= 0 {
+			script = fmt.Sprintf("tail -n %d %s 2>/dev/null || echo '(no input watch log: is the Phosphor shell running?)'", int(argN(a, "lines", 60)), watchLog)
+		} else {
+			script = fmt.Sprintf(`[ -f %[1]s ] || echo '(no input watch log yet: is the Phosphor shell running?)'
+m=$( (wc -l < %[1]s) 2>/dev/null || echo 0); sleep %[2]d
+n=$( (wc -l < %[1]s) 2>/dev/null || echo 0); [ "$n" -lt "$m" ] && m=0
+out=$(tail -n +$((m+1)) %[1]s 2>/dev/null); [ -n "$out" ] && echo "$out" || echo "(no input in %[2]d s)"`, watchLog, int(d))
+		}
+		out, _, err := l.Run(script, secs(d+20))
+		if err != nil {
+			return errOut(err)
+		}
+		return clip(out, maxText), false, false
 	case "reboot":
 		rb, ok := l.(Rebooter)
 		if !ok {
@@ -331,6 +389,13 @@ func (m *mcpServer) callOn(l Link, name string, a map[string]any) (text string, 
 	}
 	return "unknown tool " + name, true, false
 }
+
+// the Phosphor shell's remote keys and input watch log (frontend/src/input.c)
+const keysFifo = "/tmp/phosphor-keys"
+const watchLog = "/tmp/phosphor-input.log"
+
+var validButton = map[string]bool{"up": true, "down": true, "left": true, "right": true, "a": true, "b": true, "x": true,
+	"y": true, "l": true, "r": true, "select": true, "start": true}
 
 const statusScript = `echo "MiSTer Linux: $(cat /MiSTer.version 2>/dev/null || echo unknown)"
 echo "kernel: $(uname -r)"

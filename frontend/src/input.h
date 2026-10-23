@@ -28,5 +28,9 @@ pkey_t key_from_name(const char *name);
 /* a controller or keyboard was just plugged in or paired ("Connected: name") or went away; NULL if
  * nothing new. Each one is returned once. */
 const char *input_notice(void);
+/* the input watch log, /tmp/phosphor-input.log (RAM): every button the shell gets and where from, so
+ * input can be checked from Phosphor Link. Remote keys: write names ("up", "a", "start"...) one a line
+ * to the FIFO /tmp/phosphor-keys */
+void input_watch(const char *src, const char *what);
 
 #endif
