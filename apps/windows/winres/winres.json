@@ -1,7 +1,7 @@
 {
   "RT_GROUP_ICON": { "APP": { "0000": "../assets/phosphor.ico" } },
   "RT_MANIFEST": { "#1": { "0409": {
-    "identity": { "name": "Phosphor", "version": "0.2.0.0" },
+    "identity": { "name": "Phosphor", "version": "0.2.1.0" },
     "description": "Phosphor for Windows",
     "minimum-os": "win10",
     "execution-level": "as invoker",
@@ -9,10 +9,10 @@
     "use-common-controls-v6": true
   } } },
   "RT_VERSION": { "#1": { "0000": {
-    "fixed": { "file_version": "0.2.0.0", "product_version": "0.2.0.0" },
+    "fixed": { "file_version": "0.2.1.0", "product_version": "0.2.1.0" },
     "info": { "0409": {
-      "CompanyName": "f3bandit", "FileDescription": "Phosphor for Windows", "FileVersion": "0.2.0",
-      "LegalCopyright": "(C) 2026 f3bandit, PolyForm Noncommercial 1.0.0", "ProductName": "Phosphor", "ProductVersion": "0.2.0"
+      "CompanyName": "f3bandit", "FileDescription": "Phosphor for Windows", "FileVersion": "0.2.1",
+      "LegalCopyright": "(C) 2026 f3bandit, PolyForm Noncommercial 1.0.0", "ProductName": "Phosphor", "ProductVersion": "0.2.1"
     } }
   } } }
 }
