@@ -5,16 +5,16 @@
  * /dev/input changes (inotify), so a controller plugged in later just works. Devices aren't
  * grabbed: MiSTer Main keeps seeing them too.
  *
- * While Phosphor has the screen, MiSTer Main turns every controller into keys on its "MiSTer virtual
- * input" device, using the button mapping set up in MiSTer (D-pad = arrows, A = Enter, B = Esc,
- * X = Space, Y = Tab, L/R = PgUp/PgDn). That's what controllers are read from when it's there, so a
- * controller behaves the way it's mapped in MiSTer (an 8BitDo's A is A, wherever it sits), and the
- * controller's own D-pad and face buttons are left alone so one press doesn't arrive twice or three
- * times. Only what Main doesn't pass on is read from the controller itself: Start, Select and the
- * left stick. A key held from several places still counts as one press, and a second press of the
+ * Controllers are read the way MiSTer's own menu reads them: by MiSTer Main (Phosphor's fork), with the
+ * button mapping set up in MiSTer, sent to the shell as events (mainlink.c, input_main_pad). From the
+ * first such event on, controllers aren't read here. Until then, or with a Main that doesn't send
+ * them, they come from Main's "MiSTer virtual input" keys or, if that's silent, the controller itself.
+ * Remote keys (Phosphor Link's press) come in on a FIFO, and everything is noted in the input watch
+ * log in RAM (input_watch). A key held from several places still counts as one press, and a second press of the
  * same key within a few milliseconds of letting go (some pads bounce) is dropped. */
 #include "input.h"
 #include "log.h"
+#include "mainlink.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -24,6 +24,8 @@
 #include <strings.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #define MAX_DEV 16
@@ -68,6 +70,59 @@ static unsigned holders[K_R + 1];    /* which sources hold each key down */
 static unsigned released_at[K_R + 1];
 static unsigned slots_used;
 
+#define WATCH_LOG "/tmp/phosphor-input.log"
+#define KEYS_FIFO "/tmp/phosphor-keys"
+static int fifo_fd = -1, fifo_keep = -1;
+static char fifo_buf[128];
+static size_t fifo_len;
+static const char *const KNAMES[] = { "-", "up", "down", "left", "right", "a", "b", "x", "y", "start", "select", "l", "r" };
+
+void input_watch(const char *src, const char *what)
+{
+	static FILE *f;
+	static long lines;
+	if (!f || ++lines > 2000) {           /* keep it small: start over every 2000 lines */
+		if (f) fclose(f);
+		f = fopen(WATCH_LOG, "w");
+		lines = 0;
+		if (!f) return;
+		setvbuf(f, NULL, _IOLBF, 0);
+	}
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	fprintf(f, "%ld.%03ld %-6s %s\n", (long)ts.tv_sec, ts.tv_nsec / 1000000, src, what);
+}
+
+static void fifo_open(void)
+{
+	struct stat sb;
+	if (stat(KEYS_FIFO, &sb) == 0 && !S_ISFIFO(sb.st_mode)) unlink(KEYS_FIFO);
+	if (mkfifo(KEYS_FIFO, 0600) != 0 && errno != EEXIST) return;
+	fifo_fd = open(KEYS_FIFO, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fifo_fd >= 0) fifo_keep = open(KEYS_FIFO, O_WRONLY | O_NONBLOCK | O_CLOEXEC);   /* no EOF when a writer leaves */
+}
+
+static void fifo_poll(void)
+{
+	if (fifo_fd < 0) return;
+	char buf[128];
+	ssize_t r;
+	while ((r = read(fifo_fd, buf, sizeof(buf))) > 0) {
+		for (ssize_t i = 0; i < r; i++) {
+			char c = buf[i];
+			if (c != '\n' && c != '\r' && c != ' ' && c != ',') { if (fifo_len + 1 < sizeof(fifo_buf)) fifo_buf[fifo_len++] = c; continue; }
+			if (!fifo_len) continue;
+			fifo_buf[fifo_len] = 0;
+			fifo_len = 0;
+			pkey_t k = !strcasecmp(fifo_buf, "start") ? K_MENU : key_from_name(fifo_buf);
+			char w[160];
+			snprintf(w, sizeof(w), "%s%s", fifo_buf, k == KEY_NONE_ ? " (unknown)" : "");
+			input_watch("remote", w);
+			if (k != KEY_NONE_) input_push(k);
+		}
+	}
+}
+
 static int main_pads;           /* Main sends the controller buttons: don't read controllers here */
 
 void input_main_pad(const char *b, int p)
@@ -76,6 +131,9 @@ void input_main_pad(const char *b, int p)
 		{ "up", K_UP }, { "down", K_DOWN }, { "left", K_LEFT }, { "right", K_RIGHT }, { "a", K_A }, { "b", K_B },
 		{ "x", K_X }, { "y", K_Y }, { "l", K_L }, { "r", K_R }, { "select", K_SELECT }, { "start", K_MENU },
 	};
+	char w[48];
+	snprintf(w, sizeof(w), "%s %s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up");
+	input_watch("main", w);
 	main_pads = 1;
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
 	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) if (!strcmp(b, M[i].n)) { input_push(M[i].k); return; }
@@ -86,6 +144,9 @@ static int have_virt(void)
 	for (int i = 0; i < ndev; i++) if (devs[i].virt) return 1;
 	return 0;
 }
+
+/* Main's virtual input carries the controllers' buttons only when Main doesn't send them as events */
+static int virt_feeds(void) { return have_virt() && !mainlink_pads(); }
 
 void input_push(pkey_t k)
 {
@@ -153,6 +214,7 @@ void input_init(void)
 	ino_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (ino_fd >= 0) inotify_add_watch(ino_fd, "/dev/input", IN_CREATE | IN_ATTRIB);
 	scan_devs();
+	fifo_open();
 	started = 1;
 }
 
@@ -224,7 +286,7 @@ static void axis(dev_t_ *d, int code, int value, unsigned now)
 	if (code >= 64) return;
 	int dir = 0;
 	if (code == ABS_HAT0X || code == ABS_HAT0Y) {
-		if (have_virt()) return;              /* the D-pad comes from Main's virtual input */
+		if (virt_feeds()) return;            /* the D-pad comes from Main's virtual input */
 		dir = value < 0 ? -1 : value > 0 ? 1 : 0;
 	} else if (code == ABS_X || code == ABS_Y) {
 		int mn = d->ax_min[code], mx = d->ax_max[code];
@@ -263,7 +325,12 @@ void input_pad(int port, unsigned b, int lx, int ly, int analog, unsigned now)
 	}
 	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) {
 		unsigned bit = 1u << M[i].bit;
-		if ((b & bit) && !(prev[port] & bit)) press(M[i].k, SRC_PAD0 + port, now);
+		if ((b & bit) && !(prev[port] & bit)) {
+			char w[32];
+			snprintf(w, sizeof(w), "port %d %s", port + 1, KNAMES[M[i].k]);
+			input_watch("front", w);
+			press(M[i].k, SRC_PAD0 + port, now);
+		}
 		else if (!(b & bit) && (prev[port] & bit)) release(M[i].k, SRC_PAD0 + port, now);
 	}
 	prev[port] = b;
@@ -275,16 +342,24 @@ pkey_t input_poll(unsigned now)
 		char buf[1024];
 		if (read(ino_fd, buf, sizeof(buf)) > 0) scan_devs();
 	}
+	if (main_pads && !mainlink_pads()) main_pads = 0;   /* Main restarted, or isn't the fork any more */
+	fifo_poll();
 	for (int i = 0; i < ndev; i++) {
 		struct input_event ev;
 		ssize_t r;
 		while ((r = read(devs[i].fd, &ev, sizeof(ev))) == (ssize_t)sizeof(ev)) {
+			if (ev.type == EV_KEY && ev.value != 2) {
+				char w[120];
+				snprintf(w, sizeof(w), "%s key %d %s (%.40s)%s", devs[i].name, ev.code, ev.value ? "down" : "up",
+				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) ? " ignored: Main sends it" : "");
+				input_watch("evdev", w);
+			}
 			if (main_pads && (devs[i].virt || devs[i].pad)) continue;   /* Main has the controllers */
 			if (ev.type == EV_KEY) {
 				dev_t_ *d = &devs[i];
 				pkey_t k;
 				if (d->virt) k = map_virt(ev.code);
-				else if (d->pad && have_virt() && ev.code >= BTN_MISC && ev.code != BTN_START &&
+				else if (d->pad && virt_feeds() && ev.code >= BTN_MISC && ev.code != BTN_START &&
 				         ev.code != BTN_MODE && ev.code != BTN_SELECT) k = KEY_NONE_;  /* Main passes these on */
 				else k = map_key(ev.code);
 				if (k == KEY_NONE_) continue;
@@ -311,6 +386,7 @@ pkey_t input_poll(unsigned now)
 	if (qh == qt) return KEY_NONE_;
 	pkey_t k = queue[qh];
 	qh = (qh + 1) % 32;
+	if (k > KEY_NONE_ && k <= K_R) input_watch("shell", KNAMES[k]);
 	return k;
 }
 

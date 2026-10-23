@@ -49,6 +49,8 @@ backed up first). Quit Claude completely (from the tray too) and open it again. 
 | `pull_file` / `read_file` | Copies a file from the MiSTer, or returns a text file |
 | `serial_log` | Listens to the console (Main and kernel messages) without typing |
 | `recent_output` | The last part of everything the console printed |
+| `press` | Presses buttons in Phosphor's shell from the PC (up, down, a, b, start...) and shows what the shell got |
+| `watch_input` | Shows the input the shell receives for a few seconds: Main's controller events, raw controller and keyboard events, front ports, remote presses, and the keys it acted on |
 | `reboot` | Reboots and returns the whole boot log, then logs in again |
 | `disconnect` | Closes the connection |
 
@@ -109,6 +111,7 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
+0.3.0: `press` and `watch_input` (remote buttons and an input watch for Phosphor's shell 0.26.1 and later).
 0.2.0: library tools (tested against phosphord's remote access in the sandbox, not yet on the SS1).
 0.1.3: up-to-date crypto/ssh and Go, no known vulnerabilities. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against
 the pretend console with heavy mid-line noise, a stopped U-Boot and reboots.
