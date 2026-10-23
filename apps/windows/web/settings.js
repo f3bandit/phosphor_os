@@ -588,7 +588,7 @@ class AppSettings {
 		try { await ss1({ cmd: "controllers", do: "map", vidpid: c.vidpid }); } catch (e) { toast(e.message); return; }
 		const back = cur;
 		const w = h(`<div class="lockwin"><div class="win"><div><div class="sub">${spaced("Mapping")}</div><div class="step" id="mw_step">STARTING ON THE TV…</div>
-			<div class="ask" id="mw_ask">One moment</div><div class="hint" id="mw_hint">Press the buttons on the controller itself.</div>
+			<div class="ask" id="mw_ask">One moment</div><div class="hint" id="mw_hint">Press the buttons on the controller itself. Select + Start together cancels, nothing saved.</div>
 			<div class="bar"><i id="mw_bar"></i></div><div class="acts"><button class="btn" data-nav id="mw_skip">Skip</button><button class="btn" data-nav id="mw_cancel">Cancel</button></div></div>
 			<div class="pad" id="mw_pad">${ptSVG(c.style || "generic")}</div></div></div>`).firstChild;
 		document.body.appendChild(w);
