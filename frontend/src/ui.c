@@ -3667,7 +3667,9 @@ void ui_tick(void)
 		else if (cr.busy && cur != SCR_SETTINGS) cores_refresh();     /* the bar, on every screen */
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
-		/* (a card job is followed 4 times a second, below) */
+		/* (a card job is followed 4 times a second, below); otherwise the ports' state every 2 s, so the
+		   screen is right again by itself after Main restarts */
+		{ static int pt_tick; if (cur == SCR_PORTS && !pt.busy && ++pt_tick % 2 == 0) pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));

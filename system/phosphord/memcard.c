@@ -150,16 +150,17 @@ static void look_locked(ports_state_t *s)
 	s->main_api = s->available = s->can_load = s->in_game = 0;
 	s->on = ports_on;
 	cJSON *j = m_json_locked("status", 1500);
+	if (!j) j = m_json_locked("status", 1500);       /* once more, on a new connection */
 	if (!j) return;
 	s->main_api = 1;
 	s->in_game = !jbool(j, "menu");
 	cJSON_Delete(j);
 	j = m_json_locked("ports", 1500);
-	if (j) {
-		s->available = jbool(j, "available");
-		s->on = jbool(j, "on") && ports_on;
-		cJSON_Delete(j);
-	}
+	if (!j) j = m_json_locked("ports", 1500);
+	if (!j) { s->main_api = 0; return; }      /* no answer is not "the core isn't loaded": never load it on that */
+	s->available = jbool(j, "available");
+	s->on = jbool(j, "on") && ports_on;
+	cJSON_Delete(j);
 	char rbf[512];
 	rbf_path(rbf, sizeof(rbf));
 	s->can_load = !s->available && !s->in_game && !load_failed && file_exists(rbf);
@@ -170,7 +171,7 @@ static int prepare_locked(char *err, size_t n, int may_load)
 	if (ports_on && mfd >= 0) { last_use = time(NULL); return 0; }   /* on, same Main as before */
 	ports_state_t s;
 	look_locked(&s);
-	if (!s.main_api) { snprintf(err, n, "The front ports need Phosphor's Main (phosphor-main) running"); return -1; }
+	if (!s.main_api) { snprintf(err, n, "Phosphor's Main didn't answer: try again in a moment"); return -1; }
 	if (s.in_game) { snprintf(err, n, "The front ports are only read here from the menu, not during a game"); return -1; }
 	if (!s.available) {
 		if (!s.can_load) { snprintf(err, n, "The Phosphor menu core isn't installed (phosphor/cores/menu_phosphor.rbf)"); return -1; }
@@ -178,6 +179,16 @@ static int prepare_locked(char *err, size_t n, int may_load)
 		/* loading it restarts Main (the screen goes away for seconds): once, and never again after it
 		   didn't answer, until phosphord restarts */
 		if (load_failed) { snprintf(err, n, "The front ports aren't answering in the Phosphor menu core"); return -1; }
+		/* Main asks the core again a second later (just after it starts, the core may not answer yet):
+		   wait for that before loading it, which restarts Main */
+		for (int i = 0; i < 3 && !s.available && s.main_api; i++) {
+			pthread_mutex_unlock(&mlk);
+			usleep(600000);
+			pthread_mutex_lock(&mlk);
+			look_locked(&s);
+		}
+		if (s.available) goto ready;
+		if (!s.main_api) { snprintf(err, n, "Phosphor's Main didn't answer: try again in a moment"); return -1; }
 		char rbf[512], line[600];
 		rbf_path(rbf, sizeof(rbf));
 		snprintf(line, sizeof(line), "launch %s", rbf);
@@ -201,6 +212,7 @@ static int prepare_locked(char *err, size_t n, int may_load)
 			return -1;
 		}
 	}
+ready:
 	if (!ports_on) {
 		cJSON *j = m_json_locked("ports on", 1500);
 		int ok = j && jbool(j, "ok");
