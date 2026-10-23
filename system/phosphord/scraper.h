@@ -19,6 +19,15 @@ typedef struct {
 	int on, ready;                   /* turned on; set up (has its key) */
 } scrape_source_t;
 
+/* this run, for the Getting box art screen */
+typedef struct {
+	int running;
+	int total, done, found, not_found, later;   /* games: at the start of the run, looked at, ... */
+	char system[48], game[120], source[40];     /* what it's on now (source: the one being asked) */
+	char status[160];
+} scrape_progress_t;
+void scraper_progress(scrape_progress_t *out);
+
 void scraper_start(void);                  /* background thread */
 void scraper_set(sqlite3 *db, int on);     /* on: go through the games once now (only ever on request); off: stop */
 void scraper_kick(void);                   /* run once now (the user asked) */

@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.26.6
+
+### Changes
+- **Getting box art and details has its own screen**, like Looking for games: the source it's asking,
+  the system and game it's on, a bar with time left, found / not found / no connection, and the
+  systems with how many have box art. Everything else waits until it's done; B twice stops it, and
+  what's found is kept. Settings > Get box art and details opens it.
+
 ## 0.26.5
 
 ### Fixes
