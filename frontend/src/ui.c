@@ -32,7 +32,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -1015,7 +1015,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
@@ -1107,7 +1107,6 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
-	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Get or update cores (MiSTer's downloader)"); cores_value(val, vn); break;
 	case SET_UPDATE_ALL:
@@ -3587,339 +3586,6 @@ static void welcome_key(pkey_t k)
 	}
 }
 
-/* ---------- file picker ----------
- * For long lists of files in folders (300 filters, 1200 shadow masks): shows one folder at a time,
- * A opens a folder or picks a file, B goes up a folder (or cancels at the top). "Off" comes first. */
-
-static struct {
-	char **all;                /* every file, relative path */
-	int nall;
-	char folder[400];          /* current folder, "" = top */
-	char **rows;               /* shown: "Off", folders ("name/"), files */
-	int nrows, has_off;
-	vlist_t list;
-	char title[80];
-	void (*done)(const char *path);   /* NULL = cancelled, "" = off */
-	screen_t back;
-} pk;
-
-static void fp_free_rows(void)
-{
-	for (int i = 0; i < pk.nrows; i++) free(pk.rows[i]);
-	free(pk.rows);
-	pk.rows = NULL;
-	pk.nrows = 0;
-}
-
-static void fp_build(void)
-{
-	fp_free_rows();
-	pk.rows = calloc((size_t)pk.nall + 2, sizeof(char *));
-	size_t fl = strlen(pk.folder);
-	if (pk.has_off && !fl) pk.rows[pk.nrows++] = strdup("Off");
-	/* folders first (each once), then files, both in the list's order */
-	for (int pass = 0; pass < 2; pass++)
-		for (int i = 0; i < pk.nall; i++) {
-			const char *p = pk.all[i];
-			if (fl && (strncmp(p, pk.folder, fl) || p[fl] != '/')) continue;
-			const char *rest = fl ? p + fl + 1 : p, *slash = strchr(rest, '/');
-			if (pass == 0 && slash) {
-				char name[300];
-				snprintf(name, sizeof(name), "%.*s/", (int)(slash - rest), rest);
-				int dup = 0;
-				for (int k = 0; k < pk.nrows; k++) if (!strcmp(pk.rows[k], name)) dup = 1;
-				if (!dup) pk.rows[pk.nrows++] = strdup(name);
-			} else if (pass == 1 && !slash) {
-				pk.rows[pk.nrows++] = strdup(rest);
-			}
-		}
-}
-
-static void fp_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
-{
-	const char *r = pk.rows[i];
-	size_t l = strlen(r);
-	if (l && r[l - 1] == '/') { snprintf(t, n, "%.*s", (int)(l - 1), r); snprintf(val, vn, ">"); }
-	else {
-		snprintf(t, n, "%s", r);
-		char *dot = strrchr(t, '.');
-		if (dot && (!strcmp(dot, ".txt") || !strcmp(dot, ".ini"))) *dot = 0;
-		if (pk.has_off && !pk.folder[0] && i == 0) *dim = 1;
-	}
-}
-
-static void fp_draw(void)
-{
-	lv_obj_clean(body);
-	char label[440];
-	snprintf(label, sizeof(label), "%s", pk.folder[0] ? pk.folder : "");
-	screen_title(pk.folder[0] ? "FOLDER" : "CHOOSE", pk.title);
-	lv_obj_t *f = mk_label(body, FONT_SMALL, PAL.dim, label);
-	lv_obj_set_pos(f, S(56), S(178));
-	vlist_create(&pk.list, body, S(56), S(208), W - S(112), S(420));
-	pk.list.fill = fp_fill;
-	pk.list.count = pk.nrows;
-	pk.list.sel = 0;
-	pk.list.top = 0;
-	vlist_refresh(&pk.list);
-	static const char *const hints[] = { "A", "Choose", "B", "Back", "L", "Page up", "R", "Page down", NULL };
-	footer_set(hints);
-}
-
-static void fp_close(const char *result)
-{
-	for (int i = 0; i < pk.nall; i++) free(pk.all[i]);
-	free(pk.all);
-	pk.all = NULL;
-	pk.nall = 0;
-	fp_free_rows();
-	void (*cb)(const char *) = pk.done;
-	pk.done = NULL;
-	if (cb) cb(result);
-}
-
-/* kind: filters, masks, gamma, presets (from phosphord) */
-static void fp_open(const char *kind, const char *title, int has_off, void (*done)(const char *))
-{
-	cJSON *r = api_call("{\"cmd\":\"video_files\",\"kind\":\"%s\"}", kind);
-	cJSON *arr = cJSON_GetObjectItem(r, "files"), *it;
-	int n = cJSON_GetArraySize(arr);
-	if (!api_ok(r) || (!n && !has_off)) { cJSON_Delete(r); toast_show("Nothing to choose from on the SD card"); return; }
-	pk.all = calloc((size_t)(n ? n : 1), sizeof(char *));
-	pk.nall = 0;
-	cJSON_ArrayForEach(it, arr) if (cJSON_IsString(it)) pk.all[pk.nall++] = strdup(it->valuestring);
-	cJSON_Delete(r);
-	snprintf(pk.title, sizeof(pk.title), "%s", title);
-	pk.folder[0] = 0;
-	pk.has_off = has_off;
-	pk.done = done;
-	cur = SCR_PICK;
-	fp_build();
-	fp_draw();
-}
-
-static void fp_key(pkey_t k)
-{
-	if (vlist_key(&pk.list, k)) return;
-	if (k == K_A && pk.nrows) {
-		const char *r = pk.rows[pk.list.sel];
-		size_t l = strlen(r);
-		if (pk.has_off && !pk.folder[0] && pk.list.sel == 0) { fp_close(""); return; }
-		if (l && r[l - 1] == '/') {
-			char nf[400];
-			snprintf(nf, sizeof(nf), "%s%s%.*s", pk.folder, pk.folder[0] ? "/" : "", (int)(l - 1), r);
-			snprintf(pk.folder, sizeof(pk.folder), "%s", nf);
-			fp_build();
-			fp_draw();
-		} else {
-			char full[800];
-			snprintf(full, sizeof(full), "%s%s%s", pk.folder, pk.folder[0] ? "/" : "", r);
-			fp_close(full);
-		}
-	} else if (k == K_B) {
-		if (!pk.folder[0]) { fp_close(NULL); return; }
-		char *sl = strrchr(pk.folder, '/');
-		if (sl) *sl = 0;
-		else pk.folder[0] = 0;
-		fp_build();
-		fp_draw();
-	}
-}
-
-/* ---------- Screen filters ----------
- * Per system: a preset, or the video filter, scanlines, shadow mask and gamma one by one. phosphord
- * writes the files MiSTer's own OSD writes (backed up first); it shows the next time the core starts. */
-
-typedef struct { char sys[24], name[48], summary[200]; } vsys_t;
-static vsys_t vsys[40];
-static int nvsys;
-static vlist_t vsys_list;
-static cJSON *vcur;                 /* the selected system's settings */
-static char vsel_sys[24];
-static vlist_t vrow_list;
-enum { VR_PRESET, VR_FILTER, VR_VERT, VR_SCAN, VR_ILACE, VR_MASK, VR_MASKMODE, VR_GAMMA, VR_COUNT };
-static const char *VR_KEY[VR_COUNT] = { "", "filter", "vertical", "scanlines", "interlace", "mask", "maskmode", "gamma" };
-static const char *VR_NAME[VR_COUNT] = { "Apply a preset", "Video filter", "Vertical filter", "Scanlines filter",
-                                         "Interlaced filter", "Shadow mask", "Shadow mask size", "Gamma" };
-
-static const char *short_name(const char *path)
-{
-	static char b[200];
-	const char *s = strrchr(path, '/');
-	snprintf(b, sizeof(b), "%s", s ? s + 1 : path);
-	char *dot = strrchr(b, '.');
-	if (dot) *dot = 0;
-	return b;
-}
-
-static void video_summary(cJSON *x, char *out, size_t n)
-{
-	out[0] = 0;
-	if (!cJSON_IsTrue(cJSON_GetObjectItem(x, "custom"))) { snprintf(out, n, "MiSTer.ini defaults"); return; }
-	const char *keys[] = { "filter", "scanlines", "mask", "gamma" };
-	for (int i = 0; i < 4; i++) {
-		const char *v = api_str(x, keys[i]);
-		if (!v) continue;
-		size_t l = strlen(out);
-		snprintf(out + l, n - l, "%s%s", l ? "  \xC2\xB7  " : "", short_name(v));
-	}
-	if (!out[0]) snprintf(out, n, "All off");
-}
-
-static void vsys_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
-{
-	snprintf(t, n, "%s", vsys[i].name);
-	snprintf(val, vn, "%s", vsys[i].summary);
-	*dim = !strcmp(vsys[i].summary, "MiSTer.ini defaults");
-}
-
-static void show_video(void)
-{
-	cur = SCR_VIDEO;
-	cJSON *r = api_call("{\"cmd\":\"video\"}"), *it;
-	nvsys = 0;
-	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "systems")) {
-		if (nvsys >= 40) break;
-		vsys_t *v = &vsys[nvsys++];
-		snprintf(v->sys, sizeof(v->sys), "%s", api_str(it, "system") ? api_str(it, "system") : "");
-		snprintf(v->name, sizeof(v->name), "%s", api_str(it, "name") ? api_str(it, "name") : "");
-		video_summary(it, v->summary, sizeof(v->summary));
-	}
-	cJSON_Delete(r);
-	lv_obj_clean(body);
-	screen_title("SETTINGS", "Screen filters");
-	lv_obj_t *note = mk_label(body, FONT_SMALL, PAL.dim, nvsys ? "Per system. Changes show the next time the system's core starts."
-	                                                             : "No cores found for your systems.");
-	lv_obj_set_pos(note, S(56), S(178));
-	vlist_create(&vsys_list, body, S(56), S(208), W - S(112), S(420));
-	vsys_list.fill = vsys_fill;
-	vsys_list.count = nvsys;
-	vsys_list.sel = 0;
-	vsys_list.top = 0;
-	vlist_refresh(&vsys_list);
-	static const char *const hints[] = { "A", "Open", "B", "Back", NULL };
-	footer_set(hints);
-}
-
-static void vrow_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
-{
-	snprintf(t, n, "%s", VR_NAME[i]);
-	if (i == VR_PRESET) { snprintf(val, vn, ">"); return; }
-	const char *v = vcur ? api_str(vcur, VR_KEY[i]) : NULL;
-	if (i == VR_MASKMODE) {
-		int off = !v || !strcmp(v, "off");
-		snprintf(val, vn, "<  %s  >", off ? "Off" : v);
-		*dim = off;
-		return;
-	}
-	snprintf(val, vn, "%s", v ? short_name(v) : "Off");
-	*dim = !v;
-}
-
-static void show_video_sys(void);
-
-static void video_result(cJSON *r)
-{
-	if (api_ok(r)) {
-		cJSON_Delete(vcur);
-		vcur = cJSON_DetachItemFromObject(r, "video");
-	} else {
-		toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't change it");
-	}
-	cJSON_Delete(r);
-}
-
-static void video_send(const char *key, const char *value)
-{
-	cJSON *req = cJSON_CreateObject(), *set;
-	cJSON_AddStringToObject(req, "cmd", "video");
-	cJSON_AddStringToObject(req, "system", vsel_sys);
-	if (!key) cJSON_AddStringToObject(req, "preset", value);
-	else { set = cJSON_AddObjectToObject(req, "set"); cJSON_AddStringToObject(set, key, value && *value ? value : "off"); }
-	char *b = cJSON_PrintUnformatted(req);
-	cJSON_Delete(req);
-	video_result(api_call("%s", b));
-	free(b);
-}
-
-static int vpick_row;
-static void video_picked(const char *path)
-{
-	if (path) {
-		video_send(vpick_row == VR_PRESET ? NULL : VR_KEY[vpick_row], path);
-		toast_show("Saved: shows the next time this system starts");
-	}
-	show_video_sys();
-	vrow_list.sel = vpick_row;
-	vlist_refresh(&vrow_list);
-}
-
-static void show_video_sys(void)
-{
-	cur = SCR_VIDEO_SYS;
-	if (!vcur) video_result(api_call("{\"cmd\":\"video\",\"system\":\"%s\"}", vsel_sys));
-	lv_obj_clean(body);
-	char name[64] = "";
-	for (int i = 0; i < nvsys; i++) if (!strcmp(vsys[i].sys, vsel_sys)) snprintf(name, sizeof(name), "%s", vsys[i].name);
-	screen_title("SCREEN FILTERS", name);
-	char core[120];
-	snprintf(core, sizeof(core), "Core: %s  \xC2\xB7  shows the next time it starts", vcur && api_str(vcur, "core") ? api_str(vcur, "core") : "?");
-	lv_obj_t *note = mk_label(body, FONT_SMALL, PAL.dim, core);
-	lv_obj_set_pos(note, S(56), S(178));
-	vlist_create(&vrow_list, body, S(56), S(208), S(900), S(420));
-	vrow_list.fill = vrow_fill;
-	vrow_list.count = VR_COUNT;
-	vrow_list.sel = 0;
-	vrow_list.top = 0;
-	vlist_refresh(&vrow_list);
-	static const char *const hints[] = { "A", "Change", "SELECT", "Undo", "B", "Back", NULL };
-	footer_set(hints);
-}
-
-static void video_key(pkey_t k)
-{
-	if (cur == SCR_VIDEO) {
-		if (vlist_key(&vsys_list, k)) return;
-		if (k == K_A && nvsys) {
-			snprintf(vsel_sys, sizeof(vsel_sys), "%s", vsys[vsys_list.sel].sys);
-			cJSON_Delete(vcur);
-			vcur = NULL;
-			show_video_sys();
-		} else if (k == K_B || k == K_MENU) {
-			show_settings();
-			set_list.sel = SET_VIDEO;
-			vlist_refresh(&set_list);
-		}
-		return;
-	}
-	if (vlist_key(&vrow_list, k)) return;
-	int i = vrow_list.sel;
-	if (i == VR_MASKMODE && (k == K_LEFT || k == K_RIGHT || k == K_A)) {
-		static const char *MM[] = { "off", "1x", "2x", "1x rotated", "2x rotated" };
-		const char *v = vcur ? api_str(vcur, "maskmode") : "off";
-		int m = 0;
-		for (int j = 0; j < 5; j++) if (v && !strcmp(v, MM[j])) m = j;
-		m = (m + (k == K_LEFT ? 4 : 1)) % 5;
-		video_send("maskmode", MM[m]);
-		vlist_refresh(&vrow_list);
-	} else if (k == K_A) {
-		vpick_row = i;
-		static const char *KIND[VR_COUNT] = { "presets", "filters", "filters", "filters", "filters", "masks", "", "gamma" };
-		fp_open(KIND[i], VR_NAME[i], i != VR_PRESET, video_picked);
-	} else if (k == K_SELECT) {
-		cJSON *r = api_call("{\"cmd\":\"video\",\"system\":\"%s\",\"undo\":true}", vsel_sys);
-		toast_show(api_ok(r) ? "Last change undone" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't undo"));
-		video_result(r);
-		vlist_refresh(&vrow_list);
-	} else if (k == K_B || k == K_MENU) {
-		int keep = 0;
-		for (int j = 0; j < nvsys; j++) if (!strcmp(vsys[j].sys, vsel_sys)) keep = j;
-		show_video();
-		vsys_list.sel = keep;
-		vlist_refresh(&vsys_list);
-	}
-}
-
 /* ---------- navigation ---------- */
 
 /* ---------- Looking for games ----------
@@ -4235,13 +3901,6 @@ void ui_key(pkey_t k)
 	case SCR_WIFI:
 		wifi_key(k);
 		break;
-	case SCR_VIDEO:
-	case SCR_VIDEO_SYS:
-		video_key(k);
-		break;
-	case SCR_PICK:
-		fp_key(k);
-		break;
 	case SCR_REMOTE:
 		remote_key(k);
 		break;
@@ -4308,7 +3967,6 @@ void ui_key(pkey_t k)
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
 			}
 			else if (set_list.sel == SET_RESTART && k == K_A) restart_ask();
-			else if (set_list.sel == SET_VIDEO) show_video();
 			else settings_change(1);
 		}
 		else if (k == K_B || k == K_MENU) show_home();
