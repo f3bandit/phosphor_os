@@ -97,6 +97,11 @@ h1 { flex: none; font-weight: 600; font-size: 2rem; letter-spacing: -.01em; marg
 .row.f::before { content: ""; position: absolute; left: .5rem; top: .55rem; bottom: .55rem; width: 3px; border-radius: 2px; background: var(--acc); }
 .row.f .v { color: var(--acc); }
 .row .star { color: var(--acc); }
+.col { display: flex; flex-direction: column; min-height: 0; }
+.row.net { height: 3.8rem; }
+.row.net .n b { display: block; font-weight: 500; color: var(--text); }
+.row.net .n small { display: block; font-size: .8rem; color: var(--faint); margin-top: .15rem; }
+.row.net.on .tick { color: var(--acc); }
 .more { color: var(--faint); padding: .8rem 1.5rem; font-size: .875rem; }
 .empty { color: var(--dim); padding: 1.2rem 1.5rem; }
 

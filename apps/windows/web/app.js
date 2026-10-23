@@ -221,41 +221,63 @@ const ICON = {
 
 /* ---------- Connect: find the SS1, pair with the code on the TV ---------- */
 class Connect {
-	constructor() { this.hints = [["A", "Choose"], ["B", "Back"]]; this.addr = S.address || ""; }
+	constructor() { this.hints = [["A", "Choose"], ["X", "Search again"], ["B", "Back"]]; this.addr = S.address || ""; this.found = []; }
 	render(root) {
 		root.append(h(`<div class="sub">${spaced("Connect")}</div><h1>Connect to your SS1</h1>
 			<p class="lead">On the SS1, open <b>Settings &gt; Remote access</b>, turn it on and choose <b>Pair a device</b>. The TV shows a 6-digit code for 2 minutes.</p>
-			<div class="split"><div class="list" id="found"><div class="empty"><span class="spin"></span>Looking for your SS1 on this network…</div></div>
+			<div class="split"><div class="col"><div class="sub">${spaced("Consoles on this network")}</div><div class="list" id="found"></div></div>
 			<div class="panel"><h2>Pair this PC</h2>
-				<div class="field"><label for="addr">The SS1's address (shown in Remote access)</label><input id="addr" type="text" data-nav placeholder="192.168.1.23" value="${esc(this.addr)}"></div>
+				<div class="field"><label for="addr">The SS1's address (pick it on the left, or type it)</label><input id="addr" type="text" data-nav placeholder="192.168.1.23" value="${esc(this.addr)}"></div>
 				<div class="field"><label for="code">Code on the TV</label><input id="code" class="code" type="text" inputmode="numeric" maxlength="6" data-nav placeholder="000000"></div>
-				<div class="acts"><button class="btn primary" id="pair" data-nav>Pair</button><button class="btn" id="look" data-nav>Look again</button></div>
+				<div class="acts"><button class="btn primary" id="pair" data-nav>Pair</button></div>
 				<p class="note" id="pmsg">Pairing keys are kept on this PC only, protected for your Windows account.</p></div></div>`));
 		$("#pair").onclick = () => this.pair();
-		$("#look").onclick = () => this.look();
 		$("#code")._enter = () => this.pair();
 		$("#code").addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6); if (e.target.value.length === 6) focus($("#pair")); });
+		$("#addr").addEventListener("input", () => this.mark());
 		this.look();
-		focus($("#code"));
+	}
+	x() { this.look(); }
+	/* like a Wi-Fi list: every console that answers, pick one, then type the code */
+	draw(searching) {
+		const box = $("#found");
+		box.innerHTML = "";
+		for (const f of this.found) {
+			const ip = f.address.replace(/:8767$/, "");
+			const r = h(`<div class="row net" data-nav><span class="n"><b>${esc(f.name || "SuperStation One")}</b><small>${esc(ip)} · Phosphor ${esc(f.version)}</small></span><span class="v tick"></span></div>`).firstChild;
+			r._ip = ip;
+			r.onclick = () => { $("#addr").value = ip; this.mark(); focus($("#code")); };
+			box.appendChild(r);
+		}
+		if (searching) box.appendChild(h(`<div class="empty"><span class="spin"></span>Searching…</div>`).firstChild);
+		else {
+			if (!this.found.length) box.appendChild(h(`<div class="empty">No SS1 found. Check Remote access is on, then search again, or type its address.</div>`).firstChild);
+			const r = h(`<div class="row" data-nav id="again"><span class="n">Search again</span><span class="v">X</span></div>`).firstChild;
+			r.onclick = () => this.look();
+			box.appendChild(r);
+		}
+		this.mark();
+	}
+	mark() {
+		const a = $("#addr").value.trim();
+		for (const r of document.querySelectorAll("#found .net")) { const on = r._ip === a; r.classList.toggle("on", on); r.querySelector(".tick").textContent = on ? "✓ Selected" : ""; }
 	}
 	async look() {
-		const box = $("#found");
-		box.innerHTML = `<div class="empty"><span class="spin"></span>Looking for your SS1 on this network…</div>`;
+		if (this.busy) return;
+		this.busy = true; this.found = []; this.draw(true);
 		try {
 			const j = await api("/api/discover");
-			if (!j.found.length) { box.innerHTML = `<div class="empty">No SS1 found with Remote access on. Type its address instead.</div>`; return; }
-			box.innerHTML = "";
-			for (const f of j.found) {
-				const r = h(`<div class="row" data-nav><span class="n">${esc(f.address.replace(/:8767$/, ""))}</span><span class="v">Phosphor ${esc(f.version)}</span></div>`).firstChild;
-				r.onclick = () => { $("#addr").value = f.address.replace(/:8767$/, ""); focus($("#code")); };
-				box.appendChild(r);
-			}
-			if (j.found.length === 1 && !$("#addr").value) $("#addr").value = j.found[0].address.replace(/:8767$/, "");
-		} catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+			this.found = j.found;
+			if (this.found.length === 1 && !$("#addr").value) $("#addr").value = this.found[0].address.replace(/:8767$/, "");
+		} catch (e) { toast(e.message); }
+		this.busy = false;
+		this.draw(false);
+		const sel = document.querySelector("#found .net.on");
+		focus(sel ? $("#code") : $("#found").firstElementChild, true);
 	}
 	async pair() {
 		const addr = $("#addr").value.trim(), code = $("#code").value.trim(), msg = $("#pmsg");
-		if (!addr) { msg.textContent = "Type the SS1's address, or pick it on the left."; focus($("#addr")); return; }
+		if (!addr) { msg.textContent = "Pick your SS1 on the left, or type its address."; focus($("#found").firstElementChild); return; }
 		if (code.length !== 6) { msg.textContent = "Type the 6-digit code from the TV."; focus($("#code")); return; }
 		msg.innerHTML = `<span class="spin"></span>Pairing…`;
 		const j = await api("/api/pair", { address: addr, code });
