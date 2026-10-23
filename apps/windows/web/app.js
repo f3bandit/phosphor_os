@@ -69,7 +69,7 @@ function showConn() {
 	const p = $("#conn");
 	p.className = "pill" + (S.connected ? " ok" : S.paired ? " bad" : "");
 	p.querySelector("span").textContent = S.connected ? (S.name && S.name !== "Phosphor" ? S.name : "SS1") + " connected"
-		: S.paired ? "SS1 not answering" : "Not connected";
+		: S.paired ? "Reconnecting…" : "Not connected";
 }
 async function refreshState() {
 	try {

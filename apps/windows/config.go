@@ -18,6 +18,8 @@ type config struct {
 	Accent   string `json:"accent"`             // amber, red, green, blue, purple
 	Texture  int    `json:"texture"`            // the console's texture numbers
 	QuietPC  bool   `json:"quiet_pc,omitempty"` // no Windows notifications (still listed in the app)
+	// don't look for the SS1 on the network when it stops answering (reconnect.go; on by default)
+	NoReconnect bool `json:"no_reconnect,omitempty"`
 }
 
 var (
