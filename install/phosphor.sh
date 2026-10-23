@@ -7,6 +7,7 @@
 #   phosphor.sh boot           at boot (install.sh --boot-phosphor): phosphord, Phosphor's Main in place
 #                              of MiSTer's (if it's installed), then the shell
 #   phosphor.sh main           switch to Phosphor's Main now (MiSTer's Main comes back on the next boot)
+#   phosphor.sh menu-core      put Phosphor's menu core back as menu.rbf (at shutdown, after updates)
 #   phosphor.sh reload         restart the shell (Settings > Reload, the PC app); phosphord keeps running
 #   phosphor.sh stop           stop both
 #   phosphor.sh status         what's running, versions, the library
@@ -95,6 +96,11 @@ case "${1:-status}" in
 			rm -f "$ROOT/firstboot"
 		fi
 		rm -rf "$w"; rmdir "$TMP/firstboot.lock"
+		;;
+	menu-core)
+		# Phosphor's menu core as menu.rbf again (MiSTer's downloader puts its own back on updates);
+		# at shutdown and after Update / Update All. MiSTer's is kept in backup/menu.rbf.mister.
+		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" && sync
 		;;
 	main)
 		switch_main && echo "Phosphor's Main is running (MiSTer's comes back on the next boot)"
