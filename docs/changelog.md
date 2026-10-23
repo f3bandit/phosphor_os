@@ -30,11 +30,12 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - Updates & restore points: an alert in the status bar when an update reset settings, and a Settings
   screen to restore them, keep the new ones, roll back, or delete restore points.
 - **Power check.** A brownout leaves no trace: no crash, no error, no log. Phosphor marks heavy work
-  (Update, Update All, scripts, Look for games, box art, cloud saves, backups) while it runs; a mark
+  (Update, Update All, scripts, Look for games, cloud saves, backups) while it runs; a mark
   still there at the next start-up, with no normal shutdown in between, means the power went. After
   3, the status bar says "Power supply problem?" and Settings > Diagnostics lists them with what helps
   (a single-port USB-C PD adapter, 9 V / 3 A or more). Dismiss starts the count again. Idle resets
-  aren't counted: they look the same as switching off. `phosphor/logs/power.log` goes in the support
+  aren't counted: they look the same as switching off. Nor is box art, which can run for hours
+  unattended; one power cut counts once, however many jobs it interrupted. `phosphor/logs/power.log` goes in the support
   report.
 - Settings: an info panel beside the list shows what the highlighted setting is set to and what it
   does. "Get or update cores (MiSTer's downloader)" is now just "Update".

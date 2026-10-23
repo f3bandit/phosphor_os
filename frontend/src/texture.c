@@ -30,7 +30,8 @@ static const struct {
 	{ "Triangles", SH_TRIANGLE, 40, 36, 1, M_LINE },
 	{ NULL, 0, 0, 0, 0, 0 },                           /* 5 was Circles (removed): falls back to none */
 	{ "Hexagons", SH_HEX, 25.980762f, 45, 1, M_LINE },
-	/* variants (numbers 7 on) */
+	{ NULL, 0, 0, 0, 0, 0 },                           /* 7 was the 8-bit tiles (removed): falls back to none */
+	/* variants (numbers 8 on) */
 	{ "Zigzag, tight", SH_ZIGZAG, 16, 8, 1, M_LINE },
 	{ "Zigzag, bold", SH_ZIGZAG, 16, 16, 2.4f, M_LINE },
 	{ "X's, packed", SH_X, 14, 14, 1, M_LINE },
@@ -51,7 +52,7 @@ static const struct {
 const int TEX_COUNT = sizeof(T) / sizeof(T[0]);
 
 /* the order Settings steps through: each shape followed by its variants */
-static const int ORDER[] = { 0, 1, 7, 8, 2, 9, 3, 10, 11, 16, 21, 22, 17, 18, 19, 20, 4, 12, 13, 6, 14, 15 };
+static const int ORDER[] = { 0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16 };
 
 int texture_valid(texture_t t) { return t >= 0 && t < TEX_COUNT && T[t].name; }
 const char *texture_name(texture_t t) { return texture_valid(t) ? T[t].name : "None"; }
@@ -157,7 +158,9 @@ uint8_t *texture_alpha(texture_t t, float scale, int *pw, int *ph)
 	for (int y = 0; y < *ph; y++)
 		for (int x = 0; x < *pw; x++) {
 			/* sample the base-size tile; wrap so lines crossing the edge join up */
-			float fx = (x + 0.5f) / scale, fy = (y + 0.5f) / scale, d = 1e9f;
+			/* (by the rounded tile size, so a tile whose base size isn't a whole number of pixels
+			   still meets its neighbours without a seam) */
+			float fx = (x + 0.5f) * bw / *pw, fy = (y + 0.5f) * bh / *ph, d = 1e9f;
 			int in = 0, any_in = 0;
 			for (int oy = -1; oy <= 1; oy++)
 				for (int ox = -1; ox <= 1; ox++) {
@@ -165,7 +168,7 @@ uint8_t *texture_alpha(texture_t t, float scale, int *pw, int *ph)
 					if (dd < d) d = dd;
 					if (in && ox == 0 && oy == 0) any_in = 1;
 				}
-			d *= scale;
+			d *= (float)*pw / bw;
 			float line = half + 0.5f - d;                 /* 1 px of soft edge */
 			if (line < 0) line = 0;
 			if (line > 1) line = 1;

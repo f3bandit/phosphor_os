@@ -1821,7 +1821,18 @@ static int si_state(int row, char k[][40], char v[][96], int *hi)
 		if (!rc || !*rc) { LINE("Status", "Needs setting up"); break; }
 		if (!rem || !*rem) { LINE("Storage place", "Not chosen yet"); break; }
 		char w[40];
-		si_when(atol(api_str(s, "last_push") ? api_str(s, "last_push") : "0"), w, sizeof(w));
+		{   /* cloud-sync gives "YYYY-MM-DD HH:MM:SS" (local time), or nothing */
+			const char *lp = api_str(s, "last_push");
+			struct tm tm;
+			memset(&tm, 0, sizeof(tm));
+			if (lp && sscanf(lp, "%d-%d-%d %d:%d:%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
+				tm.tm_year -= 1900;
+				tm.tm_mon -= 1;
+				tm.tm_isdst = -1;
+				si_when((long)mktime(&tm), w, sizeof(w));
+			}
+			else snprintf(w, sizeof(w), "Not yet");
+		}
 		LINE("Storage place", "%s", rem);
 		LINE("Last sent", "%s", w);
 		LINE("Waiting to send", "%s", api_str(s, "pending") && !strcmp(api_str(s, "pending"), "1") ? "Yes" : "Nothing");
