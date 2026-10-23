@@ -29,9 +29,12 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <arpa/inet.h>
+#include <dirent.h>
+#include <vterm.h>
+#include "term.h"
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_VIDEO, SCR_VIDEO_SYS, SCR_PICK, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_TERM, SCR_SCRIPTS } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -915,68 +918,34 @@ static void picker_key(pkey_t k)
 	else if (k == K_B || k == K_Y) picker_close();
 }
 
-/* MiSTer's downloader (phosphord "cores"): shared by the Welcome screen and Settings */
-static struct { int available, busy, worked, ran; char line[200]; } cr;
-static void job_bar_update(void);
+/* MiSTer's downloader and Update All: scripts on the SD card, run in Phosphor's terminal window */
+static const char *fat_dir(void) { const char *f = getenv("PHOS_FAT"); return f && *f ? f : "/media/fat"; }
+static const char *fat_path(char *buf, size_t n, const char *rel) { snprintf(buf, n, "%s/%s", fat_dir(), rel); return buf; }
+static char scripts_dir_buf[320], script_log_buf[320], upd_buf[340], upd_all_buf[340];
+#define SCRIPTS_DIR fat_path(scripts_dir_buf, sizeof(scripts_dir_buf), "Scripts")
+#define SCRIPT_LOG fat_path(script_log_buf, sizeof(script_log_buf), "phosphor/logs/script.log")
+#define UPDATE_SH fat_path(upd_buf, sizeof(upd_buf), "Scripts/update.sh")
+#define UPDATE_ALL_SH fat_path(upd_all_buf, sizeof(upd_all_buf), "Scripts/update_all.sh")
+static struct { int available, all_available; } cr;
 static void cores_refresh(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"cores\"}");
-	if (api_ok(r)) {
-		int was = cr.busy;
-		cr.available = cJSON_IsTrue(cJSON_GetObjectItem(r, "available"));
-		cr.busy = cJSON_IsTrue(cJSON_GetObjectItem(r, "busy"));
-		cr.worked = cJSON_IsTrue(cJSON_GetObjectItem(r, "worked"));
-		cr.ran = api_num(r, "at", 0) > 0;
-		snprintf(cr.line, sizeof(cr.line), "%s", api_str(r, "line") ? api_str(r, "line") : "");
-		if (was && !cr.busy) toast_show(cr.worked ? "Cores and filters are in" : "The downloader stopped: see Settings > Get cores");
-	}
-	cJSON_Delete(r);
-	job_bar_update();
-}
-/* while it runs: "Running." "Running.." "Running..." in the row, and its latest line in a bar along the
-   bottom of every screen (above the button legend) */
-static lv_obj_t *job_bar, *job_line;
-static void job_bar_update(void)
-{
-	if (!job_bar) return;
-	int show = cr.busy;
-	if (show) lv_label_set_text(job_line, cr.line[0] ? cr.line : "Starting MiSTer's downloader...");
-	if (show == !lv_obj_is_hidden(job_bar)) return;
-	lv_obj_set_hidden(job_bar, !show);
-	if (show) lv_obj_move_foreground(job_bar);
-	lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, show ? -S(152) : -S(80));
-}
-static void job_bar_create(void)
-{
-	job_bar = mk_box(root, W, S(72), lv_color_hex(0x000000), 0);
-	lv_obj_set_style_bg_opa(job_bar, LV_OPA_COVER, 0);
-	lv_obj_align(job_bar, LV_ALIGN_BOTTOM_MID, 0, -S(64));
-	lv_obj_t *t = mk_label(job_bar, FONT_LABEL, PAL.acc, "GETTING CORES");
-	lv_obj_align(t, LV_ALIGN_LEFT_MID, S(56), 0);
-	job_line = mk_label(job_bar, FONT_NAME, PAL.text, "");
-	lv_label_set_long_mode(job_line, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_width(job_line, W - S(56) - S(230) - S(56));
-	lv_obj_align(job_line, LV_ALIGN_LEFT_MID, S(230), 0);
-	lv_obj_set_hidden(job_bar, true);
-	job_bar_update();
+	cr.available = access(UPDATE_SH, R_OK) == 0;
+	cr.all_available = access(UPDATE_ALL_SH, R_OK) == 0;
 }
 static void cores_value(char *val, size_t vn)
 {
 	if (!cr.available) snprintf(val, vn, "MiSTer's updater not found");
-	else if (cr.busy) { static const char *const D[] = { ".", "..", "..." }; snprintf(val, vn, "Running%s", D[(lv_tick_get() / 1000) % 3]); }
-	else if (cr.ran) snprintf(val, vn, "%s  >", cr.worked ? "Done" : "Didn't finish, try again");
-	else snprintf(val, vn, "Not yet  >");
+	else if (term_running()) snprintf(val, vn, "Running...");
+	else snprintf(val, vn, ">");
 }
-static void cores_start(int have_net)
+static void show_term(const char *script, const char *title);
+static int cores_start_job(int have_net, int all)
 {
-	if (cr.busy) { toast_show("The downloader is already running"); return; }
-	if (!have_net) { toast_show("Connect to a network first"); return; }
-	cJSON *r = api_call("{\"cmd\":\"cores\",\"do\":\"update\"}");
-	if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
-	else toast_show("Getting cores: this takes a while, Phosphor stays usable");
-	cJSON_Delete(r);
-	cores_refresh();
+	if (!have_net) { toast_show("Connect to a network first"); return 0; }
+	show_term(all ? UPDATE_ALL_SH : UPDATE_SH, all ? "Update All" : "MiSTer's downloader");
+	return 1;
 }
+static void cores_start(int have_net) { cores_start_job(have_net, 0); }
 
 /* ---------- Restart (A twice) ---------- */
 
@@ -1003,7 +972,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_CORES, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_CORES, SET_UPDATE_ALL, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
@@ -1098,6 +1067,13 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
 	case SET_CORES: snprintf(t, n, "Get or update cores (MiSTer's downloader)"); cores_value(val, vn); break;
+	case SET_UPDATE_ALL:
+		snprintf(t, n, "Update All");
+		if (!cr.all_available) { *dim = 1; snprintf(val, vn, "Not on the SD card"); }
+		else snprintf(val, vn, ">");
+		break;
+	case SET_SCRIPTS: snprintf(t, n, "Scripts"); snprintf(val, vn, ">"); break;
+	case SET_UPDLOG: snprintf(t, n, "Last script's log"); snprintf(val, vn, ">"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_MISTER: snprintf(t, n, "MiSTer menu"); snprintf(val, vn, ">"); break;
 	case SET_RESTART: snprintf(t, n, "Restart"); break;
@@ -1108,6 +1084,233 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 static void show_settings(void);
 static void show_welcome(void);
 static int in_setup;              /* the sub-screens go back to the welcome screen, not Settings */
+
+/* ---------- Script terminal ----------
+ * A script (Update All, MiSTer's downloader, anything in Scripts) runs in a window inside Phosphor:
+ * D-pad = arrow keys, A Enter, B Esc, X Backspace, Y types text (keyboard), L/R Page Up/Down,
+ * SELECT Tab. Start twice stops it; when it's done, B or Start goes back. Its output is kept in
+ * logs/script.log (Settings > Last script's log). */
+static lv_obj_t *term_head;
+static int term_back;              /* came from: 0 Settings, 1 Welcome, 2 Scripts */
+static uint32_t term_stop_asked;
+static char term_title[80];
+static const char *const TERM_HINTS[] = { "A", "Enter", "B", "Esc", "X", "Delete", "Y", "Type", "\xE2\x89\xA1", "Stop", NULL };
+static const char *const TERM_DONE_HINTS[] = { "B", "Back", NULL };
+static void show_scripts(void);
+static void osk_open(const char *title, const char *hint, int masked, int max, void (*done)(const char *), const char *const *back_hints);
+
+static void term_head_update(void)
+{
+	if (!term_head) return;
+	char h[160];
+	if (term_running()) snprintf(h, sizeof(h), "%s  \xC2\xB7  running", term_title);
+	else snprintf(h, sizeof(h), "%s  \xC2\xB7  %s", term_title, term_status() ? "stopped before the end (see the end of its output)" : "done");
+	if (strcmp(lv_label_get_text(term_head), h)) lv_label_set_text(term_head, h);
+}
+
+static void show_term(const char *script, const char *title)
+{
+	if (term_running()) { toast_show("A script is already running"); return; }
+	term_back = cur == SCR_WELCOME ? 1 : cur == SCR_SCRIPTS ? 2 : 0;
+	cur = SCR_TERM;
+	lv_obj_clean(body);
+	screen_title(term_back == 1 ? "WELCOME" : "SETTINGS", title);
+	snprintf(term_title, sizeof(term_title), "%s", title);
+	term_head = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_pos(term_head, S(56), S(176));
+	lv_obj_t *frame = mk_box(body, W - S(112), H - S(212) - S(84), lv_color_hex(0x000000), S(10));
+	lv_obj_set_pos(frame, S(56), S(206));
+	/* the bigger font when 24 lines fit (what most scripts expect), else the smaller one */
+	int th = H - S(212) - S(84) - S(24);
+	const lv_font_t *tf = th / lv_font_get_line_height(FONT_WORD) >= 24 ? FONT_WORD : FONT_LABEL;
+	lv_obj_t *cv = term_create(frame, W - S(112) - S(24), th, tf);
+	lv_obj_center(cv);
+	term_stop_asked = 0;
+	footer_set(TERM_HINTS);
+	if (term_start(script, SCRIPT_LOG)) { toast_show("Couldn't start it"); footer_set(TERM_DONE_HINTS); }
+	term_head_update();
+}
+
+static void term_typed(const char *text) { if (text) term_text(text); footer_set(term_running() ? TERM_HINTS : TERM_DONE_HINTS); }
+
+static void show_welcome(void);
+static void back_to_settings(int sel);
+static void term_leave(void)
+{
+	term_forget();
+	term_head = NULL;
+	if (term_back == 1) show_welcome();
+	else if (term_back == 2) show_scripts();
+	else back_to_settings(SET_CORES);
+}
+
+static void term_key_in(pkey_t k)
+{
+	if (!term_running()) {
+		if (k == K_B || k == K_MENU || k == K_A) term_leave();
+		return;
+	}
+	switch (k) {
+	case K_UP: term_key(VTERM_KEY_UP); break;
+	case K_DOWN: term_key(VTERM_KEY_DOWN); break;
+	case K_LEFT: term_key(VTERM_KEY_LEFT); break;
+	case K_RIGHT: term_key(VTERM_KEY_RIGHT); break;
+	case K_A: term_key(VTERM_KEY_ENTER); break;
+	case K_B: term_key(VTERM_KEY_ESCAPE); break;
+	case K_X: term_key(VTERM_KEY_BACKSPACE); break;
+	case K_L: term_key(VTERM_KEY_PAGEUP); break;
+	case K_R: term_key(VTERM_KEY_PAGEDOWN); break;
+	case K_SELECT: term_key(VTERM_KEY_TAB); break;
+	case K_Y: osk_open("Type", "Sent to the script as typed (A in the window is Enter).", 0, 78, term_typed, TERM_HINTS); break;
+	case K_MENU: {
+		uint32_t now = lv_tick_get();
+		if (!term_stop_asked || now - term_stop_asked > 4000) { term_stop_asked = now ? now : 1; toast_show("Press Start again to stop the script"); }
+		else { term_stop_asked = 0; term_stop(); toast_show("Stopped"); }
+		break;
+	}
+	default: break;
+	}
+}
+
+/* called every frame */
+static void term_tick(void)
+{
+	if (cur != SCR_TERM) { if (term_running()) term_poll(); return; }
+	int was = term_running();
+	term_poll();
+	if (was && !term_running()) { footer_set(TERM_DONE_HINTS); cores_refresh(); }
+	static uint32_t last;
+	uint32_t now = lv_tick_get();
+	if (now - last > 500) { last = now; term_head_update(); }
+}
+
+/* ---------- Scripts (everything in /media/fat/Scripts) ---------- */
+static vlist_t sc_list;
+static char sc_names[200][96];
+static int sc_n;
+static int sc_cmp(const void *a, const void *b) { return strcasecmp((const char *)a, (const char *)b); }
+static void sc_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	(void)dim;
+	snprintf(t, n, "%.*s", (int)(strlen(sc_names[i]) - 3), sc_names[i]);
+	snprintf(val, vn, "Run >");
+}
+static void show_scripts(void)
+{
+	cur = SCR_SCRIPTS;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Scripts");
+	sc_n = 0;
+	DIR *d = opendir(SCRIPTS_DIR);
+	struct dirent *e;
+	while (d && (e = readdir(d)) && sc_n < 200) {
+		size_t n = strlen(e->d_name);
+		if (n > 3 && n < sizeof(sc_names[0]) && e->d_name[0] != '.' && !strcasecmp(e->d_name + n - 3, ".sh") && strcmp(e->d_name, "phosphor.sh"))
+			snprintf(sc_names[sc_n++], sizeof(sc_names[0]), "%s", e->d_name);
+	}
+	if (d) closedir(d);
+	qsort(sc_names, (size_t)sc_n, sizeof(sc_names[0]), sc_cmp);
+	lv_obj_t *sub = mk_label(body, FONT_SMALL, PAL.dim, sc_n ? "The scripts in the SD card's Scripts folder. They run in a window here; their output is kept for Settings > Last script's log." : "There are no scripts in the SD card's Scripts folder.");
+	lv_obj_set_pos(sub, S(56), S(176));
+	vlist_create(&sc_list, body, S(56), S(210), S(1000), S(420));
+	sc_list.count = sc_n;
+	sc_list.fill = sc_fill;
+	sc_list.sel = 0;
+	sc_list.top = 0;
+	static const char *const hints[] = { "A", "Run", "B", "Back", NULL };
+	footer_set(hints);
+	vlist_refresh(&sc_list);
+}
+static void scripts_key(pkey_t k)
+{
+	if (vlist_key(&sc_list, k)) return;
+	if (k == K_B || k == K_MENU) { back_to_settings(SET_SCRIPTS); return; }
+	if (k == K_A && sc_n) {
+		char path[460], title[96];
+		snprintf(path, sizeof(path), "%s/%s", SCRIPTS_DIR, sc_names[sc_list.sel]);
+		snprintf(title, sizeof(title), "%.*s", (int)(strlen(sc_names[sc_list.sel]) - 3), sc_names[sc_list.sel]);
+		show_term(path, title);
+	}
+}
+
+/* ---------- Last script's log ----------
+ * What the last script printed (logs/script.log), cleaned up. Up/Down scroll, L/R a page, B back. */
+static lv_obj_t *log_box, *log_lab;
+static const char *const LOG_HINTS[] = { "\xE2\x86\x91\xE2\x86\x93", "Scroll", "L/R", "Page", "B", "Back", NULL };
+
+/* the end of the log (up to max bytes), colour codes gone, carriage-return redraws applied */
+static char *log_clean(size_t max)
+{
+	FILE *f = fopen(SCRIPT_LOG, "rb");
+	if (!f) return strdup("(no script has run yet)");
+	fseek(f, 0, SEEK_END);
+	long size = ftell(f), from = size > (long)max ? size - (long)max : 0;
+	fseek(f, from, SEEK_SET);
+	char *raw = malloc((size_t)(size - from) + 1), *out = malloc((size_t)(size - from) + 2);
+	size_t n = raw ? fread(raw, 1, (size_t)(size - from), f) : 0;
+	fclose(f);
+	if (!raw || !out) { free(raw); free(out); return strdup(""); }
+	size_t i = 0, k = 0, line0 = 0;
+	if (from) { while (i < n && raw[i] != '\n') i++; if (i < n) i++; }
+	for (; i < n; i++) {
+		unsigned char c = (unsigned char)raw[i];
+		if (c == 0x1b) {
+			i++;
+			if (i < n && raw[i] == '[') { i++; while (i < n && !(raw[i] >= 0x40 && raw[i] <= 0x7E)) i++; }
+			else if (i < n && raw[i] == ']') { while (i < n && raw[i] != 7) i++; }
+			continue;
+		}
+		if (c == '\r') { if (i + 1 < n && raw[i + 1] == '\n') continue; k = line0; continue; }
+		if (c == '\n') { out[k++] = '\n'; line0 = k; continue; }
+		if (c >= 0x20 || c == '\t') out[k++] = (char)c;
+	}
+	out[k] = 0;
+	free(raw);
+	if (!k) { free(out); return strdup("(the log is empty)"); }
+	return out;
+}
+
+static void show_log(void)
+{
+	cur = SCR_LOG;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Last script's log");
+	log_box = lv_obj_create(body);
+	lv_obj_remove_style_all(log_box);
+	lv_obj_set_size(log_box, W - S(112), H - S(180) - S(84));
+	lv_obj_set_pos(log_box, S(56), S(176));
+	lv_obj_set_style_bg_color(log_box, lv_color_hex(0x000000), 0);
+	lv_obj_set_style_bg_opa(log_box, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(log_box, S(10), 0);
+	lv_obj_set_style_pad_all(log_box, S(16), 0);
+	lv_obj_set_scrollbar_mode(log_box, LV_SCROLLBAR_MODE_ON);
+	lv_obj_set_scroll_dir(log_box, LV_DIR_VER);
+	lv_obj_set_style_bg_color(log_box, PAL.acc, LV_PART_SCROLLBAR);
+	lv_obj_set_style_bg_opa(log_box, LV_OPA_COVER, LV_PART_SCROLLBAR);
+	lv_obj_set_style_width(log_box, S(4), LV_PART_SCROLLBAR);
+	log_lab = mk_label(log_box, FONT_SMALL, PAL.text, "");
+	lv_obj_set_width(log_lab, W - S(112) - S(40));
+	lv_label_set_long_mode(log_lab, LV_LABEL_LONG_MODE_WRAP);
+	char *t = log_clean(32 * 1024);
+	lv_label_set_text(log_lab, t);
+	free(t);
+	lv_obj_update_layout(log_box);
+	lv_obj_scroll_to_y(log_box, LV_COORD_MAX, LV_ANIM_OFF);
+	footer_set(LOG_HINTS);
+}
+
+static void log_key(pkey_t k)
+{
+	int line = S(24), page = lv_obj_get_height(log_box) - S(40);
+	switch (k) {
+	case K_UP: lv_obj_scroll_by_bounded(log_box, 0, line * 3, LV_ANIM_OFF); break;
+	case K_DOWN: lv_obj_scroll_by_bounded(log_box, 0, -line * 3, LV_ANIM_OFF); break;
+	case K_L: lv_obj_scroll_by_bounded(log_box, 0, page, LV_ANIM_OFF); break;
+	case K_R: lv_obj_scroll_by_bounded(log_box, 0, -page, LV_ANIM_OFF); break;
+	case K_B: case K_MENU: log_box = NULL; back_to_settings(SET_UPDLOG); return;
+	default: break;
+	}
+}
 
 static void back_to_settings(int sel)
 {
@@ -3646,6 +3849,15 @@ void ui_key(pkey_t k)
 	case SCR_ABOUT:
 		about_key(k);
 		break;
+	case SCR_LOG:
+		log_key(k);
+		break;
+	case SCR_TERM:
+		term_key_in(k);
+		break;
+	case SCR_SCRIPTS:
+		scripts_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
@@ -3660,16 +3872,18 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
 			else if (set_list.sel == SET_ABOUT) show_about();
-			else if (set_list.sel == SET_CORES && k == K_A) {
+			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
+				if (set_list.sel == SET_UPDATE_ALL && !cr.all_available) { toast_show("Update All isn't on the SD card (Scripts/update_all.sh)"); break; }
 				sysinfo_t si;
 				sysinfo_read(&si);
 				cJSON *w = api_call("{\"cmd\":\"wifi\"}");
 				cJSON *ws = w ? cJSON_GetObjectItem(w, "status") : NULL;
 				int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(ws, "connected"));
 				cJSON_Delete(w);
-				cores_start(net);
-				vlist_refresh(&set_list);
+				if (!cores_start_job(net, set_list.sel == SET_UPDATE_ALL)) vlist_refresh(&set_list);
 			}
+			else if (set_list.sel == SET_SCRIPTS) show_scripts();
+			else if (set_list.sel == SET_UPDLOG) show_log();
 			else if (set_list.sel == SET_MISTER && k == K_A) {
 				if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
@@ -3689,6 +3903,7 @@ static uint32_t last_status, last_poll;
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
+	term_tick();
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);
@@ -3703,8 +3918,6 @@ void ui_tick(void)
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); }
-		if (cur == SCR_WELCOME && cr.busy) { cores_refresh(); vlist_refresh(&wl_list); }
-		else if (cr.busy && cur != SCR_SETTINGS) cores_refresh();     /* the bar, on every screen */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
@@ -3773,7 +3986,6 @@ void ui_init(int w, int h)
 	lv_obj_center(tl);
 	lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -S(80));
 	lv_obj_set_hidden(toast, true);
-	job_bar_create();
 
 	status_update();
 	if (SETTINGS.setup_done) show_home();

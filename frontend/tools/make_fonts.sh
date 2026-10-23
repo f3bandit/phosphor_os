@@ -7,7 +7,7 @@ C=tools/node_modules/.bin/lv_font_conv
 INTER="${INTER_DIR:-/usr/share/fonts/opentype/inter}"
 MONO="${MONO_FONT:-/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf}"
 TEXT="0x20-0x7E,0xA0-0xFF,0x2013-0x2014,0x2018-0x201D,0x2022,0x2026,0x2190-0x2193"
-MONO_RANGE="0x20-0x7E,0xA0-0xFF,0x2014,0x2194,0x2261"
+MONO_RANGE="0x20-0x7E,0xA0-0xFF,0x2014,0x2022,0x2026,0x2190-0x2195,0x2261,0x2500-0x259F"   # + box drawing and blocks (the script terminal)
 gen() { # name size font range
 	$C --no-compress --no-prefilter --bpp 4 --size "$2" --font "$3" -r "$4" \
 		--format lvgl --lv-include lvgl.h -o "fonts/$1.c"
