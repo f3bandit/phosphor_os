@@ -30,6 +30,8 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/kd.h>
+#include <linux/fb.h>
+#include <sys/mman.h>
 #include <poll.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -151,12 +153,33 @@ static void console_quiet(void)
 	if (f >= 0) { if (write(f, "0", 1) < 0) {} close(f); }
 }
 
+/* the framebuffer to black, so nothing that was on it (the Linux console's text) shows before the first
+   picture */
+static void fb_black(const char *fbdev)
+{
+	int fd = open(fbdev, O_RDWR | O_CLOEXEC);
+	if (fd < 0) return;
+	struct fb_var_screeninfo v;
+	struct fb_fix_screeninfo f;
+	if (ioctl(fd, FBIOGET_VSCREENINFO, &v) == 0 && ioctl(fd, FBIOGET_FSCREENINFO, &f) == 0) {
+		size_t len = (size_t)f.line_length * v.yres_virtual;
+		if (!len || len > f.smem_len) len = f.smem_len;
+		void *m = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+		if (m != MAP_FAILED) { memset(m, 0, len); munmap(m, len); }
+	}
+	close(fd);
+}
+
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
 	lv_tick_set_cb(mono_ms);
 	int mw = 0, mh = 0;
 	/* "full": 0x0, which Main turns into the size it sends to the TV */
 	int have_mode = fb_mode && (!strcmp(fb_mode, "full") || sscanf(fb_mode, "%dx%d", &mw, &mh) == 2);
+	/* no console text on the screen: the console stops drawing and what it drew is cleared before Main
+	   shows the framebuffer (and again after the mode change) */
+	console_quiet();
+	fb_black(fbdev);
 	/* with phosphor-main the shell takes the screen itself; with stock Main it's F9 */
 	mainlink_start();
 	if (have_mode) {
@@ -167,6 +190,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		usleep(300000);
 	}
 	console_quiet();
+	fb_black(fbdev);
 	lv_display_t *d = lv_linux_fbdev_create();
 	if (!d) { plog("can't create the framebuffer display"); return 1; }
 	lv_linux_fbdev_set_file(d, fbdev);
