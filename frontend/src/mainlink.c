@@ -18,7 +18,9 @@
 #include <time.h>
 #include <unistd.h>
 
-static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0;
+static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
+/* a controller mapping Main runs for the shell (its steps come as events) */
+static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
 static char lbuf[2048];
 static size_t llen;
@@ -67,6 +69,7 @@ static int take(void)
 	if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0 || ask("hello", r, sizeof(r)) || !strstr(r, "\"api\":")
 	    || !((pads = strstr(r, "\"pads\":true") != NULL), 1)
 	    || !((scripts = strstr(r, "\"scripts\":true") != NULL), 1)
+	    || !((mapping = strstr(r, "\"mapping\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
@@ -112,6 +115,29 @@ int mainlink_script_result(void)
 	return r;
 }
 
+int mainlink_can_map(void) { return fd >= 0 && mapping && !hidden; }
+
+int mainlink_map(const char *what)
+{
+	if (!mainlink_can_map()) return -1;
+	char line[64];
+	int n = snprintf(line, sizeof(line), "map_%s\n", what);
+	if (n <= 0 || n >= (int)sizeof(line) || send(fd, line, (size_t)n, MSG_NOSIGNAL) != n) return -1;
+	if (!strncmp(what, "start", 5)) { memset(&mp, 0, sizeof(mp)); mp.on = 1; mp.step = -100; }
+	mp.pending = 1;
+	return 0;
+}
+
+int mainlink_map_state(int *step, int *done, int *saved, char *dev, size_t dn, char *err, size_t en)
+{
+	if (step) *step = mp.step;
+	if (done) *done = mp.done;
+	if (saved) *saved = mp.saved;
+	if (dev) snprintf(dev, dn, "%s", mp.dev);
+	if (err) snprintf(err, en, "%s", mp.err);
+	return mp.on;
+}
+
 int mainlink_give(void)
 {
 	if (fd < 0) return 0;
@@ -142,6 +168,23 @@ int mainlink_poll(void)
 						else input_watch("main", lbuf);                /* not understood: show it in the watch log */
 						continue;
 					}
+					/* the controller mapping: a step, the end, or a refused command */
+					if (strstr(lbuf, "\"event\":\"map\"")) {
+						const char *q;
+						if (strstr(lbuf, "\"done\":true")) { mp.on = 0; mp.done = 1; mp.saved = strstr(lbuf, "\"saved\":true") != NULL; }
+						else if ((q = strstr(lbuf, "\"step\":"))) mp.step = atoi(q + 7);
+						if ((q = strstr(lbuf, "\"dev\":\"")) && sscanf(q + 7, "%15[0-9a-f:]", mp.dev) != 1) mp.dev[0] = 0;
+						continue;
+					}
+					if (mp.pending && !strncmp(lbuf, "{\"ok\":", 6)) {
+						mp.pending = 0;
+						if (!strncmp(lbuf, "{\"ok\":false", 12)) {
+							const char *q = strstr(lbuf, "\"error\":\"");
+							snprintf(mp.err, sizeof(mp.err), "%.*s", q ? (int)strcspn(q + 9, "\"") : 0, q ? q + 9 : "");
+							if (mp.on && mp.step == -100) { mp.on = 0; mp.done = 1; mp.saved = 0; }
+						}
+						if (!script_on) continue;
+					}
 					/* a script ran in MiSTer's terminal; it's over (or Main refused it): the screen again */
 					if (script_on && (strstr(lbuf, "\"event\":\"script_done\"") || (!strncmp(lbuf, "{\"ok\":false", 12)))) {
 						int st = 0;
@@ -171,6 +214,7 @@ int mainlink_poll(void)
 			close(fd);
 			fd = -1;
 			if (script_on) { script_on = 0; script_done_status = 1; }
+			if (mp.on) { mp.on = 0; mp.done = 1; mp.saved = 0; snprintf(mp.err, sizeof(mp.err), "MiSTer's Main restarted"); }
 			next_try = now_ms() + 2000;
 			return 0;
 		}

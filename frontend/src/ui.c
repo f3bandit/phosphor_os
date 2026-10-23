@@ -18,6 +18,7 @@
 #include "settings.h"
 #include "sysinfo.h"
 #include "texture.h"
+#include "padview.h"
 #include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +33,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -1053,7 +1054,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_MISTER, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1128,6 +1129,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_SOURCES: snprintf(t, n, "Box art sources"); snprintf(val, vn, ">"); break;
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
 	case SET_BT: snprintf(t, n, "Bluetooth"); snprintf(val, vn, ">"); break;
+	case SET_CTRL: snprintf(t, n, "Controllers"); snprintf(val, vn, ">"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_SAMBA:
 		snprintf(t, n, "Network share (Samba)");
@@ -1146,7 +1148,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		break;
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
-	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
+	case SET_PORTS: snprintf(t, n, "Front ports & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
 	case SET_UPDATE_ALL:
@@ -1162,7 +1164,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_SCRIPTS: snprintf(t, n, "Scripts"); snprintf(val, vn, ">"); break;
 	case SET_UPDLOG: snprintf(t, n, "Last update's log"); snprintf(val, vn, ">"); break;
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
-	case SET_MISTER: snprintf(t, n, "MiSTer menu"); snprintf(val, vn, ">"); break;
+	case SET_MISTER: snprintf(t, n, "MiSTer menu (OSD)"); snprintf(val, vn, ">"); break;
 	case SET_RESTART: snprintf(t, n, "Restart"); break;
 	case SET_ABOUT: snprintf(t, n, "About this system"); snprintf(val, vn, "Phosphor %s  >", PHOS_VERSION); break;
 	}
@@ -1743,7 +1745,10 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_UPDLOG] = { "The downloader's log from the last update, to see what changed or what went wrong.", NULL },
 	[SET_DIAG] = { "Checks the network, drives, temperature and services, and makes a report to share when something isn't working.",
 	               "Also counts times the power went in the middle of an update or other heavy work: three means the power adapter needs a look." },
-	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu. Launch Phosphor in the menu's System page comes back.", NULL },
+	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu (the OSD), for MiSTer's own settings. Launch Phosphor, in its System page, comes back here.",
+	                 "Controllers are mapped in Controllers, without leaving Phosphor." },
+	[SET_CTRL] = { "Your USB and Bluetooth controllers: map their buttons for MiSTer's menu and every core, see them work live, or put them back to automatic.",
+	               "Every change is backed up first, and can be put back from Backups there." },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
 	[SET_ABOUT] = { "Versions, licences and credits for Phosphor and the parts it's built on.", NULL },
 };
@@ -3646,7 +3651,7 @@ static void show_ports(void)
 {
 	cur = SCR_PORTS;
 	lv_obj_clean(body);
-	screen_title("SETTINGS", "Controllers & memory cards");
+	screen_title("SETTINGS", "Front ports & memory cards");
 	pt_head = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_label_set_long_mode(pt_head, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(pt_head, S(880), S(24));
@@ -3847,6 +3852,455 @@ static void bt_key(pkey_t k)
 	bt.pick = bt_list.sel - 1;
 	bt.mode = BT_ACTION;
 	bt_apply(api_call("{\"cmd\":\"bluetooth\"}"));
+}
+
+/* ---------- Controllers ----------
+ * USB and Bluetooth controllers, the way SS1 Tool shows them: its button layouts, picked automatically
+ * (or by hand, kept per controller), lit up live. Map buttons opens a locked window where MiSTer's own
+ * mapping (run by Phosphor's Main) records the buttons; Reset to automatic, backups and restore.
+ * phosphord reads the controllers and does the files; nothing here writes a mapping itself. */
+
+#define CT_MAX 12
+static struct {
+	int n, nbk, mode;                       /* mode: 0 the controllers, 1 the backups */
+	char ev[CT_MAX][16], vp[CT_MAX][16], name[CT_MAX][96], style[CT_MAX][24], uses[CT_MAX][12], where[CT_MAX][16];
+	int style_set[CT_MAX], ncores[CT_MAX];
+	char has[CT_MAX][24][8];
+	int nhas[CT_MAX];
+	char bk[24][64];
+	int bkfiles[24];
+	padview_t *pv;
+	lv_obj_t *style_lab, *desc, *empty;
+	uint32_t confirm_at;                    /* a second press confirms (reset, restore) */
+	int confirm_row;
+	char on[40][8];                         /* what's pressed now (live) */
+} ct;
+static vlist_t ct_list;
+enum { CT_BACKUP_NOW, CT_BACKUPS, CT_MISTER, CT_ACTIONS };
+
+static const char *ct_where(const char *w)
+{
+	return !strcmp(w, "bluetooth") ? "Bluetooth" : !strcmp(w, "dock") ? "Dock USB" : !strcmp(w, "superstation") ? "SS1 USB" : "USB";
+}
+
+static void ct_apply(cJSON *r)
+{
+	if (!api_ok(r)) { cJSON_Delete(r); return; }
+	cJSON *a = cJSON_GetObjectItem(r, "controllers"), *x;
+	ct.n = 0;
+	cJSON_ArrayForEach(x, a) {
+		if (ct.n >= CT_MAX) break;
+		int i = ct.n++;
+		snprintf(ct.ev[i], sizeof(ct.ev[i]), "%s", api_str(x, "id") ? api_str(x, "id") : "");
+		snprintf(ct.vp[i], sizeof(ct.vp[i]), "%s", api_str(x, "vidpid") ? api_str(x, "vidpid") : "");
+		snprintf(ct.name[i], sizeof(ct.name[i]), "%s", api_str(x, "name") ? api_str(x, "name") : "Controller");
+		snprintf(ct.style[i], sizeof(ct.style[i]), "%s", api_str(x, "style") ? api_str(x, "style") : "generic");
+		snprintf(ct.where[i], sizeof(ct.where[i]), "%s", api_str(x, "where") ? api_str(x, "where") : "");
+		ct.style_set[i] = cJSON_IsTrue(cJSON_GetObjectItem(x, "style_set"));
+		cJSON *m = cJSON_GetObjectItem(x, "mapping");
+		snprintf(ct.uses[i], sizeof(ct.uses[i]), "%s", api_str(m, "uses") ? api_str(m, "uses") : "none");
+		ct.ncores[i] = cJSON_GetArraySize(cJSON_GetObjectItem(m, "cores"));
+		ct.nhas[i] = 0;
+		cJSON *h;
+		cJSON_ArrayForEach(h, cJSON_GetObjectItem(x, "has"))
+			if (ct.nhas[i] < 24 && cJSON_IsString(h)) snprintf(ct.has[i][ct.nhas[i]++], 8, "%s", h->valuestring);
+	}
+	ct.nbk = 0;
+	cJSON_ArrayForEach(x, cJSON_GetObjectItem(r, "backups")) {
+		if (ct.nbk >= 24) break;
+		snprintf(ct.bk[ct.nbk], sizeof(ct.bk[0]), "%s", api_str(x, "name") ? api_str(x, "name") : "");
+		ct.bkfiles[ct.nbk++] = (int)api_num(x, "files", 0);
+	}
+	cJSON_Delete(r);
+}
+
+/* "20261023-181512_before-reset" -> "Oct 23, 6:15 PM · before reset" */
+static void ct_bk_label(const char *b, char *out, size_t n)
+{
+	struct tm tm = { 0 };
+	const char *rest = strchr(b, '_');
+	if (sscanf(b, "%4d%2d%2d-%2d%2d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min) == 5) {
+		tm.tm_year -= 1900; tm.tm_mon -= 1;
+		char d[40];
+		strftime(d, sizeof(d), SETTINGS.clock24 ? "%b %d, %H:%M" : "%b %d, %I:%M %p", &tm);
+		char lab[48] = "";
+		if (rest) { snprintf(lab, sizeof(lab), "%s", rest + 1); for (char *c = lab; *c; c++) if (*c == '_' || *c == '-') *c = ' '; }
+		snprintf(out, n, "%s%s%s", d, lab[0] ? "  \xC2\xB7  " : "", lab);
+	} else snprintf(out, n, "%s", b);
+}
+
+static void ct_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	if (ct.mode == 1) {
+		if (!ct.nbk) { *dim = 1; snprintf(t, n, "No backups yet"); return; }
+		ct_bk_label(ct.bk[i], t, n);
+		if (ct.confirm_row == i && lv_tick_get() - ct.confirm_at < 4000) snprintf(val, vn, "Press A again to restore");
+		else snprintf(val, vn, "%d file%s", ct.bkfiles[i], ct.bkfiles[i] == 1 ? "" : "s");
+		return;
+	}
+	if (i < ct.n) {
+		snprintf(t, n, "%s   %s", ct.name[i], ct_where(ct.where[i]));
+		if (ct.confirm_row == i && lv_tick_get() - ct.confirm_at < 4000) snprintf(val, vn, "Press X again to reset");
+		else if (!strcmp(ct.uses[i], "custom")) snprintf(val, vn, "Custom mapping  >");
+		else if (!strcmp(ct.uses[i], "database")) snprintf(val, vn, "Automatic  >");
+		else snprintf(val, vn, "Not in MiSTer's list  >");
+		return;
+	}
+	switch (i - ct.n) {
+	case CT_BACKUP_NOW: snprintf(t, n, "Back up mappings now"); break;
+	case CT_BACKUPS: snprintf(t, n, "Backups"); snprintf(val, vn, "%d  >", ct.nbk); break;
+	case CT_MISTER: snprintf(t, n, "MiSTer menu (OSD)"); snprintf(val, vn, ">"); break;
+	}
+}
+
+static const char *const CT_HINTS[] = { "A", "Map buttons", "X", "Reset to automatic", "\xE2\x86\x94", "Drawing", "B", "Back", NULL };
+static const char *const CT_HINTS2[] = { "A", "Choose", "B", "Back", NULL };
+static const char *const CT_HINTS3[] = { "A", "Restore", "B", "Back", NULL };
+
+static void ct_side(void)
+{
+	int s = ct_list.sel, pad = ct.mode == 0 && s < ct.n;
+	lv_obj_set_hidden(padview_obj(ct.pv), !pad);
+	lv_obj_set_hidden(ct.style_lab, !pad);
+	footer_set(ct.mode == 1 ? CT_HINTS3 : pad ? CT_HINTS : CT_HINTS2);
+	if (pad) {
+		padview_layout(ct.pv, ct.style[s]);
+		char b[96];
+		snprintf(b, sizeof(b), "<  %s%s  >", padview_name(ct.style[s]), ct.style_set[s] ? "" : " (automatic)");
+		lv_label_set_text(ct.style_lab, b);
+		lv_label_set_text(ct.desc, !strcmp(ct.uses[s], "custom") ?
+			"Uses its own button mapping in MiSTer's menu and every core. Map buttons to change it; Reset to automatic goes back to MiSTer's controller list." :
+			!strcmp(ct.uses[s], "database") ? "MiSTer knows this controller and maps it by itself. Map buttons to set it up your way." :
+			"MiSTer doesn't know this controller yet: map its buttons once and it works in the menu and every core.");
+	} else if (ct.mode == 1) {
+		lv_label_set_text(ct.desc, "Every backup holds all the mapping files and your controller profiles as they were. Restoring one backs up the current ones first.");
+	} else {
+		int a = s - ct.n;
+		lv_label_set_text(ct.desc, a == CT_BACKUP_NOW ? "Saves every controller's mapping and your controller profiles in phosphor/backups on the SD card." :
+			a == CT_BACKUPS ? "Put back the mappings from an earlier backup." :
+			"MiSTer's own menu, for its settings. Launch Phosphor, in its System page, comes back here.");
+	}
+	lv_obj_set_hidden(ct.empty, ct.n > 0 || ct.mode == 1);
+}
+
+static void ct_refresh(cJSON *r)
+{
+	int keep = ct_list.sel;
+	ct_apply(r);
+	ct_list.count = ct.mode == 1 ? LV_MAX(1, ct.nbk) : ct.n + CT_ACTIONS;
+	ct_list.sel = LV_MIN(keep, ct_list.count - 1);
+	vlist_refresh(&ct_list);
+	ct_side();
+}
+
+static void show_ctrl(void)
+{
+	cur = SCR_CTRL;
+	lv_obj_clean(body);
+	free(ct.pv);                            /* (its objects went with the screen) */
+	screen_title("SETTINGS", "Controllers");
+	vlist_create(&ct_list, body, S(56), S(176), S(660), S(440));
+	ct_list.fill = ct_fill;
+	ct_list.sel = ct_list.top = 0;
+	ct_list.count = 0;
+	ct.mode = 0;
+	ct.confirm_row = -1;
+	ct.style_lab = mk_label(body, FONT_SMALL, PAL.text, "");
+	lv_obj_set_pos(ct.style_lab, S(752), S(186));
+	ct.pv = padview_create(body, S(752), S(214), S(472));
+	ct.desc = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_width(ct.desc, S(472));
+	lv_label_set_long_mode(ct.desc, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(ct.desc, S(752), S(500));
+	ct.empty = mk_label(body, FONT_BODY, PAL.dim, "No USB or Bluetooth controller found. Plug one in or switch it on: it shows up here by itself.");
+	lv_obj_set_width(ct.empty, S(660));
+	lv_label_set_long_mode(ct.empty, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(ct.empty, S(80), S(136) + S(46) * 4);
+	ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
+}
+
+/* the live state of the highlighted controller, into the drawing */
+static char ct_live_on[40][8];
+static void ct_live(padview_t *pv, const char *ev, int idx, const char *target, char done[][8], int ndone)
+{
+	cJSON *r = api_call("{\"cmd\":\"controllers\",\"live\":\"%s\"}", ev);
+	cJSON *l = r ? cJSON_GetObjectItem(r, "live") : NULL;
+	padstate_t s;
+	memset(&s, 0, sizeof(s));
+	s.nhas = idx >= 0 ? ct.nhas[idx] : -1;
+	for (int i = 0; i < s.nhas; i++) s.has[i] = ct.has[idx][i];
+	cJSON *x;
+	cJSON_ArrayForEach(x, cJSON_GetObjectItem(l, "on"))
+		if (s.non < 40 && cJSON_IsString(x)) { snprintf(ct_live_on[s.non], 8, "%.7s", x->valuestring); s.on[s.non] = ct_live_on[s.non]; s.non++; }
+	cJSON *ls = cJSON_GetObjectItem(l, "ls"), *rs = cJSON_GetObjectItem(l, "rs");
+	if (ls) { s.lx = (float)cJSON_GetArrayItem(ls, 0)->valuedouble; s.ly = (float)cJSON_GetArrayItem(ls, 1)->valuedouble; }
+	if (rs) { s.rx = (float)cJSON_GetArrayItem(rs, 0)->valuedouble; s.ry = (float)cJSON_GetArrayItem(rs, 1)->valuedouble; }
+	s.l2 = (float)api_num(l, "l2", 0);
+	s.r2 = (float)api_num(l, "r2", 0);
+	s.target = target;
+	for (int i = 0; i < ndone && i < 40; i++) s.done[s.ndone++] = done[i];
+	padview_state(pv, &s);
+	cJSON_Delete(r);
+}
+
+static void show_map(int idx);
+
+static void ct_key(pkey_t k)
+{
+	int s = ct_list.sel;
+	if (vlist_key(&ct_list, k)) { ct.confirm_row = -1; ct_side(); return; }
+	if (k == K_B || k == K_MENU) {
+		if (ct.mode == 1) { ct.mode = 0; ct_list.sel = ct.n + CT_BACKUPS; ct_refresh(api_call("{\"cmd\":\"controllers\"}")); return; }
+		back_to_settings(SET_CTRL);
+		return;
+	}
+	if (ct.mode == 1) {
+		if (k != K_A || !ct.nbk) return;
+		if (ct.confirm_row != s || lv_tick_get() - ct.confirm_at > 4000) { ct.confirm_row = s; ct.confirm_at = lv_tick_get(); vlist_refresh(&ct_list); return; }
+		ct.confirm_row = -1;
+		cJSON *r = api_call("{\"cmd\":\"controllers\",\"do\":\"restore\",\"name\":\"%s\"}", ct.bk[s]);
+		toast_show(api_ok(r) ? "Mappings put back: they work from the next game or menu" : (api_str(r, "error") ? api_str(r, "error") : "Couldn't restore"));
+		cJSON_Delete(r);
+		ct.mode = 0;
+		ct_list.sel = 0;
+		ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
+		return;
+	}
+	if (s < ct.n) {
+		if (k == K_LEFT || k == K_RIGHT) {                  /* the drawing: Automatic, then every layout */
+			int i = ct.style_set[s] ? padview_index(ct.style[s]) : -1;
+			i += k == K_RIGHT ? 1 : -1;
+			if (i >= padview_count()) i = -1;
+			if (i < -1) i = padview_count() - 1;
+			cJSON_Delete(api_call("{\"cmd\":\"controllers\",\"do\":\"style\",\"vidpid\":\"%s\",\"style\":\"%s\"}", ct.vp[s], i < 0 ? "auto" : padview_key(i)));
+			ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
+		} else if (k == K_A) {
+			show_map(s);
+		} else if (k == K_X) {
+			if (strcmp(ct.uses[s], "custom")) { toast_show("This controller already uses MiSTer's automatic mapping"); return; }
+			if (ct.confirm_row != s || lv_tick_get() - ct.confirm_at > 4000) { ct.confirm_row = s; ct.confirm_at = lv_tick_get(); vlist_refresh(&ct_list); return; }
+			ct.confirm_row = -1;
+			cJSON *r = api_call("{\"cmd\":\"controllers\",\"do\":\"reset\",\"vidpid\":\"%s\"}", ct.vp[s]);
+			toast_show(api_ok(r) ? "Back to automatic. The old mapping is in Backups" : (api_str(r, "error") ? api_str(r, "error") : "Couldn't reset"));
+			cJSON_Delete(r);
+			ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
+		}
+		return;
+	}
+	if (k != K_A) return;
+	switch (s - ct.n) {
+	case CT_BACKUP_NOW: {
+		cJSON *r = api_call("{\"cmd\":\"controllers\",\"do\":\"backup\"}");
+		char m[96];
+		snprintf(m, sizeof(m), "Backed up %d file%s", (int)api_num(r, "saved", 0), api_num(r, "saved", 0) == 1 ? "" : "s");
+		toast_show(api_ok(r) ? m : "Couldn't make the backup");
+		cJSON_Delete(r);
+		ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
+		break;
+	}
+	case CT_BACKUPS:
+		ct.mode = 1;
+		ct_list.sel = ct_list.top = 0;
+		ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
+		break;
+	case CT_MISTER:
+		if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
+		else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
+		break;
+	}
+}
+
+/* ---------- the mapping window ----------
+ * Locked, like Looking for games: MiSTer's own mapping runs in Main and decides what counts; this shows
+ * the step and the controller. Select + Start cancels (nothing saved). Asked for from the TV or, through
+ * phosphord, from the app (<tmp>/map-request); its state goes to <tmp>/map-state for the app. */
+
+static const struct { int step; const char *what, *ask, *target, *hint; } MSTEPS[] = {
+	{ -6, "D-pad test", "Press right on the D-pad", "right", "MiSTer checks how the D-pad talks first." },
+	{ -5, "D-pad test", "Press down on the D-pad", "down", NULL },
+	{ -4, "Left stick", "Tilt the left stick right", "ls", "No left stick? Press any button." },
+	{ -3, "Left stick", "Tilt the left stick down", "ls", "No left stick? Press any button." },
+	{ -2, "Right stick", "Tilt the right stick right", "rs", "No right stick? Press any button." },
+	{ -1, "Right stick", "Tilt the right stick down", "rs", "No right stick? Press any button." },
+	{ 0, "D-pad", "Press RIGHT", "right", NULL }, { 1, "D-pad", "Press LEFT", "left", NULL },
+	{ 2, "D-pad", "Press DOWN", "down", NULL }, { 3, "D-pad", "Press UP", "up", NULL },
+	{ 4, "Buttons", "Press A", "b", "The ring shows where A usually goes; any button works." },
+	{ 5, "Buttons", "Press B", "a", NULL },
+	{ 6, "Buttons", "Press X", "y", "Not on this controller? Press a button you've already used." },
+	{ 7, "Buttons", "Press Y", "x", "Not on this controller? Press a button you've already used." },
+	{ 8, "Buttons", "Press L", "l1", "Not on this controller? Press a button you've already used." },
+	{ 9, "Buttons", "Press R", "r1", "Not on this controller? Press a button you've already used." },
+	{ 10, "Buttons", "Press SELECT", "back", "Not on this controller? Press a button you've already used." },
+	{ 11, "Buttons", "Press START", "start", "Not on this controller? Press a button you've already used." },
+	{ 20, "Menu", "Press the MENU button", "guide", "Opens MiSTer's menu in a game. Two buttons together work too." },
+	{ 21, "Menu", "Press OK", "b", "OK in MiSTer's menu: usually the same button as A." },
+	{ 22, "Menu", "Press BACK", "a", "Back in MiSTer's menu: usually the same button as B." },
+	{ 23, "Menu", "Tilt a stick right", "ls", "For moving in MiSTer's menu. No stick? Press any button." },
+	{ 24, "Menu", "Tilt a stick down", "ls", "For moving in MiSTer's menu. No stick? Press any button." },
+};
+#define MSTEP_N ((int)(sizeof(MSTEPS) / sizeof(MSTEPS[0])))
+
+static struct {
+	int idx, step, finished, from_app;
+	uint32_t end_at, started;
+	char vp[16], ev[16], name[96], style[24];
+	char done[40][8], seen[40][8];
+	int ndone, nseen;
+	lv_obj_t *what, *ask, *hint, *bar, *note;
+	padview_t *pv;
+} mw;
+
+static void map_state_file(const char *extra)
+{
+	char p[300], t[310];
+	const char *tmp = getenv("PHOS_TMP");
+	snprintf(p, sizeof(p), "%s/map-state", tmp && *tmp ? tmp : "/tmp/phosphor");
+	snprintf(t, sizeof(t), "%s.new", p);
+	FILE *f = fopen(t, "w");
+	if (!f) return;
+	int i = -1;
+	for (int k = 0; k < MSTEP_N; k++) if (MSTEPS[k].step == mw.step) i = k;
+	fprintf(f, "{\"on\":%s,\"dev\":\"%s\",\"name\":\"%s\",\"step\":%d,\"n\":%d,\"of\":%d,\"ask\":\"%s\",\"target\":\"%s\"%s}\n",
+	        mw.finished ? "false" : "true", mw.vp, mw.name, mw.step, i + 1, MSTEP_N, i >= 0 ? MSTEPS[i].ask : "", i >= 0 ? MSTEPS[i].target : "", extra ? extra : "");
+	fclose(f);
+	rename(t, p);
+}
+
+static void map_show_step(void)
+{
+	int i = -1;
+	for (int k = 0; k < MSTEP_N; k++) if (MSTEPS[k].step == mw.step) i = k;
+	if (i < 0) return;
+	char b[64];
+	snprintf(b, sizeof(b), "%s  \xC2\xB7  %d OF %d", MSTEPS[i].what, i + 1, MSTEP_N);
+	for (char *c = b; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
+	lv_label_set_text(mw.what, b);
+	lv_label_set_text(mw.ask, MSTEPS[i].ask);
+	lv_label_set_text(mw.hint, MSTEPS[i].hint ? MSTEPS[i].hint : "");
+	lv_bar_set_value(mw.bar, (i * 100) / MSTEP_N, LV_ANIM_OFF);
+	map_state_file(NULL);
+}
+
+static const char *const MAP_HINTS[] = { "Select + Start", "Cancel, nothing saved", NULL };
+
+static void show_map(int idx)
+{
+	if (!mainlink_can_map()) { toast_show("Mapping needs Phosphor's Main (phosphor-main 0.27 or newer)"); return; }
+	char what[32];
+	snprintf(what, sizeof(what), "start %s", ct.vp[idx]);
+	if (mainlink_map(what)) { toast_show("Couldn't start the mapping"); return; }
+	memset(&mw, 0, sizeof(mw));
+	mw.idx = idx;
+	mw.step = -100;
+	mw.started = lv_tick_get();
+	snprintf(mw.vp, sizeof(mw.vp), "%s", ct.vp[idx]);
+	snprintf(mw.ev, sizeof(mw.ev), "%s", ct.ev[idx]);
+	snprintf(mw.name, sizeof(mw.name), "%s", ct.name[idx]);
+	snprintf(mw.style, sizeof(mw.style), "%s", ct.style[idx]);
+	cur = SCR_MAP;
+	lv_obj_clean(body);
+	free(ct.pv);
+	ct.pv = NULL;
+	char t[128];
+	snprintf(t, sizeof(t), "Mapping %s", mw.name);
+	screen_title("CONTROLLERS", t);
+	mw.what = mk_label(body, FONT_LABEL, PAL.acc, "STARTING");
+	lv_obj_set_style_text_letter_space(mw.what, S(1), 0);
+	lv_obj_set_pos(mw.what, S(56), S(200));
+	mw.ask = mk_label(body, FONT_HEADING, PAL.text, "");
+	lv_obj_set_pos(mw.ask, S(56), S(226));
+	mw.hint = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(mw.hint, S(430));
+	lv_label_set_long_mode(mw.hint, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(mw.hint, S(56), S(282));
+	mw.bar = lv_bar_create(body);
+	lv_obj_set_size(mw.bar, S(430), S(10));
+	lv_obj_set_pos(mw.bar, S(56), S(560));
+	lv_obj_set_style_bg_color(mw.bar, PAL.line, LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(mw.bar, LV_OPA_COVER, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(mw.bar, PAL.acc, LV_PART_INDICATOR);
+	lv_bar_set_range(mw.bar, 0, 100);
+	mw.note = mk_label(body, FONT_SMALL, PAL.dim, "Each button goes into MiSTer's mapping for this controller: the menu, Phosphor and every core.");
+	lv_obj_set_width(mw.note, S(430));
+	lv_label_set_long_mode(mw.note, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(mw.note, S(56), S(586));
+	mw.pv = padview_create(body, S(520), S(196), S(704));
+	padview_layout(mw.pv, mw.style);
+	footer_set(MAP_HINTS);
+	plog("controllers: mapping %s (%s)", mw.name, mw.vp);
+}
+
+static void map_finish(int saved, const char *err)
+{
+	mw.finished = 1;
+	mw.end_at = lv_tick_get();
+	lv_label_set_text(mw.what, saved ? "SAVED" : "CANCELLED");
+	lv_label_set_text(mw.ask, saved ? "All set" : "Nothing changed");
+	lv_label_set_text(mw.hint, saved ? "This controller now works this way in MiSTer's menu, Phosphor and every core. The old mapping is in Backups." :
+	                  err && *err ? err : "The controller keeps the mapping it had.");
+	lv_bar_set_value(mw.bar, saved ? 100 : 0, LV_ANIM_OFF);
+	char ex[160];
+	snprintf(ex, sizeof(ex), ",\"done\":true,\"saved\":%s,\"error\":\"%s\"", saved ? "true" : "false", err ? err : "");
+	map_state_file(ex);
+	plog("controllers: mapping %s %s%s%s", mw.vp, saved ? "saved" : "cancelled", err && *err ? ": " : "", err ? err : "");
+}
+
+static void map_tick(void)
+{
+	if (mw.finished) {
+		if (lv_tick_get() - mw.end_at > 3000) { show_ctrl(); }
+		return;
+	}
+	int step, done, saved;
+	char dev[16], err[96];
+	int on = mainlink_map_state(&step, &done, &saved, dev, sizeof(dev), err, sizeof(err));
+	if (!on && done) { map_finish(saved, err); return; }
+	if (!on && !done && lv_tick_get() - mw.started > 3000) { map_finish(0, "Phosphor's Main didn't start the mapping"); return; }
+	if (step != mw.step && step != -100) {
+		/* what was pressed for the step that just ended: lit as mapped from here on */
+		for (int i = 0; i < mw.nseen && mw.ndone < 40; i++) snprintf(mw.done[mw.ndone++], 8, "%s", mw.seen[i]);
+		mw.nseen = 0;
+		mw.step = step;
+		map_show_step();
+	}
+	int i = -1;
+	for (int k = 0; k < MSTEP_N; k++) if (MSTEPS[k].step == mw.step) i = k;
+	ct_live(mw.pv, mw.ev, mw.idx, i >= 0 ? MSTEPS[i].target : NULL, mw.done, mw.ndone);
+	for (int k = 0; k < 40 && ct_live_on[k][0]; k++) {
+		int have = 0;
+		for (int j = 0; j < mw.nseen; j++) have |= !strcmp(mw.seen[j], ct_live_on[k]);
+		if (!have && mw.nseen < 40) snprintf(mw.seen[mw.nseen++], 8, "%.7s", ct_live_on[k]);
+	}
+	memset(ct_live_on, 0, sizeof(ct_live_on));
+}
+
+static void map_key(pkey_t k)
+{
+	if (mw.finished) { if (k == K_A || k == K_B) show_ctrl(); return; }
+	if (k == K_POWER) mainlink_map("cancel");
+}
+
+/* the app asks through phosphord: <tmp>/map-request ("start VVVV:PPPP", "skip", "cancel") */
+static void map_requests(void)
+{
+	char p[300], what[48] = "";
+	const char *t = getenv("PHOS_TMP");
+	snprintf(p, sizeof(p), "%s/map-request", t && *t ? t : "/tmp/phosphor");
+	FILE *f = fopen(p, "r");
+	if (!f) return;
+	if (!fgets(what, sizeof(what), f)) what[0] = 0;
+	fclose(f);
+	unlink(p);
+	what[strcspn(what, "\r\n")] = 0;
+	plog("controllers: asked from another device (%s)", what);
+	if (!strncmp(what, "start ", 6)) {
+		if (cur == SCR_MAP && !mw.finished) return;
+		if (cur != SCR_CTRL) show_ctrl();
+		for (int i = 0; i < ct.n; i++) if (!strcmp(ct.vp[i], what + 6)) { show_map(i); mw.from_app = 1; return; }
+		toast_show("That controller isn't connected");
+	} else if (cur == SCR_MAP && !mw.finished && (!strcmp(what, "skip") || !strcmp(what, "cancel"))) {
+		mainlink_map(what);
+	}
 }
 
 /* ---------- About this system ----------
@@ -4709,6 +5163,7 @@ void ui_key(pkey_t k)
 	if (powering) return;
 	if (k == K_POWER) saver_hide();
 	else if (saver_key()) return;
+	if (cur == SCR_MAP) { map_key(k); return; }       /* locked: only Select + Start (cancel) */
 	if (pm_key(k)) return;
 	if (osk_key(k)) return;
 	switch (cur) {
@@ -4788,6 +5243,11 @@ void ui_key(pkey_t k)
 	case SCR_ART:
 		art_key(k);
 		break;
+	case SCR_CTRL:
+		ct_key(k);
+		break;
+	case SCR_MAP:
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) { si_update(); break; }
 		if (k == K_LEFT) settings_change(-1);
@@ -4798,6 +5258,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_DIAG) show_diag();
 			else if (set_list.sel == SET_WIFI) show_wifi();
 			else if (set_list.sel == SET_BT) show_bt();
+			else if (set_list.sel == SET_CTRL) show_ctrl();
 			else if (set_list.sel == SET_REMOTE) show_remote();
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
@@ -4833,6 +5294,7 @@ static uint32_t last_status, last_poll;
 int ui_max_sleep(void)
 {
 	if (cur == SCR_PORTS) return 100;                         /* the card map follows a job */
+	if (cur == SCR_CTRL || cur == SCR_MAP) return 100;       /* the controller, live */
 	if (si_pending()) return 100;                             /* a Settings row's status, once it rests */
 	return 500;                                               /* status bar, clock, spinners: twice a second */
 }
@@ -4842,6 +5304,13 @@ void ui_tick(void)
 	uint32_t now = lv_tick_get();
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	if (cur == SCR_ART) { ui_activity(); art_tick(now); }
+	if (cur == SCR_MAP) { ui_activity(); static uint32_t lm; if (now - lm >= 100) { lm = now; map_tick(); } }
+	if (cur == SCR_CTRL) {
+		static uint32_t lc, lr;
+		if (now - lc >= 100 && ct.mode == 0 && ct_list.sel < ct.n) { lc = now; ct_live(ct.pv, ct.ev[ct_list.sel], ct_list.sel, NULL, NULL, 0); }
+		if (now - lr >= 2000) { lr = now; ct_refresh(api_call("{\"cmd\":\"controllers\"}")); }   /* plugged in, switched on */
+	}
+	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
 	if (si_pending()) si_update();
 	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); } }   /* the alerts, once after start-up */
 	saver_tick(now);
