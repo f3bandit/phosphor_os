@@ -40,3 +40,4 @@ dist/
 
 # SD card image downloads
 image/cache/
+apps/windows/dist/
