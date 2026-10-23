@@ -5,7 +5,7 @@
 
 #include "lvgl.h"
 
-typedef enum { TEX_NONE, TEX_ZIGZAG, TEX_X, TEX_SQUARES, TEX_TRIANGLES, TEX_CIRCLES, TEX_HEX, TEX_PIXEL, TEX_COUNT } texture_t;
+typedef enum { TEX_NONE, TEX_ZIGZAG, TEX_X, TEX_SQUARES, TEX_TRIANGLES, TEX_CIRCLES, TEX_HEX, TEX_COUNT } texture_t;
 
 const char *texture_name(texture_t t);
 /* draw the texture in the current accent colour as obj's tiled background (TEX_NONE removes it) */
