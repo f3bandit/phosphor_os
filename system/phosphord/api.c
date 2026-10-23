@@ -1197,7 +1197,8 @@ static char *cmd_update(cJSON *req)
 			l += n + (l[n] == '\n');
 		}
 		if (!found) { free(pk); free(rb); cJSON_Delete(o); return fail("do: install (file from packages) or rollback (version from rollbacks)"); }
-		snprintf(cmd, sizeof(cmd), "'%s' %s '%s' > /dev/null 2>&1", up, d, arg);
+		/* (a moment before it stops Phosphor, so this reply gets out first) */
+		snprintf(cmd, sizeof(cmd), "PHOS_UPDATE_DELAY=2 '%s' %s '%s' > /dev/null 2>&1", up, d, arg);
 		plog("update: %s %s", d, arg);
 		if (system(cmd)) { free(pk); free(rb); cJSON_Delete(o); return fail("the updater didn't start"); }
 	}
