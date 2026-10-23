@@ -11,6 +11,9 @@ void ui_key(pkey_t k);
 int ui_max_sleep(void);
 /* a script run through Main is done (its exit status): Phosphor has the screen again */
 void ui_script_done(int status);
+/* the console in text mode (main.c), so Main can switch to MiSTer's terminal for a script */
+void console_text(void);
+void console_quiet(void);
 void ui_tick(void);          /* every frame: status bar, scan progress, mount changes */
 void ui_rescan(void);
 

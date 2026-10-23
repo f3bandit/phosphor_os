@@ -1093,7 +1093,8 @@ static void show_scripts(void);
 static void run_script(const char *path)
 {
 	if (mainlink_script_running()) { toast_show("A script is already running"); return; }
-	if (mainlink_script(path)) toast_show("Scripts need Phosphor's Main (phosphor-main)");
+	console_text();
+	if (mainlink_script(path)) { console_quiet(); toast_show("Scripts need Phosphor's Main (phosphor-main)"); }
 }
 
 void ui_script_done(int status)
