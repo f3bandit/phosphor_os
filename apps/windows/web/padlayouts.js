@@ -60,13 +60,13 @@ function ptSVG(k){const L=PTL[k];let s=`<svg viewBox="0 0 600 345" role="img" ar
 /* Phosphor's additions: controllers drawn as they really are (positions from their GP2040-CE board
    layout, configs/<board>/BoardConfig.h, scaled to the 600 x 345 drawing) */
 PTL.haute42m = { n: "Haute42 COSMOX M Ultra", g: "Fight", b: "box", it: [
-	["c", "left", 56, 142, 25, 0, "←"], ["c", "down", 126, 142, 25, 0, "↓"], ["c", "right", 182, 180, 25, 0, "→"],
-	["c", "up", 161, 82, 25, 0, "↑"], ["c", "l3", 280, 67, 25, 0, "L3"],
-	["c", "up", 210, 307, 31, 0, "↑"], ["c", "l3", 126, 300, 25, 0, "L3"], ["c", "r3", 294, 300, 25, 0, "R3"],
-	["c", "x", 245, 142, 25, 0, "X"], ["c", "y", 315, 127, 25, 0, "Y"], ["c", "r1", 385, 127, 25, 0, "RB"], ["c", "l1", 455, 142, 25, 0, "LB"],
-	["c", "a", 245, 217, 25, 0, "A"], ["c", "b", 315, 202, 25, 0, "B"], ["c", "r2", 385, 202, 25, 0, "RT"], ["c", "l2", 455, 217, 25, 0, "LT"],
-	["c", "turbo", 371, 52, 10, 0, "T"], ["c", "capture", 420, 52, 10, 0, "Cap"], ["c", "guide", 469, 52, 10, 0, "Home"],
-	["c", "back", 518, 52, 10, 0, "Sel"], ["c", "start", 567, 52, 10, 0, "St"]] };
+	["c", "turbo", 370, 20, 9, 0, "T"], ["c", "a2", 412, 20, 9, 0, "-"], ["c", "guide", 456, 20, 9, 0, "Hm"],
+	["c", "back", 498, 20, 9, 0, "Bk"], ["c", "start", 541, 20, 9, 0, "St"],
+	["c", "up", 169, 91, 29, 0, "M1"], ["c", "l3", 290, 91, 29, 0, "M2"],
+	["c", "left", 93, 156, 29, 0, "←"], ["c", "down", 155, 153, 29, 0, "↓"], ["c", "right", 212, 179, 29, 0, "→"],
+	["c", "x", 283, 153, 29, 0, "X"], ["c", "y", 340, 129, 29, 0, "Y"], ["c", "r1", 402, 129, 29, 0, "RB"], ["c", "l1", 463, 141, 29, 0, "LB"],
+	["c", "a", 278, 217, 29, 0, "A"], ["c", "b", 334, 191, 29, 0, "B"], ["c", "r2", 396, 191, 29, 0, "RT"], ["c", "l2", 456, 204, 29, 0, "LT"],
+	["c", "l3", 180, 292, 29, 0, "LS"], ["c", "up", 244, 308, 31, 0, "↑"], ["c", "r3", 308, 292, 29, 0, "RS"]] };
 
 /* Phosphor: light a drawing up. st: { has: [controls] (null: draw everything), on: [controls pressed],
    ls/rs: [x, y] -1..1, l2/r2: 0..1, target: the control asked for (glows), done: [controls mapped] } */
