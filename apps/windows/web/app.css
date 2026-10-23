@@ -223,3 +223,32 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 	[data-nav] { cursor: pointer; }
 	input[data-nav], textarea[data-nav] { cursor: text; }
 }
+
+/* ---- controllers: SS1 Tool's layout drawings, in Phosphor's colours */
+.pad svg { width: 100%; height: auto; display: block; }
+.pad .ptc { stroke-width: 2.5; fill: #1b1b20; stroke: var(--line); transition: fill .05s; }
+.pad .ptc.on { fill: var(--acc); stroke: var(--acc); }
+.pad .ptc.done { stroke: color-mix(in srgb, var(--acc) 45%, var(--line)); }
+.pad .ptc.tgt { stroke: var(--acc); stroke-width: 3.5; fill: var(--on); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--acc) 60%, transparent)); }
+.pad .ptc.no { opacity: .35; }
+.pad .ptl { fill: var(--text); font: 600 13px Inter, sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.pad .ptl.sm { font-size: 10px; }
+.pad .ptfill { fill: var(--acc); } .pad .ptdbase { fill: #1b1b20; } .pad .ptcross { fill: none; }
+.pad .ptarm { fill: transparent; } .pad .ptarm.on { fill: var(--acc); } .pad .ptarm.tgt { fill: color-mix(in srgb, var(--acc) 35%, transparent); }
+.pad .ptknob { fill: var(--faint); } .pad .ptknob.on { fill: var(--acc); }
+.padhead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
+.stylepick { display: flex; align-items: center; gap: .4rem; font-size: .875rem; color: var(--dim); }
+.stylepick b { color: var(--text); font-weight: 500; min-width: 12rem; text-align: center; }
+.stylepick .btn { height: 2rem; padding: 0 .7rem; }
+.tag { font-size: .75rem; padding: .1rem .55rem; border-radius: .6rem; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+.tag.c { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, var(--line)); }
+.tag.w { color: #ff8a70; border-color: #6b3a2a; }
+/* a locked window over the page (controller mapping) */
+.lockwin { position: fixed; inset: 0; background: #000000b8; display: grid; place-items: center; z-index: 50; }
+.lockwin .win { width: min(56rem, 92vw); background: var(--panel); border: 1px solid var(--acc); border-radius: 1.1rem; padding: 1.6rem 1.8rem;
+	box-shadow: 0 20px 80px #000; display: grid; grid-template-columns: 18rem 1fr; gap: 1.6rem; }
+.lockwin .step { font: .8rem PhosMono, monospace; letter-spacing: .2em; color: var(--acc); }
+.lockwin .ask { font-size: 2rem; font-weight: 600; margin: .4rem 0; }
+.lockwin .hint { color: var(--dim); font-size: .9rem; }
+.lockwin .bar { height: .5rem; border-radius: .25rem; background: var(--line); margin: 1.2rem 0; overflow: hidden; }
+.lockwin .bar i { display: block; height: 100%; background: var(--acc); width: 0; transition: width .2s; }

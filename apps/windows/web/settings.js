@@ -10,6 +10,7 @@ const SET_SECTIONS = [
 	{ grp: "SuperStation" },
 	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"], ["Backups", "tSnaps"]] },
+	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
 	{ grp: "Tools" },
 	{ id: "diagnostics", name: "Diagnostics", tabs: [["Dashboard", "tDash"]] },
 	{ grp: "This PC" },
@@ -466,6 +467,139 @@ class AppSettings {
 		if (await draw()) this.every(2000, draw);
 	}
 
+	/* ---------- Controllers: USB and Bluetooth pads, SS1 Tool's drawings, live; mapping in a locked
+	   window (MiSTer's own, run on the SS1: you press the buttons on the controller) ---------- */
+	ctWhere(w) { return { bluetooth: "Bluetooth", dock: "Dock USB", superstation: "SS1 USB" }[w] || "USB"; }
+	ctTag(c) {
+		const u = (c.mapping || {}).uses;
+		return u === "custom" ? `<span class="tag c">Custom mapping</span>` : u === "database" ? `<span class="tag">Automatic</span>` : `<span class="tag w">Not in MiSTer's list</span>`;
+	}
+	async tCtrl(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split" style="grid-template-columns:20rem 1fr"><div class="list" id="ctl"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="ctp"></div></div>`));
+		let s;
+		try { s = await ss1({ cmd: "controllers" }); } catch (e) { if (!alive()) return false; $("#ctl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
+		this.ct = s;
+		const l = $("#ctl"), cs = s.controllers || [];
+		if (!cs.length) { l.innerHTML = `<div class="empty">No USB or Bluetooth controller found. Plug one into the SS1 or switch it on, then come back here.</div>`; $("#ctp").innerHTML = ""; return; }
+		l.innerHTML = "";
+		for (const c of cs) {
+			const el = h(`<div class="row net" data-nav><span class="n"><b>${esc(c.name)}</b><small>${esc(this.ctWhere(c.where))} · ${esc(c.vidpid)}</small></span>${this.ctTag(c)}</div>`).firstChild;
+			el._onfocus = () => { this.ctSel = c.id; this.ctPanel(c); };
+			l.appendChild(el);
+		}
+		const first = cs.find(c => c.id === this.ctSel) || cs[0];
+		this.ctSel = first.id;
+		this.ctPanel(first);
+		/* live: what's pressed on the highlighted controller */
+		this.every(150, async () => {
+			if (lockwin) return true;
+			const pad = $("#ctpad");
+			if (!pad || !this.ctSel) return true;
+			try { const r = await ss1({ cmd: "controllers", live: this.ctSel }); const c = (this.ct.controllers || []).find(x => x.id === this.ctSel); padPaint(pad, Object.assign({ has: c ? c.has : null }, r.live || {})); }
+			catch (e) { /* unplugged: the list catches up on the next visit */ }
+			return true;
+		});
+	}
+	ctPanel(c) {
+		const p = $("#ctp");
+		if (!p) return;
+		const m = c.mapping || {}, style = c.style || "generic";
+		p.innerHTML = `<div class="padhead"><h2 style="margin:0;font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(c.name)}</h2>
+				<div class="stylepick"><button class="btn" data-nav id="st_l">‹</button><b>${esc((PTL[style] || {}).n || style)}${c.style_set ? "" : " (automatic)"}</b><button class="btn" data-nav id="st_r">›</button></div></div>
+			<div class="pad" id="ctpad">${ptSVG(style)}</div>
+			<dl class="kv"><dt>Buttons</dt><dd>${m.uses === "custom" ? "Its own mapping" + (m.cores && m.cores.length ? ", and its own in " + esc(m.cores.join(", ")) : "") : m.uses === "database" ? "MiSTer's automatic mapping" : "Not mapped yet: MiSTer doesn't know it"}</dd>
+				<dt>MiSTer's list</dt><dd>${c.db_name ? esc(c.db_name) + (c.db_user ? " (your own entry)" : "") : "Not in it"}</dd><dt>Has</dt><dd>${c.buttons} buttons, ${c.axes} axes</dd></dl>
+			<div class="acts"><button class="btn primary" data-nav id="ct_map">Map buttons…</button><button class="btn" data-nav id="ct_reset"${m.uses === "custom" ? "" : " disabled"}>Reset to automatic</button><button class="btn" data-nav id="ct_bk">Back up</button></div>
+			<p class="note">Map buttons works with the controller in your hand: the TV and this window show which button to press. Every change is backed up first (Backups tab).</p>`;
+		padPaint($("#ctpad"), { has: c.has });
+		const step = async d => {
+			const keys = [null, ...PAD_ORDER];
+			let i = c.style_set ? keys.indexOf(style) : 0;
+			i = (i + d + keys.length) % keys.length;
+			try { await ss1({ cmd: "controllers", do: "style", vidpid: c.vidpid, style: keys[i] || "auto" }); this.drawTool(); } catch (e) { toast(e.message); }
+		};
+		$("#st_l").onclick = () => step(-1);
+		$("#st_r").onclick = () => step(1);
+		$("#ct_map").onclick = () => this.ctMap(c);
+		twice($("#ct_reset"), "Press again: back to automatic", async () => {
+			try { const r = await ss1({ cmd: "controllers", do: "reset", vidpid: c.vidpid }); toast(`Back to automatic. The old mapping is in Backups (${r.backup})`); this.drawTool(); } catch (e) { toast(e.message); }
+		});
+		$("#ct_bk").onclick = async () => { try { const r = await ss1({ cmd: "controllers", do: "backup" }); toast(`Backed up ${r.saved} file${r.saved === 1 ? "" : "s"}`); } catch (e) { toast(e.message); } };
+	}
+	/* the locked mapping window: started here, run by the SS1 (the TV shows it too) */
+	async ctMap(c) {
+		try { await ss1({ cmd: "controllers", do: "map", vidpid: c.vidpid }); } catch (e) { toast(e.message); return; }
+		const back = cur;
+		const w = h(`<div class="lockwin"><div class="win"><div><div class="sub">${spaced("Mapping")}</div><div class="step" id="mw_step">STARTING ON THE TV…</div>
+			<div class="ask" id="mw_ask">One moment</div><div class="hint" id="mw_hint">Press the buttons on the controller itself.</div>
+			<div class="bar"><i id="mw_bar"></i></div><div class="acts"><button class="btn" data-nav id="mw_skip">Skip</button><button class="btn" data-nav id="mw_cancel">Cancel</button></div></div>
+			<div class="pad" id="mw_pad">${ptSVG(c.style || "generic")}</div></div></div>`).firstChild;
+		document.body.appendChild(w);
+		lockwin = w;
+		focus($("#mw_cancel", w));
+		let done = false, seen = new Set(), mapped = new Set(), lastStep = null, started = Date.now();
+		const close = msg => {
+			if (done) return;
+			done = true;
+			if (msg) toast(msg);
+			setTimeout(() => { w.remove(); lockwin = null; if (back && document.body.contains(back)) focus(back); this.drawTool(); }, msg ? 1800 : 0);
+		};
+		w._esc = () => ss1({ cmd: "controllers", do: "map_cancel" }).catch(() => close("Cancelled"));
+		$("#mw_cancel", w).onclick = w._esc;
+		$("#mw_skip", w).onclick = () => ss1({ cmd: "controllers", do: "map_skip" }).catch(e => toast(e.message));
+		const tick = async () => {
+			if (done) return;
+			let r;
+			try { r = await ss1({ cmd: "controllers", live: c.id }); } catch (e) { close("The controller went away: nothing was saved"); return; }
+			const m = r.map || {}, live = r.live || {};
+			if (m.dev === c.vidpid && m.done) {
+				$("#mw_step", w).textContent = m.saved ? "SAVED" : "CANCELLED";
+				$("#mw_ask", w).textContent = m.saved ? "All set" : "Nothing changed";
+				$("#mw_bar", w).style.width = m.saved ? "100%" : "0";
+				close(m.saved ? "Mapped: it works this way in MiSTer's menu, Phosphor and every core" : m.error || "Cancelled: the controller keeps its old mapping");
+				return;
+			}
+			if (m.on && m.dev === c.vidpid) {
+				if (m.step !== lastStep) { seen.forEach(x => mapped.add(x)); seen.clear(); lastStep = m.step; }
+				$("#mw_step", w).textContent = `STEP ${m.n} OF ${m.of}`;
+				$("#mw_ask", w).textContent = m.ask || "";
+				$("#mw_hint", w).textContent = m.step < 0 ? "No stick or D-pad like that? Skip, or press any button." : m.step >= 6 && m.step <= 11 ? "Not on this controller? Skip it." : "On the controller in your hand.";
+				$("#mw_bar", w).style.width = (100 * (m.n - 1) / m.of) + "%";
+			} else if (Date.now() - started > 8000 && !m.on) { close("The TV didn't start the mapping (is Phosphor on screen?)"); return; }
+			(live.on || []).forEach(x => seen.add(x));
+			padPaint($("#mw_pad", w), Object.assign({ has: c.has, target: m.target, done: [...mapped] }, live));
+			setTimeout(tick, 150);
+		};
+		tick();
+	}
+	/* backups of every controller's mapping files, on the SS1 */
+	async tCtrlBk(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="cbl"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="cbp"><h2>Backups</h2>
+			<p class="note">Each backup holds every controller's mapping files and your own controller profiles (gamecontrollerdb_user.txt), in phosphor/backups/controller-maps on the SD card. Resets and restores make one first.</p>
+			<div class="acts"><button class="btn primary" data-nav id="cb_now">Back up now</button></div></div></div>`));
+		let s;
+		try { s = await ss1({ cmd: "controllers" }); } catch (e) { if (!alive()) return false; $("#cbl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
+		$("#cb_now").onclick = async () => { try { const r = await ss1({ cmd: "controllers", do: "backup" }); toast(`Backed up ${r.saved} file${r.saved === 1 ? "" : "s"}`); this.drawTool(); } catch (e) { toast(e.message); } };
+		const l = $("#cbl"), bks = s.backups || [];
+		if (!bks.length) { l.innerHTML = `<div class="empty">No backups yet.</div>`; return; }
+		l.innerHTML = "";
+		const when = n => { const m = /^(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)_?(.*)$/.exec(n); return m ? [new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }), m[7].replace(/[_-]/g, " ")] : [n, ""]; };
+		for (const k of bks) {
+			const [d, lab] = when(k.name);
+			const el = h(`<div class="row net" data-nav><span class="n"><b>${esc(d)}${lab ? " · " + esc(lab) : ""}</b><small>${k.files} file${k.files === 1 ? "" : "s"}</small></span><span class="v">Restore</span></div>`).firstChild;
+			const v = $(".v", el);
+			el.onclick = async () => {        /* asks once: "Press again" */
+				if (el.dataset.sure !== "1") { el.dataset.sure = "1"; v.textContent = "Press again to restore"; setTimeout(() => { el.dataset.sure = ""; v.textContent = "Restore"; }, 4000); return; }
+				el.dataset.sure = "";
+				try { const r = await ss1({ cmd: "controllers", do: "restore", name: k.name }); toast(`Put back ${r.restored} file${r.restored === 1 ? "" : "s"}. The ones before are in ${r.backup}`); this.drawTool(); } catch (e) { toast(e.message); }
+			};
+			l.appendChild(el);
+		}
+	}
 	/* ---------- Diagnostics: the dashboard (live, every 2 s while it's shown) ---------- */
 	async tDash(b) {
 		const alive = this.alive;
