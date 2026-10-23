@@ -50,6 +50,18 @@ if [ -f "$HERE/cores/menu_phosphor.rbf" ]; then
 	mkdir -p "$ROOT/cores" && cp "$HERE/cores/menu_phosphor.rbf" "$ROOT/cores/menu_phosphor.rbf.new" && mv -f "$ROOT/cores/menu_phosphor.rbf.new" "$ROOT/cores/menu_phosphor.rbf"
 fi
 cp "$HERE/phosphor.sh" "$HERE/uninstall.sh" "$ROOT/" && chmod 755 "$ROOT/phosphor.sh" "$ROOT/uninstall.sh"
+# Phosphor's picture behind MiSTer's own menu: MiSTer's menu.png, only when there's no menu.png or
+# menu.jpg of your own (uninstall.sh takes it away again, if it's still Phosphor's)
+if [ -f "$HERE/wallpaper/phosphor-wallpaper.png" ]; then
+	if [ ! -e "$FAT/menu.png" ] && [ ! -e "$FAT/menu.jpg" ]; then
+		cp "$HERE/wallpaper/phosphor-wallpaper.png" "$FAT/menu.png.new" && mv -f "$FAT/menu.png.new" "$FAT/menu.png" && \
+			md5sum "$FAT/menu.png" | cut -c1-32 > "$ROOT/backup/menu.png.phosphor" && echo "menu.png: Phosphor's picture behind MiSTer's menu"
+	elif [ -f "$ROOT/backup/menu.png.phosphor" ] && [ "$(md5sum "$FAT/menu.png" 2>/dev/null | cut -c1-32)" = "$(cat "$ROOT/backup/menu.png.phosphor")" ]; then
+		# still ours: the new version of it
+		cp "$HERE/wallpaper/phosphor-wallpaper.png" "$FAT/menu.png.new" && mv -f "$FAT/menu.png.new" "$FAT/menu.png" && \
+			md5sum "$FAT/menu.png" | cut -c1-32 > "$ROOT/backup/menu.png.phosphor"
+	fi
+fi
 # the updater (Settings > Update Phosphor), when the package has one
 [ -f "$HERE/update.sh" ] && cp "$HERE/update.sh" "$ROOT/update.sh" && chmod 755 "$ROOT/update.sh"
 # MiSTer's updaters as Phosphor starts them (a restore point first, then the updater)

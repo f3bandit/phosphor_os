@@ -22,6 +22,10 @@ if [ -f "$INI" ] && grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI"; then
 	echo "MiSTer.ini: main= put back (${prev:-the default})"
 fi
 # menu.rbf: MiSTer's back, if Phosphor's is there
+# Phosphor's picture behind MiSTer's menu, if it's still the one Phosphor put there
+if [ -f "$ROOT/backup/menu.png.phosphor" ] && [ "$(md5sum "$FAT/menu.png" 2>/dev/null | cut -c1-32)" = "$(cat "$ROOT/backup/menu.png.phosphor")" ]; then
+	rm -f "$FAT/menu.png" && echo "menu.png: Phosphor's picture taken away"
+fi
 if [ -f "$ROOT/backup/menu.rbf.mister" ] && [ -f "$ROOT/cores/menu_phosphor.rbf" ] && cmp -s "$ROOT/cores/menu_phosphor.rbf" "$FAT/menu.rbf"; then
 	cp "$ROOT/backup/menu.rbf.mister" "$FAT/menu.rbf.new" && mv -f "$FAT/menu.rbf.new" "$FAT/menu.rbf" && echo "menu.rbf: MiSTer's put back"
 fi
