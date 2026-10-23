@@ -149,6 +149,16 @@ static void fifo_poll(void)
 
 static int main_pads;           /* Main sends the controller buttons: don't read controllers here */
 
+/* a real controller (not Main's virtual one) is read here */
+static int have_pad(void);
+
+/* buttons read from a real controller even when Main sends the rest: Select and Start (Main doesn't
+   pass them on reliably) and X and Y (Main sends them as "select" and "start") */
+static int own_button(int code)
+{
+	return code == BTN_SELECT || code == BTN_START || code == BTN_NORTH || code == BTN_WEST;
+}
+
 void input_main_pad(const char *b, int p)
 {
 	static const struct { const char *n; pkey_t k; } M[] = {
@@ -156,15 +166,25 @@ void input_main_pad(const char *b, int p)
 		{ "x", K_X }, { "y", K_Y }, { "l", K_L }, { "r", K_R }, { "select", K_SELECT }, { "start", K_MENU },
 	};
 	char w[48];
-	snprintf(w, sizeof(w), "%s %s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up");
+	int centre = !strcmp(b, "select") || !strcmp(b, "start");
+	/* Main's "select" and "start" are whatever its menu mapping put there: on the SS1's 8BitDo pads,
+	   the X and Y buttons. With a controller read here, its own Select, Start, X and Y are used. */
+	snprintf(w, sizeof(w), "%s %s%s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up", centre && have_pad() ? " ignored: read from the controller" : "");
 	input_watch("main", w);
-	if (!strcmp(b, "select") || !strcmp(b, "start")) {   /* the centre buttons (see centre_press) */
+	if (centre && have_pad()) return;
+	if (centre) {                                     /* the centre buttons (see centre_press) */
 		int w = b[1] == 'e' ? CB_SELECT : CB_START;
 		if (p == 1) centre_press(w, SRC_MAIN); else if (p == 0) centre_release(w, SRC_MAIN);
 		return;
 	}
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
 	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) if (!strcmp(b, M[i].n)) { input_push(M[i].k); return; }
+}
+
+static int have_pad(void)
+{
+	for (int i = 0; i < ndev; i++) if (devs[i].pad && !devs[i].virt) return 1;
+	return 0;
 }
 
 static int have_virt(void)
@@ -363,15 +383,21 @@ pkey_t input_poll(unsigned now)
 			if (ev.type == EV_KEY && ev.value != 2) {
 				char w[120];
 				snprintf(w, sizeof(w), "%s key %d %s (%.40s)%s", devs[i].name, ev.code, ev.value ? "down" : "up",
-				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(devs[i].pad && !devs[i].virt && (ev.code == BTN_SELECT || ev.code == BTN_START)) ? " ignored: Main sends it" : "");
+				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(devs[i].pad && !devs[i].virt && own_button(ev.code)) ? " ignored: Main sends it" : "");
 				input_watch("evdev", w);
 			}
 			if (main_pads && (devs[i].virt || devs[i].pad)) {             /* Main has the controllers... */
-				/* ...but doesn't reliably pass Select and Start on: those two are read here as well */
-				if (devs[i].pad && !devs[i].virt && ev.type == EV_KEY && (ev.code == BTN_SELECT || ev.code == BTN_START)) {
-					int w = ev.code == BTN_SELECT ? CB_SELECT : CB_START;
-					if (ev.value == 1) centre_press(w, 1u << devs[i].slot);
-					else if (ev.value == 0) centre_release(w, 1u << devs[i].slot);
+				/* ...but not Select, Start, X and Y as they are (see own_button): read here */
+				if (devs[i].pad && !devs[i].virt && ev.type == EV_KEY && own_button(ev.code)) {
+					if (ev.code == BTN_SELECT || ev.code == BTN_START) {
+						int w = ev.code == BTN_SELECT ? CB_SELECT : CB_START;
+						if (ev.value == 1) centre_press(w, 1u << devs[i].slot);
+						else if (ev.value == 0) centre_release(w, 1u << devs[i].slot);
+					} else {
+						pkey_t k = map_key(ev.code);
+						if (ev.value == 1) press(k, devs[i].slot, now);
+						else if (ev.value == 0) release(k, devs[i].slot, now);
+					}
 				}
 				continue;
 			}

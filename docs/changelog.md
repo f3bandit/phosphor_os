@@ -11,6 +11,9 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   now, and a drive behind the dock's bridge shows as NVMe.
 - **Opening the storage page could reset the dock.** Listing the drives asked the NVMe drive for its
   model (Identify), which the dock's bridge times out on before USB resets it. It's never asked now.
+- **X and Y did the wrong thing** (Save a report in Diagnostics, among others). MiSTer's Main sends
+  the 8BitDo pad's X and Y as "select" and "start"; Phosphor now reads Select, Start, X and Y from
+  the controller itself.
 - **A drive left unmounted vanished from the app** ("No NVMe or USB drive"). Unmounted drives are now
   listed, with **Mount it again**.
 
