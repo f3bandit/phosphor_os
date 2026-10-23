@@ -1590,43 +1590,80 @@ static char *log_clean(size_t max)
 	return out;
 }
 
+/* The whole log, however long (Update All's runs to thousands of lines): only the lines on screen are
+ * drawn, so it stays quick on the MiSTer's ARM. Long lines wrap at a fixed width. */
+#define LOG_WRAP 150
+static char *log_text;
+static int *log_line, log_n, log_top, log_vis;
+static lv_obj_t *log_pos;
+
+static void log_draw(void)
+{
+	if (log_top > log_n - log_vis) log_top = log_n - log_vis;
+	if (log_top < 0) log_top = 0;
+	size_t cap = (size_t)log_vis * (LOG_WRAP + 2) + 1, k = 0;
+	char *b = malloc(cap);
+	if (!b) return;
+	for (int i = log_top; i < log_n && i < log_top + log_vis; i++) {
+		int a = log_line[i], e = log_line[i + 1];
+		while (e > a && (log_text[e - 1] == '\n')) e--;
+		if (e - a > LOG_WRAP) e = a + LOG_WRAP;
+		memcpy(b + k, log_text + a, (size_t)(e - a));
+		k += (size_t)(e - a);
+		b[k++] = '\n';
+	}
+	if (k) k--;
+	b[k] = 0;
+	lv_label_set_text(log_lab, b);
+	free(b);
+	char p[64];
+	snprintf(p, sizeof(p), "lines %d\xE2\x80\x93%d of %d", log_n ? log_top + 1 : 0, LV_MIN(log_top + log_vis, log_n), log_n);
+	lv_label_set_text(log_pos, p);
+}
+
 static void show_log(void)
 {
 	cur = SCR_LOG;
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Last update's log");
-	log_box = lv_obj_create(body);
-	lv_obj_remove_style_all(log_box);
-	lv_obj_set_size(log_box, W - S(112), H - S(180) - S(84));
+	log_box = mk_box(body, W - S(112), H - S(180) - S(84), lv_color_hex(0x000000), S(10));
 	lv_obj_set_pos(log_box, S(56), S(176));
-	lv_obj_set_style_bg_color(log_box, lv_color_hex(0x000000), 0);
-	lv_obj_set_style_bg_opa(log_box, LV_OPA_COVER, 0);
-	lv_obj_set_style_radius(log_box, S(10), 0);
 	lv_obj_set_style_pad_all(log_box, S(16), 0);
-	lv_obj_set_scrollbar_mode(log_box, LV_SCROLLBAR_MODE_ON);
-	lv_obj_set_scroll_dir(log_box, LV_DIR_VER);
-	lv_obj_set_style_bg_color(log_box, PAL.acc, LV_PART_SCROLLBAR);
-	lv_obj_set_style_bg_opa(log_box, LV_OPA_COVER, LV_PART_SCROLLBAR);
-	lv_obj_set_style_width(log_box, S(4), LV_PART_SCROLLBAR);
 	log_lab = mk_label(log_box, FONT_SMALL, PAL.text, "");
-	lv_obj_set_width(log_lab, W - S(112) - S(40));
-	lv_label_set_long_mode(log_lab, LV_LABEL_LONG_MODE_WRAP);
-	char *t = log_clean(32 * 1024);
-	lv_label_set_text(log_lab, t);
-	free(t);
-	lv_obj_update_layout(log_box);
-	lv_obj_scroll_to_y(log_box, LV_COORD_MAX, LV_ANIM_OFF);
+	lv_label_set_long_mode(log_lab, LV_LABEL_LONG_MODE_CLIP);
+	lv_obj_set_size(log_lab, W - S(112) - S(32), H - S(180) - S(84) - S(32));
+	log_pos = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_align(log_pos, LV_ALIGN_TOP_RIGHT, -S(56), S(136));
+	free(log_text);
+	free(log_line);
+	log_text = log_clean(4u * 1024 * 1024);
+	/* line starts, with long lines cut into LOG_WRAP pieces */
+	int cap = 1024;
+	log_line = malloc(sizeof(int) * (size_t)cap);
+	log_n = 0;
+	for (int a = 0, n = (int)strlen(log_text); a < n; ) {
+		int e = a;
+		while (e < n && log_text[e] != '\n' && e - a < LOG_WRAP) e++;
+		if (e < n && log_text[e] == '\n') e++;
+		if (log_n + 2 >= cap) { cap *= 2; log_line = realloc(log_line, sizeof(int) * (size_t)cap); }
+		log_line[log_n++] = a;
+		a = e;
+	}
+	log_line[log_n] = (int)strlen(log_text);
+	log_vis = (H - S(180) - S(84) - S(32)) / lv_font_get_line_height(FONT_SMALL);
+	if (log_vis < 1) log_vis = 1;
+	log_top = log_n - log_vis;                 /* the end: what happened last */
+	log_draw();
 	footer_set(LOG_HINTS);
 }
 
 static void log_key(pkey_t k)
 {
-	int line = S(24), page = lv_obj_get_height(log_box) - S(40);
 	switch (k) {
-	case K_UP: lv_obj_scroll_by_bounded(log_box, 0, line * 3, LV_ANIM_OFF); break;
-	case K_DOWN: lv_obj_scroll_by_bounded(log_box, 0, -line * 3, LV_ANIM_OFF); break;
-	case K_L: lv_obj_scroll_by_bounded(log_box, 0, page, LV_ANIM_OFF); break;
-	case K_R: lv_obj_scroll_by_bounded(log_box, 0, -page, LV_ANIM_OFF); break;
+	case K_UP: log_top -= 3; log_draw(); break;
+	case K_DOWN: log_top += 3; log_draw(); break;
+	case K_L: case K_LEFT: log_top -= log_vis - 2; log_draw(); break;
+	case K_R: case K_RIGHT: log_top += log_vis - 2; log_draw(); break;
 	case K_B: case K_MENU: log_box = NULL; back_to_settings(SET_UPDLOG); return;
 	default: break;
 	}

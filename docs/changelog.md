@@ -3,6 +3,22 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.8
+
+### Fixes
+- **MiSTer's menu showed no wallpaper.** MiSTer's background setting starts at "none"; when
+  Phosphor hands the screen to MiSTer's menu and there's a menu.png or menu.jpg, it's switched to
+  the wallpaper (F1 in MiSTer's menu still changes it, and the choice is kept).
+- **Last update's log was cut off.** The whole log shows now, starting at the end; Up/Down
+  scroll, L/R (or Left/Right) page, and the line count shows where you are.
+
+### Changed
+- **Launch Phosphor sits under Reboot** on MiSTer's System page, where the cursor starts.
+
+### New
+- **Cancel the mapping wizard:** Select + Start together (or Esc on a keyboard) stops it and saves
+  nothing; the mapping that was there stays.
+
 ## 0.27.7
 
 ### Fixes
