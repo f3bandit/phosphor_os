@@ -5394,7 +5394,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_GUARD) show_guard();
 			else if (set_list.sel == SET_UPDLOG) show_log();
 			else if (set_list.sel == SET_MISTER && k == K_A) {
-				if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
+				if (mainlink_give()) toast_show("Back to Phosphor: hold the menu button, or System > Launch Phosphor");
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
 			}
 			else if (set_list.sel == SET_RESTART && k == K_A) restart_ask();
