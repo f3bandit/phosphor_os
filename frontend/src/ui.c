@@ -87,19 +87,48 @@ static void status_bar(void)
 	lv_obj_set_style_margin_left(sb_clock, S(6), 0);
 }
 
-/* update-guard's alert: how many settings the last Linux update reset (0: nothing to show) */
+/* the notification pill: the power warning first (it can cost a save), else update-guard's alert */
 static int guard_resets = -1;
+static struct {
+	int known, count, warn_at, warn;
+	struct { long at; char what[64]; } ev[10];
+	int nev;
+} pw = { .warn_at = 3 };
+static void alert_refresh(void)
+{
+	if (!sb_alert) return;
+	char t[64] = "";
+	if (pw.warn) snprintf(t, sizeof(t), "Power supply problem?");
+	else if (guard_resets > 0) snprintf(t, sizeof(t), "%d setting%s reset by an update", guard_resets, guard_resets == 1 ? "" : "s");
+	if (t[0]) lv_label_set_text(sb_alert_text, t);
+	lv_obj_set_hidden(sb_alert, !t[0]);
+}
 static void guard_alert_set(int n)
 {
 	guard_resets = n;
-	if (!sb_alert) return;
-	if (n > 0) {
-		char t[64];
-		snprintf(t, sizeof(t), "%d setting%s reset by an update", n, n == 1 ? "" : "s");
-		lv_label_set_text(sb_alert_text, t);
-	}
-	lv_obj_set_hidden(sb_alert, n <= 0);
+	alert_refresh();
 }
+/* health-watch's power check: heavy work cut short with no trace, counted since the last Dismiss.
+ * Asked at start-up, after a script and when Diagnostics opens; never on a timer. */
+static void power_apply(cJSON *r)
+{
+	if (!api_ok(r) || !cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"))) { cJSON_Delete(r); return; }
+	pw.known = 1;
+	pw.count = (int)api_num(r, "count", 0);
+	pw.warn_at = (int)api_num(r, "warn_at", 3);
+	pw.warn = cJSON_IsTrue(cJSON_GetObjectItem(r, "warn"));
+	pw.nev = 0;
+	cJSON *e;
+	cJSON_ArrayForEach(e, cJSON_GetObjectItem(r, "events")) {
+		if (pw.nev >= 10) break;
+		pw.ev[pw.nev].at = (long)api_num(e, "at", 0);
+		snprintf(pw.ev[pw.nev].what, sizeof(pw.ev[0].what), "%s", api_str(e, "what") ? api_str(e, "what") : "?");
+		pw.nev++;
+	}
+	cJSON_Delete(r);
+	alert_refresh();
+}
+static void power_check(void) { power_apply(api_call("{\"cmd\":\"power\"}")); }
 static int guard_count(cJSON *g)
 {
 	if (!g || !cJSON_IsTrue(cJSON_GetObjectItem(g, "awaiting"))) return 0;
@@ -1152,6 +1181,7 @@ void ui_script_done(int status)
 {
 	cores_refresh();
 	guard_check();                 /* a restore point was saved; and the alert may have changed */
+	power_check();
 	if (cur == SCR_SETTINGS) vlist_refresh(&set_list);
 	toast_show(status ? "The script ended with an error (Settings > Last update's log)" : "Done");
 }
@@ -1701,7 +1731,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_SCRIPTS] = { "Runs the scripts in /media/fat/Scripts, the way MiSTer's own Scripts menu does.",
 	                  "Controllers work as keys while a script runs." },
 	[SET_UPDLOG] = { "The downloader's log from the last update, to see what changed or what went wrong.", NULL },
-	[SET_DIAG] = { "Checks the network, drives, temperature and services, and makes a report to share when something isn't working.", NULL },
+	[SET_DIAG] = { "Checks the network, drives, temperature and services, and makes a report to share when something isn't working.",
+	               "Also counts times the power went in the middle of an update or other heavy work: three means the power adapter needs a look." },
 	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu. Launch Phosphor in the menu's System page comes back.", NULL },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
 	[SET_ABOUT] = { "Versions, licences and credits for Phosphor and the parts it's built on.", NULL },
@@ -1724,7 +1755,7 @@ static void si_when(long t, char *out, size_t n)
 	const char *c = clk[0] == '0' && !SETTINGS.clock24 ? clk + 1 : clk;
 	if (a.tm_year == b.tm_year && a.tm_yday == b.tm_yday) snprintf(out, n, "Today, %s", c);
 	else if (a.tm_year == b.tm_year && a.tm_yday == b.tm_yday - 1) snprintf(out, n, "Yesterday, %s", c);
-	else { char d[16]; strftime(d, sizeof(d), "%b %d", &a); snprintf(out, n, "%s, %s", d, c); }
+	else { char d[16]; strftime(d, sizeof(d), a.tm_year == b.tm_year ? "%b %d" : "%b %d %Y", &a); snprintf(out, n, "%s, %s", d, c); }
 }
 
 /* the state lines for a row: returns how many; *hi marks a line drawn in the accent colour */
@@ -1841,6 +1872,16 @@ static int si_state(int row, char k[][40], char v[][96], int *hi)
 	case SET_GUARD:
 		if (guard_resets > 0) { *hi = 0; LINE("Reset by an update", "%d setting%s", guard_resets, guard_resets == 1 ? "" : "s"); }
 		else if (guard_resets == 0) LINE("Settings", "As you left them");
+		break;
+	case SET_DIAG:
+		if (!pw.known) break;
+		if (pw.warn) *hi = 0;
+		LINE("Power events", "%d  (warns at %d)", pw.count, pw.warn_at);
+		if (pw.nev) {
+			char w[40];
+			si_when(pw.ev[0].at, w, sizeof(w));
+			LINE("Last one", "%.40s, %.40s", pw.ev[0].what, pw.ev[0].at < 1000000000L ? "time unknown" : w);
+		}
 		break;
 	case SET_ABOUT: {
 		char ip[64];
@@ -2162,18 +2203,77 @@ static void diag_apply(cJSON *r)
 	vlist_refresh(&diag_list);
 }
 
+/* the Power section at the top of Diagnostics, while there are power events since the last Dismiss.
+ * Returns its height (0: none). */
+static int diag_power(int y)
+{
+	if (!pw.known || pw.count <= 0) return 0;
+	int x = S(56), w = W - S(112), h = S(232), pad = S(22);
+	lv_obj_t *box = mk_box(body, w, h, PAL.panel, S(10));
+	lv_obj_set_pos(box, x, y);
+	lv_obj_set_style_border_color(box, pw.warn ? PAL.acc : PAL.line, 0);
+	lv_obj_set_style_border_width(box, S(1) > 1 ? S(1) : 1, 0);
+	char t[160];
+	char cap[16];
+	spaced_caps(cap, sizeof(cap), "POWER");
+	lv_obj_t *l = mk_label(box, FONT_LABEL, PAL.acc, cap);
+	lv_obj_set_pos(l, pad, S(14));
+	if (pw.warn) snprintf(t, sizeof(t), "The MiSTer lost power %d times in the middle of heavy work", pw.count);
+	else snprintf(t, sizeof(t), "The MiSTer lost power %d time%s in the middle of heavy work (a warning comes at %d)",
+	              pw.count, pw.count == 1 ? "" : "s", pw.warn_at);
+	l = mk_label(box, FONT_TITLE, PAL.text, t);
+	lv_obj_set_width(l, w - 2 * pad);
+	lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(l, pad, S(36));
+	l = mk_label(box, FONT_SMALL, PAL.dim, "No crash, no error, no log: it just restarted. That's what a power adapter that can't keep up looks like.");
+	lv_obj_set_width(l, w - 2 * pad);
+	lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(l, pad, S(68));
+	int col = (w - 2 * pad) * 55 / 100;
+	for (int i = 0; i < pw.nev && i < 3; i++) {
+		char when[40];
+		si_when(pw.ev[i].at, when, sizeof(when));
+		if (pw.ev[i].at < 1000000000L) snprintf(when, sizeof(when), "Time unknown");   /* no clock yet when it started */
+		l = mk_label(box, FONT_BODY, PAL.dim, when);
+		lv_obj_set_pos(l, pad, S(100) + i * S(24));
+		snprintf(t, sizeof(t), "Lost power during %s", pw.ev[i].what);
+		l = mk_label(box, FONT_BODY, PAL.text, t);
+		lv_obj_set_width(l, col - S(170));
+		lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_pos(l, pad + S(170), S(100) + i * S(24));
+	}
+	lv_obj_t *rule = mk_box(box, 1, S(84), PAL.line, 0);
+	lv_obj_set_pos(rule, pad + col, S(100));
+	l = mk_label(box, FONT_NAME, PAL.text, "What helps");
+	lv_obj_set_pos(l, pad + col + S(22), S(98));
+	l = mk_label(box, FONT_SMALL, PAL.dim, "A single-port USB-C PD adapter, 9 V / 3 A or more (the Steam Deck adapter works well). "
+	                                       "Not a shared multi-port charger: it moves power between ports and can dip under load.");
+	lv_obj_set_width(l, w - 2 * pad - col - S(22));
+	lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(l, pad + col + S(22), S(124));
+	lv_obj_t *btn = mk_box(box, S(190), S(34), PAL.acc, S(8));
+	lv_obj_set_pos(btn, pad, h - S(34) - S(16));
+	l = mk_label(btn, FONT_NAME, PAL.bg, "Dismiss (fixed it)");
+	lv_obj_center(l);
+	l = mk_label(box, FONT_SMALL, PAL.faint, "The count starts again. Switching off in the middle of an update counts once too.");
+	lv_obj_set_pos(l, pad + S(210), h - S(34) - S(16) + S(9));
+	return h + S(16);
+}
+
 static void show_diag(void)
 {
 	cur = SCR_DIAG;
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Diagnostics");
+	power_check();
 	diag_head = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_obj_set_pos(diag_head, S(56), S(178));
 	diag_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
 	lv_label_set_long_mode(diag_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(diag_sub, W - S(112), S(22));
 	lv_obj_set_pos(diag_sub, S(56), S(208));
-	vlist_create(&diag_list, body, S(56), S(244), W - S(112), S(380));
+	int ph = diag_power(S(240));
+	vlist_create(&diag_list, body, S(56), S(244) + ph, W - S(112), S(380) - ph);
 	diag_list.fill = diag_fill;
 	diag_list.sel = 0;
 	diag_list.top = 0;
@@ -2186,12 +2286,19 @@ static void show_diag(void)
 	}
 	diag_apply(r);
 	static const char *const hints[] = { "Y", "Check again", "X", "Save a report for support", "B", "Back", NULL };
-	footer_set(hints);
+	static const char *const phints[] = { "A", "Dismiss", "Y", "Check again", "X", "Save a report for support", "B", "Back", NULL };
+	footer_set(ph ? phints : hints);
 }
 
 static void diag_key(pkey_t k)
 {
 	if (vlist_key(&diag_list, k)) return;
+	if (k == K_A && pw.count > 0) {
+		power_apply(api_call("{\"cmd\":\"power\",\"do\":\"ack\"}"));
+		toast_show("Dismissed: the count starts again");
+		show_diag();
+		return;
+	}
 	if (k == K_Y && !diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\",\"run\":true}"));
 	else if (k == K_X && !diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\",\"bundle\":true}"));
 	else if (k == K_B || k == K_MENU) {
@@ -4322,7 +4429,7 @@ void ui_tick(void)
 	uint32_t now = lv_tick_get();
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	if (si_pending()) si_update();
-	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); } }   /* the alert, once after start-up */
+	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); } }   /* the alerts, once after start-up */
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);
