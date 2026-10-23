@@ -354,10 +354,17 @@ pkey_t input_poll(unsigned now)
 			if (ev.type == EV_KEY && ev.value != 2) {
 				char w[120];
 				snprintf(w, sizeof(w), "%s key %d %s (%.40s)%s", devs[i].name, ev.code, ev.value ? "down" : "up",
-				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) ? " ignored: Main sends it" : "");
+				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(devs[i].pad && !devs[i].virt && ev.code == BTN_SELECT) ? " ignored: Main sends it" : "");
 				input_watch("evdev", w);
 			}
-			if (main_pads && (devs[i].virt || devs[i].pad)) continue;   /* Main has the controllers */
+			if (main_pads && (devs[i].virt || devs[i].pad)) {             /* Main has the controllers... */
+				/* ...but doesn't pass Select on: it's read here (tap: Select, hold: the power window) */
+				if (devs[i].pad && !devs[i].virt && ev.type == EV_KEY && ev.code == BTN_SELECT) {
+					if (ev.value == 1) sel_press(now_ms());
+					else if (ev.value == 0) sel_release();
+				}
+				continue;
+			}
 			if (ev.type == EV_KEY) {
 				dev_t_ *d = &devs[i];
 				pkey_t k;
