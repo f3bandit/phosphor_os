@@ -2657,7 +2657,7 @@ static void pt_apply(cJSON *r)
 	if (pt.mode == PT_CONFIRM) {
 		char lab[100];
 		pt_label_for(pt.pick, lab, sizeof(lab));
-		snprintf(sub, sizeof(sub), "Put %s on the card in port 1 (A) or port 2 (X)? The card is backed up first.", lab);
+		snprintf(sub, sizeof(sub), "Restore %s to the card in port 1 (A) or port 2 (X)? The card is backed up first.", lab);
 	}
 	if (pt.busy) {
 		int pc = pt.total > 0 ? pt.done * 100 / pt.total : 0;
@@ -2691,7 +2691,7 @@ static void pt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	}
 	i -= PT_FIRST_FILE;
 	pt_label_for(pt.names[i], t, n);
-	snprintf(val, vn, "Put back >");
+	snprintf(val, vn, "Restore >");
 }
 
 static void pt_do(const char *what, int port, const char *name)
