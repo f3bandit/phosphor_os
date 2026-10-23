@@ -33,7 +33,7 @@ void settings_load(void)
 		const char *k = line, *v = eq + 1;
 		if (!strcmp(k, "accent")) SETTINGS.accent = atoi(v);
 		else if (!strcmp(k, "clock24")) SETTINGS.clock24 = atoi(v);
-		else if (!strcmp(k, "texture")) { SETTINGS.texture = atoi(v); if (SETTINGS.texture < 0 || SETTINGS.texture >= TEX_COUNT) SETTINGS.texture = 0; }   /* (8-bit tiles are gone) */
+		else if (!strcmp(k, "texture")) { SETTINGS.texture = atoi(v); if (!texture_valid(SETTINGS.texture)) SETTINGS.texture = 0; }   /* (8-bit tiles and circles are gone) */
 		else if (!strcmp(k, "setup_done")) SETTINGS.setup_done = atoi(v);
 		else if (!strcmp(k, "saver_min")) SETTINGS.saver_min = atoi(v);
 	}

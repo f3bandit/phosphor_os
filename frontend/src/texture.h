@@ -7,11 +7,13 @@
 #include <stdint.h>
 
 /* a texture is a number into the table in texture.c (saved in frontend.ini; 0 = none). The first
- * seven keep their old numbers; the variants come after. */
+ * seven keep their old numbers (5 is retired); the variants come after. */
 typedef int texture_t;
 #define TEX_NONE 0
 extern const int TEX_COUNT;
 
+/* false for numbers out of range or removed (5, the old Circles) */
+int texture_valid(texture_t t);
 const char *texture_name(texture_t t);
 /* the next texture in the order Settings shows them (dir -1 or 1) */
 texture_t texture_step(texture_t t, int dir);

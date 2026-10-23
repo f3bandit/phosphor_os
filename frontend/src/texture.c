@@ -13,7 +13,7 @@
 
 #define STRENGTH 0.13f      /* how much accent colour a line gets */
 
-typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_CIRCLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID } shape_t;
+typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID } shape_t;
 enum { M_LINE, M_FILL, M_INVERT };
 
 static const struct {
@@ -28,7 +28,7 @@ static const struct {
 	{ "X's", SH_X, 40, 40, 1, M_LINE },
 	{ "Squares", SH_SQUARE, 40, 40, 1, M_LINE },
 	{ "Triangles", SH_TRIANGLE, 40, 36, 1, M_LINE },
-	{ "Circles", SH_CIRCLE, 40, 40, 1, M_LINE },
+	{ NULL, 0, 0, 0, 0, 0 },                           /* 5 was Circles (removed): falls back to none */
 	{ "Hexagons", SH_HEX, 25.980762f, 45, 1, M_LINE },
 	/* variants (numbers 7 on) */
 	{ "Zigzag, tight", SH_ZIGZAG, 16, 8, 1, M_LINE },
@@ -38,8 +38,6 @@ static const struct {
 	{ "Squares, filled", SH_SQUARE, 26, 26, 1, M_FILL },
 	{ "Triangles, packed", SH_TRIGRID, 20, 34.641016f, 1, M_LINE },
 	{ "Triangles, bold", SH_TRIANGLE, 40, 36, 2.4f, M_LINE },
-	{ "Circles, packed", SH_CIRCLE, 15, 15, 1, M_LINE },
-	{ "Dots", SH_CIRCLE, 20, 20, 1, M_FILL },
 	{ "Hexagons, bold", SH_HEX, 25.980762f, 45, 2.4f, M_LINE },
 	{ "Honeycomb, inverted", SH_HEX, 25.980762f, 45, 2.0f, M_INVERT },
 	{ "Squares, inverted", SH_SQUARE, 17, 17, 1.6f, M_INVERT },
@@ -53,9 +51,10 @@ static const struct {
 const int TEX_COUNT = sizeof(T) / sizeof(T[0]);
 
 /* the order Settings steps through: each shape followed by its variants */
-static const int ORDER[] = { 0, 1, 7, 8, 2, 9, 3, 10, 11, 18, 23, 24, 19, 20, 21, 22, 4, 12, 13, 5, 14, 15, 6, 16, 17 };
+static const int ORDER[] = { 0, 1, 7, 8, 2, 9, 3, 10, 11, 16, 21, 22, 17, 18, 19, 20, 4, 12, 13, 6, 14, 15 };
 
-const char *texture_name(texture_t t) { return t >= 0 && t < TEX_COUNT ? T[t].name : "?"; }
+int texture_valid(texture_t t) { return t >= 0 && t < TEX_COUNT && T[t].name; }
+const char *texture_name(texture_t t) { return texture_valid(t) ? T[t].name : "None"; }
 
 texture_t texture_step(texture_t t, int dir)
 {
@@ -101,12 +100,6 @@ static float shape(shape_t s, float x, float y, float w, float h, int *inside)
 		float ax = cx, ay = cy - r, bx = cx - r * 0.866f, by = cy + r * 0.5f, qx = cx + r * 0.866f, qy = by;
 		return fminf(seg(x, y, ax, ay, bx, by), fminf(seg(x, y, bx, by, qx, qy), seg(x, y, qx, qy, ax, ay)));
 	}
-	case SH_CIRCLE: {
-		float dx = x - cx, dy = y - cy, d = sqrtf(dx * dx + dy * dy), r = fminf(7, fminf(w, h) / 2 - 1.5f);
-		if (w < 18) r = fminf(w, h) / 2 - 1.2f;
-		*inside = d < r;
-		return fabsf(d - r);
-	}
 	case SH_HEX: {                                       /* honeycomb, pointy-top, R = 15 */
 		const float R = 15, W = 1.7320508f * R, H = 3 * R;
 		float best = 1e9f;
@@ -151,7 +144,7 @@ static float shape(shape_t s, float x, float y, float w, float h, int *inside)
 
 uint8_t *texture_alpha(texture_t t, float scale, int *pw, int *ph)
 {
-	if (t <= TEX_NONE || t >= TEX_COUNT) return NULL;
+	if (t <= TEX_NONE || !texture_valid(t)) return NULL;
 	float bw = T[t].w, bh = T[t].h;
 	*pw = (int)lroundf(bw * scale);
 	*ph = (int)lroundf(bh * scale);
