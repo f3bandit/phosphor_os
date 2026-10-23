@@ -147,13 +147,25 @@ func watchSS1() {
 		}
 		if ask(`{"cmd":"gen"}`) == nil {
 			misses++
-			if misses == 3 && !lostTold { // three minutes without an answer
+			// maybe it moved (the router gave it a new address): look for it, every minute or so
+			if misses%4 == 1 && autoReconnect() {
+				if a, ok := relocate(); ok {
+					addNote(fmt.Sprintf("moved-%d", time.Now().Unix()), "info", "Reconnected to "+name,
+						"It's at "+a+" now; nothing to do.", "")
+					misses = 0
+					continue
+				}
+			}
+			if misses == 12 && !lostTold { // three minutes without an answer
 				lostTold = true
 				addNote(fmt.Sprintf("lost-%d", time.Now().Unix()/3600), "info", name+" isn't answering",
-					"It may be off, asleep, or off the network. Phosphor keeps checking.", "")
+					"It may be off, asleep, or off the network. Phosphor keeps checking and reconnects by itself.", "")
 			}
-			time.Sleep(60 * time.Second)
+			time.Sleep(15 * time.Second) // while it's away, often: back within seconds of a restart
 			continue
+		}
+		if lostTold {
+			addNote(fmt.Sprintf("back-%d", time.Now().Unix()), "info", name+" is back", "Connected again.", "")
 		}
 		misses, lostTold = 0, false
 

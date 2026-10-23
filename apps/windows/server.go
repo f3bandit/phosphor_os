@@ -95,6 +95,31 @@ func routes(mux *http.ServeMux) {
 		_ = saveConfig()
 		writeJSON(w, map[string]any{"ok": true})
 	})
+	h("/api/reconnect", func(w http.ResponseWriter, r *http.Request) { // GET: the setting; POST {auto} or {now: true}
+		if r.Method == http.MethodPost {
+			var req struct {
+				Auto *bool
+				Now  bool
+			}
+			_ = readJSON(r, &req)
+			if req.Auto != nil {
+				cfgMu.Lock()
+				cfg.NoReconnect = !*req.Auto
+				cfgMu.Unlock()
+				_ = saveConfig()
+			}
+			if req.Now {
+				if keyWorksAt(func() string { cfgMu.Lock(); defer cfgMu.Unlock(); return cfg.Address }()) {
+					writeJSON(w, map[string]any{"ok": true, "found": true, "moved": false})
+					return
+				}
+				a, ok := relocate()
+				writeJSON(w, map[string]any{"ok": true, "found": ok, "moved": ok, "address": a})
+				return
+			}
+		}
+		writeJSON(w, map[string]any{"ok": true, "auto": autoReconnect()})
+	})
 	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
 		writeJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()

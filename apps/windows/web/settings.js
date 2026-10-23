@@ -566,13 +566,29 @@ class AppSettings {
 	}
 
 	/* ---------- Connection, About ---------- */
-	tConn(b) {
+	async tConn(b) {
 		const alive = this.alive;
+		let rc = { auto: true };
+		try { rc = await api("/api/reconnect"); } catch (e) {}
+		if (!alive()) return;
 		b.append(h(`<div class="split"><div class="list"><dl class="kv" style="max-width:34rem">
-			<dt>SS1</dt><dd>${esc(S.address || "not paired")}</dd><dt>Status</dt><dd>${S.connected ? "connected" : S.paired ? "not answering" : "not paired"}</dd>
+			<dt>SS1</dt><dd>${esc(S.address || "not paired")}</dd><dt>Status</dt><dd>${S.connected ? "connected" : S.paired ? (rc.auto ? "not answering: looking for it" : "not answering") : "not paired"}</dd>
 			<dt>Phosphor on the SS1</dt><dd>${esc(S.status ? S.status.version || "" : "")}</dd><dt>Games</dt><dd>${S.status ? n(S.status.games) : ""}</dd></dl>
-			<div class="acts"><button class="btn primary" id="repair" data-nav>Pair again…</button><button class="btn" id="forget" data-nav>Forget this SS1</button></div></div>
-			<div class="panel"><h2>Connection</h2><p class="note">This PC reaches the SS1 over your home network with Phosphor's remote access, paired with a code. The pairing key stays on this PC, protected for your Windows account. Nothing goes over the internet.</p></div></div>`));
+			<div class="acts"><button class="btn primary" id="rc_now" data-nav>Reconnect now</button><button class="btn" id="rc_auto" data-nav>Reconnect automatically: ${rc.auto ? "on" : "off"}</button></div>
+			<div class="acts"><button class="btn" id="repair" data-nav>Pair again…</button><button class="btn" id="forget" data-nav>Forget this SS1</button></div></div>
+			<div class="panel"><h2>Connection</h2><p class="note">This PC reaches the SS1 over your home network with Phosphor's remote access, paired with a code. The pairing key stays on this PC, protected for your Windows account. Nothing goes over the internet.</p>
+			<p class="note"><b>Reconnect automatically:</b> when the SS1 restarts or your router gives it a new address, Phosphor finds it again on your network by itself, no pairing needed. Only the SS1 this PC is paired with can answer, so another one on the network is never picked up.</p>
+			<p class="note">After the SS1's SD card is reflashed it doesn't know this PC any more: pair again then.</p></div></div>`));
+		$("#rc_now").onclick = async () => {
+			$("#rc_now").textContent = "Looking…";
+			try {
+				const j = await api("/api/reconnect", { now: true });
+				toast(j.found ? (j.moved ? "Found it at " + j.address : "Connected") : "Couldn't find it: is it on, and on the same network?");
+			} catch (e) { toast(e.message); }
+			await refreshState();
+			if (alive()) this.drawTool(true);
+		};
+		$("#rc_auto").onclick = async () => { await api("/api/reconnect", { auto: !rc.auto }); this.drawTool(true); };
 		$("#repair").onclick = () => push(Connect);
 		twice($("#forget"), "Press again to forget", async () => { await api("/api/forget", {}); await refreshState(); toast("Forgotten. To use it again, pair again."); replace(Connect); });
 	}
