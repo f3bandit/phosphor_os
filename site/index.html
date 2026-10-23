@@ -188,7 +188,7 @@ footer p { margin: 0; max-width: 40rem; }
 	<section id="tour">
 		<div class="wrap">
 			<h2>Everything from the couch</h2>
-			<p class="intro">These are real screens from Phosphor running at 1280 by 720, the way it draws them on the SuperStation One.</p>
+			<p class="intro">These are real screens, drawn by Phosphor's own code at 1280 by 720. On a 1080p TV it draws every pixel at 1080p.</p>
 
 			<div class="feature">
 				<div class="shot"><img src="img/tv-games.png" width="1280" height="720" loading="lazy" alt="A list of games with box art, year and play time"></div>
@@ -202,9 +202,9 @@ footer p { margin: 0; max-width: 40rem; }
 			<div class="feature flip">
 				<div class="shot"><img src="img/tv-ports.png" width="1280" height="720" loading="lazy" alt="Controllers and memory cards: two PlayStation controllers shown live, memory card backups"></div>
 				<div>
-					<h3>The front ports, live</h3>
-					<p>The SuperStation One's PlayStation ports work right in the menu: see each controller's buttons and sticks, switch a DualShock to analog, and use it to move around Phosphor.</p>
-					<p>Back up a memory card to the SD card, or put a backup on a card. The card is always backed up first.</p>
+					<h3>Memory cards from the front ports</h3>
+					<p>Back up a PlayStation memory card to the SD card, or put a backup on a card. The card is always backed up first.</p>
+					<p>The ports are only read while this screen is open. The rest of the time they belong to your games, the way MiSTer intends.</p>
 				</div>
 			</div>
 
@@ -217,10 +217,11 @@ footer p { margin: 0; max-width: 40rem; }
 			</div>
 
 			<div class="feature flip">
-				<div class="shot"><img src="img/tv-screen-filters.png" width="1280" height="720" loading="lazy" alt="Screen filters for one system: scanlines, shadow mask, gamma, presets"></div>
+				<div class="shot"><img src="img/tv-settings-panel.png" width="1280" height="720" loading="lazy" alt="Settings with Cloud saves highlighted; the panel beside the list shows where saves go, when they were last sent, and what the setting does"></div>
 				<div>
-					<h3>Screen filters per system</h3>
-					<p>Scanlines, shadow masks and gamma for each system, from MiSTer's own filter folders. Every change is backed up and can be undone with one button.</p>
+					<h3>Settings that explain themselves</h3>
+					<p>Move down the list and the panel beside it follows: what each setting is set to right now, and what it's for, in plain words.</p>
+					<p>Each status is asked for once, when you stop on a row. Nothing is polled while you look.</p>
 				</div>
 			</div>
 
@@ -232,6 +233,23 @@ footer p { margin: 0; max-width: 40rem; }
 				</div>
 			</div>
 
+			<div class="feature flip">
+				<div class="shot"><img src="img/tv-restore-points.png" width="1280" height="720" loading="lazy" alt="Updates and restore points: settings a Linux update can reset, and restore points saved before each update"></div>
+				<div>
+					<h3>Updates you can undo</h3>
+					<p>Update and Update All run exactly as MiSTer runs them, with a restore point saved first. If an update breaks something, roll back: Main, the menu core and Linux come back, with Linux downloaded from MiSTer-devel and checked before use.</p>
+					<p>If a Linux update puts your network address or SSH settings back to stock, Phosphor says so and puts them back when you ask.</p>
+				</div>
+			</div>
+			
+			<div class="feature">
+				<div class="shot"><img src="img/tv-power.png" width="1280" height="720" loading="lazy" alt="Diagnostics with the Power section: the MiSTer lost power three times during updates, and what helps (example events)"></div>
+				<div>
+					<h3>It knows when it's the power</h3>
+					<p>A power adapter that can't keep up resets the MiSTer instantly under load. No crash, no error, no log, so it usually costs an evening of guessing. Phosphor uses that silence: heavy work that never finished, with no normal shutdown in between, means the power went.</p>
+					<p>After three, it tells you and says what helps. Switching off while idle is never counted. The events in this picture are an example.</p>
+				</div>
+			</div>
 			<div class="feature flip">
 				<div class="shot phones">
 					<img src="img/phone-2-home.png" width="493" height="1069" loading="lazy" alt="Phone app: the library with games that need box art or details">
@@ -254,7 +272,7 @@ footer p { margin: 0; max-width: 40rem; }
 				<li><b>MiSTer Linux</b><span>Stock, from MiSTer-devel, updated the usual way.</span></li>
 				<li class="ours"><b>MiSTer Main + Phosphor's API</b><span>MiSTer's own program, plus a small local interface so Phosphor can work with it instead of around it.</span></li>
 				<li class="ours"><b>Menu core + front ports</b><span>MiSTer's menu core, plus PlayStation controller and memory card access, off until Phosphor asks.</span></li>
-				<li class="ours"><b>phosphord</b><span>The library, box art lookup, saves, network and Bluetooth, in the background.</span></li>
+				<li class="ours"><b>phosphord and modules</b><span>The library, box art, backups, cloud saves, restore points and health checks. Each does its work when you ask, not on a timer.</span></li>
 				<li class="ours"><b>Phosphor and the phone app</b><span>What you see and hold.</span></li>
 			</ol>
 			<p class="stack-key"><i></i>Phosphor's parts. The changes to MiSTer's own programs will be published under the GPL, like MiSTer.</p>
@@ -268,7 +286,9 @@ footer p { margin: 0; max-width: 40rem; }
 			<div class="promises">
 				<div><h3>Your settings stay home</h3><p>WiFi passwords and Bluetooth pairings live on the SuperStation One, your phone, NVMe or NAS. Never on the internet.</p></div>
 				<div><h3>A backup before every change</h3><p>Anything Phosphor changes is backed up first and can be put back from the same screen.</p></div>
-				<div><h3>Only when you press the button</h3><p>Nothing installs, updates or rewrites itself. Cores are yours to manage.</p></div>
+				<div><h3>Only when you press the button</h3><p>Nothing installs, updates or rewrites itself. Cores are yours to manage. Looking for games and fetching box art start when you choose them.</p></div>
+				<div><h3>Quiet in the menu</h3><p>The DE10-Nano has one small CPU and a modest power budget. Phosphor sleeps between button presses, so the menu idles well under 20% CPU and an update gets the machine to itself.</p></div>
+				<div><h3>Plain answers when it goes wrong</h3><p>Errors say what happened and what to try. Diagnostics checks the whole system and saves one report to share, with passwords taken out.</p></div>
 				<div><h3>MiSTer underneath</h3><p>No replaced kernel, no replaced files. Remove Phosphor and the card is plain MiSTer again.</p></div>
 			</div>
 		</div>
@@ -278,9 +298,9 @@ footer p { margin: 0; max-width: 40rem; }
 		<div class="wrap status">
 			<div>
 				<h2>Not out yet</h2>
-				<p>Phosphor is in development and being tested on a SuperStation One. There's no download yet; this page will have one when there is. Phosphor is a working name.</p>
+				<p>Phosphor is in development and being tested on a SuperStation One with test images. There's no download yet; this page will have one when there is. Phosphor is a working name.</p>
 			</div>
-			<p class="now">Testing on hardware</p>
+			<p class="now">Test build 0.26.5</p>
 		</div>
 	</section>
 </main>
