@@ -92,6 +92,7 @@
 #include "log.h"
 #include "indexer.h"
 #include "guard.h"
+#include "power.h"
 #include "play.h"
 #include "scraper.h"
 #include "systems.h"
@@ -773,6 +774,39 @@ static int arg_ok(const char *v)
 
 /* updates & restore points (update-guard): what a Linux update reset, the restore points, and one
  * job at a time (restore some settings, keep stock, roll back, delete points) */
+/* {"cmd":"power"} the power check: {count, warn_at, warn, events:[{at, what}]}; "do":"ack" dismisses */
+static char *cmd_power(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && strcmp(d, "ack")) return fail("do: ack");
+	char *st = power_state(d != NULL);
+	cJSON *o = ok();
+	cJSON_AddBoolToObject(o, "installed", st != NULL);
+	int count = 0, warn_at = 3, warn = 0;
+	cJSON *ev = cJSON_CreateArray();
+	char *save = NULL;
+	for (char *line = st ? strtok_r(st, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		if (!strncmp(line, "count=", 6)) count = atoi(line + 6);
+		else if (!strncmp(line, "warn_at=", 8)) warn_at = atoi(line + 8);
+		else if (!strncmp(line, "warn=", 5)) warn = atoi(line + 5) == 1;
+		else if (!strncmp(line, "event=", 6)) {
+			char *bar = strchr(line + 6, '|');
+			if (!bar) continue;
+			*bar = 0;
+			cJSON *x = cJSON_CreateObject();
+			cJSON_AddNumberToObject(x, "at", atof(line + 6));
+			cJSON_AddStringToObject(x, "what", bar + 1);
+			cJSON_AddItemToArray(ev, x);
+		}
+	}
+	free(st);
+	cJSON_AddNumberToObject(o, "count", count);
+	cJSON_AddNumberToObject(o, "warn_at", warn_at);
+	cJSON_AddBoolToObject(o, "warn", warn);
+	cJSON_AddItemToObject(o, "events", ev);
+	return reply(o);
+}
+
 static char *cmd_guard(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -1178,6 +1212,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
 	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
+	else if (!strcmp(c->valuestring, "power")) out = cmd_power(req);
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
