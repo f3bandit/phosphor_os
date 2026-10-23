@@ -39,4 +39,7 @@ target_compile_options(phosphord PRIVATE -Wall -Wextra -Wno-unused-parameter)
 set_source_files_properties(phosphord/art.c PROPERTIES COMPILE_OPTIONS "-Wno-sign-compare;-Wno-unused-function")
 
 add_executable(phos phos/phos.c)
+# the NVMe drive behind the SS1 dock's JMicron bridge (model, temperature, health)
+add_executable(phos-nvme tools/phos-nvme.c)
+target_compile_options(phos-nvme PRIVATE -Wall -Wextra)
 target_compile_options(phos PRIVATE -Wall -Wextra)

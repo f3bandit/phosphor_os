@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/klog.h>
 #include <sys/statvfs.h>
+#include <time.h>
 #include <unistd.h>
 
 static long read_long(const char *path, int *ok)
@@ -36,9 +37,11 @@ static void read_line(const char *path, char *out, size_t n)
 	fclose(f);
 }
 
+static void nvme_temps(cJSON *arr);
 static void temps(cJSON *o)
 {
 	cJSON *arr = cJSON_AddArrayToObject(o, "temps");
+	nvme_temps(arr);
 	char p[300], name[100];
 	int ok;
 	for (int i = 0; i < 16; i++) {
@@ -71,6 +74,48 @@ static void temps(cJSON *o)
 			cJSON_AddNumberToObject(x, "c", v / 1000.0);
 			cJSON_AddItemToArray(arr, x);
 		}
+	}
+}
+
+/* the NVMe drive in the dock: behind its JMicron USB bridge, read with phos-nvme (asked at most every
+ * 20 s; the drive doesn't need waking up any more often than that) */
+static void nvme_temps(cJSON *arr)
+{
+	static time_t at;
+	static int n;
+	static struct { char dev[16]; int c; } cache[4];
+	time_t now = time(NULL);
+	if (now - at >= 20 || at == 0) {
+		at = now;
+		n = 0;
+		char tool[300];
+		snprintf(tool, sizeof(tool), "%s/phosphor/bin/phos-nvme", p_fat());
+		DIR *d = opendir("/sys/block");
+		struct dirent *e;
+		while (d && (e = readdir(d)) && n < 4) {
+			if (strncmp(e->d_name, "sd", 2)) continue;
+			char p[300], v[64];
+			snprintf(p, sizeof(p), "/sys/block/%s/device/vendor", e->d_name);
+			read_line(p, v, sizeof(v));
+			if (!strcasestr(v, "jmicron") || access(tool, X_OK)) continue;
+			char cmd[400], out[32] = "";
+			snprintf(cmd, sizeof(cmd), "'%s' -temp /dev/%s 2>/dev/null", tool, e->d_name);
+			FILE *f = popen(cmd, "r");
+			if (!f) continue;
+			if (!fgets(out, sizeof(out), f)) out[0] = 0;
+			pclose(f);
+			if (!out[0]) continue;
+			snprintf(cache[n].dev, sizeof(cache[n].dev), "%s", e->d_name);
+			cache[n].c = atoi(out);
+			n++;
+		}
+		if (d) closedir(d);
+	}
+	for (int i = 0; i < n; i++) {
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "name", "NVMe drive");
+		cJSON_AddNumberToObject(x, "c", cache[i].c);
+		cJSON_AddItemToArray(arr, x);
 	}
 }
 

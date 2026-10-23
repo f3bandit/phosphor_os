@@ -253,7 +253,7 @@ class AppSettings {
 			<div class="card2"><div><b>Restart</b><small>The drives are marked clean first, then the SS1 starts again. A game that's running is closed.</small></div><button class="btn primary" id="p_reboot" data-nav>Restart</button></div>
 			<div class="card2"><div><b>Shut down safely</b><small>Writes everything to the drives and marks them clean, so Windows won't ask to scan the card. The TV says when it's safe to switch off.</small></div><button class="btn" id="p_off" data-nav>Shut down</button></div>
 			<div class="card2"><div><b>Reload the TV screen</b><small>Restarts Phosphor's screen on the TV, not the SS1: for when the screen looks stuck. A running game keeps running.</small></div><button class="btn" id="p_ui" data-nav>Reload</button></div>
-			</div><div class="panel"><h2>Power</h2><p class="note">The same as holding Select on the SS1: modules stop, everything is written, and the drives are made read-only so they're marked clean. On the SS1 itself, hold Select anywhere in Phosphor for this window.</p></div></div>`));
+			</div><div class="panel"><h2>Power</h2><p class="note">The same as Select + Start on the SS1: modules stop, everything is written, and the drives are made read-only so they're marked clean. On the SS1 itself, press Select + Start together anywhere in Phosphor for this window.</p></div></div>`));
 		const go = async (what, msg) => {
 			try { await ss1({ cmd: "system", do: what }); toast(msg); setTimeout(refreshState, 4000); } catch (e) { toast(e.message); }
 		};
