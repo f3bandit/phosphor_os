@@ -4,6 +4,7 @@
  * The script gets phosphord's own paths (PHOSPHOR_ROOT, PHOSPHOR_TMP, the CORENAME file), runs in its own
  * process group so a timeout stops all of it, and its output is kept for the screen to show. */
 #include "modjob.h"
+#include "busy.h"
 #include "log.h"
 #include "paths.h"
 #include <fcntl.h>
@@ -120,7 +121,12 @@ static void *worker(void *arg)
 {
 	work_t *w = arg;
 	int rc;
+	char what[80];
+	snprintf(what, sizeof(what), "%s", !strcmp(w->m->module, "cloud-sync") ? "Cloud saves" : !strcmp(w->m->module, "backup-agent") ? "Backup"
+	         : !strcmp(w->m->module, "update-guard") ? "Restore point" : w->m->module);
+	busy_mark(w->m->module, what);
 	char *o = modjob_run(w->m, (const char *const *)w->argv, w->limit, &rc);
+	busy_clear(w->m->module);
 	if (!o) o = strdup("Out of memory");
 	pthread_mutex_lock(&w->m->lk);
 	free(w->m->out);

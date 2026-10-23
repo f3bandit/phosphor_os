@@ -6,6 +6,7 @@
  * Serves the API on a local socket (<tmp>/phosphord.sock): one JSON request per line, one JSON
  * reply per line. Indexes the library in the background, again whenever the mount table changes,
  * and keeps play time. Sleeps in poll() between events. */
+#include "busy.h"
 #include "api.h"
 #include "remote.h"
 #include "memcard.h"
@@ -121,6 +122,7 @@ int main(int argc, char **argv)
 	int lfd = listen_socket();
 	if (lfd < 0) return 1;
 	for (int i = 0; i < MAX_CLIENTS; i++) cl[i].fd = -1;
+	busy_init();
 	indexer_start();
 	scraper_start();
 	remote_start();

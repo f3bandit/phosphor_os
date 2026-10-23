@@ -11,6 +11,7 @@
  * Skipped: games based on another (they use its art), unidentified games, games already looked
  * up. Runs only while the menu is up, one game at a time. Network trouble pauses it for a few
  * minutes without marking anything. */
+#include "busy.h"
 #include "scraper.h"
 #include "art.h"
 #include "db.h"
@@ -416,6 +417,7 @@ static void *thread(void *arg)
 		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");   /* network trouble last time: try again */
 		int worked = 0, fails = 0, cut = 0;
 		running = 1;
+		busy_mark("boxart", "Box art");
 		while (!stop_now && menu_up()) {
 			sqlite3_stmt *st;
 			if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) { plog("scrape: %s", sqlite3_errmsg(db)); break; }
@@ -449,6 +451,7 @@ static void *thread(void *arg)
 			worked++;
 		}
 		running = 0;
+		busy_clear("boxart");
 		if (worked) plog("looked up %d game(s)", worked);
 		if (cut) scrape_status("No connection: stopped (choose Get box art to try again)");
 		else if (stop_now) scrape_status("Stopped");
