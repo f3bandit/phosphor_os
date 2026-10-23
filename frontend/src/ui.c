@@ -1054,7 +1054,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_MISTER, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1748,8 +1748,7 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_UPDLOG] = { "The downloader's log from the last update, to see what changed or what went wrong.", NULL },
 	[SET_DIAG] = { "Checks the network, drives, temperature and services, and makes a report to share when something isn't working.",
 	               "Also counts times the power went in the middle of an update or other heavy work: three means the power adapter needs a look." },
-	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu (the OSD), for MiSTer's own settings. Launch Phosphor, in its System page, comes back here.",
-	                 "Controllers are mapped in Controllers, without leaving Phosphor." },
+	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu (the OSD), for MiSTer's own settings. Launch Phosphor, in its System page, comes back here.", NULL },
 	[SET_CTRL] = { "Your USB and Bluetooth controllers: map their buttons for MiSTer's menu and every core, see them work live, or put them back to automatic.",
 	               "Every change is backed up first, and can be put back from Backups there." },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
@@ -3879,7 +3878,7 @@ static struct {
 	char on[40][8];                         /* what's pressed now (live) */
 } ct;
 static vlist_t ct_list;
-enum { CT_BACKUP_NOW, CT_BACKUPS, CT_MISTER, CT_ACTIONS };
+enum { CT_BACKUP_NOW, CT_BACKUPS, CT_ACTIONS };
 
 static const char *ct_where(const char *w)
 {
@@ -3952,7 +3951,6 @@ static void ct_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	switch (i - ct.n) {
 	case CT_BACKUP_NOW: snprintf(t, n, "Back up mappings now"); break;
 	case CT_BACKUPS: snprintf(t, n, "Backups"); snprintf(val, vn, "%d  >", ct.nbk); break;
-	case CT_MISTER: snprintf(t, n, "MiSTer menu (OSD)"); snprintf(val, vn, ">"); break;
 	}
 }
 
@@ -3980,8 +3978,7 @@ static void ct_side(void)
 	} else {
 		int a = s - ct.n;
 		lv_label_set_text(ct.desc, a == CT_BACKUP_NOW ? "Saves every controller's mapping and your controller profiles in phosphor/backups on the SD card." :
-			a == CT_BACKUPS ? "Put back the mappings from an earlier backup." :
-			"MiSTer's own menu, for its settings. Launch Phosphor, in its System page, comes back here.");
+			"Put back the mappings from an earlier backup.");
 	}
 	lv_obj_set_hidden(ct.empty, ct.n > 0 || ct.mode == 1);
 }
@@ -4105,10 +4102,6 @@ static void ct_key(pkey_t k)
 		ct.mode = 1;
 		ct_list.sel = ct_list.top = 0;
 		ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
-		break;
-	case CT_MISTER:
-		if (mainlink_give()) toast_show("MiSTer's menu: OSD > Launch Phosphor comes back here");
-		else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
 		break;
 	}
 }

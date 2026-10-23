@@ -1,5 +1,5 @@
-/* SS1 Tool's controller layouts (its web/index.html PTL) for the shell: generated from SS1 Tool,
- * keep in step with it. x, y on a 600 x 345 drawing; t: c circle, r pill, t trigger, s stick, d D-pad, l lever. */
+/* SS1 Tool's controller layouts (its web/index.html PTL) and Phosphor's additions, for the shell:
+ * generated from apps/windows/web/padlayouts.js (frontend/tools/gen_padlayouts.js). x, y on a 600 x 345 drawing; t: c circle, r pill, t trigger, s stick, d D-pad, l lever. */
 typedef struct { char t; const char *id; short x, y, a, b; const char *lab; } pl_item_t;
 typedef struct { const char *key, *name, *group; int n; const pl_item_t *it; } pl_layout_t;
 static const pl_item_t PL_generic[] = {
@@ -264,6 +264,29 @@ static const pl_item_t PL_stick6[] = {
 	{ 'c', "b", 405, 220, 24, 0, "B" },
 	{ 'c', "r2", 465, 220, 24, 0, "RT" },
 };
+static const pl_item_t PL_haute42m[] = {
+	{ 'c', "left", 56, 142, 25, 0, "←" },
+	{ 'c', "down", 126, 142, 25, 0, "↓" },
+	{ 'c', "right", 182, 180, 25, 0, "→" },
+	{ 'c', "up", 161, 82, 25, 0, "↑" },
+	{ 'c', "l3", 280, 67, 25, 0, "L3" },
+	{ 'c', "up", 210, 307, 31, 0, "↑" },
+	{ 'c', "l3", 126, 300, 25, 0, "L3" },
+	{ 'c', "r3", 294, 300, 25, 0, "R3" },
+	{ 'c', "x", 245, 142, 25, 0, "X" },
+	{ 'c', "y", 315, 127, 25, 0, "Y" },
+	{ 'c', "r1", 385, 127, 25, 0, "RB" },
+	{ 'c', "l1", 455, 142, 25, 0, "LB" },
+	{ 'c', "a", 245, 217, 25, 0, "A" },
+	{ 'c', "b", 315, 202, 25, 0, "B" },
+	{ 'c', "r2", 385, 202, 25, 0, "RT" },
+	{ 'c', "l2", 455, 217, 25, 0, "LT" },
+	{ 'c', "turbo", 371, 52, 10, 0, "T" },
+	{ 'c', "capture", 420, 52, 10, 0, "Cap" },
+	{ 'c', "guide", 469, 52, 10, 0, "Home" },
+	{ 'c', "back", 518, 52, 10, 0, "Sel" },
+	{ 'c', "start", 567, 52, 10, 0, "St" },
+};
 static const pl_layout_t PLAYOUTS[] = {
 	{ "generic", "Generic (every input)", "Modern", (int)(sizeof(PL_generic) / sizeof(PL_generic[0])), PL_generic },
 	{ "xbox", "Xbox-style", "Modern", (int)(sizeof(PL_xbox) / sizeof(PL_xbox[0])), PL_xbox },
@@ -286,5 +309,6 @@ static const pl_layout_t PLAYOUTS[] = {
 	{ "leverless", "Leverless / all-button (Haute42, Hit Box, Snack Box style)", "Fight", (int)(sizeof(PL_leverless) / sizeof(PL_leverless[0])), PL_leverless },
 	{ "stick8", "Arcade stick, 8 buttons (Mayflash F300/F500, Hori RAP style)", "Fight", (int)(sizeof(PL_stick8) / sizeof(PL_stick8[0])), PL_stick8 },
 	{ "stick6", "Arcade stick, 6 buttons (Astro City style)", "Fight", (int)(sizeof(PL_stick6) / sizeof(PL_stick6[0])), PL_stick6 },
+	{ "haute42m", "Haute42 COSMOX M Ultra", "Fight", (int)(sizeof(PL_haute42m) / sizeof(PL_haute42m[0])), PL_haute42m },
 };
 #define PL_COUNT ((int)(sizeof(PLAYOUTS) / sizeof(PLAYOUTS[0])))

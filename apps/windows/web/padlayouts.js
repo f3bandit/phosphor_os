@@ -57,6 +57,17 @@ function ptSVG(k){const L=PTL[k];let s=`<svg viewBox="0 0 600 345" role="img" ar
   s+="</g>"}
  return s+"</svg>"}
 
+/* Phosphor's additions: controllers drawn as they really are (positions from their GP2040-CE board
+   layout, configs/<board>/BoardConfig.h, scaled to the 600 x 345 drawing) */
+PTL.haute42m = { n: "Haute42 COSMOX M Ultra", g: "Fight", b: "box", it: [
+	["c", "left", 56, 142, 25, 0, "←"], ["c", "down", 126, 142, 25, 0, "↓"], ["c", "right", 182, 180, 25, 0, "→"],
+	["c", "up", 161, 82, 25, 0, "↑"], ["c", "l3", 280, 67, 25, 0, "L3"],
+	["c", "up", 210, 307, 31, 0, "↑"], ["c", "l3", 126, 300, 25, 0, "L3"], ["c", "r3", 294, 300, 25, 0, "R3"],
+	["c", "x", 245, 142, 25, 0, "X"], ["c", "y", 315, 127, 25, 0, "Y"], ["c", "r1", 385, 127, 25, 0, "RB"], ["c", "l1", 455, 142, 25, 0, "LB"],
+	["c", "a", 245, 217, 25, 0, "A"], ["c", "b", 315, 202, 25, 0, "B"], ["c", "r2", 385, 202, 25, 0, "RT"], ["c", "l2", 455, 217, 25, 0, "LT"],
+	["c", "turbo", 371, 52, 10, 0, "T"], ["c", "capture", 420, 52, 10, 0, "Cap"], ["c", "guide", 469, 52, 10, 0, "Home"],
+	["c", "back", 518, 52, 10, 0, "Sel"], ["c", "start", 567, 52, 10, 0, "St"]] };
+
 /* Phosphor: light a drawing up. st: { has: [controls] (null: draw everything), on: [controls pressed],
    ls/rs: [x, y] -1..1, l2/r2: 0..1, target: the control asked for (glows), done: [controls mapped] } */
 function padPaint(el, st) {
