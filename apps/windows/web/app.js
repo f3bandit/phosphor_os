@@ -333,6 +333,10 @@ class Home {
 			const p = await api("/api/ping");
 			if (p.unseen) t.unshift({ id: "notes", b: p.warn ? `⚠ ${p.warn} warning${p.warn === 1 ? "" : "s"}` : `${p.unseen} new`, s: "notifications", warn: p.warn > 0 });
 		} catch (e) {}
+		try {                                   /* the SS1's files, while file sharing is on */
+			const sm = await ss1({ cmd: "samba" });
+			if (sm.running) t.splice(t.length - 1, 0, { id: "files", b: "SS1 files", s: "open in File Explorer" });
+		} catch (e) {}
 		if (!$("#tools")) return;
 		box.innerHTML = t.map(x => `<div class="tool${x.warn ? " alert" : ""}" data-nav data-id="${x.id}"><b>${esc(x.b)}</b><small id="t-${x.id}">${esc(x.s)}</small></div>`).join("");
 		box.querySelectorAll(".tool").forEach(el => (el.onclick = () => {
@@ -342,6 +346,7 @@ class Home {
 			else if (id === "settings") push(AppSettings);
 			else if (id === "art") push(AppSettings, "boxart");
 			else if (id === "notes") push(AppSettings, "notifications");
+			else if (id === "files") api("/api/explore", {}).then(j => { if (!j.ok) toast(j.error); });
 		}));
 		try {
 			const j = await ss1({ cmd: "games", filter: "not_found", limit: 1 });

@@ -89,6 +89,7 @@ const (
 	smCxSmIcon      = 49
 	idOpen          = 1
 	idNotes         = 2
+	idFiles         = 4
 	idExit          = 3
 	notifyIconVer4  = 4
 	trayUID         = 1
@@ -254,6 +255,7 @@ func trayMenu(x, y int32) {
 	}
 	add(idOpen, "Open Phosphor")
 	add(idNotes, "Notifications")
+	add(idFiles, "Open the SS1's files")
 	pAppendMenu.Call(m, mfSeparator, 0, 0)
 	add(idExit, "Exit Phosphor")
 	pSetForegroundWindow.Call(tray.hwnd)
@@ -263,6 +265,10 @@ func trayMenu(x, y int32) {
 	switch cmd {
 	case idOpen:
 		showUI("")
+	case idFiles: // the Samba share (File sharing must be on, Settings > Power & updates)
+		if !openShare() {
+			trayNotify("Not paired", "Pair with your SS1 first.", false)
+		}
 	case idNotes:
 		showUI("notifications")
 	case idExit:
