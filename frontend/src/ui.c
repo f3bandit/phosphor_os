@@ -32,7 +32,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -1102,7 +1102,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_SCRAPE: {
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
 		snprintf(t, n, "Get box art and details");
-		snprintf(val, vn, "%s", on ? "Working...  (A stops it)" : "Start  >");
+		snprintf(val, vn, "%s", on ? "Working...  >" : "Start  >");
 		break;
 	}
 	case SET_SCRAPE_INFO: {
@@ -1169,6 +1169,7 @@ static int in_setup;              /* the sub-screens go back to the welcome scre
  * the same), and gives the screen back after "Press any key to continue". Phosphor draws nothing
  * and reads nothing meanwhile (main.c). */
 static void back_to_settings(int sel);
+static void show_art(void);
 static void show_scripts(void);
 static void run_script(const char *path)
 {
@@ -1719,7 +1720,7 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_RESCAN] = { "Looks through the SD card and the games drive for new or removed games and works out what each one is. Run it after adding games.",
 	                 "The menu waits while it works; B twice stops it." },
 	[SET_SCRAPE] = { "Fetches box art, descriptions and release details for your games from the sources in Box art sources.",
-	                 "Needs a network. Runs only when you start it; A again stops it." },
+	                 "Needs a network. Runs only when you start it, on its own screen; B twice there stops it." },
 	[SET_SCRAPE_INFO] = { "How far box art has got: games found, still to do, and ones no source knew.", NULL },
 	[SET_SOURCES] = { "Which sites box art and details come from, and in what order. The first answer for each game wins.",
 	                  "Some sources need a free account key, in phosphor/config/scraper.ini." },
@@ -4218,6 +4219,187 @@ static void scan_tick(uint32_t now)
 	scan_update();
 }
 
+
+/* ---------- Getting box art and details ----------
+ * Like Looking for games: "Get box art and details" takes over the screen until it's done. The
+ * source it's asking, the system and game it's on, a bar, this run's counts, and the systems list
+ * (art found of games). B twice stops it (what's found stays; the next run carries on). */
+static struct {
+	lv_obj_t *step, *sys, *game, *src, *bar, *count, *eta, *tally, *list;
+	int seen_running, quiet, done_at, stop_sent;
+	uint32_t t0, b_asked;
+} ar;
+static const char *const ART_HINTS[] = { "B", "twice: Stop", NULL };
+
+static void upper(char *s) { for (; *s; s++) if (*s >= 'a' && *s <= 'z') *s -= 32; }
+
+static void art_update(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"scrape_progress\"}");
+	if (!api_ok(r)) { cJSON_Delete(r); return; }
+	int running = cJSON_IsTrue(cJSON_GetObjectItem(r, "running"));
+	int total = (int)api_num(r, "total", 0), done = (int)api_num(r, "done", 0);
+	int found = (int)api_num(r, "found", 0), nf = (int)api_num(r, "not_found", 0), later = (int)api_num(r, "later", 0);
+	const char *cur_sys = api_str(r, "system"), *game = api_str(r, "game"), *src = api_str(r, "source"), *status = api_str(r, "status");
+	char t[240];
+	if (running) {
+		ar.seen_running = 1;
+		ar.quiet = 0;
+		if (src && *src) snprintf(t, sizeof(t), "ASKING %s", src);
+		else snprintf(t, sizeof(t), "%s", status ? status : "STARTING");
+		upper(t);
+		lv_label_set_text(ar.step, t);
+		lv_label_set_text(ar.sys, cur_sys && *cur_sys ? cur_sys : "");
+		lv_label_set_text(ar.game, game ? game : "");
+		lv_label_set_text(ar.src, src && *src ? "Looking it up..." : (status ? status : ""));
+		int pct = total ? done * 100 / total : 0;
+		if (pct > 100) pct = 100;
+		lv_bar_set_value(ar.bar, pct, LV_ANIM_OFF);
+		snprintf(t, sizeof(t), "%d of %d games", done, total);
+		lv_label_set_text(ar.count, t);
+		uint32_t el = (lv_tick_get() - ar.t0) / 1000;
+		if (done >= 5 && done < total) {
+			uint32_t left = (uint32_t)((uint64_t)el * (uint64_t)(total - done) / (uint64_t)done);
+			if (left < 60) snprintf(t, sizeof(t), "%d%%  \xC2\xB7  less than a minute left", pct);
+			else if (left < 5400) snprintf(t, sizeof(t), "%d%%  \xC2\xB7  about %u minute%s left", pct, (left + 30) / 60, (left + 30) / 60 == 1 ? "" : "s");
+			else snprintf(t, sizeof(t), "%d%%  \xC2\xB7  about %u hours left", pct, (left + 1800) / 3600);
+		} else snprintf(t, sizeof(t), "%d%%", pct);
+		lv_label_set_text(ar.eta, t);
+	}
+	if (later) snprintf(t, sizeof(t), "Found  %d        Not found  %d        No connection  %d (tried again next time)", found, nf, later);
+	else snprintf(t, sizeof(t), "Found  %d        Not found  %d", found, nf);
+	lv_label_set_text(ar.tally, t);
+	/* the systems: art found of games; the one it's on; waiting (a window of 9 around the current one) */
+	lv_obj_clean(ar.list);
+	cJSON *arr = cJSON_GetObjectItem(r, "systems"), *e;
+	int n = cJSON_GetArraySize(arr), curi = -1, i = 0;
+	cJSON_ArrayForEach(e, arr) { const char *nm = api_str(e, "name"); if (running && cur_sys && nm && !strcmp(nm, cur_sys)) curi = i; i++; }
+	int from = curi > 4 ? curi - 4 : 0;
+	if (from + 9 > n) from = n > 9 ? n - 9 : 0;
+	i = 0;
+	int y = 0;
+	cJSON_ArrayForEach(e, arr) {
+		if (i >= from && i < from + 9) {
+			const char *nm = api_str(e, "name");
+			int g = (int)api_num(e, "games", 0), a = (int)api_num(e, "art", 0), p = (int)api_num(e, "pending", 0);
+			char v[48];
+			int st = i == curi ? 1 : (!p || !running) ? 2 : 0;
+			if (st) snprintf(v, sizeof(v), "%d of %d", a, g);
+			else snprintf(v, sizeof(v), "waiting");
+			scan_row(ar.list, y, st == 2 ? "\xE2\x9C\x93" : st == 1 ? "\xE2\x80\xBA" : "\xC2\xB7", nm ? nm : "", v, st);
+			y += S(40);
+		}
+		i++;
+	}
+	/* finished: not running twice in a row after it was seen working (or never got going in 10 s) */
+	if (!running) {
+		ar.quiet++;
+		/* (the worker starts at once when asked, so 3 quiet looks means it's finished, or had nothing to do) */
+		if ((ar.seen_running && ar.quiet >= 2) || ar.quiet >= 3) {
+			lv_label_set_text(ar.step, "DONE");
+			if (!done && !ar.stop_sent) {
+				lv_label_set_text(ar.sys, "Nothing new to look up");
+				lv_label_set_text(ar.game, "Every game has been looked up. Added games? Look for games first.");
+			} else {
+				snprintf(t, sizeof(t), ar.stop_sent ? "Stopped: box art for %d more games" : "Found box art and details for %d games", found);
+				lv_label_set_text(ar.sys, t);
+				lv_label_set_text(ar.game, status ? status : "");
+			}
+			lv_label_set_text(ar.src, "");
+			lv_bar_set_value(ar.bar, 100, LV_ANIM_OFF);
+			lv_label_set_text(ar.count, "");
+			lv_label_set_text(ar.eta, "");
+			footer_set(SCAN_DONE_HINTS);
+			ar.done_at = (int)lv_tick_get() | 1;
+		}
+	}
+	cJSON_Delete(r);
+}
+
+static void show_art(void)
+{
+	cur = SCR_ART;
+	memset(&ar, 0, sizeof(ar));
+	lv_obj_clean(body);
+	screen_title("LIBRARY", "Getting box art and details");
+	ar.step = mk_label(body, FONT_LABEL, PAL.acc, "STARTING");
+	lv_obj_set_style_text_letter_space(ar.step, S(1), 0);
+	lv_obj_set_width(ar.step, S(706));
+	lv_label_set_long_mode(ar.step, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(ar.step, S(56), S(200));
+	ar.sys = mk_label(body, FONT_HEADING, PAL.text, "");
+	lv_obj_set_width(ar.sys, S(706));
+	lv_label_set_long_mode(ar.sys, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(ar.sys, S(56), S(224));
+	ar.game = mk_label(body, FONT_TITLE, PAL.text, "");
+	lv_obj_set_width(ar.game, S(706));
+	lv_label_set_long_mode(ar.game, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(ar.game, S(56), S(276));
+	ar.src = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(ar.src, S(706));
+	lv_label_set_long_mode(ar.src, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(ar.src, S(56), S(306));
+	ar.bar = lv_bar_create(body);
+	lv_obj_set_size(ar.bar, S(706), S(16));
+	lv_obj_set_pos(ar.bar, S(56), S(346));
+	lv_obj_set_style_bg_color(ar.bar, PAL.line, LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(ar.bar, LV_OPA_COVER, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(ar.bar, PAL.acc, LV_PART_INDICATOR);
+	lv_obj_set_style_radius(ar.bar, S(8), LV_PART_MAIN);
+	lv_obj_set_style_radius(ar.bar, S(8), LV_PART_INDICATOR);
+	lv_bar_set_range(ar.bar, 0, 100);
+	ar.count = mk_label(body, FONT_TITLE, PAL.text, "");
+	lv_obj_set_pos(ar.count, S(56), S(376));
+	ar.eta = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(ar.eta, S(500));
+	lv_obj_set_style_text_align(ar.eta, LV_TEXT_ALIGN_RIGHT, 0);
+	lv_obj_set_pos(ar.eta, S(56 + 706 - 500), S(380));
+	ar.tally = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_pos(ar.tally, S(56), S(412));
+	lv_obj_t *note = mk_box(body, S(706), S(100), PAL.bg, S(10));
+	lv_obj_set_style_border_color(note, PAL.line, 0);
+	lv_obj_set_style_border_width(note, S(1) > 0 ? S(1) : 1, 0);
+	lv_obj_set_pos(note, S(56), S(466));
+	lv_obj_t *nt = mk_label(note, FONT_NAME, PAL.text, "Everything else waits until this is done.");
+	lv_obj_set_pos(nt, S(20), S(18));
+	lv_obj_t *nb = mk_label(note, FONT_SMALL, PAL.dim, "Box art and details found so far are kept. If it is stopped or the SS1 is\nturned off, it carries on from where it left off next time.");
+	lv_obj_set_pos(nb, S(20), S(50));
+	lv_obj_t *sl = mk_label(body, FONT_LABEL, PAL.dim, "SYSTEMS  \xC2\xB7  BOX ART FOUND");
+	lv_obj_set_style_text_letter_space(sl, S(2), 0);
+	lv_obj_set_pos(sl, S(840), S(166));
+	ar.list = mk_box(body, S(384), S(380), PAL.bg, 0);
+	lv_obj_set_pos(ar.list, S(830), S(200));
+	footer_set(ART_HINTS);
+	ar.t0 = lv_tick_get();
+	/* start it, unless it's already working (then this screen just follows it) */
+	cJSON *r = api_call("{\"cmd\":\"scrape\"}");
+	int on = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "on"));
+	cJSON_Delete(r);
+	if (!on) cJSON_Delete(api_call("{\"cmd\":\"scrape\",\"on\":true}"));
+	art_update();
+}
+
+static void art_key(pkey_t k)
+{
+	if (ar.done_at) return;
+	if (k != K_B) return;
+	uint32_t now = lv_tick_get();
+	if (!ar.b_asked || now - ar.b_asked > 4000) { ar.b_asked = now ? now : 1; toast_show("Press B again to stop"); return; }
+	ar.b_asked = 0;
+	ar.stop_sent = 1;
+	cJSON_Delete(api_call("{\"cmd\":\"scrape\",\"on\":false}"));
+	lv_label_set_text(ar.step, "STOPPING");
+}
+
+static void art_tick(uint32_t now)
+{
+	static uint32_t last;
+	if (ar.done_at) { if (now - (uint32_t)ar.done_at > 3500) { ar.done_at = 0; back_to_settings(SET_SCRAPE); } return; }
+	if (now - last < 500) return;
+	last = now;
+	art_update();
+}
+
 /* ---------- lists across systems: favorites, recently played, search ---------- */
 
 static void show_list(int mode)
@@ -4386,12 +4568,15 @@ void ui_key(pkey_t k)
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
+	case SCR_ART:
+		art_key(k);
+		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) { si_update(); break; }
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
 			if (set_list.sel == SET_RESCAN) { if (k == K_A) show_scan(); }
-			else if (set_list.sel == SET_SCRAPE) { if (k == K_A) settings_change(0); }
+			else if (set_list.sel == SET_SCRAPE) { if (k == K_A) show_art(); }
 			else if (set_list.sel == SET_SOURCES) show_sources();
 			else if (set_list.sel == SET_DIAG) show_diag();
 			else if (set_list.sel == SET_WIFI) show_wifi();
@@ -4439,6 +4624,7 @@ void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
+	if (cur == SCR_ART) { ui_activity(); art_tick(now); }
 	if (si_pending()) si_update();
 	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); } }   /* the alerts, once after start-up */
 	saver_tick(now);

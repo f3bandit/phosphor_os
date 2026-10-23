@@ -14,6 +14,8 @@
  *   favorite   id on                        mark or unmark
  *   rescan [stop:true]                      look for games (list them, then identify them); only ever on request.
  *                                           stop: stop it (what's done stays)
+ *   scrape_progress                         {running, status, system, game, source, total, done, found, not_found,
+ *                                             later, systems:[{name, games, art, pending}]}: the Getting box art screen
  *   scan_progress                           {stage listing|identifying|waiting|idle, listed, done, total, system, file,
  *                                            systems:[{name, files, identified}], games}: for the scan screen
  *   gen                                     {generation, indexing, identifying}: cheap "has the library changed?"
@@ -1248,6 +1250,39 @@ char *api_handle(sqlite3 *db, const char *request)
 			sqlite3_finalize(st);
 		}
 		cJSON_AddNumberToObject(o, "games", games);
+		out = reply(o);
+	}
+	else if (!strcmp(c->valuestring, "scrape_progress")) {   /* for the Getting box art screen, while it's open */
+		scrape_progress_t pr;
+		scraper_progress(&pr);
+		cJSON *o = ok();
+		cJSON_AddBoolToObject(o, "running", pr.running);
+		cJSON_AddStringToObject(o, "status", pr.status);
+		cJSON_AddStringToObject(o, "system", pr.system);
+		cJSON_AddStringToObject(o, "game", pr.game);
+		cJSON_AddStringToObject(o, "source", pr.source);
+		cJSON_AddNumberToObject(o, "total", pr.total);
+		cJSON_AddNumberToObject(o, "done", pr.done);
+		cJSON_AddNumberToObject(o, "found", pr.found);
+		cJSON_AddNumberToObject(o, "not_found", pr.not_found);
+		cJSON_AddNumberToObject(o, "later", pr.later);
+		/* per system, in the order the scraper goes through them: games, with box art, still to look up */
+		cJSON *arr = cJSON_AddArrayToObject(o, "systems");
+		sqlite3_stmt *st;
+		if (sqlite3_prepare_v2(db, "SELECT g.system_id, COUNT(*), SUM(COALESCE(g.art_box,'') <> ''),"
+		                           " SUM(g.scrape IS NULL AND g.based_on IS NULL AND g.key NOT LIKE 'n:%')"
+		                           " FROM games g WHERE " VISIBLE " GROUP BY g.system_id ORDER BY g.system_id", -1, &st, NULL) == SQLITE_OK) {
+			while (sqlite3_step(st) == SQLITE_ROW) {
+				const gsys_t *sy = system_by_id((const char *)sqlite3_column_text(st, 0));
+				cJSON *e = cJSON_CreateObject();
+				cJSON_AddStringToObject(e, "name", sy ? sy->name : (const char *)sqlite3_column_text(st, 0));
+				cJSON_AddNumberToObject(e, "games", sqlite3_column_int(st, 1));
+				cJSON_AddNumberToObject(e, "art", sqlite3_column_int(st, 2));
+				cJSON_AddNumberToObject(e, "pending", sqlite3_column_int(st, 3));
+				cJSON_AddItemToArray(arr, e);
+			}
+			sqlite3_finalize(st);
+		}
 		out = reply(o);
 	}
 	else if (!strcmp(c->valuestring, "gen")) {          /* has the library changed? (cheap: no queries) */

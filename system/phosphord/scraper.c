@@ -38,6 +38,16 @@ static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 static int kicked, stop_now, running;   /* runs only when asked (Get box art), never by itself */
 static char status_text[160] = "Not run yet";
+static scrape_progress_t pg;            /* this run (under lk) */
+
+void scraper_progress(scrape_progress_t *o)
+{
+	pthread_mutex_lock(&lk);
+	*o = pg;
+	o->running = running;
+	snprintf(o->status, sizeof(o->status), "%s", status_text);
+	pthread_mutex_unlock(&lk);
+}
 
 void scrape_status(const char *fmt, ...)
 {
@@ -342,6 +352,9 @@ static int scrape_one(sqlite3 *db, sgame_t *g)
 	for (int i = 0; i < n; i++) {
 		if (!source_on(src[i]) || !src[i]->ready()) continue;
 		if (sres_complete(&r, had_art)) break;
+		pthread_mutex_lock(&lk);
+		snprintf(pg.source, sizeof(pg.source), "%s", src[i]->name);
+		pthread_mutex_unlock(&lk);
 		int rc = src[i]->lookup(db, g, &r);
 		if (rc == 1) {
 			found = 1;
@@ -416,6 +429,20 @@ static void *thread(void *arg)
 		cfg_load();
 		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");   /* network trouble last time: try again */
 		int worked = 0, fails = 0, cut = 0;
+		{
+			char csql[1300];
+			snprintf(csql, sizeof(csql), "SELECT COUNT(*) %s", PENDING);
+			sqlite3_stmt *cs;
+			int total = 0;
+			if (sqlite3_prepare_v2(db, csql, -1, &cs, NULL) == SQLITE_OK) {
+				if (sqlite3_step(cs) == SQLITE_ROW) total = sqlite3_column_int(cs, 0);
+				sqlite3_finalize(cs);
+			}
+			pthread_mutex_lock(&lk);
+			memset(&pg, 0, sizeof(pg));
+			pg.total = total;
+			pthread_mutex_unlock(&lk);
+		}
 		running = 1;
 		while (!stop_now && menu_up()) {
 			sqlite3_stmt *st;
@@ -438,7 +465,18 @@ static void *thread(void *arg)
 				if (p) g.size = atol(p + 1);
 			}
 			scrape_status("Looking up %s games", gs ? gs->name : g.sys);
+			pthread_mutex_lock(&lk);
+			snprintf(pg.system, sizeof(pg.system), "%s", gs ? gs->name : g.sys);
+			snprintf(pg.game, sizeof(pg.game), "%.119s", g.title);
+			pg.source[0] = 0;
+			pthread_mutex_unlock(&lk);
 			int r = scrape_one(db, &g);
+			pthread_mutex_lock(&lk);
+			pg.done++;
+			if (r < 0) pg.later++;
+			else if (r) pg.found++;
+			else pg.not_found++;
+			pthread_mutex_unlock(&lk);
 			if (r < 0) {
 				/* one source unreachable: this game later; several in a row: stop, the user can ask again */
 				mark(db, g.id, "later");
