@@ -1610,7 +1610,7 @@ static void settings_change(int dir)
 		set_list.sel = keep;
 		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_TEXTURE) {
-		SETTINGS.texture = (SETTINGS.texture + dir + TEX_COUNT) % TEX_COUNT;
+		SETTINGS.texture = texture_step(SETTINGS.texture, dir ? dir : 1);
 		settings_save();
 		texture_apply(root, (texture_t)SETTINGS.texture);
 		vlist_refresh(&set_list);

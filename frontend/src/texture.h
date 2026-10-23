@@ -4,11 +4,21 @@
 #define PHOS_TEXTURE_H
 
 #include "lvgl.h"
+#include <stdint.h>
 
-typedef enum { TEX_NONE, TEX_ZIGZAG, TEX_X, TEX_SQUARES, TEX_TRIANGLES, TEX_CIRCLES, TEX_HEX, TEX_COUNT } texture_t;
+/* a texture is a number into the table in texture.c (saved in frontend.ini; 0 = none). The first
+ * seven keep their old numbers; the variants come after. */
+typedef int texture_t;
+#define TEX_NONE 0
+extern const int TEX_COUNT;
 
 const char *texture_name(texture_t t);
+/* the next texture in the order Settings shows them (dir -1 or 1) */
+texture_t texture_step(texture_t t, int dir);
 /* draw the texture in the current accent colour as obj's tiled background (TEX_NONE removes it) */
 void texture_apply(lv_obj_t *obj, texture_t t);
+/* the tile's coverage (0..255 a pixel) at this scale, for tests and previews: its size in *w, *h;
+ * returns NULL for none (caller frees) */
+uint8_t *texture_alpha(texture_t t, float scale, int *w, int *h);
 
 #endif
