@@ -66,6 +66,8 @@ texture_t texture_step(texture_t t, int dir)
 
 static lv_draw_buf_t *tile;
 
+const void *texture_tile(void) { return tile; }
+
 static float seg(float px, float py, float ax, float ay, float bx, float by)
 {
 	float vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
