@@ -77,19 +77,21 @@ if [ "$BOOT" != 0 ]; then
 fi
 
 # booting into Phosphor: every module too, since Settings uses them (Backups, Cloud saves, shares,
-# health, update safety). On the MiSTer now; for an SD card image, on its first boot (they change
-# files inside Linux too, which only exist there)
+# health, update safety). On the MiSTer: now. For an SD card image: into the image (files, settings,
+# boot entries; nothing started), so the first boot has nothing left to install except the part of
+# cifs-helper that lives inside Linux (its network hook), which a quick first-boot step does.
 MODS="cifs-helper backup-agent health-watch update-guard cloud-sync"
 if [ "$BOOT" = 2 ]; then
-	if [ -n "${PHOS_FAT_TARGET:-}" ]; then
-		echo "$MODS" > "$ROOT/firstboot"
-		echo "modules: installed on the first boot"
-	else
-		for m in $MODS; do
-			[ -x "$HERE/modules/$m/install.sh" ] || continue
+	for m in $MODS; do
+		[ -x "$HERE/modules/$m/install.sh" ] || continue
+		if [ -n "${PHOS_FAT_TARGET:-}" ]; then
+			PHOSPHOR_OFFLINE=1 PHOSPHOR_ROOT="$ROOT" PHOSPHOR_TARGET_ROOT="$RUNROOT" PHOSPHOR_USER_STARTUP="$STARTUP" \
+				"$HERE/modules/$m/install.sh" > /dev/null 2>&1 && echo "module $m installed (image)" || { echo "module $m didn't install" >&2; exit 1; }
+		else
 			PHOSPHOR_ROOT="$ROOT" "$HERE/modules/$m/install.sh" > /dev/null 2>&1 && echo "module $m installed" || echo "note: module $m didn't install" >&2
-		done
-	fi
+		fi
+	done
+	[ -n "${PHOS_FAT_TARGET:-}" ] && echo "cifs-helper" > "$ROOT/firstboot"
 fi
 
 # Phosphor's menu core as menu.rbf: the bootloader loads menu.rbf before Linux starts, and Phosphor's

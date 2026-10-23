@@ -125,7 +125,12 @@ PHOS_FAT="$WORK/rel/files" PHOS_FAT_TARGET=/media/fat bash "$PDIR/install.sh" --
 grep -q '^# phosphor: BEGIN' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block missing" >&2; exit 1; }
 grep -q ' /media/fat/phosphor/phosphor.sh boot' "$WORK/rel/files/linux/user-startup.sh" || { echo "boot block has the wrong path" >&2; exit 1; }
 grep -q "^main=phosphor/bin/MiSTer_phosphor" "$WORK/rel/files/MiSTer.ini" || { echo "MiSTer.ini main= missing" >&2; exit 1; }
-grep -q "cloud-sync" "$WORK/rel/files/phosphor/firstboot" || { echo "first-boot module list missing" >&2; exit 1; }
+# the modules are in the image, their boot entries point at the card (not at this machine)
+for m in cifs-helper backup-agent health-watch update-guard cloud-sync; do
+	[ -x "$WORK/rel/files/phosphor/modules/$m/$m.sh" ] || { echo "module $m isn't in the image" >&2; exit 1; }
+	grep -q "phosphor $m: BEGIN\|phosphor $m" "$WORK/rel/files/linux/user-startup.sh" || { echo "module $m has no boot entry" >&2; exit 1; }
+done
+if grep -q "$WORK" "$WORK/rel/files/linux/user-startup.sh"; then echo "user-startup.sh points at the build folder" >&2; exit 1; fi
 cmp -s "$WORK/rel/files/menu.rbf" "$WORK/rel/files/phosphor/cores/menu_phosphor.rbf" || { echo "menu.rbf isn't Phosphor's menu core" >&2; exit 1; }
 # MiSTer's video filters, shadow masks, gamma tables and presets (MiSTer-devel), so Screen filters works
 # from the start; the downloader keeps them current later
