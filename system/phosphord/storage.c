@@ -1,6 +1,6 @@
 /* phosphord: drives the storage module (SD card, NVMe and USB checks; the faulty overlap tool).
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
- * Only fsrepair changes a file system (the checker unmounts and repairs it); speed writes and removes
+ * Only fsrepair changes a file system (and mount mounts a drive that was left unmounted) (the checker unmounts and repairs it); speed writes and removes
  * one file; the overlap tool is moved into phosphor/backups, never deleted, and can be put back. */
 #include "storage.h"
 #include "modjob.h"
@@ -24,6 +24,14 @@ int storage_start(const char *test, const char *target)
 {
 	static const char *T[] = { "quick", "windows", "partition", "boot", "kernel", "drive", "health", "speed", "fscheck", "fsrepair", NULL };
 	const char *argv[6];
+	if (!strcmp(test, "mount")) {                         /* a drive left unmounted: /dev/sdXN */
+		if (!target || strncmp(target, "/dev/sd", 7) || target[7] < 'a' || target[7] > 'z' || !target[8]) return -2;
+		for (const char *p = target + 8; *p; p++) if (*p < '0' || *p > '9') return -2;
+		if (strlen(target) > 11) return -2;
+		argv[0] = "mount"; argv[1] = target; argv[2] = NULL;
+		snprintf(last_target, sizeof(last_target), "%s", target);
+		return modjob_start(&mj, test, argv, 60);
+	}
 	if (!strcmp(test, "overlap-remove") || !strcmp(test, "overlap-undo")) {
 		argv[0] = "overlap"; argv[1] = test + 8; argv[2] = NULL;
 		snprintf(last_target, sizeof(last_target), "/media/fat");

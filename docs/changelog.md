@@ -3,6 +3,20 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.5
+
+### Fixes
+- **No NVMe temperature, and the drive showed as "USB".** The installer left out `phos-nvme`, so the
+  Dashboard had no temperature and the storage checks fell back to SS1 Tool's helper. It's installed
+  now, and a drive behind the dock's bridge shows as NVMe.
+- **Opening the storage page could reset the dock.** Listing the drives asked the NVMe drive for its
+  model (Identify), which the dock's bridge times out on before USB resets it. It's never asked now.
+- **A drive left unmounted vanished from the app** ("No NVMe or USB drive"). Unmounted drives are now
+  listed, with **Mount it again**.
+
+### Windows app 0.2.5
+- Reconnects by itself when the SS1 restarts or gets a new address (Settings > Connection).
+
 ## 0.27.4
 
 ### Fixes
