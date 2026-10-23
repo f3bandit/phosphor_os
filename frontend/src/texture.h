@@ -19,6 +19,8 @@ const char *texture_name(texture_t t);
 texture_t texture_step(texture_t t, int dir);
 /* draw the texture in the current accent colour as obj's tiled background (TEX_NONE removes it) */
 void texture_apply(lv_obj_t *obj, texture_t t);
+/* the tile texture_apply made (NULL for none); it's replaced the next time texture_apply runs */
+const void *texture_tile(void);
 /* the tile's coverage (0..255 a pixel) at this scale, for tests and previews: its size in *w, *h;
  * returns NULL for none (caller frees) */
 uint8_t *texture_alpha(texture_t t, float scale, int *w, int *h);

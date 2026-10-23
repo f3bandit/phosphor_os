@@ -1016,6 +1016,8 @@ static void restart_ask(void)
 
 static vlist_t set_list;
 enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+static void si_update(void);
+static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
@@ -1090,7 +1092,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_BT: snprintf(t, n, "Bluetooth"); snprintf(val, vn, ">"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_SAMBA:
-		snprintf(t, n, "Share the SD card on the network (Samba)");
+		snprintf(t, n, "Network share (Samba)");
 		if (!api_ok(samba_st) || !samba_b("available")) { *dim = 1; snprintf(val, vn, "Not on this system"); }
 		else if (samba_b("busy")) {
 			static const char *const D[] = { ".", "..", "..." };
@@ -1108,7 +1110,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
-	case SET_CORES: snprintf(t, n, "Get or update cores (MiSTer's downloader)"); cores_value(val, vn); break;
+	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
 	case SET_UPDATE_ALL:
 		snprintf(t, n, "Update All");
 		if (!cr.all_available) { *dim = 1; snprintf(val, vn, "Not on the SD card"); }
@@ -1593,6 +1595,7 @@ static void back_to_settings(int sel)
 	show_settings();
 	set_list.sel = sel;
 	vlist_refresh(&set_list);
+	si_update();
 }
 
 static void settings_change(int dir)
@@ -1609,11 +1612,13 @@ static void settings_change(int dir)
 		show_settings();
 		set_list.sel = keep;
 		vlist_refresh(&set_list);
+		si_update();
 	} else if (set_list.sel == SET_TEXTURE) {
 		SETTINGS.texture = texture_step(SETTINGS.texture, dir ? dir : 1);
 		settings_save();
 		texture_apply(root, (texture_t)SETTINGS.texture);
 		vlist_refresh(&set_list);
+		si_update();                          /* (the swatch holds the old tile until then) */
 	} else if (set_list.sel == SET_SCRAPE) {    /* A: start, or stop it while it works */
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
 		cJSON_Delete(scrape_state);
@@ -1645,18 +1650,332 @@ static void settings_change(int dir)
 	}
 }
 
+/* ---------- Settings: the info panel ----------
+ * Beside the list: what the highlighted setting is set to now, and what it's for. Built from what the
+ * shell already has; rows with a screen of their own (WiFi, Bluetooth, Remote access, Cloud saves,
+ * Backups, Look for games) ask phosphord once, after the cursor has rested on them, never on a timer.
+ * Controllers & memory cards asks nothing, so the card reader stays asleep until its screen opens. */
+
+#define SI_ROWS 5
+#define SI_REST_MS 300
+static struct {
+	lv_obj_t *box, *title, *pair[SI_ROWS], *k[SI_ROWS], *v[SI_ROWS], *swatch, *rule, *about, *tip;
+	int row;                  /* the row on show (-1: none yet) */
+	cJSON *ext;               /* phosphord's answer for ext_row */
+	int ext_row, ext_asked;
+	uint32_t moved_at;
+} si = { .row = -1, .ext_row = -1 };
+
+static const char *const SI_TEXT[SET_COUNT][2] = {
+	[SET_WIFI] = { "Join a WiFi network, or switch between saved ones. Networks you've joined are remembered and stay on this MiSTer.",
+	               "Needed for updates, box art and cloud saves. Ethernet on the dock works too." },
+	[SET_BT] = { "Pair Bluetooth controllers and keyboards, and forget ones you no longer use.",
+	             "Put the controller in pairing mode first, then choose Pair." },
+	[SET_REMOTE] = { "Lets the Phosphor phone app and Phosphor Link on a PC reach this MiSTer over your home network, after you pair them with a code shown here.",
+	                 "Only paired devices get in. Nothing goes over the internet." },
+	[SET_SAMBA] = { "Shares the SD card and the games drive as a network folder, so you can copy games and files from a PC.",
+	                "Leave it off when you don't need it: anyone on your network can open the share." },
+	[SET_CLOUD] = { "Sends your saves, save states and core settings to your own storage after each game, with older versions kept. Getting them back is only on request, with a preview first.",
+	                "WiFi, Bluetooth pairings and passwords are never sent." },
+	[SET_BACKUP] = { "Snapshots of your saves and settings, taken when you leave a game and once a day. Restore just the saves, or everything, from any snapshot.",
+	                 "Every restore takes a snapshot first, so it can be undone." },
+	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
+	                "The ports are only read while this screen is open." },
+	[SET_ACCENT] = { "The colour used for highlights, the wordmark and the background texture. Left and right change it.", NULL },
+	[SET_TEXTURE] = { "A faint pattern behind the menus, in the accent colour. Left and right step through them; it changes as you go.",
+	                  "Drawn once when you pick it, so it costs nothing while you use the menu." },
+	[SET_CLOCK] = { "How the clock in the top corner shows the time.", NULL },
+	[SET_SAVER] = { "Dims the screen after a while with no buttons pressed, to save the TV from burn-in. Any button wakes it.", NULL },
+	[SET_RESCAN] = { "Looks through the SD card and the games drive for new or removed games and works out what each one is. Run it after adding games.",
+	                 "The menu waits while it works; B twice stops it." },
+	[SET_SCRAPE] = { "Fetches box art, descriptions and release details for your games from the sources in Box art sources.",
+	                 "Needs a network. Runs only when you start it; A again stops it." },
+	[SET_SCRAPE_INFO] = { "How far box art has got: games found, still to do, and ones no source knew.", NULL },
+	[SET_SOURCES] = { "Which sites box art and details come from, and in what order. The first answer for each game wins.",
+	                  "Some sources need a free account key, in phosphor/config/scraper.ini." },
+	[SET_CORES] = { "Runs MiSTer's own downloader to get the cores, or update them. A restore point is saved first.",
+	                "Takes a while on a fresh card. Cores go to the games drive when there is one." },
+	[SET_UPDATE_ALL] = { "Runs Update All: cores, plus extras such as arcade ROMs, BIOS files and other databases you've chosen in it. A restore point is saved first.",
+	                     "Use a single-port power adapter: shared multi-port chargers can cut out under the load." },
+	[SET_GUARD] = { "Linux updates can put some settings back to stock (network address, SSH keys). This shows which, puts them back, or rolls back to a restore point.", NULL },
+	[SET_SCRIPTS] = { "Runs the scripts in /media/fat/Scripts, the way MiSTer's own Scripts menu does.",
+	                  "Controllers work as keys while a script runs." },
+	[SET_UPDLOG] = { "The downloader's log from the last update, to see what changed or what went wrong.", NULL },
+	[SET_DIAG] = { "Checks the network, drives, temperature and services, and makes a report to share when something isn't working.", NULL },
+	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu. Launch Phosphor in the menu's System page comes back.", NULL },
+	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
+	[SET_ABOUT] = { "Versions, licences and credits for Phosphor and the parts it's built on.", NULL },
+};
+
+static int si_wants_ext(int row)
+{
+	return row == SET_WIFI || row == SET_BT || row == SET_REMOTE || row == SET_CLOUD || row == SET_BACKUP || row == SET_RESCAN;
+}
+
+static void si_when(long t, char *out, size_t n)
+{
+	if (t <= 0) { snprintf(out, n, "Never"); return; }
+	time_t now = time(NULL), tt = (time_t)t;
+	struct tm a, b;
+	localtime_r(&tt, &a);
+	localtime_r(&now, &b);
+	char clk[16];
+	strftime(clk, sizeof(clk), SETTINGS.clock24 ? "%H:%M" : "%I:%M %p", &a);
+	const char *c = clk[0] == '0' && !SETTINGS.clock24 ? clk + 1 : clk;
+	if (a.tm_year == b.tm_year && a.tm_yday == b.tm_yday) snprintf(out, n, "Today, %s", c);
+	else if (a.tm_year == b.tm_year && a.tm_yday == b.tm_yday - 1) snprintf(out, n, "Yesterday, %s", c);
+	else { char d[16]; strftime(d, sizeof(d), "%b %d", &a); snprintf(out, n, "%s, %s", d, c); }
+}
+
+/* the state lines for a row: returns how many; *hi marks a line drawn in the accent colour */
+static int si_state(int row, char k[][40], char v[][96], int *hi)
+{
+	int n = 0;
+	*hi = -1;
+	cJSON *e = si.ext_row == row ? si.ext : NULL;
+#define LINE(K, ...) do { if (n < SI_ROWS) { snprintf(k[n], 40, "%s", K); snprintf(v[n], 96, __VA_ARGS__); n++; } } while (0)
+	switch (row) {
+	case SET_WIFI: {
+		cJSON *s = cJSON_GetObjectItem(e, "status");
+		if (!e) break;
+		if (!cJSON_IsTrue(cJSON_GetObjectItem(s, "present"))) { LINE("WiFi", "No adapter"); break; }
+		if (cJSON_IsTrue(cJSON_GetObjectItem(s, "connected"))) {
+			int sig = (int)api_num(s, "signal", 0);
+			*hi = 0;
+			LINE("Network", "%s", api_str(s, "ssid") ? api_str(s, "ssid") : "?");
+			if (sig) LINE("Signal", "%s", sig >= -55 ? "Strong" : sig >= -67 ? "Good" : sig >= -75 ? "Fair" : "Weak");
+			LINE("Address", "%s", api_str(s, "ip") && *api_str(s, "ip") ? api_str(s, "ip") : "Waiting for one");
+		} else LINE("Network", "Not connected");
+		LINE("Saved networks", "%d", cJSON_GetArraySize(cJSON_GetObjectItem(e, "saved")));
+		break;
+	}
+	case SET_BT: {
+		if (!e) break;
+		if (!cJSON_IsTrue(cJSON_GetObjectItem(e, "present"))) { LINE("Bluetooth", "No adapter"); break; }
+		cJSON *d, *ds = cJSON_GetObjectItem(e, "devices");
+		int paired = cJSON_GetArraySize(ds), conn = 0;
+		LINE("Paired", "%d", paired);
+		cJSON_ArrayForEach(d, ds) if (cJSON_IsTrue(cJSON_GetObjectItem(d, "connected"))) {
+			if (conn++ < 3) LINE(conn == 1 ? "Connected" : "", "%s", api_str(d, "name") ? api_str(d, "name") : "?");
+		}
+		if (!conn) LINE("Connected", "None");
+		break;
+	}
+	case SET_REMOTE: {
+		if (!e) break;
+		int on = cJSON_IsTrue(cJSON_GetObjectItem(e, "on"));
+		*hi = 0;
+		LINE("Status", "%s", !on ? "Off" : cJSON_IsTrue(cJSON_GetObjectItem(e, "listening")) ? "On" : "On, not listening");
+		cJSON *a = cJSON_GetArrayItem(cJSON_GetObjectItem(e, "addresses"), 0);
+		if (on && cJSON_IsString(a)) LINE("Address", "%s:%d", a->valuestring, (int)api_num(e, "port", 0));
+		LINE("Paired devices", "%d", cJSON_GetArraySize(cJSON_GetObjectItem(e, "devices")));
+		break;
+	}
+	case SET_SAMBA:
+		if (!api_ok(samba_st) || !samba_b("available")) { LINE("Status", "Not on this system"); break; }
+		*hi = 0;
+		LINE("Status", "%s", samba_b("on") && samba_b("running") ? "On" : samba_b("on") ? "On, not running" : "Off");
+		if (samba_b("on") && samba_b("running")) {
+			char ip[64];
+			my_ip(ip, sizeof(ip));
+			LINE("Address", "\\\\%s", ip);
+			LINE("Sign in", "root  /  1");
+		}
+		break;
+	case SET_CLOUD: {
+		if (!e) break;
+		cJSON *s = cJSON_GetObjectItem(e, "status");
+		const char *rc = api_str(s, "rclone"), *rem = api_str(s, "remote"), *err = api_str(s, "last_error");
+		if (!cJSON_IsTrue(cJSON_GetObjectItem(e, "installed"))) { LINE("Status", "Not installed"); break; }
+		if (!rc || !*rc) { LINE("Status", "Needs setting up"); break; }
+		if (!rem || !*rem) { LINE("Storage place", "Not chosen yet"); break; }
+		char w[40];
+		si_when(atol(api_str(s, "last_push") ? api_str(s, "last_push") : "0"), w, sizeof(w));
+		LINE("Storage place", "%s", rem);
+		LINE("Last sent", "%s", w);
+		LINE("Waiting to send", "%s", api_str(s, "pending") && !strcmp(api_str(s, "pending"), "1") ? "Yes" : "Nothing");
+		if (err && *err) { *hi = n; LINE("Last problem", "%.90s", err); }
+		break;
+	}
+	case SET_BACKUP: {
+		if (!e) break;
+		cJSON *s = cJSON_GetObjectItem(e, "status");
+		if (!cJSON_IsTrue(cJSON_GetObjectItem(e, "installed"))) { LINE("Status", "Not installed"); break; }
+		const char *at = api_str(s, "last_at"), *dest = api_str(s, "dest"), *err = api_str(s, "last_error");
+		LINE("Snapshots", "%d", cJSON_GetArraySize(cJSON_GetObjectItem(e, "snapshots")));
+		LINE("Newest", "%s", at && *at ? at : "None yet");
+		if (dest && *dest) LINE("Kept in", "%s", dest);
+		if (api_str(s, "free_mb")) LINE("Free space there", "%s MB", api_str(s, "free_mb"));
+		if (err && *err) { *hi = n; LINE("Last problem", "%.90s", err); }
+		break;
+	}
+	case SET_ACCENT: *hi = 0; LINE("Set to", "%s", theme_accent_name(theme_accent())); break;
+	case SET_TEXTURE:
+		*hi = 0;
+		LINE("Set to", "%s", texture_name((texture_t)SETTINGS.texture));
+		if (SETTINGS.texture) LINE("Drawn in", "%s (the accent colour)", theme_accent_name(theme_accent()));
+		break;
+	case SET_CLOCK: *hi = 0; LINE("Set to", "%s", SETTINGS.clock24 ? "24-hour" : "12-hour"); break;
+	case SET_SAVER:
+		*hi = 0;
+		if (SETTINGS.saver_min) LINE("Set to", "After %d minutes", SETTINGS.saver_min);
+		else LINE("Set to", "Never");
+		break;
+	case SET_RESCAN:
+		if (e) LINE("Games in the library", "%d", (int)api_num(e, "games", 0));
+		break;
+	case SET_SCRAPE: case SET_SCRAPE_INFO:
+		if (!api_ok(scrape_state)) break;
+		*hi = 0;
+		LINE("Status", "%s", cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on")) ? "Working" : api_str(scrape_state, "status") ? api_str(scrape_state, "status") : "");
+		LINE("Found", "%d", (int)api_num(scrape_state, "found", 0));
+		LINE("Still to do", "%d", (int)api_num(scrape_state, "pending", 0));
+		LINE("Not found", "%d", (int)api_num(scrape_state, "not_found", 0));
+		break;
+	case SET_CORES:
+		LINE("MiSTer's updater", "%s", cr.available ? "On the SD card" : "Not found");
+		break;
+	case SET_UPDATE_ALL:
+		LINE("Update All", "%s", cr.all_available ? "On the SD card" : "Not on the SD card");
+		break;
+	case SET_GUARD:
+		if (guard_resets > 0) { *hi = 0; LINE("Reset by an update", "%d setting%s", guard_resets, guard_resets == 1 ? "" : "s"); }
+		else if (guard_resets == 0) LINE("Settings", "As you left them");
+		break;
+	case SET_ABOUT: {
+		char ip[64];
+		my_ip(ip, sizeof(ip));
+		LINE("Phosphor", "%s", PHOS_VERSION);
+		LINE("Address", "%s", ip);
+		break;
+	}
+	default: break;
+	}
+#undef LINE
+	return n;
+}
+
+/* a row is waiting for its status: the loop wakes for it */
+static int si_pending(void) { return si.box && cur == SCR_SETTINGS && si_wants_ext(si.row) && !si.ext_asked; }
+
+static void si_set(lv_obj_t *l, const char *t)
+{
+	const char *was = lv_label_get_text(l);
+	if (!was || strcmp(was, t)) lv_label_set_text(l, t);
+}
+
+static void si_update(void)
+{
+	if (!si.box || cur != SCR_SETTINGS) return;
+	int row = set_list.sel;
+	if (row < 0 || row >= SET_COUNT) return;
+	uint32_t now = lv_tick_get();
+	if (row != si.row) {
+		si.row = row;
+		si.moved_at = now ? now : 1;
+		si.ext_asked = 0;
+	}
+	/* rested on a row with a screen of its own: ask phosphord once */
+	if (si_wants_ext(row) && !si.ext_asked && now - si.moved_at >= SI_REST_MS) {
+		si.ext_asked = 1;
+		cJSON_Delete(si.ext);
+		si.ext = api_call(row == SET_WIFI ? "{\"cmd\":\"wifi\"}" : row == SET_BT ? "{\"cmd\":\"bluetooth\"}" :
+		                  row == SET_REMOTE ? "{\"cmd\":\"remote\"}" : row == SET_CLOUD ? "{\"cmd\":\"cloud\"}" :
+		                  row == SET_BACKUP ? "{\"cmd\":\"backup\"}" : "{\"cmd\":\"status\"}");
+		si.ext_row = api_ok(si.ext) ? row : -1;
+	}
+	char t[96], val[96];
+	int dim = 0;
+	set_fill(row, t, sizeof(t), val, sizeof(val), &dim);
+	if (row == SET_SCRAPE_INFO) snprintf(t, sizeof(t), "Box art progress");
+	si_set(si.title, t);
+	char k[SI_ROWS][40], v[SI_ROWS][96];
+	int hi, n = si_state(row, k, v, &hi);
+	if (!n && si_wants_ext(row)) { snprintf(k[0], 40, " "); snprintf(v[0], 96, "%s", si.ext_asked ? "Not answering" : "..."); n = 1; hi = -1; }
+	for (int i = 0; i < SI_ROWS; i++) {
+		lv_obj_set_hidden(si.pair[i], i >= n);
+		if (i >= n) continue;
+		si_set(si.k[i], k[i]);
+		si_set(si.v[i], v[i]);
+		lv_obj_set_style_text_color(si.v[i], i == hi ? PAL.acc : PAL.text, 0);
+	}
+	/* the texture: a piece of the real tile */
+	int sw = row == SET_TEXTURE || row == SET_ACCENT;
+	lv_obj_set_hidden(si.swatch, !sw);
+	if (sw) {
+		const void *tile = row == SET_TEXTURE ? texture_tile() : NULL;
+		lv_obj_set_style_bg_color(si.swatch, row == SET_ACCENT ? PAL.acc : PAL.bg, 0);
+		lv_obj_set_style_bg_image_src(si.swatch, tile, 0);
+		lv_obj_set_style_bg_image_tiled(si.swatch, tile != NULL, 0);
+		lv_obj_set_height(si.swatch, row == SET_ACCENT ? S(14) : S(84));
+	}
+	lv_obj_set_hidden(si.rule, n == 0 && !sw);
+	si_set(si.about, SI_TEXT[row][0] ? SI_TEXT[row][0] : "");
+	si_set(si.tip, SI_TEXT[row][1] ? SI_TEXT[row][1] : "");
+	lv_obj_set_hidden(si.tip, !SI_TEXT[row][1]);
+}
+
+static void si_create(lv_obj_t *parent, int x, int y, int w, int h)
+{
+	si.box = mk_box(parent, w, h, PAL.panel, S(10));
+	lv_obj_set_pos(si.box, x, y);
+	lv_obj_set_style_border_color(si.box, PAL.line, 0);
+	lv_obj_set_style_border_width(si.box, S(1) > 0 ? S(1) : 1, 0);
+	lv_obj_set_style_pad_all(si.box, S(24), 0);
+	lv_obj_set_style_pad_row(si.box, S(8), 0);
+	lv_obj_set_flex_flow(si.box, LV_FLEX_FLOW_COLUMN);
+	int iw = w - 2 * S(24);
+	si.title = mk_label(si.box, FONT_TITLE, PAL.text, "");
+	lv_obj_set_width(si.title, iw);
+	lv_label_set_long_mode(si.title, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_style_pad_bottom(si.title, S(8), 0);
+	for (int i = 0; i < SI_ROWS; i++) {
+		si.pair[i] = lv_obj_create(si.box);
+		lv_obj_remove_style_all(si.pair[i]);
+		lv_obj_set_size(si.pair[i], iw, LV_SIZE_CONTENT);
+		si.k[i] = mk_label(si.pair[i], FONT_BODY, PAL.dim, "");
+		si.v[i] = mk_label(si.pair[i], FONT_BODY, PAL.text, "");
+		lv_obj_set_width(si.v[i], iw * 62 / 100);
+		lv_obj_set_style_text_align(si.v[i], LV_TEXT_ALIGN_RIGHT, 0);
+		lv_label_set_long_mode(si.v[i], LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_align(si.v[i], LV_ALIGN_TOP_RIGHT, 0, 0);
+		lv_obj_set_hidden(si.pair[i], true);
+	}
+	si.swatch = mk_box(si.box, iw, S(84), PAL.bg, S(4));
+	lv_obj_set_style_border_color(si.swatch, PAL.line, 0);
+	lv_obj_set_style_border_width(si.swatch, 1, 0);
+	lv_obj_set_hidden(si.swatch, true);
+	si.rule = mk_box(si.box, iw, 1, PAL.line, 0);
+	lv_obj_set_style_margin_top(si.rule, S(8), 0);
+	lv_obj_set_style_margin_bottom(si.rule, S(8), 0);
+	si.about = mk_label(si.box, FONT_BODY, PAL.text, "");
+	lv_obj_set_width(si.about, iw);
+	lv_label_set_long_mode(si.about, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_style_text_line_space(si.about, S(4), 0);
+	si.tip = mk_label(si.box, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_width(si.tip, iw);
+	lv_label_set_long_mode(si.tip, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_style_margin_top(si.tip, S(6), 0);
+	si.row = -1;
+	si.ext_row = -1;
+	cJSON_Delete(si.ext);
+	si.ext = NULL;
+}
+
 static void show_settings(void)
 {
 	cur = SCR_SETTINGS;
 	scrape_refresh();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Settings");
-	vlist_create(&set_list, body, S(56), S(176), S(760), S(440));
+	vlist_create(&set_list, body, S(56), S(176), S(700), S(440));
 	set_list.count = SET_COUNT;
 	set_list.fill = set_fill;
 	set_list.sel = 0;
 	set_list.top = 0;
 	vlist_refresh(&set_list);
+	si_create(body, S(780), S(170), S(444), S(452));
+	si_update();
 	static const char *const hints[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
 	footer_set(hints);
 }
@@ -3950,7 +4269,7 @@ void ui_key(pkey_t k)
 		scripts_key(k);
 		break;
 	case SCR_SETTINGS:
-		if (vlist_key(&set_list, k)) break;
+		if (vlist_key(&set_list, k)) { si_update(); break; }
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
 			if (set_list.sel == SET_RESCAN) { if (k == K_A) show_scan(); }
@@ -3994,6 +4313,7 @@ static uint32_t last_status, last_poll;
 int ui_max_sleep(void)
 {
 	if (cur == SCR_PORTS) return 100;                         /* the card map follows a job */
+	if (si_pending()) return 100;                             /* a Settings row's status, once it rests */
 	return 500;                                               /* status bar, clock, spinners: twice a second */
 }
 
@@ -4001,6 +4321,7 @@ void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
+	if (si_pending()) si_update();
 	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); } }   /* the alert, once after start-up */
 	saver_tick(now);
 	const char *note = input_notice();
@@ -4015,7 +4336,7 @@ void ui_tick(void)
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
-		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); }
+		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); si_update(); }
 		gd_tick();                                    /* (only while one of its jobs runs) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
