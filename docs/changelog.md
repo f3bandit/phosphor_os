@@ -20,12 +20,17 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - **Update guard copied the 375 MB `linux.img` two minutes after every boot and left Linux's file
   system writable.** Boot checks are now cheap (no copies, no writes), and copying an image puts the
   file system back the way it was.
+- **The Update and Update All terminal was small and bunched at the left** at 1080p (240 columns for
+  80-column output). Scripts now run with a 16x32 font: 120 columns, twice the size, still sharp.
+  MiSTer's own Scripts menu keeps its usual font.
 - **Cores didn't install to the NVMe.** The image now carries the SS1 documentation's recommended
   `downloader.ini` (`storage_priority = prefer_external`), with `update_linux = true`.
 
 ### Changes
 - Updates & restore points: an alert in the status bar when an update reset settings, and a Settings
   screen to restore them, keep the new ones, roll back, or delete restore points.
+- Settings: an info panel beside the list shows what the highlighted setting is set to and what it
+  does. "Get or update cores (MiSTer's downloader)" is now just "Update".
 - Background textures: 8-bit tiles and circles removed; packed, bold, filled and inverted versions
   added, plus diamonds and square grids (21 in all).
 - Settings > Screen filters removed (each core's OSD has them).
