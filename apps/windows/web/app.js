@@ -93,6 +93,8 @@ function focus(el, quiet) {
 	else if (document.activeElement && document.activeElement.matches("input, textarea")) document.activeElement.blur();
 	el.scrollIntoView({ block: "nearest", inline: "nearest" });
 	if (!quiet && el._onfocus) el._onfocus();
+	const s = topScr();
+	if (s && s.focused) s.focused(el);
 }
 function move(dx, dy) {
 	const all = navs();
@@ -486,11 +488,12 @@ class Game {
 	details(body) {
 		const g = this.g;
 		const f = (k, l) => `<div class="field"><label for="f-${k}">${l}</label><input id="f-${k}" type="text" data-nav value="${esc(g[k])}"></div>`;
-		body.append(h(`<div class="split"><div class="list">
+		/* the fields scroll; the buttons stay in view under them */
+		body.append(h(`<div class="split"><div class="col"><div class="list grow">
 			${f("title", "Title")}
 			<div class="field"><label for="f-description">Description</label><textarea id="f-description" data-nav>${esc(g.description)}</textarea></div>
-			<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 1rem">${DETAIL_KEYS.map(([k, l]) => f(k, l)).join("")}</div>
-			<div class="acts"><button class="btn primary" id="save" data-nav>Save</button><button class="btn" id="play" data-nav>Play on TV</button>
+			<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 1rem">${DETAIL_KEYS.map(([k, l]) => f(k, l)).join("")}</div></div>
+			<div class="acts" style="flex:none;margin-top:.8rem"><button class="btn primary" id="save" data-nav>Save</button><button class="btn" id="play" data-nav>Play on TV</button>
 			<button class="btn" id="again" data-nav>Look it up again</button><button class="btn" id="setart" data-nav>Choose box art…</button></div>
 			<input type="file" id="artfile" accept="image/*" hidden></div>
 			<div class="panel">${gamePanel(g)}<p class="note">${esc(g.system_name || g.system)} · ${g.play_count ? `played ${g.play_count} time${g.play_count === 1 ? "" : "s"}` : "not played yet"}</p></div></div>`));

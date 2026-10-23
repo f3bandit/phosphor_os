@@ -26,6 +26,8 @@
  *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
+ *   dashboard  [kernel]                     live numbers: temps, cpu, load, uptime, mem, disks, io, ips, net,
+ *                                           procs, core; kernel: the kernel log's last lines (read only)
  *   storage    [do: check (test, target) | overlap-remove | overlap-undo]  drives {path,kind,fs,size_kb,free_kb,model,
  *                                           gen,watts}, overlap_tool [paths], last {job,target,busy,ok,at,output}
  *   system     do: reboot|shutdown|reload_ui   restart, shut down cleanly, or restart the shell
@@ -93,6 +95,7 @@
 #include "cores.h"
 #include "samba.h"
 #include "storage.h"
+#include "dash.h"
 #include "version.h"
 #include "ident.h"
 #include "importer.h"
@@ -1277,6 +1280,11 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "storage")) out = cmd_storage(req);
+	else if (!strcmp(c->valuestring, "dashboard")) {
+		cJSON *o = dash_json(cJSON_IsTrue(cJSON_GetObjectItem(req, "kernel")));
+		cJSON_AddBoolToObject(o, "ok", 1);
+		out = reply(o);
+	}
 	else if (!strcmp(c->valuestring, "ports")) out = cmd_ports(req);
 	else if (!strcmp(c->valuestring, "pads")) out = cmd_pads();
 	else if (!strcmp(c->valuestring, "scan_progress")) {   /* for the Looking for games screen, while it runs */

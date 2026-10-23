@@ -142,7 +142,7 @@ func watchSS1() {
 			time.Sleep(10 * time.Second)
 			continue
 		}
-		if name == "" {
+		if name == "" || name == "Phosphor" { // the SS1 calls itself Phosphor unless it was renamed
 			name = "Your SS1"
 		}
 		if ask(`{"cmd":"gen"}`) == nil {

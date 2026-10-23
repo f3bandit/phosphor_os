@@ -10,6 +10,8 @@ const SET_SECTIONS = [
 	{ grp: "SuperStation" },
 	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"], ["Backups", "tSnaps"]] },
+	{ grp: "Tools" },
+	{ id: "diagnostics", name: "Diagnostics", tabs: [["Dashboard", "tDash"]] },
 	{ grp: "This PC" },
 	{ id: "notifications", name: "Notifications", tabs: [["Notifications", "tNotes"]] },
 	{ id: "connection", name: "Connection", tabs: [["Connection", "tConn"]] },
@@ -86,7 +88,14 @@ class AppSettings {
 	async badges() {
 		try { const p = await api("/api/ping"); const b = $("#sv_notifications"); if (b) b.textContent = p.unseen ? p.unseen + " new" : ""; } catch (e) {}
 	}
-	inTool() { return cur && $("#tool") && $("#tool").contains(cur); }
+	inTool() { return !!(cur && $("#tool") && $("#tool").contains(cur)); }
+	/* the hints follow the focus (mouse included): the list, or a section's tools */
+	focused() {
+		const t = this.inTool();
+		if (t === this.wasTool) return;
+		this.wasTool = t;
+		if (t) this.toolHints(this.extra); else this.listHints();
+	}
 	/* into the tools: the first thing to choose there (not the tabs) */
 	into() {
 		const f = [...$("#tbody").querySelectorAll("[data-nav]")].find(e => e.offsetParent !== null) || $("#tb .tab.on");
@@ -118,18 +127,21 @@ class AppSettings {
 		this.alive = () => this.tok === tok && document.body.contains(body);
 		clearInterval(this.poll);
 		const r = this[s.tabs[this.ti][1]](body);
-		const after = () => { if (enter && this.alive()) this.into(); else if (this.inTool()) this.toolHints(this.extra); };
+		const alive = this.alive;
+		const after = () => { if (enter && alive()) this.into(); else if (this.inTool()) this.toolHints(this.extra); };
 		if (r && r.then) r.then(after); else after();
 	}
 	/* refresh a tool every ms while fn says so (a check or a job running) */
 	every(ms, fn) {
 		clearInterval(this.poll);
-		this.poll = setInterval(async () => { if (!this.alive() || !(await fn())) clearInterval(this.poll); }, ms);
+		const alive = this.alive, me = setInterval(async () => { if (!alive() || !(await fn())) clearInterval(me); }, ms);
+		this.poll = me;
 	}
 
 	/* ---------- Look ---------- */
 	async setTheme(p) { Object.assign(S, p); applyTheme(); await api("/api/theme", p); }
 	tLook(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="list grow"><div class="sub" style="margin-top:.2rem">${spaced("Accent colour")}</div><div class="swatches" id="sw"></div>
 			<div class="sub" style="margin-top:1.4rem">${spaced("Background texture")}</div><div class="tex" id="tx"></div></div>`));
 		for (const [name, col] of Object.entries(ACCENTS)) {
@@ -148,6 +160,7 @@ class AppSettings {
 
 	/* ---------- Box art: the SS1's sources (order, on/off) and their logins ---------- */
 	async tArt(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="col"><div class="sub">${spaced("Sources, asked in this order")}</div><div class="list" id="srcs"><div class="empty"><span class="spin"></span></div></div>
 			<div class="acts"><button class="btn primary" id="runart" data-nav>Look up box art now</button></div></div>
 			<div class="panel" id="acct"></div></div>`));
@@ -155,7 +168,8 @@ class AppSettings {
 		try {
 			const [src, acc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" })]);
 			this.srcs = src.sources; this.acc = acc.accounts;
-		} catch (e) { if (!this.alive()) return false; $("#srcs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		} catch (e) { if (!alive()) return false; $("#srcs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
 		this.extra = [["X", "Move up"], ["Y", "Move down"]];
 		this.onX = () => this.moveSrc(-1); this.onY = () => this.moveSrc(1);
 		this.drawSources(undefined, true);
@@ -234,6 +248,7 @@ class AppSettings {
 
 	/* ---------- Power: restart, shut down, reload the TV screen ---------- */
 	tPower(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list">
 			<div class="card2"><div><b>Restart</b><small>Restarts the SS1. Saves are written as they happen, so nothing is lost; a game that's running is closed.</small></div><button class="btn primary" id="p_reboot" data-nav>Restart</button></div>
 			<div class="card2"><div><b>Shut down</b><small>Stops everything cleanly and marks the drives clean. When the TV goes blank (about 10 seconds), it's safe to switch the SS1 off.</small></div><button class="btn" id="p_off" data-nav>Shut down</button></div>
@@ -249,11 +264,12 @@ class AppSettings {
 
 	/* ---------- Updates & restore points (update-guard) ---------- */
 	async tGuard(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="gl"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="gp"></div></div>`));
 		const draw = async () => {
 			let g;
-			try { g = await ss1({ cmd: "guard" }); } catch (e) { if (!this.alive()) return false; $("#gl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
-			if (!this.alive()) return false;
+			try { g = await ss1({ cmd: "guard" }); } catch (e) { if (!alive()) return false; $("#gl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
 			const gl = $("#gl"), gp = $("#gp");
 			if (!g.installed) { gl.innerHTML = `<div class="empty">The update-guard module isn't installed on the SS1.</div>`; gp.innerHTML = ""; return false; }
 			const reset = (g.files || []).filter(f => f.reset);
@@ -296,12 +312,13 @@ class AppSettings {
 
 	/* ---------- File sharing (MiSTer's Samba) ---------- */
 	async tSamba(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="sm"><div class="empty"><span class="spin"></span></div></div>
 			<div class="panel"><h2>File sharing</h2><p class="note">MiSTer's own Samba file sharing: the SS1's SD card (and drives) show up on this PC's network as <b>\\\\${esc((S.address || "").replace(/:\d+$/, ""))}</b>. Anyone on your home network can open it, so turn it off when you don't need it.</p></div></div>`));
 		const draw = async () => {
 			let s;
-			try { s = await ss1({ cmd: "samba" }); } catch (e) { if (!this.alive()) return false; $("#sm").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
-			if (!this.alive()) return false;
+			try { s = await ss1({ cmd: "samba" }); } catch (e) { if (!alive()) return false; $("#sm").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
 			const sm = $("#sm"), had = cur && sm.contains(cur) ? cur.id : "";
 			if (!s.available) { sm.innerHTML = `<div class="empty">MiSTer's Samba isn't on this SD card.</div>`; return false; }
 			const state = s.busy ? (s.want ? "Starting…" : "Stopping…") : s.running ? "On" : "Off";
@@ -366,11 +383,12 @@ class AppSettings {
 		if (un) un.onclick = async () => { try { await ss1({ cmd: "storage", do: "overlap-undo" }); this.ovUndo = false; setTimeout(async () => this.overlap(await this.storageState()), 1500); } catch (e) { toast(e.message); } };
 	}
 	async tSD(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="sdbox"><div class="empty"><span class="spin"></span></div></div>
 			<div class="panel"><h2>SD card</h2><p class="note">The checks only read, except the speed test (one temporary file) and Repair, which asks first. Results also go to the SS1's /media/fat/sd_integrity.log.</p><div id="ovl"></div></div></div>`));
 		let s;
-		try { s = await this.storageState(); } catch (e) { if (!this.alive()) return false; $("#sdbox").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-		if (!this.alive()) return;
+		try { s = await this.storageState(); } catch (e) { if (!alive()) return false; $("#sdbox").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
 		if (!s.installed) { $("#sdbox").innerHTML = `<div class="empty">The storage module isn't on the SS1 yet (it comes with Phosphor 0.27).</div>`; return; }
 		const d = (s.drives || []).find(x => x.kind === "sd");
 		if (!d) { $("#sdbox").innerHTML = `<div class="empty">No SD card found.</div>`; return; }
@@ -379,10 +397,11 @@ class AppSettings {
 		if (s.last && s.last.busy) this.every(2000, async () => { const t = await this.storageState(); this.redrawStorage(t); return t.last && t.last.busy; });
 	}
 	async tExt(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split" style="grid-template-columns:18rem 1fr"><div class="list" id="exl"><div class="empty"><span class="spin"></span></div></div><div class="list" id="exbox"></div></div>`));
 		let s;
-		try { s = await this.storageState(); } catch (e) { if (!this.alive()) return false; $("#exl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-		if (!this.alive()) return;
+		try { s = await this.storageState(); } catch (e) { if (!alive()) return false; $("#exl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
 		const ds = (s.drives || []).filter(x => x.kind !== "sd");
 		const l = $("#exl");
 		if (!s.installed) { l.innerHTML = `<div class="empty">The storage module isn't on the SS1 yet.</div>`; return; }
@@ -400,11 +419,12 @@ class AppSettings {
 	}
 	/* snapshots of saves and settings (backup-agent) on the SD card, NVMe or NAS */
 	async tSnaps(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="bk"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="bkp"></div></div>`));
 		const draw = async () => {
 			let s;
-			try { s = await ss1({ cmd: "backup" }); } catch (e) { if (!this.alive()) return false; $("#bk").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
-			if (!this.alive()) return false;
+			try { s = await ss1({ cmd: "backup" }); } catch (e) { if (!alive()) return false; $("#bk").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
 			const bk = $("#bk"), bp = $("#bkp");
 			if (!s.installed) { bk.innerHTML = `<div class="empty">The backup-agent module isn't installed on the SS1.</div>`; bp.innerHTML = ""; return false; }
 			const st = s.status || {}, busy = s.job && s.job.busy;
@@ -432,14 +452,102 @@ class AppSettings {
 		if (await draw()) this.every(2000, draw);
 	}
 
+	/* ---------- Diagnostics: the dashboard (live, every 2 s while it's shown) ---------- */
+	async tDash(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="dash" id="dash">
+			<div class="dcard"><div class="sub">${spaced("Temperature")}</div><div class="big" id="d_temp">–</div><div class="note" id="d_tempn"></div><svg class="spark" id="s_temp" viewBox="0 0 100 24" preserveAspectRatio="none"></svg></div>
+			<div class="dcard"><div class="sub">${spaced("CPU")}</div><div class="big" id="d_cpu">–</div><div class="note" id="d_cpun"></div><svg class="spark" id="s_cpu" viewBox="0 0 100 24" preserveAspectRatio="none"></svg><div id="d_cores"></div></div>
+			<div class="dcard"><div class="sub">${spaced("Memory")}</div><div class="big" id="d_mem">–</div><div class="mbar"><i id="d_memb"></i></div><div class="note" id="d_memn"></div></div>
+			<div class="dcard"><div class="sub">${spaced("System")}</div><dl class="kv" id="d_sys"></dl></div>
+			<div class="dcard wide"><div class="sub">${spaced("Storage")}</div><div id="d_disks"></div></div>
+			<div class="dcard wide"><div class="sub">${spaced("Network")}</div><div id="d_net"></div></div>
+			<div class="dcard full"><div class="sub">${spaced("Processes · busiest first")}</div><table class="ptab"><thead><tr><th>PID</th><th>CPU</th><th>Memory</th><th>Name</th></tr></thead><tbody id="d_procs"></tbody></table></div>
+			<div class="dcard full"><div class="sub">${spaced("Kernel log")}</div><p class="note" style="margin:.2rem 0 .6rem">The latest hardware and driver messages: useful when a controller, WiFi adapter or drive keeps disconnecting.</p>
+				<div class="acts" style="margin-top:0"><button class="btn" id="d_klog" data-nav>Show the kernel log</button></div><pre class="out" id="d_kern" hidden></pre></div>
+			</div>`));
+		this.prev = null; this.hist = { cpu: [], temp: [] };
+		$("#d_klog").onclick = async () => {
+			try { const j = await ss1({ cmd: "dashboard", kernel: true }); const k = $("#d_kern"); k.hidden = false; k.textContent = j.kernel || "(empty)"; k.scrollTop = k.scrollHeight; $("#d_klog").textContent = "Refresh the kernel log"; }
+			catch (e) { toast(e.message); }
+		};
+		const tick = async () => {
+			if (document.visibilityState !== "visible") return alive();     /* nobody's looking: don't ask */
+			let d;
+			try { d = await ss1({ cmd: "dashboard" }); } catch (e) { if (alive()) $("#d_cpun").textContent = e.message; return alive(); }
+			if (!alive()) return false;
+			this.drawDash(d);
+			return true;
+		};
+		await tick();
+		this.every(2000, tick);
+	}
+	drawDash(d) {
+		const p = this.prev, now = performance.now(), dt = p ? (now - p.t) / 1000 : 0;
+		const spark = (id, arr, max) => {
+			const pts = arr.map((v, i) => `${(i / Math.max(1, 29)) * 100},${24 - Math.min(1, v / max) * 22 - 1}`).join(" ");
+			$("#" + id).innerHTML = arr.length > 1 ? `<polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke"/>` : "";
+		};
+		const push = (a, v) => { a.push(v); if (a.length > 30) a.shift(); };
+		/* temperature: the hottest sensor */
+		const t = (d.temps || []).slice().sort((a, b) => b.c - a.c)[0];
+		if (t) {
+			$("#d_temp").textContent = t.c.toFixed(1) + " °C";
+			$("#d_temp").className = "big " + (t.c >= 80 ? "bad" : t.c >= 65 ? "warn" : "good");
+			$("#d_tempn").textContent = (d.temps.length > 1 ? `hottest of ${d.temps.length}: ` : "") + t.name;
+			push(this.hist.temp, t.c); spark("s_temp", this.hist.temp, 100);
+		} else { $("#d_temp").textContent = "–"; $("#d_tempn").textContent = "No temperature sensor on this board"; }
+		/* CPU: busy share since the last ask, all and each core */
+		const cpu = Object.fromEntries((d.cpu || []).map(([n, busy, tot]) => [n, [busy, tot]]));
+		if (p) {
+			const pc = n => { const a = cpu[n], b = p.cpu[n]; return a && b && a[1] > b[1] ? (100 * (a[0] - b[0])) / (a[1] - b[1]) : 0; };
+			const all = pc("cpu");
+			$("#d_cpu").textContent = Math.round(all) + " %";
+			push(this.hist.cpu, all); spark("s_cpu", this.hist.cpu, 100);
+			$("#d_cores").innerHTML = Object.keys(cpu).filter(k => k !== "cpu").map(k => `<div class="core"><span>${esc(k.replace("cpu", "Core "))}</span><div class="mbar"><i style="width:${pc(k).toFixed(0)}%"></i></div><span>${Math.round(pc(k))}%</span></div>`).join("");
+		}
+		$("#d_cpun").textContent = `${d.cpu_model || ""}${d.load ? " · load " + d.load.map(x => x.toFixed(2)).join(" ") : ""}`;
+		/* memory */
+		const m = d.mem || {}, used = (m.total || 0) - (m.available || 0), mp = m.total ? (100 * used) / m.total : 0;
+		$("#d_mem").textContent = Math.round(mp) + " %";
+		$("#d_memb").style.width = mp.toFixed(0) + "%";
+		$("#d_memn").textContent = `${kb(used)} used of ${kb(m.total)}`;
+		/* system */
+		const up = d.uptime || 0, dd = Math.floor(up / 86400), hh = Math.floor((up % 86400) / 3600), mm = Math.floor((up % 3600) / 60);
+		$("#d_sys").innerHTML = `<dt>Up</dt><dd>${dd ? dd + "d " : ""}${hh}h ${mm}m</dd><dt>Running</dt><dd>${esc(!d.core || d.core === "MENU" ? "Phosphor (menu)" : d.core)}</dd>` +
+			(d.ips || []).map(x => `<dt>${esc(x.if === "wlan0" ? "WiFi" : x.if.startsWith("eth") ? "Ethernet" : x.if)}</dt><dd>${esc(x.ip)}</dd>`).join("");
+		/* storage, with read / write speed since the last ask */
+		const io = Object.fromEntries((d.io || []).map(([n, r, w]) => [n, [r, w]]));
+		const rate = v => v >= 1048576 ? (v / 1048576).toFixed(1) + " MB/s" : v >= 1024 ? Math.round(v / 1024) + " KB/s" : Math.round(v) + " B/s";
+		$("#d_disks").innerHTML = (d.disks || []).map(x => {
+			const u = x.size_kb ? (100 * (x.size_kb - x.free_kb)) / x.size_kb : 0;
+			const name = x.path === "/media/fat" ? "SD card" : x.path === "/media/fat/cifs" ? "Network share" : "Drive " + x.path.replace("/media/", "");
+			return `<div class="disk"><div class="dl"><b>${esc(name)}</b><span>${gb(x.free_kb)} free of ${gb(x.size_kb)} · ${esc(x.fs)}</span></div><div class="mbar${u > 92 ? " full" : ""}"><i style="width:${u.toFixed(0)}%"></i></div></div>`;
+		}).join("") + (p ? `<p class="note">${Object.keys(io).map(k => { const a = io[k], b = p.io[k]; return b && dt ? `${esc(k)}: read ${rate((a[0] - b[0]) / dt)}, write ${rate((a[1] - b[1]) / dt)}` : ""; }).filter(Boolean).join(" · ")}</p>` : "");
+		/* network traffic */
+		const net = Object.fromEntries((d.net || []).map(([n, r, w]) => [n, [r, w]]));
+		$("#d_net").innerHTML = Object.keys(net).filter(k => !/^(ifb|dummy|sit|tunl)/.test(k)).map(k => {
+			const a = net[k], b = p && p.net[k];
+			const label = k === "wlan0" ? "WiFi" : k.startsWith("eth") ? "Ethernet" : k;
+			return `<div class="kvrow"><b>${esc(label)}</b><span>${b && dt ? `↓ ${rate((a[0] - b[0]) / dt)}   ↑ ${rate((a[1] - b[1]) / dt)}` : "…"}</span><span class="note">${kb(a[0] / 1024)} in · ${kb(a[1] / 1024)} out since start</span></div>`;
+		}).join("") || `<p class="note">No network connection.</p>`;
+		/* processes: CPU since the last ask, busiest first */
+		const hz = d.hz || 100, prevP = p ? Object.fromEntries(p.procs.map(x => [x[0], x[2]])) : {};
+		const rows = (d.procs || []).map(([pid, name, j, mem]) => ({ pid, name, mem, cpu: p && dt && prevP[pid] !== undefined ? (100 * (j - prevP[pid])) / hz / dt : 0 }))
+			.sort((a, b) => b.cpu - a.cpu || b.mem - a.mem).slice(0, 14);
+		$("#d_procs").innerHTML = rows.map(r => `<tr><td>${r.pid}</td><td>${r.cpu.toFixed(1)}%</td><td>${kb(r.mem)}</td><td>${esc(r.name)}</td></tr>`).join("");
+		this.prev = { t: now, cpu, io, net, procs: d.procs || [] };
+	}
+
 	/* ---------- Notifications (this PC) ---------- */
 	async tNotes(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="col"><div class="list" id="nl"><div class="empty"><span class="spin"></span></div></div>
 			<div class="acts"><button class="btn" id="n_seen" data-nav>Mark all as seen</button><button class="btn" id="n_clr" data-nav>Clear</button><button class="btn" id="n_q" data-nav></button></div></div>
 			<div class="panel" id="np"><h2>Notifications</h2><p class="note">What Phosphor noticed on the SS1 while it ran, window open or not: power trouble, settings an update reset, storage problems, box art finishing. New ones also show as a Windows notification from the tray icon, which gets a red dot until they're seen.</p></div></div>`));
 		const draw = async (j) => {
 			j = j || await api("/api/notes");
-			if (!this.alive()) return;
+			if (!alive()) return;
 			const nl = $("#nl");
 			nl.innerHTML = j.notes.length ? "" : `<div class="empty">Nothing yet.</div>`;
 			for (const x of j.notes) {
@@ -454,11 +562,12 @@ class AppSettings {
 		$("#n_seen").onclick = async () => { draw(await api("/api/notes", { do: "seen" })); this.badges(); bell(); };
 		twice($("#n_clr"), "Press again to clear", async () => { draw(await api("/api/notes", { do: "clear" })); this.badges(); bell(); });
 		/* looking at them counts as seeing them */
-		setTimeout(async () => { if (this.alive()) { await api("/api/notes", { do: "seen" }); this.badges(); bell(); } }, 2500);
+		setTimeout(async () => { if (alive()) { await api("/api/notes", { do: "seen" }); this.badges(); bell(); } }, 2500);
 	}
 
 	/* ---------- Connection, About ---------- */
 	tConn(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list"><dl class="kv" style="max-width:34rem">
 			<dt>SS1</dt><dd>${esc(S.address || "not paired")}</dd><dt>Status</dt><dd>${S.connected ? "connected" : S.paired ? "not answering" : "not paired"}</dd>
 			<dt>Phosphor on the SS1</dt><dd>${esc(S.status ? S.status.version || "" : "")}</dd><dt>Games</dt><dd>${S.status ? n(S.status.games) : ""}</dd></dl>
@@ -468,6 +577,7 @@ class AppSettings {
 		twice($("#forget"), "Press again to forget", async () => { await api("/api/forget", {}); await refreshState(); toast("Forgotten. To use it again, pair again."); replace(Connect); });
 	}
 	tAbout(b) {
+		const alive = this.alive;
 		b.append(h(`<div class="panel" style="max-width:46rem"><h2>Phosphor for Windows ${esc(S.appVersion || "")}</h2>
 			<p class="note">The PC companion for Phosphor on the SuperStation One: the library, box art and details, base games, and the SS1's settings and tools, from your PC.</p>
 			<p class="note">Unofficial. Not made or supported by MiSTer-devel or the makers of the SuperStation One. Free for personal, non-commercial use (PolyForm Noncommercial 1.0.0).</p>
