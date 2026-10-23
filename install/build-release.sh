@@ -7,6 +7,12 @@ V="$(sed -n 's/#define PHOS_VERSION "\(.*\)"/\1/p' frontend/src/settings.h)"
 D="dist/phosphor-$V"
 rm -rf "$D"
 mkdir -p "$D/bin" "$D/config"
+# a failed build leaves the old binary behind: refuse anything older than its sources
+for pair in "frontend/build-arm/phosphor frontend/src" "system/build-arm/phosphord system/phosphord"; do
+	set -- $pair
+	newer="$(find "$2" -newer "$1" -type f \( -name '*.c' -o -name '*.h' \) | head -1)"
+	[ -z "$newer" ] || { echo "$1 is older than $newer: build it first" >&2; exit 1; }
+done
 cp frontend/build-arm/phosphor system/build-arm/phosphord system/build-arm/phos "$D/bin/"
 # phosphor-main (GPL-3.0, its own repo): copied in when built next to this repo; never started by the installer
 if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/bin/MiSTer_phosphor"; fi
