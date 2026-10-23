@@ -6,6 +6,7 @@
  * mounted right now are marked offline rather than forgotten, so a USB drive or the share coming
  * back doesn't lose anything. A game whose files are all gone is removed unless it has history
  * (played, favourite, art or details), in which case it's kept, hidden, for when it comes back. */
+#include "busy.h"
 #include "indexer.h"
 #include "db.h"
 #include "ident.h"
@@ -280,6 +281,7 @@ static void *thread(void *arg)
 		busy = scan_now;
 		pthread_mutex_unlock(&lk);
 		if (!db && !(db = db_open())) { busy = 0; ident_wanted = 0; continue; }
+		if (scan_now || ident_wanted) busy_mark("scan", "Look for games");
 		if (scan_now) {
 			scan(db);
 			busy = 0;
@@ -293,6 +295,7 @@ static void *thread(void *arg)
 			   Look for games. Only a pass cut short (a game started) carries on by itself. */
 			if (!ident_should_stop()) ident_wanted = 0;
 		}
+		busy_clear("scan");
 	}
 	return NULL;
 }
