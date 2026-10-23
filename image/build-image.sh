@@ -149,7 +149,7 @@ mkdir -p "$WORK/rel/files/Scripts" && cp "$UA" "$WORK/rel/files/Scripts/update_a
 # the Phosphor release itself, so modules can be installed later without downloading anything
 # the SS1 documentation's recommended downloader.ini (games and docs to the NVMe/USB drive when there
 # is one), with Linux updates left on
-DLI="$(dirname "$0")/downloader.ini"
+DLI="$REPO/image/downloader.ini"
 grep -q "^storage_priority = 'prefer_external'" "$DLI" && grep -q "^update_linux = true" "$DLI" || { echo "image/downloader.ini doesn't look right" >&2; exit 1; }
 cp "$DLI" "$WORK/rel/files/downloader.ini"
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
@@ -194,5 +194,8 @@ Phosphor $PHOS_VER SD card image
   Update All:     Scripts/update_all.sh (https://github.com/theypsilon/Update_All_MiSTer, GPL-3.0)
   Phosphor:       $(cat "$PDIR/VERSION")
 EOF
+# this version's section of docs/changelog.md (fixes and changes since the last image)
+CHANGES="$(awk -v v="## $PHOS_VER" '$0 == v { on = 1; next } on && /^## / { exit } on' "$REPO/docs/changelog.md" 2>/dev/null)"
+[ -n "$CHANGES" ] && printf '\nWhat changed in %s\n%s\n' "$PHOS_VER" "$CHANGES" >> "$OUT/$NAME.txt"
 say "Done"
 ls -l "$OUT/$NAME.img.zip"
