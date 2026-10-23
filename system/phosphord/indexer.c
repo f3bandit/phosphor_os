@@ -289,13 +289,9 @@ static void *thread(void *arg)
 			identifying = 1;
 			if (ident_pending(db, ident_should_stop) > 0) __sync_add_and_fetch(&generation, 1);
 			identifying = 0;
-			sqlite3_stmt *left;
-			int more = 1;
-			if (sqlite3_prepare_v2(db, "SELECT 1 FROM files WHERE ident=0 AND online=1 LIMIT 1", -1, &left, NULL) == SQLITE_OK) {
-				more = sqlite3_step(left) == SQLITE_ROW;
-				sqlite3_finalize(left);
-			}
-			if (!more) ident_wanted = 0;
+			/* one pass over every file is the job: files that couldn't be read wait for the next
+			   Look for games. Only a pass cut short (a game started) carries on by itself. */
+			if (!ident_should_stop()) ident_wanted = 0;
 		}
 	}
 	return NULL;
