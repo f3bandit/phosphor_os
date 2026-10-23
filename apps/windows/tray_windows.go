@@ -32,67 +32,67 @@ var (
 	shell32 = windows.NewLazySystemDLL("shell32.dll")
 	kern32  = windows.NewLazySystemDLL("kernel32.dll")
 
-	pRegisterClassEx        = user32.NewProc("RegisterClassExW")
-	pCreateWindowEx         = user32.NewProc("CreateWindowExW")
-	pDefWindowProc          = user32.NewProc("DefWindowProcW")
-	pGetMessage             = user32.NewProc("GetMessageW")
-	pTranslateMessage       = user32.NewProc("TranslateMessage")
-	pDispatchMessage        = user32.NewProc("DispatchMessageW")
-	pPostMessage            = user32.NewProc("PostMessageW")
-	pPostQuitMessage        = user32.NewProc("PostQuitMessage")
-	pLoadImage              = user32.NewProc("LoadImageW")
-	pCreatePopupMenu        = user32.NewProc("CreatePopupMenu")
-	pAppendMenu             = user32.NewProc("AppendMenuW")
-	pTrackPopupMenu         = user32.NewProc("TrackPopupMenu")
-	pDestroyMenu            = user32.NewProc("DestroyMenu")
-	pSetForegroundWindow    = user32.NewProc("SetForegroundWindow")
-	pGetCursorPos           = user32.NewProc("GetCursorPos")
-	pRegisterWindowMessage  = user32.NewProc("RegisterWindowMessageW")
-	pGetSystemMetrics       = user32.NewProc("GetSystemMetrics")
-	pShellNotifyIcon        = shell32.NewProc("Shell_NotifyIconW")
-	pGetModuleHandle        = kern32.NewProc("GetModuleHandleW")
-	pSetCurrentProcessAppID = shell32.NewProc("SetCurrentProcessExplicitAppUserModelID")
+	pRegisterClassEx       = user32.NewProc("RegisterClassExW")
+	pCreateWindowEx        = user32.NewProc("CreateWindowExW")
+	pDefWindowProc         = user32.NewProc("DefWindowProcW")
+	pGetMessage            = user32.NewProc("GetMessageW")
+	pTranslateMessage      = user32.NewProc("TranslateMessage")
+	pDispatchMessage       = user32.NewProc("DispatchMessageW")
+	pPostMessage           = user32.NewProc("PostMessageW")
+	pPostQuitMessage       = user32.NewProc("PostQuitMessage")
+	pLoadImage             = user32.NewProc("LoadImageW")
+	pCreatePopupMenu       = user32.NewProc("CreatePopupMenu")
+	pAppendMenu            = user32.NewProc("AppendMenuW")
+	pTrackPopupMenu        = user32.NewProc("TrackPopupMenu")
+	pDestroyMenu           = user32.NewProc("DestroyMenu")
+	pSetForegroundWindow   = user32.NewProc("SetForegroundWindow")
+	pGetCursorPos          = user32.NewProc("GetCursorPos")
+	pRegisterWindowMessage = user32.NewProc("RegisterWindowMessageW")
+	pGetSystemMetrics      = user32.NewProc("GetSystemMetrics")
+	pShellNotifyIcon       = shell32.NewProc("Shell_NotifyIconW")
+	pSetTimer              = user32.NewProc("SetTimer")
+	pKillTimer             = user32.NewProc("KillTimer")
+	pGetModuleHandle       = kern32.NewProc("GetModuleHandleW")
 )
 
 const (
-	wmApp            = 0x8000
-	wmTray           = wmApp + 1 // the icon's own messages
-	wmWake           = wmApp + 2 // something for the tray from another goroutine
-	wmDestroy        = 0x0002
-	wmCommand        = 0x0111
-	wmRButtonUp      = 0x0205
-	wmContextMenu    = 0x007B
-	ninSelect        = 0x0400
-	ninKeySelect     = 0x0401
-	ninBalloonClick  = 0x0405
-	nimAdd           = 0
-	nimModify        = 1
-	nimDelete        = 2
-	nimSetVersion    = 4
-	nifMessage       = 0x1
-	nifIcon          = 0x2
-	nifTip           = 0x4
-	nifInfo          = 0x10
-	nifShowTip       = 0x80
-	niifInfo         = 0x1
-	niifWarning      = 0x2
-	niifUser         = 0x4
-	niifLargeIcon    = 0x20
-	imageIcon        = 1
-	lrLoadFromFile   = 0x10
-	mfString         = 0x0
-	mfSeparator      = 0x800
-	tpmReturnCmd     = 0x100
-	tpmRightButton   = 0x2
-	tpmBottomAlign   = 0x20
-	smCxSmIcon       = 49
-	idOpen           = 1
-	idNotes          = 2
-	idExit           = 3
-	notifyIconVer4   = 4
-	trayUID          = 1
-	wsOverlapped     = 0
-	appUserModelName = "f3bandit.Phosphor"
+	wmApp           = 0x8000
+	wmTray          = wmApp + 1 // the icon's own messages
+	wmWake          = wmApp + 2 // something for the tray from another goroutine
+	wmDestroy       = 0x0002
+	wmTimer         = 0x0113
+	wmCommand       = 0x0111
+	wmContextMenu   = 0x007B
+	ninSelect       = 0x0400
+	ninKeySelect    = 0x0401
+	ninBalloonClick = 0x0405
+	nimAdd          = 0
+	nimModify       = 1
+	nimDelete       = 2
+	nimSetVersion   = 4
+	nifMessage      = 0x1
+	nifIcon         = 0x2
+	nifTip          = 0x4
+	nifInfo         = 0x10
+	nifShowTip      = 0x80
+	niifInfo        = 0x1
+	niifWarning     = 0x2
+	niifUser        = 0x4
+	niifLargeIcon   = 0x20
+	imageIcon       = 1
+	lrLoadFromFile  = 0x10
+	mfString        = 0x0
+	mfSeparator     = 0x800
+	tpmReturnCmd    = 0x100
+	tpmRightButton  = 0x2
+	tpmBottomAlign  = 0x20
+	smCxSmIcon      = 49
+	idOpen          = 1
+	idNotes         = 2
+	idExit          = 3
+	notifyIconVer4  = 4
+	trayUID         = 1
+	wsOverlapped    = 0
 )
 
 type notifyIconData struct {
@@ -146,13 +146,15 @@ type trayNote struct {
 
 var tray struct {
 	sync.Mutex
-	hwnd               uintptr
-	icon, alert, large uintptr
-	alerting           bool
-	url                string
-	notes              []trayNote // waiting to be shown (from other goroutines)
-	setAlert           *bool
-	taskbarCreated     uint32
+	hwnd                           uintptr
+	icon, alert, large, alertLarge uintptr
+	alerting                       bool
+	url                            string
+	notes                          []trayNote // waiting to be shown (from other goroutines)
+	setAlert                       *bool
+	taskbarCreated                 uint32
+	retries                        int
+	quitting                       bool
 }
 
 func utf16Into(dst []uint16, s string) {
@@ -171,6 +173,11 @@ func loadIcon(data []byte, name string, size int) uintptr {
 	}
 	pp, _ := windows.UTF16PtrFromString(p)
 	h, _, _ := pLoadImage.Call(0, uintptr(unsafe.Pointer(pp)), imageIcon, uintptr(size), uintptr(size), lrLoadFromFile)
+	if h == 0 { // couldn't write or read the file: the exe's own icon (winres.json's "APP")
+		inst, _, _ := pGetModuleHandle.Call(0)
+		app, _ := windows.UTF16PtrFromString("APP")
+		h, _, _ = pLoadImage.Call(inst, uintptr(unsafe.Pointer(app)), imageIcon, uintptr(size), uintptr(size), 0)
+	}
 	return h
 }
 
@@ -190,10 +197,21 @@ func trayAdd() {
 	if tray.alerting {
 		n.HIcon = tray.alert
 	}
-	utf16Into(n.SzTip[:], "Phosphor")
-	pShellNotifyIcon.Call(nimAdd, uintptr(unsafe.Pointer(&n)))
+	utf16Into(n.SzTip[:], tipText())
+	if r, _, _ := pShellNotifyIcon.Call(nimAdd, uintptr(unsafe.Pointer(&n))); r == 0 && tray.retries < 10 {
+		tray.retries++ // the taskbar isn't ready yet (Phosphor started with Windows): again in a second
+		pSetTimer.Call(tray.hwnd, 1, 1000, 0)
+		return
+	}
 	n.UVersion = notifyIconVer4
 	pShellNotifyIcon.Call(nimSetVersion, uintptr(unsafe.Pointer(&n)))
+}
+
+func tipText() string {
+	if tray.alerting {
+		return "Phosphor: something needs a look"
+	}
+	return "Phosphor"
 }
 
 func trayIconSet(alert bool) {
@@ -201,24 +219,23 @@ func trayIconSet(alert bool) {
 	n := nid()
 	n.UFlags = nifIcon | nifTip | nifShowTip
 	n.HIcon = tray.icon
-	tip := "Phosphor"
 	if alert {
 		n.HIcon = tray.alert
-		tip = "Phosphor: something needs a look"
 	}
-	utf16Into(n.SzTip[:], tip)
+	utf16Into(n.SzTip[:], tipText())
 	pShellNotifyIcon.Call(nimModify, uintptr(unsafe.Pointer(&n)))
 }
 
 func trayBalloon(t trayNote) {
 	n := nid()
-	n.UFlags = nifInfo
+	n.UFlags = nifInfo | nifTip | nifShowTip
+	utf16Into(n.SzTip[:], tipText())
 	utf16Into(n.SzInfoTitle[:], t.title)
 	utf16Into(n.SzInfo[:], t.body)
 	n.DwInfoFlags = niifUser | niifLargeIcon
 	n.HBalloonIcon = tray.large
 	if t.warn {
-		n.HBalloonIcon = tray.alert
+		n.HBalloonIcon = tray.alertLarge
 	}
 	if n.HBalloonIcon == 0 {
 		n.DwInfoFlags = niifInfo
@@ -229,7 +246,7 @@ func trayBalloon(t trayNote) {
 	pShellNotifyIcon.Call(nimModify, uintptr(unsafe.Pointer(&n)))
 }
 
-func trayMenu() {
+func trayMenu(x, y int32) {
 	m, _, _ := pCreatePopupMenu.Call()
 	add := func(id int, s string) {
 		p, _ := windows.UTF16PtrFromString(s)
@@ -239,10 +256,9 @@ func trayMenu() {
 	add(idNotes, "Notifications")
 	pAppendMenu.Call(m, mfSeparator, 0, 0)
 	add(idExit, "Exit Phosphor")
-	var pt struct{ X, Y int32 }
-	pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	pSetForegroundWindow.Call(tray.hwnd)
-	cmd, _, _ := pTrackPopupMenu.Call(m, tpmReturnCmd|tpmRightButton|tpmBottomAlign, uintptr(pt.X), uintptr(pt.Y), 0, tray.hwnd, 0)
+	cmd, _, _ := pTrackPopupMenu.Call(m, tpmReturnCmd|tpmRightButton|tpmBottomAlign, uintptr(x), uintptr(y), 0, tray.hwnd, 0)
+	pPostMessage.Call(tray.hwnd, 0, 0, 0) // WM_NULL: the menu closes properly next time (KB135788)
 	pDestroyMenu.Call(m)
 	switch cmd {
 	case idOpen:
@@ -258,15 +274,15 @@ func wndProc(hwnd uintptr, m uint32, wp, lp uintptr) uintptr {
 	switch {
 	case m == wmTray:
 		switch uint32(lp & 0xffff) {
-		case ninSelect, ninKeySelect: // a click (version 4 icons send this, not the mouse messages)
+		case ninSelect, ninKeySelect: // a click (version 4 icons send this as well as the mouse messages)
 			if time.Since(lastClick) > 1500*time.Millisecond { // a double-click is one
 				lastClick = time.Now()
 				showUI("")
 			}
 		case ninBalloonClick:
 			showUI("notifications")
-		case wmRButtonUp, wmContextMenu:
-			trayMenu()
+		case wmContextMenu: // also from the keyboard; wParam is where to put the menu
+			trayMenu(int32(int16(wp&0xffff)), int32(int16((wp>>16)&0xffff)))
 		}
 		return 0
 	case m == wmWake:
@@ -284,6 +300,10 @@ func wndProc(hwnd uintptr, m uint32, wp, lp uintptr) uintptr {
 		}
 		return 0
 	case m == tray.taskbarCreated && m != 0: // Explorer restarted: the icon again
+		trayAdd()
+		return 0
+	case m == wmTimer:
+		pKillTimer.Call(hwnd, 1)
 		trayAdd()
 		return 0
 	case m == wmDestroy:
@@ -319,7 +339,17 @@ func trayAlert(on bool) {
 }
 
 func quitApp() {
-	closeWindows()
+	tray.Lock()
+	if tray.quitting {
+		tray.Unlock()
+		return
+	}
+	tray.quitting = true
+	tray.Unlock()
+	go func() { closeWindows(); quitTray() }()
+}
+
+func quitTray() {
 	tray.Lock()
 	h := tray.hwnd
 	tray.Unlock()
@@ -334,9 +364,6 @@ func quitApp() {
 func runTray(url string) {
 	runtime.LockOSThread()
 	tray.url = url
-	if id, err := windows.UTF16PtrFromString(appUserModelName); err == nil {
-		pSetCurrentProcessAppID.Call(uintptr(unsafe.Pointer(id)))
-	}
 	small, _, _ := pGetSystemMetrics.Call(smCxSmIcon)
 	if small == 0 {
 		small = 16
@@ -344,6 +371,7 @@ func runTray(url string) {
 	tray.icon = loadIcon(trayIcon, "tray.ico", int(small))
 	tray.alert = loadIcon(trayIconAlert, "tray-alert.ico", int(small))
 	tray.large = loadIcon(trayIcon, "tray.ico", 48)
+	tray.alertLarge = loadIcon(trayIconAlert, "tray-alert.ico", 48)
 	inst, _, _ := pGetModuleHandle.Call(0)
 	cls, _ := windows.UTF16PtrFromString("PhosphorTray")
 	wc := wndClassEx{LpfnWndProc: windows.NewCallback(wndProc), HInstance: inst, LpszClassName: cls}
