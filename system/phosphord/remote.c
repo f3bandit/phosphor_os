@@ -2,7 +2,8 @@
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  *
  * Off until turned on in Settings > Remote access. Plain HTTP/1.1 on port 8767, one request per
- * connection, only from home-network addresses (10/8, 172.16/12, 192.168/16, 169.254/16, 127/8).
+ * connection, only from home-network addresses (10/8, 172.16/12, 192.168/16, 169.254/16, 127/8,
+ * or the subnet of one of the SS1's own network connections).
  *
  *   GET  /info                       {name, version, api}                   no key needed
  *   POST /pair    {"code","name"}    {token, id}: the code shown on the TV; 5 tries, 2 minutes
@@ -374,12 +375,27 @@ static int read_body(req_t *r, char *buf, int out)
 	return 0;
 }
 
-/* a home-network address */
+/* a home-network address: the private ranges, or the same subnet as one of the SS1's own
+   network connections (some home networks use other ranges, e.g. 200.200.200.x). Only a directly
+   attached subnet counts, and nothing wider than a /16. */
 static int local_peer(const struct sockaddr_in *a)
 {
 	uint32_t ip = ntohl(a->sin_addr.s_addr);
-	return (ip >> 24) == 10 || (ip >> 24) == 127 || (ip >> 20) == (172u << 4 | 1) ||
-	       (ip >> 16) == (192u << 8 | 168) || (ip >> 16) == (169u << 8 | 254);
+	if ((ip >> 24) == 10 || (ip >> 24) == 127 || (ip >> 20) == (172u << 4 | 1) ||
+	    (ip >> 16) == (192u << 8 | 168) || (ip >> 16) == (169u << 8 | 254))
+		return 1;
+	struct ifaddrs *ifs, *i;
+	int ok = 0;
+	if (getifaddrs(&ifs)) return 0;
+	for (i = ifs; i && !ok; i = i->ifa_next) {
+		if (!i->ifa_addr || !i->ifa_netmask || i->ifa_addr->sa_family != AF_INET) continue;
+		if (!(i->ifa_flags & IFF_UP) || (i->ifa_flags & IFF_LOOPBACK)) continue;
+		uint32_t me = ntohl(((struct sockaddr_in *)i->ifa_addr)->sin_addr.s_addr);
+		uint32_t m = ntohl(((struct sockaddr_in *)i->ifa_netmask)->sin_addr.s_addr);
+		if (m >= 0xffff0000u && m != 0xffffffffu && (me & m) == (ip & m)) ok = 1;
+	}
+	freeifaddrs(ifs);
+	return ok;
 }
 
 /* the device for this request's key; updates last used. Returns its index or -1. */

@@ -16,9 +16,11 @@ type found struct {
 	Version string `json:"version"`
 }
 
+// every IPv4 network this PC is on, private range or not (some home networks use other ranges);
+// the sweep is the /24 around the PC's own address either way
 func homeNet(ip net.IP) bool {
 	ip = ip.To4()
-	return ip != nil && (ip[0] == 10 || (ip[0] == 172 && ip[1]&0xf0 == 16) || (ip[0] == 192 && ip[1] == 168))
+	return ip != nil && !ip.IsLoopback() && !(ip[0] == 169 && ip[1] == 254)
 }
 
 func discover() []found {
