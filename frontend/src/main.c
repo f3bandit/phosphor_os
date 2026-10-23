@@ -235,9 +235,16 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		pkey_t k;
 		while ((k = input_poll(now)) != KEY_NONE_) ui_key(k);
 		ui_tick();
+		/* sleep until input (controllers through Main, keyboards, remote keys) or the next screen timer:
+		   at idle that's up to half a second, not 60 wake-ups a second */
 		uint32_t wait = lv_timer_handler();
-		if (wait > 16) wait = 16;   /* stay responsive to input */
-		usleep(wait * 1000);
+		uint32_t cap = (uint32_t)ui_max_sleep();
+		if (input_held() || redraw_at) cap = 16;
+		if (wait > cap) wait = cap;
+		struct pollfd p[24];
+		int n = input_pollfds(p, 23);
+		if (mainlink_fd() >= 0) p[n++] = (struct pollfd){ mainlink_fd(), POLLIN, 0 };
+		poll(p, (nfds_t)n, (int)wait);
 	}
 	return 0;
 }

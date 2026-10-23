@@ -305,6 +305,17 @@ static void axis(dev_t_ *d, int code, int value, unsigned now)
 	if (dir > 0) press(pos, d->slot, now);
 }
 
+int input_pollfds(struct pollfd *p, int max)
+{
+	int n = 0;
+	if (ino_fd >= 0 && n < max) p[n++] = (struct pollfd){ ino_fd, POLLIN, 0 };
+	if (fifo_fd >= 0 && n < max) p[n++] = (struct pollfd){ fifo_fd, POLLIN, 0 };
+	for (int i = 0; i < ndev && n < max; i++) p[n++] = (struct pollfd){ devs[i].fd, POLLIN, 0 };
+	return n;
+}
+
+int input_held(void) { return held != KEY_NONE_ || qh != qt; }
+
 pkey_t input_poll(unsigned now)
 {
 	if (ino_fd >= 0) {

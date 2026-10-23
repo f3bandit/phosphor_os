@@ -7,6 +7,8 @@
 
 void ui_init(int w, int h);
 void ui_key(pkey_t k);
+/* how long the main loop may sleep (ms) when nothing comes in: short only while a screen needs it */
+int ui_max_sleep(void);
 void ui_tick(void);          /* every frame: status bar, scan progress, mount changes */
 void ui_rescan(void);
 

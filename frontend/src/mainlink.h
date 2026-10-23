@@ -9,6 +9,7 @@ int mainlink_start(void);
  * Returns 1 when it just (re)took the screen, so the caller can set its video mode again. */
 int mainlink_poll(void);
 int mainlink_connected(void);
+int mainlink_fd(void);              /* to wait on (events from Main); -1 if not connected */
 /* "MiSTer menu": give the screen to Main's own menu; the shell then waits (input ignored) until
  * Launch Phosphor in Main's OSD asks for it again. 0 when there's no Main fork to give it to */
 int mainlink_give(void);

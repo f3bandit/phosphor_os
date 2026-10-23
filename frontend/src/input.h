@@ -14,6 +14,11 @@ typedef enum {
 } pkey_t;
 
 void input_init(void);
+#include <poll.h>
+/* the fds to wait on (devices, hot-plug, remote keys); returns how many were put in p */
+int input_pollfds(struct pollfd *p, int max);
+/* a direction is held: keys repeat, so the loop must keep coming round */
+int input_held(void);
 /* next key press (with repeat for held directions), or KEY_NONE_; call every frame */
 pkey_t input_poll(unsigned now_ms);
 /* inject keys for tests and screenshots */

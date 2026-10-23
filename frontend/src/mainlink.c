@@ -89,6 +89,7 @@ int mainlink_start(void)
 int mainlink_connected(void) { return fd >= 0; }
 int mainlink_hidden(void) { return fd >= 0 && hidden; }
 int mainlink_pads(void) { return fd >= 0 && pads; }
+int mainlink_fd(void) { return fd; }
 
 int mainlink_give(void)
 {
