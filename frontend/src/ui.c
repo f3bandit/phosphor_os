@@ -323,18 +323,28 @@ static struct {
 	lv_obj_t *cont, *cont_title, *cont_sub;
 } home;
 
+/* the shelf, laid out like Phosphor for Windows: a row of cards from the left, the highlight moving
+ * along it; the highlighted card a little bigger. The row slides only when the highlight would go off
+ * the right edge, never to centre it. pos is the animated selection (0..SHELF_COUNT-1). */
 static void shelf_layout(float pos)
 {
 	home.pos = pos;
-	int cx = W / 2, step = S(236);
+	int left = S(56), cw0 = S(200), ch0 = S(250), gap = S(18), step = cw0 + gap;
+	int vis_w = W - 2 * left;
+	int fit = (vis_w + gap) / step;                         /* cards that fit without sliding */
+	int max_scroll = SHELF_COUNT * step - gap - vis_w;
+	float sc = (pos - (fit - 1)) * step;
+	if (sc < 0) sc = 0;
+	if (max_scroll < 0) max_scroll = 0;
+	if (sc > max_scroll) sc = (float)max_scroll;
 	for (int i = 0; i < SHELF_COUNT; i++) {
 		float d = i - pos, ad = d < 0 ? -d : d;
-		float grow = ad < 1 ? 1 - ad : 0;                  /* 1 at the focused card */
-		int cw = S(200) + (int)(S(36) * grow), ch = S(250) + (int)(S(45) * grow);
+		float grow = ad < 1 ? 1 - ad : 0;                  /* 1 at the highlighted card */
+		int cw = cw0 + (int)(S(28) * grow), ch = ch0 + (int)(S(36) * grow);
+		int cx = left + i * step + cw0 / 2 - (int)sc;
 		lv_obj_set_size(home.card[i], cw, ch);
-		lv_obj_set_pos(home.card[i], cx + (int)(d * step) - cw / 2, S(140) + (S(250) - ch) / 2);
-		int opa = 255 - (int)(LV_MIN(ad, 2.5f) * 60);
-		lv_obj_set_style_opa(home.card[i], (lv_opa_t)LV_MAX(opa, 90), 0);
+		lv_obj_set_pos(home.card[i], cx - cw / 2, S(140) + (ch0 - ch) / 2);
+		lv_obj_set_style_opa(home.card[i], LV_OPA_COVER, 0);
 		int on = ad < 0.5f;
 		lv_obj_set_style_border_color(home.card[i], on ? PAL.acc : PAL.line, 0);
 		lv_obj_set_style_bg_color(home.card[i], on ? PAL.panel_on : PAL.panel, 0);

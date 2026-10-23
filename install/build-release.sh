@@ -37,7 +37,12 @@ if [ -x "\$G" ]; then
 	"\$G" save-point $label || echo "(couldn't save one; the update goes ahead)"
 	echo
 fi
-cd /media/fat/Scripts && exec ./$u.sh "\$@"
+cd /media/fat/Scripts && ./$u.sh "\$@"
+rc=\$?
+# the downloader puts MiSTer's own menu core back: Phosphor's again, so going back shows Phosphor's
+# loading screen, not MiSTer's static (a restart by the downloader does the same at shutdown)
+/media/fat/phosphor/phosphor.sh menu-core > /dev/null 2>&1
+exit \$rc
 SH
 done
 cp system/config/systems.ini "$D/config/"
