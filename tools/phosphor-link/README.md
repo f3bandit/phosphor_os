@@ -99,7 +99,8 @@ Everything the console prints is also kept in `phosphor-link.log` next to the pr
 ## Speed
 
 The port runs at 115200 baud, about 11 KB/s raw. Files travel as base64, so expect roughly
-8 KB/s: a script is instant, a 1 MB file takes about two minutes. Use SSH for big files.
+8 KB/s: a script is instant, a 1 MB file takes about two minutes. Over SSH a 20 MB file takes about a second on a local network, so `auto` uses SSH whenever the SS1
+is on the network.
 
 ## Building
 
@@ -111,6 +112,12 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
+0.4.0: SSH first in `auto` (the address comes from `host=` or from the Phosphor app's pairing); the
+boot log, recent output and reboot open the debug port on demand. A watchdog: SSH keepalives every
+10 s, a console that stops answering gets Ctrl-C and a check, a dead link is reopened and safe tools
+are tried once more, and an old copy of Phosphor Link still holding the COM port is stopped. A new
+SSH host key after a reflash is accepted and noted in `phosphor-link.hostkeys`. Fixed SSH output
+going missing when a command wrote to stdout and stderr at once.
 0.3.0: `press` and `watch_input` (remote buttons and an input watch for Phosphor's shell 0.26.1 and later).
 0.2.0: library tools (tested against phosphord's remote access in the sandbox, not yet on the SS1).
 0.1.3: up-to-date crypto/ssh and Go, no known vulnerabilities. Runs on a real SuperStation One (selftest passes over the dock port, about 6.5 KB/s). Also tested against

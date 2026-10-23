@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 const usage = `Phosphor Link ` + version + `: reach a MiSTer through the SuperStation One dock's debug port, or SSH.
 
@@ -88,6 +88,9 @@ func withLink(cfg Config, cmd string, args []string) int {
 	if len(args) < n {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
+	}
+	if (cmd == "watch" || cmd == "reboot") && strings.EqualFold(cfg.Transport, "auto") {
+		cfg.Transport = "serial" // only the debug port shows the console
 	}
 	l, err := connect(cfg)
 	if err != nil {
