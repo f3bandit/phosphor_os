@@ -958,6 +958,7 @@ static char *cmd_memcard(cJSON *req)
 	cJSON_AddNumberToObject(j, "done", s.done);
 	cJSON_AddNumberToObject(j, "total", s.total);
 	cJSON_AddStringToObject(j, "message", s.message);
+	cJSON_AddStringToObject(j, "map", s.map);     /* 1024 characters, see memcard.h ("" before the first card job) */
 	cJSON_AddStringToObject(j, "file", s.file);
 	cJSON *arr = cJSON_AddArrayToObject(o, "backups");
 	char *list = memcard_list(), *save = NULL;
