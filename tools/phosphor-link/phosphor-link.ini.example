@@ -1,6 +1,7 @@
 ; Phosphor Link settings. Copy to phosphor-link.ini next to phosphor-link.exe. Everything is optional.
 
-; auto = the dock's debug port first, then SSH (if host is set). Or: serial, ssh
+; auto = SSH first when the SS1 is on the network (host= below, or the SS1 the Phosphor app is paired
+; with), the dock's debug port otherwise. The boot log and reboots always use the debug port. Or: serial, ssh
 transport=auto
 
 ; auto finds the dock's USB serial port by asking it. Or name it: COM5 (Windows), /dev/ttyUSB0 (Linux)
@@ -11,7 +12,7 @@ baud=115200
 user=root
 password=1
 
-; SSH, for when the debug port isn't connected
+; SSH. Leave host unset to use the SS1 the Phosphor app is paired with.
 ;host=192.168.1.50
 ssh_user=root
 ssh_password=1

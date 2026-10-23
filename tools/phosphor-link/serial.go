@@ -42,6 +42,7 @@ type SerialLink struct {
 	readErr error
 	logf    *os.File
 	opMu    sync.Mutex // one operation at a time
+	dead    bool       // the watchdog gave up on this console: reopen the port
 }
 
 const keepBytes = 1 << 20
@@ -82,6 +83,9 @@ var promptRe = regexp.MustCompile(`(?:login: ?|Password: ?|[#$] ?|=> ?)$`)
 // probe: does a MiSTer console answer on this port? Listens first, then presses Enter once.
 func probe(name string, baud int) bool {
 	p, err := serial.Open(name, &serial.Mode{BaudRate: baud})
+	if err != nil && portBusy(err) && freeStale() > 0 {
+		p, err = serial.Open(name, &serial.Mode{BaudRate: baud})
+	}
 	if err != nil {
 		return false
 	}
@@ -144,7 +148,18 @@ func openRetry(name string, baud int) (serial.Port, error) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
+	// one last thing: an old copy of Phosphor Link may still hold it
+	if freeStale() > 0 {
+		if p, err2 := serial.Open(name, &serial.Mode{BaudRate: baud}); err2 == nil {
+			return p, nil
+		}
+	}
 	return nil, fmt.Errorf("%v (another program may have it open, such as a terminal or the Claude app)", err)
+}
+
+func portBusy(err error) bool {
+	e := strings.ToLower(err.Error())
+	return strings.Contains(e, "busy") || strings.Contains(e, "access")
 }
 
 func OpenSerial(cfg Config) (*SerialLink, error) {
@@ -501,8 +516,10 @@ func (s *SerialLink) Run(cmd string, timeout time.Duration) (string, int, error)
 	}
 	m, _, err := s.line("bash "+script+" > "+out+" 2>&1 < /dev/null", "PLRC_"+id+" $?", "PLRC_"+id+` (\d+)`, timeout)
 	if err != nil {
-		_ = s.write("\x03")
-		time.Sleep(300 * time.Millisecond)
+		// watchdog: stop the command, then make sure the console still answers
+		if !s.revive() {
+			return "", -1, fmt.Errorf("command %s after %s, and the console stopped answering (link reset)", err, timeout)
+		}
 		partial, _ := s.pull(out)
 		s.cleanup(id)
 		return string(partial), -1, fmt.Errorf("command %s after %s", err, timeout)
@@ -516,13 +533,62 @@ func (s *SerialLink) Run(cmd string, timeout time.Duration) (string, int, error)
 func (s *SerialLink) Push(data []byte, remote, mode string) error {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
-	return s.push(data, remote, mode)
+	err := s.push(data, remote, mode)
+	if err != nil && strings.Contains(err.Error(), "timed out") && !s.revive() {
+		return fmt.Errorf("%v, and the console stopped answering (link reset)", err)
+	}
+	return err
 }
 
 func (s *SerialLink) Pull(remote string) ([]byte, error) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
-	return s.pull(remote)
+	data, err := s.pull(remote)
+	if err != nil && strings.Contains(err.Error(), "timed out") && !s.revive() {
+		return nil, fmt.Errorf("%v, and the console stopped answering (link reset)", err)
+	}
+	return data, err
+}
+
+// ping: does the shell answer an echo?
+func (s *SerialLink) ping(wait time.Duration) bool {
+	id := newID()
+	from := s.pos()
+	_ = s.write("echo PLPING_" + id + "\r")
+	_, _, err := s.waitFor(from, regexp.MustCompile(`(?m)^PLPING_`+id+`$`), wait)
+	return err == nil
+}
+
+// revive (called holding opMu): Ctrl-C whatever is stuck, then check the shell answers. If the
+// MiSTer rebooted under us, log in again. Gives up (and marks the link dead) if nothing helps.
+func (s *SerialLink) revive() bool {
+	for try := 0; try < 3; try++ {
+		_ = s.write("\x03")
+		time.Sleep(300 * time.Millisecond)
+		_ = s.write("\r")
+		time.Sleep(200 * time.Millisecond)
+		if s.ping(3 * time.Second) {
+			return true
+		}
+		if strings.Contains(cleanText(s.Recent(400)), "login:") {
+			if s.login() == nil {
+				return true
+			}
+		}
+	}
+	s.mu.Lock()
+	s.dead = true
+	s.mu.Unlock()
+	return false
+}
+
+// Alive (for the session's watchdog): false once the port failed or revive gave up. A link
+// that's busy with another call counts as alive.
+func (s *SerialLink) Alive() bool {
+	s.mu.Lock()
+	bad := s.closed || s.dead || s.readErr != nil
+	s.mu.Unlock()
+	return !bad
 }
 
 // Listen: capture what the console prints (boot log, Main's messages) without typing anything.

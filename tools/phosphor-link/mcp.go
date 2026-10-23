@@ -196,6 +196,14 @@ func (m *mcpServer) handle(req rpcReq) {
 	}
 }
 
+// tools that do the same thing when repeated (not run, press or reboot)
+var retryable = map[string]bool{"status": true, "push_file": true, "push_text": true, "pull_file": true, "read_file": true, "watch_input": true}
+
+func firstLine(s string) string {
+	s, _, _ = strings.Cut(s, "\n")
+	return s
+}
+
 func argS(a map[string]any, k, def string) string {
 	if v, ok := a[k].(string); ok && v != "" {
 		return v
@@ -234,6 +242,18 @@ func (m *mcpServer) call(name string, a map[string]any) (string, bool) {
 	text, isErr, broken := m.callOn(l, name, a)
 	if broken {
 		m.sess.drop()
+		// watchdog: the link died under us. Tools that are safe to repeat get one more go on a fresh link.
+		if retryable[name] {
+			log.Printf("watchdog: %s failed on %s (%s), reconnecting and trying again", name, l.Name(), firstLine(text))
+			if l2, err := m.sess.get(); err == nil {
+				text, isErr, broken = m.callOn(l2, name, a)
+				if broken {
+					m.sess.drop()
+				}
+			}
+		} else {
+			text += "\n[the link was reset; the next call reconnects]"
+		}
 	}
 	return text, isErr
 }
@@ -304,9 +324,9 @@ func (m *mcpServer) callOn(l Link, name string, a map[string]any) (text string, 
 		}
 		return clip(string(data), mx), false, false
 	case "serial_log":
-		li, ok := l.(Listener)
-		if !ok {
-			return errNotSerial.Error(), true, false
+		li, err := m.sess.console()
+		if err != nil {
+			return err.Error(), true, false
 		}
 		d := argN(a, "seconds", 10)
 		if d > 600 {
@@ -321,9 +341,9 @@ func (m *mcpServer) callOn(l Link, name string, a map[string]any) (text string, 
 		}
 		return clip(out, maxText), false, false
 	case "recent_output":
-		li, ok := l.(Listener)
-		if !ok {
-			return errNotSerial.Error(), true, false
+		li, err := m.sess.console()
+		if err != nil {
+			return err.Error(), true, false
 		}
 		return li.Recent(int(argN(a, "max_bytes", 20000))), false, false
 	case "press":
@@ -377,13 +397,16 @@ out=$(tail -n +$((m+1)) %[1]s 2>/dev/null); [ -n "$out" ] && echo "$out" || echo
 		}
 		return clip(out, maxText), false, false
 	case "reboot":
-		rb, ok := l.(Rebooter)
-		if !ok {
-			return errNotSerial.Error(), true, false
+		rb, err := m.sess.console()
+		if err != nil {
+			return err.Error(), true, false
 		}
 		out, err := rb.Reboot(secs(argN(a, "timeout_s", 180)))
+		// an SSH link didn't survive the reboot either: reconnect both next time
+		m.sess.drop()
 		if err != nil {
-			return clip(out, maxText) + "\n[" + err.Error() + "]", true, true
+			m.sess.dropConsole()
+			return clip(out, maxText) + "\n[" + err.Error() + "]", true, false
 		}
 		return clip(out, maxText), false, false
 	}
