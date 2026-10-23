@@ -9,6 +9,7 @@
 #include "api.h"
 #include "remote.h"
 #include "memcard.h"
+#include "wifi.h"
 #include "db.h"
 #include "indexer.h"
 #include "log.h"
@@ -123,6 +124,7 @@ int main(int argc, char **argv)
 	scraper_start();
 	remote_start();
 	memcard_start();
+	wifi_start();
 
 	int mfd = open("/proc/self/mounts", O_RDONLY);
 	plog("ready on %s", p_socket());

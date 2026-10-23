@@ -33,5 +33,6 @@ int wifi_connect(const char *ssid, const char *password, int hidden, char *err, 
 int wifi_forget(const char *ssid, char *err, size_t errn);
 int wifi_move(const char *ssid, int dir, char *err, size_t errn);
 int wifi_undo(char *err, size_t errn);
+void wifi_start(void);   /* keeps WiFi up: starts wpa_supplicant once the adapter is there (saved network) */
 
 #endif

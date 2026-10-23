@@ -495,3 +495,49 @@ int wifi_undo(char *err, size_t errn)
 	plog("wifi: undid the last change");
 	return 0;
 }
+
+/* ---------- keeping WiFi up ----------
+ * MiSTer starts wpa_supplicant once at boot (ifup wlan0), and a USB WiFi adapter that isn't ready yet
+ * then stays off ("Failed to bring up wlan0") until something starts it. With a saved network, phosphord
+ * starts it as soon as the adapter is there: every 5 s for the first 2 minutes, then every 30 s. */
+static int supplicant_running(void)
+{
+	FILE *f = fopen(pid_path(), "r");
+	int pid = 0;
+	if (f) { if (fscanf(f, "%d", &pid) != 1) pid = 0; fclose(f); }
+	return pid > 0 && kill(pid, 0) == 0;
+}
+
+static int has_saved_network(void)
+{
+	FILE *f = fopen(conf_path(), "r");
+	if (!f) return 0;
+	char line[256];
+	int yes = 0;
+	while (!yes && fgets(line, sizeof(line), f)) if (strstr(line, "network={")) yes = 1;
+	fclose(f);
+	return yes;
+}
+
+static void *keep_up(void *arg)
+{
+	(void)arg;
+	for (int t = 0;; t++) {
+		char sys[200];
+		snprintf(sys, sizeof(sys), "/sys/class/net/%s", ifname());
+		if (dir_exists(sys) && has_saved_network() && !supplicant_running()) {
+			pthread_mutex_lock(&lk);
+			reload();
+			pthread_mutex_unlock(&lk);
+		}
+		sleep(t < 24 ? 5 : 30);
+	}
+	return NULL;
+}
+
+void wifi_start(void)
+{
+	if (getenv("PHOS_WPA_CONF")) return;         /* tests */
+	pthread_t th;
+	if (pthread_create(&th, NULL, keep_up, NULL) == 0) pthread_detach(th);
+}

@@ -65,6 +65,8 @@ put_menu_core() {
 
 case "${1:-status}" in
 	boot)
+		# a line a boot (with the uptime), to tell restarts apart from Main's (logs/main-reboots.log)
+		echo "$(date '+%Y-%m-%d %H:%M:%S')  boot  up $(cut -d' ' -f1 /proc/uptime 2>/dev/null)s" >> "$ROOT/logs/boots.log"
 		# MiSTer's downloader may have put its own menu.rbf back: Phosphor's again (for the next boot)
 		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" > /dev/null
 		# Phosphor first, so it's on screen within seconds of MiSTer starting

@@ -3704,6 +3704,8 @@ void ui_tick(void)
 		last_poll = now ? now : 1;
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); }
 		if (cur == SCR_WELCOME && cr.busy) { cores_refresh(); vlist_refresh(&wl_list); }
+		/* the Welcome screen's Network line follows WiFi coming up by itself */
+		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		else if (cr.busy && cur != SCR_SETTINGS) cores_refresh();     /* the bar, on every screen */
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
