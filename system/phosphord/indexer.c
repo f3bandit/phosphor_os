@@ -9,7 +9,6 @@
 #include "indexer.h"
 #include "db.h"
 #include "ident.h"
-#include "scraper.h"
 #include "log.h"
 #include "paths.h"
 #include "systems.h"
@@ -24,12 +23,21 @@
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-static int requested = 1, busy, identifying, generation;
+static int requested, ident_wanted, busy, identifying, generation;   /* nothing until asked */
 
 void indexer_request(void)
 {
 	pthread_mutex_lock(&lk);
 	requested = 1;
+	pthread_cond_signal(&cv);
+	pthread_mutex_unlock(&lk);
+}
+
+void indexer_identify(void)
+{
+	pthread_mutex_lock(&lk);
+	requested = 1;
+	ident_wanted = 1;
 	pthread_cond_signal(&cv);
 	pthread_mutex_unlock(&lk);
 }
@@ -226,33 +234,43 @@ static int menu_up(void)
 
 static int ident_should_stop(void) { return requested || !menu_up(); }
 
+/* Looks for games only when asked ("Look for games"), like Console Mode: never at start-up, when a
+ * drive comes or goes, or on a timer. One request lists the files and then works out what they are.
+ * If a game is started in between, identifying stops and carries on once the menu is back. */
 static void *thread(void *arg)
 {
 	(void)arg;
-	sqlite3 *db = db_open();
-	if (!db) return NULL;
+	sqlite3 *db = NULL;
 	for (;;) {
 		pthread_mutex_lock(&lk);
-		if (!requested) {
-			/* wake up now and then to carry on identifying (e.g. once a game is closed) */
+		while (!requested && !ident_wanted) pthread_cond_wait(&cv, &lk);
+		if (!requested) {                    /* only identifying left (a game was running): look again in 30 s */
 			struct timespec ts;
 			clock_gettime(CLOCK_REALTIME, &ts);
-			ts.tv_sec += 15;
+			ts.tv_sec += 30;
 			pthread_cond_timedwait(&cv, &lk, &ts);
 		}
 		int scan_now = requested;
 		requested = 0;
 		busy = scan_now;
 		pthread_mutex_unlock(&lk);
+		if (!db && !(db = db_open())) { busy = 0; ident_wanted = 0; continue; }
 		if (scan_now) {
 			scan(db);
 			busy = 0;
 			__sync_add_and_fetch(&generation, 1);
 		}
-		if (menu_up()) {
+		if (ident_wanted && menu_up()) {
 			identifying = 1;
-			if (ident_pending(db, ident_should_stop) > 0) { __sync_add_and_fetch(&generation, 1); scraper_kick(); }
+			if (ident_pending(db, ident_should_stop) > 0) __sync_add_and_fetch(&generation, 1);
 			identifying = 0;
+			sqlite3_stmt *left;
+			int more = 1;
+			if (sqlite3_prepare_v2(db, "SELECT 1 FROM files WHERE ident=0 AND online=1 LIMIT 1", -1, &left, NULL) == SQLITE_OK) {
+				more = sqlite3_step(left) == SQLITE_ROW;
+				sqlite3_finalize(left);
+			}
+			if (!more) ident_wanted = 0;
 		}
 	}
 	return NULL;

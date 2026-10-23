@@ -6,9 +6,9 @@
  * grabbed: MiSTer Main keeps seeing them too.
  *
  * Controllers are read the way MiSTer's own menu reads them: by MiSTer Main (Phosphor's fork), with the
- * button mapping set up in MiSTer, sent to the shell as events (mainlink.c, input_main_pad). From the
- * first such event on, controllers aren't read here. Until then, or with a Main that doesn't send
- * them, they come from Main's "MiSTer virtual input" keys or, if that's silent, the controller itself.
+ * button mapping set up in MiSTer, sent to the shell as events (mainlink.c, input_main_pad). The SS1's
+ * front ports (SNAC) are for games only, as in MiSTer. With that Main, controllers aren't read here at all, only keyboards. With a
+ * Main that doesn't send them, they come from Main's "MiSTer virtual input" keys and the pads themselves.
  * Remote keys (Phosphor Link's press) come in on a FIFO, and everything is noted in the input watch
  * log in RAM (input_watch). A key held from several places still counts as one press, and a second press of the
  * same key within a few milliseconds of letting go (some pads bounce) is dropped. */
@@ -33,7 +33,6 @@
 #define REPEAT_RATE 85
 #define AXIS_DEAD 40   /* percent of the axis range */
 #define BOUNCE_MS 35   /* a press this soon after letting go of the same key is a bounce */
-#define SRC_PAD0 16    /* sources: devices 0..15 (their slot), front ports 16 and 17 */
 
 typedef struct {
 	int fd;
@@ -134,7 +133,6 @@ void input_main_pad(const char *b, int p)
 	char w[48];
 	snprintf(w, sizeof(w), "%s %s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up");
 	input_watch("main", w);
-	main_pads = 1;
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
 	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) if (!strcmp(b, M[i].n)) { input_push(M[i].k); return; }
 }
@@ -307,42 +305,13 @@ static void axis(dev_t_ *d, int code, int value, unsigned now)
 	if (dir > 0) press(pos, d->slot, now);
 }
 
-/* front-port controllers: Cross confirms and Circle goes back (the PlayStation way), Square X,
- * Triangle Y, Start the menu, the left stick moves like the D-pad */
-void input_pad(int port, unsigned b, int lx, int ly, int analog, unsigned now)
-{
-	static unsigned prev[2];
-	static const struct { int bit; pkey_t k; } M[] = {
-		{ 4, K_UP }, { 5, K_RIGHT }, { 6, K_DOWN }, { 7, K_LEFT }, { 14, K_A }, { 13, K_B }, { 15, K_X },
-		{ 12, K_Y }, { 3, K_MENU }, { 0, K_SELECT }, { 10, K_L }, { 11, K_R },
-	};
-	if (port < 0 || port > 1) return;
-	if (analog) {
-		if (lx < 48) b |= 1u << 7;
-		if (lx > 208) b |= 1u << 5;
-		if (ly < 48) b |= 1u << 4;
-		if (ly > 208) b |= 1u << 6;
-	}
-	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) {
-		unsigned bit = 1u << M[i].bit;
-		if ((b & bit) && !(prev[port] & bit)) {
-			char w[32];
-			snprintf(w, sizeof(w), "port %d %s", port + 1, KNAMES[M[i].k]);
-			input_watch("front", w);
-			press(M[i].k, SRC_PAD0 + port, now);
-		}
-		else if (!(b & bit) && (prev[port] & bit)) release(M[i].k, SRC_PAD0 + port, now);
-	}
-	prev[port] = b;
-}
-
 pkey_t input_poll(unsigned now)
 {
 	if (ino_fd >= 0) {
 		char buf[1024];
 		if (read(ino_fd, buf, sizeof(buf)) > 0) scan_devs();
 	}
-	if (main_pads && !mainlink_pads()) main_pads = 0;   /* Main restarted, or isn't the fork any more */
+	main_pads = mainlink_pads();   /* Phosphor's Main sends the controllers: they aren't read here at all */
 	fifo_poll();
 	for (int i = 0; i < ndev; i++) {
 		struct input_event ev;

@@ -16,9 +16,6 @@ typedef enum {
 void input_init(void);
 /* next key press (with repeat for held directions), or KEY_NONE_; call every frame */
 pkey_t input_poll(unsigned now_ms);
-/* a PlayStation controller on a front port (phosphord "pads"): buttons as sent there (pressed = 1,
- * bit 0 Select ... bit 15 Square), the left stick (0..255) when it's analog; port 0 or 1 */
-void input_pad(int port, unsigned buttons, int lx, int ly, int analog, unsigned now_ms);
 /* inject keys for tests and screenshots */
 void input_push(pkey_t k);
 /* a controller button from MiSTer Main ("up", "a", "start"...; p 1 pressed, 2 held/repeat, 0 released).

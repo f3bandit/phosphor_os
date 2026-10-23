@@ -231,6 +231,9 @@ int ports_prepare(char *err, size_t n)
 	pthread_mutex_lock(&mlk);
 	int r = prepare_locked(err, n, 1);
 	pthread_mutex_unlock(&mlk);
+	pthread_mutex_lock(&slk);
+	pthread_cond_signal(&wake);           /* the worker turns them off again after a while */
+	pthread_mutex_unlock(&slk);
 	return r;
 }
 
@@ -494,9 +497,11 @@ static void *worker(void *arg)
 		int port;
 		pthread_mutex_lock(&slk);
 		while (!want_job[0]) {
+			/* ports off: nothing to do until a card job comes (from the memory cards screen), so a
+			   look twice a minute is plenty; on: every 2 s, to turn them off once unused */
 			struct timespec ts;
 			clock_gettime(CLOCK_REALTIME, &ts);
-			ts.tv_sec += 2;
+			ts.tv_sec += ports_on ? 2 : 30;
 			pthread_cond_timedwait(&wake, &slk, &ts);
 			if (want_job[0]) break;
 			pthread_mutex_unlock(&slk);

@@ -3,14 +3,13 @@
 #ifndef PHOS_SETTINGS_H
 #define PHOS_SETTINGS_H
 
-#define PHOS_VERSION "0.26.1"
+#define PHOS_VERSION "0.26.2"
 
 typedef struct {
 	int accent;
 	int clock24;
 	int texture;      /* background texture (texture.h), 0 = none */
 	int setup_done;   /* first-start setup finished (a new card shows it; existing installs don't) */
-	int front_pads;
 	int saver_min;    /* screensaver after this many idle minutes, 0 = never */   /* the controllers on the front ports move around Phosphor (needs phosphor-main) */
 } settings_t;
 

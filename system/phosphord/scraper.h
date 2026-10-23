@@ -6,7 +6,7 @@
 #include "sqlite3.h"
 
 typedef struct {
-	int on;            /* looking things up when the menu is up */
+	int on;            /* looking things up right now (asked for) */
 	int running;       /* working right now */
 	int pending;       /* identified games not looked up yet */
 	int done;          /* found */
@@ -20,8 +20,8 @@ typedef struct {
 } scrape_source_t;
 
 void scraper_start(void);                  /* background thread */
-void scraper_set(sqlite3 *db, int on);     /* turn looking up on or off (kept in the library) */
-void scraper_kick(void);                   /* new games may be waiting */
+void scraper_set(sqlite3 *db, int on);     /* on: go through the games once now (only ever on request); off: stop */
+void scraper_kick(void);                   /* run once now (the user asked) */
 void scraper_info(sqlite3 *db, scrape_info_t *out);
 int scraper_retry(sqlite3 *db, long long game_id);   /* look this game up again */
 int scraper_sources(scrape_source_t *out, int max);   /* in the user's order */
