@@ -147,6 +147,11 @@ UA="$CACHE/update_all.sh"
 head -1 "$UA" | grep -q '^#!/bin/bash' || { echo "update_all.sh doesn't look right" >&2; exit 1; }
 mkdir -p "$WORK/rel/files/Scripts" && cp "$UA" "$WORK/rel/files/Scripts/update_all.sh" && chmod 755 "$WORK/rel/files/Scripts/update_all.sh"
 # the Phosphor release itself, so modules can be installed later without downloading anything
+# the SS1 documentation's recommended downloader.ini (games and docs to the NVMe/USB drive when there
+# is one), with Linux updates left on
+DLI="$(dirname "$0")/downloader.ini"
+grep -q "^storage_priority = 'prefer_external'" "$DLI" && grep -q "^update_linux = true" "$DLI" || { echo "image/downloader.ini doesn't look right" >&2; exit 1; }
+cp "$DLI" "$WORK/rel/files/downloader.ini"
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
 # testing only: a WiFi network the SS1 joins straight away (never in a release image)
 if [ -n "$WIFI_CONF" ]; then
