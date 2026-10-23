@@ -13,5 +13,7 @@ int mainlink_connected(void);
  * Launch Phosphor in Main's OSD asks for it again. 0 when there's no Main fork to give it to */
 int mainlink_give(void);
 int mainlink_hidden(void);
+/* Main sends the controllers' buttons (MiSTer's mapping and repeat); the shell then doesn't read them itself */
+int mainlink_pads(void);
 
 #endif

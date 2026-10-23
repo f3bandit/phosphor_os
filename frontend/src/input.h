@@ -21,6 +21,9 @@ pkey_t input_poll(unsigned now_ms);
 void input_pad(int port, unsigned buttons, int lx, int ly, int analog, unsigned now_ms);
 /* inject keys for tests and screenshots */
 void input_push(pkey_t k);
+/* a controller button from MiSTer Main ("up", "a", "start"...; p 1 pressed, 2 held/repeat, 0 released).
+ * From the first one on, controllers are only taken from Main, like MiSTer's own menu */
+void input_main_pad(const char *button, int p);
 pkey_t key_from_name(const char *name);
 /* a controller or keyboard was just plugged in or paired ("Connected: name") or went away; NULL if
  * nothing new. Each one is returned once. */

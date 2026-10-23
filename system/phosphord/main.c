@@ -10,6 +10,7 @@
 #include "remote.h"
 #include "memcard.h"
 #include "wifi.h"
+#include "heartbeat.h"
 #include "db.h"
 #include "indexer.h"
 #include "log.h"
@@ -125,6 +126,7 @@ int main(int argc, char **argv)
 	remote_start();
 	memcard_start();
 	wifi_start();
+	heartbeat_start();
 
 	int mfd = open("/proc/self/mounts", O_RDONLY);
 	plog("ready on %s", p_socket());

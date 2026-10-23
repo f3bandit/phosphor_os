@@ -141,6 +141,11 @@ done
 cp -r "$CACHE/Filters_MiSTer/Filters" "$CACHE/Filters_MiSTer/Filters_Audio" "$CACHE/Filters_MiSTer/Gamma" "$WORK/rel/files/"
 cp -r "$CACHE/ShadowMasks_MiSTer/Shadow_Masks" "$WORK/rel/files/"
 cp -r "$CACHE/Presets_MiSTer/Presets" "$WORK/rel/files/"
+# Update All (theypsilon, GPL-3.0): its bootstrap script, as people install it (it fetches the rest itself)
+UA="$CACHE/update_all.sh"
+[ -s "$UA" ] || curl -fsSL --retry 3 -o "$UA" "https://raw.githubusercontent.com/theypsilon/Update_All_MiSTer/master/update_all.sh"
+head -1 "$UA" | grep -q '^#!/bin/bash' || { echo "update_all.sh doesn't look right" >&2; exit 1; }
+mkdir -p "$WORK/rel/files/Scripts" && cp "$UA" "$WORK/rel/files/Scripts/update_all.sh" && chmod 755 "$WORK/rel/files/Scripts/update_all.sh"
 # the Phosphor release itself, so modules can be installed later without downloading anything
 cp "$TARBALL" "$WORK/rel/files/phosphor/"
 # testing only: a WiFi network the SS1 joins straight away (never in a release image)
@@ -181,6 +186,7 @@ Phosphor $PHOS_VER SD card image
   Mr. Fusion:     $MRF_VER (https://github.com/MiSTer-devel/mr-fusion, GPL-3.0; source and
                   licences of the Linux kernel and tools it contains: its legal-info folder);
                   de10_nano_hdmi_config.bin's background colour changed from blue to dark
+  Update All:     Scripts/update_all.sh (https://github.com/theypsilon/Update_All_MiSTer, GPL-3.0)
   Phosphor:       $(cat "$PDIR/VERSION")
 EOF
 say "Done"

@@ -68,6 +68,19 @@ static unsigned holders[K_R + 1];    /* which sources hold each key down */
 static unsigned released_at[K_R + 1];
 static unsigned slots_used;
 
+static int main_pads;           /* Main sends the controller buttons: don't read controllers here */
+
+void input_main_pad(const char *b, int p)
+{
+	static const struct { const char *n; pkey_t k; } M[] = {
+		{ "up", K_UP }, { "down", K_DOWN }, { "left", K_LEFT }, { "right", K_RIGHT }, { "a", K_A }, { "b", K_B },
+		{ "x", K_X }, { "y", K_Y }, { "l", K_L }, { "r", K_R }, { "select", K_SELECT }, { "start", K_MENU },
+	};
+	main_pads = 1;
+	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
+	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) if (!strcmp(b, M[i].n)) { input_push(M[i].k); return; }
+}
+
 static int have_virt(void)
 {
 	for (int i = 0; i < ndev; i++) if (devs[i].virt) return 1;
@@ -266,6 +279,7 @@ pkey_t input_poll(unsigned now)
 		struct input_event ev;
 		ssize_t r;
 		while ((r = read(devs[i].fd, &ev, sizeof(ev))) == (ssize_t)sizeof(ev)) {
+			if (main_pads && (devs[i].virt || devs[i].pad)) continue;   /* Main has the controllers */
 			if (ev.type == EV_KEY) {
 				dev_t_ *d = &devs[i];
 				pkey_t k;
