@@ -50,6 +50,8 @@ if [ -f "$HERE/cores/menu_phosphor.rbf" ]; then
 	mkdir -p "$ROOT/cores" && cp "$HERE/cores/menu_phosphor.rbf" "$ROOT/cores/menu_phosphor.rbf.new" && mv -f "$ROOT/cores/menu_phosphor.rbf.new" "$ROOT/cores/menu_phosphor.rbf"
 fi
 cp "$HERE/phosphor.sh" "$HERE/uninstall.sh" "$ROOT/" && chmod 755 "$ROOT/phosphor.sh" "$ROOT/uninstall.sh"
+# the updater (Settings > Update Phosphor), when the package has one
+[ -f "$HERE/update.sh" ] && cp "$HERE/update.sh" "$ROOT/update.sh" && chmod 755 "$ROOT/update.sh"
 # MiSTer's updaters as Phosphor starts them (a restore point first, then the updater)
 if [ -d "$HERE/scripts" ]; then
 	mkdir -p "$ROOT/scripts" && cp "$HERE"/scripts/*.sh "$ROOT/scripts/" && chmod 755 "$ROOT"/scripts/*.sh

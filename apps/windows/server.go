@@ -4,11 +4,13 @@ package main
 // page elsewhere can't reach them through DNS tricks).
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -120,6 +122,7 @@ func routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]any{"ok": true, "auto": autoReconnect()})
 	})
+	h("/api/upload", apiUpload) // a Phosphor package to the SS1 (Settings > Update Phosphor)
 	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
 		writeJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()
@@ -256,6 +259,33 @@ func apiArt(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 	}
+}
+
+// apiUpload: a Phosphor release package from this PC to the SS1 (phosphor/updates), for Settings >
+// Update Phosphor. ?name=phosphor-<version>-armhf.tar.gz, the file as the body.
+func apiUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if !regexp.MustCompile(`^phosphor-[A-Za-z0-9._-]+-armhf\.tar\.gz$`).MatchString(name) {
+		fail(w, "That isn't a Phosphor package (phosphor-<version>-armhf.tar.gz)")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
+	if err != nil || len(body) < 1024 {
+		fail(w, "couldn't read the file")
+		return
+	}
+	resp, err := authed("PUT", "/update/"+name, bytes.NewReader(body), 5*time.Minute)
+	if err != nil {
+		fail(w, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
 }
 
 // openShare: the SS1's Samba share (\\<its address>) in File Explorer; false when not paired

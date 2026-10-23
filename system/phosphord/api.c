@@ -36,6 +36,8 @@
  *              [{id, name, vidpid, where, buttons, axes, db_name, db_user, style, style_auto, style_set,
  *              has [controls], mapping {uses custom|database|none, menu, cores}}], files, backups, map
  *              (the shell's mapping window: on, step, dev, done, saved); live: {on [controls], ls, rs, l2, r2}
+ *   update     [do: install (file) | rollback (version)]   Phosphor's own updates: available, version,
+ *              packages [{file, version}], rollbacks [{version, date}], state {state, version, restart, msg, at}
  *   system     do: shutdown|reboot|reload_ui|safe_stop|halt_now|reboot_now   (see the command below)
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
@@ -1159,6 +1161,80 @@ static char *cmd_storage(cJSON *req)
 	return reply(o);
 }
 
+/* Phosphor's own updates (phosphor/update.sh): packages found, versions to roll back to, the last run */
+static char *run_out(const char *cmd)
+{
+	FILE *f = popen(cmd, "r");
+	if (!f) return NULL;
+	size_t len = 0, cap = 1024;
+	char *b = malloc(cap);
+	size_t r;
+	while (b && (r = fread(b + len, 1, cap - len - 1, f)) > 0) { len += r; if (len + 1 >= cap) { cap *= 2; b = realloc(b, cap); } }
+	pclose(f);
+	if (b) b[len] = 0;
+	return b;
+}
+
+static char *cmd_update(cJSON *req)
+{
+	char up[600], cmd[1400], line[600];
+	snprintf(up, sizeof(up), "%s/phosphor/update.sh", p_fat());
+	cJSON *o = ok();
+	if (access(up, X_OK)) { cJSON_AddBoolToObject(o, "available", 0); return reply(o); }
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	snprintf(cmd, sizeof(cmd), "'%s' list 2>/dev/null", up);
+	char *pk = run_out(cmd);
+	snprintf(cmd, sizeof(cmd), "'%s' rollbacks 2>/dev/null", up);
+	char *rb = run_out(cmd);
+	if (d && *d) {
+		const char *arg = cJSON_GetStringValue(cJSON_GetObjectItem(req, !strcmp(d, "install") ? "file" : "version"));
+		int found = 0;
+		/* only what update.sh itself listed */
+		for (const char *l = !strcmp(d, "install") ? pk : !strcmp(d, "rollback") ? rb : NULL; arg && l && *l; ) {
+			size_t n = strcspn(l, "\n");
+			const char *bar = memchr(l, '|', n);
+			if (bar && (size_t)(bar - l) == strlen(arg) && !strncmp(l, arg, (size_t)(bar - l))) found = 1;
+			l += n + (l[n] == '\n');
+		}
+		if (!found) { free(pk); free(rb); cJSON_Delete(o); return fail("do: install (file from packages) or rollback (version from rollbacks)"); }
+		snprintf(cmd, sizeof(cmd), "'%s' %s '%s' > /dev/null 2>&1", up, d, arg);
+		plog("update: %s %s", d, arg);
+		if (system(cmd)) { free(pk); free(rb); cJSON_Delete(o); return fail("the updater didn't start"); }
+	}
+	cJSON_AddBoolToObject(o, "available", 1);
+	snprintf(cmd, sizeof(cmd), "%s/phosphor/VERSION", p_fat());
+	FILE *vf = fopen(cmd, "r");
+	if (vf && fgets(line, sizeof(line), vf)) { line[strcspn(line, " \n")] = 0; cJSON_AddStringToObject(o, "version", line); }
+	if (vf) fclose(vf);
+	const char *keys[2] = { "packages", "rollbacks" }, *f1[2] = { "file", "version" }, *f2[2] = { "version", "date" };
+	char *txt[2] = { pk, rb };
+	for (int k = 0; k < 2; k++) {
+		cJSON *a = cJSON_AddArrayToObject(o, keys[k]);
+		for (char *save = NULL, *l = txt[k] ? strtok_r(txt[k], "\n", &save) : NULL; l; l = strtok_r(NULL, "\n", &save)) {
+			char *bar = strchr(l, '|');
+			if (!bar) continue;
+			*bar = 0;
+			cJSON *x = cJSON_CreateObject();
+			cJSON_AddStringToObject(x, f1[k], l);
+			cJSON_AddStringToObject(x, f2[k], bar + 1);
+			cJSON_AddItemToArray(a, x);
+		}
+	}
+	free(pk); free(rb);
+	snprintf(cmd, sizeof(cmd), "'%s' state 2>/dev/null", up);
+	char *st = run_out(cmd);
+	cJSON *so = cJSON_AddObjectToObject(o, "state");
+	for (char *save = NULL, *l = st ? strtok_r(st, "\n", &save) : NULL; l; l = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(l, '=');
+		if (!eq) continue;
+		*eq = 0;
+		if (!strcmp(l, "restart") || !strcmp(l, "at")) cJSON_AddNumberToObject(so, l, atof(eq + 1));
+		else cJSON_AddStringToObject(so, l, eq + 1);
+	}
+	free(st);
+	return reply(o);
+}
+
 static char *cmd_backup(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -1288,6 +1364,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "storage")) out = cmd_storage(req);
+	else if (!strcmp(c->valuestring, "update")) out = cmd_update(req);
 	else if (!strcmp(c->valuestring, "controllers")) {
 		const char *e = NULL;
 		cJSON *o = ctrl_command(req, &e);

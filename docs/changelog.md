@@ -3,6 +3,23 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.6
+
+### New
+- **Controllers** (Settings, and Settings > SuperStation > Controllers in the app): your USB and
+  Bluetooth controllers with SS1 Tool's button layouts, picked automatically or by hand (kept per
+  controller), lit up live. **Map buttons** opens a locked window where MiSTer's own mapping, run by
+  Phosphor's Main, records the buttons: the same mapping file as Define joystick buttons, for MiSTer's
+  menu, Phosphor and every core. Reset to automatic, backups and restore; every change backed up first.
+- **Update Phosphor** (Settings, and Settings > Power & updates in the app): installs a release
+  package from phosphor/updates, the SD card, a USB drive, or sent from the app; the installed version
+  is backed up first and one press rolls back. Your library, box art and settings stay.
+- **MiSTer menu (OSD)** moved up under Controllers. The front-port screen is now "Front ports &
+  memory cards".
+
+### Windows app 0.2.6, 0.2.7
+- Controllers, and Update Phosphor (send a package from the PC, install, roll back).
+
 ## 0.27.5
 
 ### Fixes
