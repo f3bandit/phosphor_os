@@ -301,6 +301,82 @@ static int cfg_save_sources(const char *order, const char *off)
 	return 0;
 }
 
+/* the account keys Settings (and the PC app) may set: nothing else in scraper.ini */
+static const char *const ACCT[][2] = {
+	{ "screenscraper", "user" }, { "screenscraper", "password" }, { "screenscraper", "devid" }, { "screenscraper", "devpassword" },
+	{ "thegamesdb", "apikey" }, { "igdb", "client_id" }, { "igdb", "client_secret" },
+};
+#define NACCT (int)(sizeof(ACCT) / sizeof(ACCT[0]))
+
+int scraper_account_ok(const char *sec, const char *key)
+{
+	for (int i = 0; i < NACCT; i++) if (!strcmp(ACCT[i][0], sec) && !strcmp(ACCT[i][1], key)) return 1;
+	return 0;
+}
+
+/* one key in its [section] of scraper.ini, written in place (comments and the rest kept); "" clears it */
+int scraper_set_account(const char *sec, const char *key, const char *val)
+{
+	if (!scraper_account_ok(sec, key)) return -1;
+	char v[256];
+	snprintf(v, sizeof(v), "%s", val ? val : "");
+	v[strcspn(v, "\r\n")] = 0;
+	pthread_mutex_lock(&cfg_lk);
+	char path[600], tmp[620], line[512];
+	cfg_path(path, sizeof(path));
+	snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+	mkdirs(p_config());
+	FILE *in = fopen(path, "r"), *out = fopen(tmp, "w");
+	if (!out) { if (in) fclose(in); pthread_mutex_unlock(&cfg_lk); return -1; }
+	int insec = 0, done = 0, seen_sec = 0;
+	if (in) {
+		while (fgets(line, sizeof(line), in)) {
+			const char *t = line;
+			while (isspace((unsigned char)*t)) t++;
+			if (*t == '[') {
+				if (insec && !done) { fprintf(out, "%s = %s\n", key, v); done = 1; }
+				char nm[40];
+				insec = sscanf(t, "[%39[^]]", nm) == 1 && !strcasecmp(nm, sec);
+				if (insec) seen_sec = 1;
+			} else if (insec && !done) {
+				size_t kl = strlen(key);
+				if (!strncasecmp(t, key, kl) && (isspace((unsigned char)t[kl]) || t[kl] == '=')) {
+					fprintf(out, "%s = %s\n", key, v);
+					done = 1;
+					continue;
+				}
+			}
+			fputs(line, out);
+		}
+		fclose(in);
+	}
+	if (!done) {
+		if (!seen_sec) fprintf(out, "\n[%s]\n", sec);
+		fprintf(out, "%s = %s\n", key, v);
+	}
+	fclose(out);
+	int rc = rename(tmp, path) ? -1 : 0;
+	pthread_mutex_unlock(&cfg_lk);
+	cfg_load();
+	return rc;
+}
+
+/* what's set: user names as they are, secrets only as set / not set */
+void scraper_accounts(scrape_account_t *out, int *n)
+{
+	cfg_load();
+	*n = 0;
+	for (int i = 0; i < NACCT; i++) {
+		scrape_account_t *a = &out[(*n)++];
+		snprintf(a->sec, sizeof(a->sec), "%s", ACCT[i][0]);
+		snprintf(a->key, sizeof(a->key), "%s", ACCT[i][1]);
+		const char *v = scfg(ACCT[i][0], ACCT[i][1]);
+		a->set = *v != 0;
+		int secret = strcmp(ACCT[i][1], "user") && strcmp(ACCT[i][1], "devid") && strcmp(ACCT[i][1], "client_id");
+		snprintf(a->value, sizeof(a->value), "%s", secret ? "" : v);
+	}
+}
+
 /* ---------- one game ---------- */
 
 static int menu_up(void)

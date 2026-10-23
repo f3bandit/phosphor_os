@@ -52,6 +52,10 @@ func routes(mux *http.ServeMux) {
 		writeJSON(w, map[string]any{"ok": true})
 	})
 	h("/api/theme", apiTheme)
+	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
+		writeJSON(w, map[string]any{"ok": true})
+		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()
+	})
 	h("/api/call", apiCall)
 	h("/api/art/", apiArt)
 }
