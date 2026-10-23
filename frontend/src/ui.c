@@ -2483,7 +2483,14 @@ static void cl_apply(cJSON *r)
 		else if (!strcmp(cl.job, "push")) toast_show(cl.job_ok ? "Saves sent" : "Sending failed");
 		else if (!strcmp(cl.job, "pull")) toast_show(cl.job_ok ? "Saves are back" : "Couldn't get them back");
 		else if (!strcmp(cl.job, "test")) toast_show(cl.job_ok ? "Connection OK" : first);
-		else if (!strcmp(cl.job, "setup")) toast_show(cl.job_ok ? "rclone is ready" : first);
+		else if (!strcmp(cl.job, "setup")) {
+			toast_show(cl.job_ok ? "rclone is ready: now choose where saves go" : first);
+			if (cl.job_ok && !cl.remote[0]) {      /* straight on to the next step */
+				cl.mode = cl.nplaces ? CL_PLACES : CL_TYPES;
+				cl_list.sel = 0;
+				cl_list.top = 0;
+			}
+		}
 		else if (!strcmp(cl.job, "use")) toast_show(cl.job_ok ? "Storage place chosen" : first);
 		else if (!strcmp(cl.job, "add")) {
 			if (cl.job_ok) {           /* added: use it straight away */
@@ -2515,7 +2522,7 @@ static void cl_apply(cJSON *r)
 		snprintf(sub, sizeof(sub), "Download it once (about 25 MB, checked against rclone's checksums).");
 	} else if (!cl.remote[0]) {
 		snprintf(h, sizeof(h), "No storage place yet");
-		snprintf(sub, sizeof(sub), "Choose where saves go: your NAS, a PC, or a cloud drive (from the phone app).");
+		snprintf(sub, sizeof(sub), "Next: Storage place, then Add (Google Drive, Dropbox, OneDrive: from the phone app).");
 	} else {
 		snprintf(h, sizeof(h), "Sending to %s  \xC2\xB7  %s", cl.remote, cl.device);
 		if (cl.last_error[0]) snprintf(sub, sizeof(sub), "%s", cl.last_error);
@@ -2543,6 +2550,8 @@ static void cl_apply(cJSON *r)
 	case CL_TYPES: cl_list.count = CL_NTYPES; break;
 	default: cl_list.count = !cl.installed ? 0 : !cl.ready ? 1 : 4; break;
 	}
+	/* nowhere to send yet: the cursor goes to the one row that does something */
+	if (cl.mode == CL_MAIN && cl.ready && !cl.remote[0] && !cl.busy) cl_list.sel = 2;
 	footer_set(cl.mode == CL_PREVIEW ? (cl.nlines && strncmp(cl.lines[0], "Nothing", 7) ? CL_PREVIEW_HINTS : CL_NOTHING_HINTS) : cl.mode == CL_PLACES ? CL_PLACES_HINTS : CL_HINTS);
 	vlist_refresh(&cl_list);
 }
