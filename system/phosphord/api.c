@@ -31,6 +31,11 @@
  *   storage    [do: check (test, target) | mount (target /dev/sdXN) | overlap-remove | overlap-undo]
  *                                           drives {path,kind,fs,size_kb,free_kb,model,gen,watts,mounted},
  *                                           overlap_tool [paths], last {job,target,busy,ok,at,output}
+ *   controllers [live: eventN] [do: style (vidpid, style|auto) | reset (vidpid) | backup [name] |
+ *              restore (name) | map (vidpid) | map_skip | map_cancel]   USB / Bluetooth pads: controllers
+ *              [{id, name, vidpid, where, buttons, axes, db_name, db_user, style, style_auto, style_set,
+ *              has [controls], mapping {uses custom|database|none, menu, cores}}], files, backups, map
+ *              (the shell's mapping window: on, step, dev, done, saved); live: {on [controls], ls, rs, l2, r2}
  *   system     do: shutdown|reboot|reload_ui|safe_stop|halt_now|reboot_now   (see the command below)
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
@@ -96,6 +101,7 @@
 #include "cores.h"
 #include "samba.h"
 #include "storage.h"
+#include "ctrl.h"
 #include "dash.h"
 #include "version.h"
 #include "ident.h"
@@ -1282,6 +1288,12 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "storage")) out = cmd_storage(req);
+	else if (!strcmp(c->valuestring, "controllers")) {
+		const char *e = NULL;
+		cJSON *o = ctrl_command(req, &e);
+		if (!o) out = fail(e ? e : "controllers failed");
+		else { cJSON_AddBoolToObject(o, "ok", 1); out = reply(o); }
+	}
 	else if (!strcmp(c->valuestring, "dashboard")) {
 		cJSON *o = dash_json(cJSON_IsTrue(cJSON_GetObjectItem(req, "kernel")));
 		cJSON_AddBoolToObject(o, "ok", 1);
