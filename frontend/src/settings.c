@@ -21,7 +21,6 @@ void settings_load(void)
 	char p[512], line[1400];
 	path(p, sizeof(p));
 	FILE *f = fopen(p, "r");
-	SETTINGS.front_pads = 1;
 	SETTINGS.saver_min = 10;
 	SETTINGS.setup_done = f != NULL;     /* no settings yet: a new install, show the welcome */
 	if (!f) return;
@@ -35,7 +34,6 @@ void settings_load(void)
 		else if (!strcmp(k, "clock24")) SETTINGS.clock24 = atoi(v);
 		else if (!strcmp(k, "texture")) SETTINGS.texture = atoi(v);
 		else if (!strcmp(k, "setup_done")) SETTINGS.setup_done = atoi(v);
-		else if (!strcmp(k, "front_pads")) SETTINGS.front_pads = atoi(v);
 		else if (!strcmp(k, "saver_min")) SETTINGS.saver_min = atoi(v);
 	}
 	fclose(f);
@@ -58,8 +56,8 @@ void settings_save(void)
 	snprintf(tmp, sizeof(tmp), "%s.tmp", p);
 	FILE *f = fopen(tmp, "w");
 	if (!f) { plog("can't write %s", p); return; }
-	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\nfront_pads=%d\nsaver_min=%d\n", SETTINGS.accent, SETTINGS.clock24,
-		SETTINGS.texture, SETTINGS.setup_done, SETTINGS.front_pads, SETTINGS.saver_min);
+	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\nsaver_min=%d\n", SETTINGS.accent, SETTINGS.clock24,
+		SETTINGS.texture, SETTINGS.setup_done, SETTINGS.saver_min);
 	fclose(f);
 	rename(tmp, p);
 }

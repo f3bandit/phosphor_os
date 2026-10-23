@@ -12,7 +12,7 @@
  *   last                                    the last game played (same shape as game), or null
  *   launch     id                           start it
  *   favorite   id on                        mark or unmark
- *   rescan                                  look for games again
+ *   rescan                                  look for games (list them, then identify them); only ever on request
  *   import                                  one-time import of gamelist.xml / media art
  *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
  *   unlink     id                           not based on another game any more
@@ -1222,7 +1222,7 @@ char *api_handle(sqlite3 *db, const char *request)
 		}
 		out = reply(ok());
 	} else if (!strcmp(c->valuestring, "rescan")) {
-		indexer_request();
+		indexer_identify();          /* the user asked: list the games and work out what they are */
 		out = reply(ok());
 	} else if (!strcmp(c->valuestring, "import")) {
 		import_result_t r = import_existing(db);

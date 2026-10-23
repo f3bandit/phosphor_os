@@ -128,15 +128,13 @@ int main(int argc, char **argv)
 	wifi_start();
 	heartbeat_start();
 
-	int mfd = open("/proc/self/mounts", O_RDONLY);
 	plog("ready on %s", p_socket());
 	for (;;) {
-		struct pollfd p[MAX_CLIENTS + 2];
+		struct pollfd p[MAX_CLIENTS + 1];
 		int n = 0, idx[MAX_CLIENTS];
 		p[n++] = (struct pollfd){ lfd, POLLIN, 0 };
-		p[n++] = (struct pollfd){ mfd, POLLPRI, 0 };
 		for (int i = 0; i < MAX_CLIENTS; i++)
-			if (cl[i].fd >= 0) { idx[n - 2] = i; p[n++] = (struct pollfd){ cl[i].fd, POLLIN, 0 }; }
+			if (cl[i].fd >= 0) { idx[n - 1] = i; p[n++] = (struct pollfd){ cl[i].fd, POLLIN, 0 }; }
 		int r = poll(p, (nfds_t)n, 2000);   /* wakes every 2 s only to keep play time */
 		play_tick(db);
 		if (r <= 0) continue;
@@ -149,14 +147,7 @@ int main(int argc, char **argv)
 				else { cl[slot].fd = fd; cl[slot].len = 0; cl[slot].buf = NULL; }
 			}
 		}
-		if (mfd >= 0 && (p[1].revents & (POLLPRI | POLLERR))) {
-			/* a drive or the share came or went */
-			close(mfd);
-			mfd = open("/proc/self/mounts", O_RDONLY);
-			plog("mounts changed: looking for games again");
-			indexer_request();
-		}
-		for (int k = 2; k < n; k++)
-			if (p[k].revents & (POLLIN | POLLHUP | POLLERR)) serve(db, &cl[idx[k - 2]]);
+		for (int k = 1; k < n; k++)
+			if (p[k].revents & (POLLIN | POLLHUP | POLLERR)) serve(db, &cl[idx[k - 1]]);
 	}
 }

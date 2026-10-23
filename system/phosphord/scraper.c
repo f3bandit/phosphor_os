@@ -35,8 +35,8 @@ static const char *DEFAULT_ORDER = "libretro, arcadedb, launchbox, thegamesdb, s
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
-static int kicked = 1, on_cached = -1, running;   /* kicked: look at the queue right after starting */
-static char status_text[160] = "Starting";
+static int kicked, stop_now, running;   /* runs only when asked (Get box art), never by itself */
+static char status_text[160] = "Not run yet";
 
 void scrape_status(const char *fmt, ...)
 {
@@ -385,16 +385,6 @@ static const char *PENDING =
 	"FROM games g WHERE g.scrape IS NULL AND g.based_on IS NULL AND g.key NOT LIKE 'n:%' "
 	"AND EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)";
 
-static int is_on(sqlite3 *db)
-{
-	if (on_cached < 0) {
-		char v[8];
-		db_meta_get(db, "scrape_on", v, sizeof(v));
-		on_cached = v[0] == '1';
-	}
-	return on_cached;
-}
-
 static void mark(sqlite3 *db, long long gid, const char *state)
 {
 	sqlite3_stmt *st;
@@ -410,7 +400,6 @@ static void *thread(void *arg)
 	(void)arg;
 	sqlite3 *db = db_open();
 	if (!db) return NULL;
-	int backoff = 0;
 	char sql[1200];
 	snprintf(sql, sizeof(sql),
 	         "SELECT g.id, g.system_id, g.key, g.title,"
@@ -418,21 +407,16 @@ static void *thread(void *arg)
 	         " (SELECT serial FROM files WHERE game_id=g.id AND serial IS NOT NULL LIMIT 1) %s ORDER BY g.system_id, g.id LIMIT 1", PENDING);
 	for (;;) {
 		pthread_mutex_lock(&lk);
-		if (!kicked) {
-			struct timespec ts;
-			clock_gettime(CLOCK_REALTIME, &ts);
-			ts.tv_sec += backoff ? backoff : 20;
-			pthread_cond_timedwait(&cv, &lk, &ts);
-		}
+		while (!kicked) pthread_cond_wait(&cv, &lk);
 		kicked = 0;
+		stop_now = 0;
 		pthread_mutex_unlock(&lk);
-		if (!is_on(db)) { scrape_status("Off"); continue; }
-		if (!menu_up()) { scrape_status("Waiting: a game is running"); continue; }
+		if (!menu_up()) { scrape_status("Not while a game is running"); continue; }
 		cfg_load();
-		backoff = 0;
 		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");   /* network trouble last time: try again */
-		int worked = 0, fails = 0;
-		while (is_on(db) && menu_up()) {
+		int worked = 0, fails = 0, cut = 0;
+		running = 1;
+		while (!stop_now && menu_up()) {
 			sqlite3_stmt *st;
 			if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) { plog("scrape: %s", sqlite3_errmsg(db)); break; }
 			if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); break; }
@@ -452,26 +436,24 @@ static void *thread(void *arg)
 				const char *p = strchr(g.key + 5, ':');
 				if (p) g.size = atol(p + 1);
 			}
-			running = 1;
 			scrape_status("Looking up %s games", gs ? gs->name : g.sys);
 			int r = scrape_one(db, &g);
-			running = 0;
 			if (r < 0) {
-				/* one source unreachable: this game later, the rest carry on; several in a row: pause */
+				/* one source unreachable: this game later; several in a row: stop, the user can ask again */
 				mark(db, g.id, "later");
-				if (++fails >= 3) {
-					scrape_status("No connection: trying again in a few minutes");
-					backoff = 300;
-					break;
-				}
+				if (++fails >= 3) { cut = 1; break; }
 				continue;
 			}
 			fails = 0;
 			mark(db, g.id, r ? "done" : "miss");
 			worked++;
 		}
+		running = 0;
 		if (worked) plog("looked up %d game(s)", worked);
-		if (!backoff && is_on(db) && menu_up()) scrape_status("Up to date");
+		if (cut) scrape_status("No connection: stopped (choose Get box art to try again)");
+		else if (stop_now) scrape_status("Stopped");
+		else if (!menu_up()) scrape_status("Stopped: a game was started");
+		else scrape_status("Done");
 	}
 	return NULL;
 }
@@ -493,9 +475,9 @@ void scraper_kick(void)
 
 void scraper_set(sqlite3 *db, int on)
 {
-	db_meta_set(db, "scrape_on", on ? "1" : "0");
-	on_cached = on;
-	scraper_kick();
+	(void)db;
+	if (on) scraper_kick();             /* Get box art: go through the games once */
+	else stop_now = 1;                  /* stop */
 }
 
 static int count(sqlite3 *db, const char *sql)
@@ -513,14 +495,14 @@ void scraper_info(sqlite3 *db, scrape_info_t *o)
 {
 	char sql[1200];
 	memset(o, 0, sizeof(*o));
-	o->on = is_on(db);
+	o->on = running || kicked;
 	o->running = running;
 	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", PENDING);
 	o->pending = count(db, sql);
 	o->done = count(db, "SELECT COUNT(*) FROM games WHERE scrape='done'");
 	o->missing = count(db, "SELECT COUNT(*) FROM games WHERE scrape='miss' AND based_on IS NULL");
 	pthread_mutex_lock(&lk);
-	snprintf(o->status, sizeof(o->status), "%s", o->on ? status_text : "Off");
+	snprintf(o->status, sizeof(o->status), "%s", status_text);
 	pthread_mutex_unlock(&lk);
 }
 
@@ -531,7 +513,7 @@ int scraper_retry(sqlite3 *db, long long gid)
 	sqlite3_bind_int64(st, 1, gid);
 	sqlite3_step(st);
 	sqlite3_finalize(st);
-	scraper_kick();
+	/* looked up the next time the user chooses Get box art */
 	return 0;
 }
 
@@ -555,6 +537,5 @@ int scraper_set_sources(sqlite3 *db, const char *order, const char *off)
 	if (cfg_save_sources(order, off)) return -1;
 	/* look again at games that are missing something: a newly turned-on source may have it */
 	db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='miss' OR (scrape='done' AND (description IS NULL OR art_box IS NULL))");
-	scraper_kick();
 	return 0;
 }

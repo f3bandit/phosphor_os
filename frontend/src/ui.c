@@ -972,7 +972,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_RESCAN, SET_CORES, SET_UPDATE_ALL, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
@@ -1028,7 +1028,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_SCRAPE: {
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
 		snprintf(t, n, "Get box art and details");
-		snprintf(val, vn, "<  %s  >", on ? "On" : "Off");
+		snprintf(val, vn, "%s", on ? "Working...  (A stops it)" : "Start  >");
 		break;
 	}
 	case SET_SCRAPE_INFO: {
@@ -1065,7 +1065,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Controllers & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Screen filters"); snprintf(val, vn, ">"); break;
-	case SET_RESCAN: snprintf(t, n, "Look for games again"); break;
+	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Get or update cores (MiSTer's downloader)"); cores_value(val, vn); break;
 	case SET_UPDATE_ALL:
 		snprintf(t, n, "Update All");
@@ -1339,7 +1339,7 @@ static void settings_change(int dir)
 		settings_save();
 		texture_apply(root, (texture_t)SETTINGS.texture);
 		vlist_refresh(&set_list);
-	} else if (set_list.sel == SET_SCRAPE) {
+	} else if (set_list.sel == SET_SCRAPE) {    /* A: start, or stop it while it works */
 		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
 		cJSON_Delete(scrape_state);
 		scrape_state = api_call("{\"cmd\":\"scrape\",\"on\":%s}", on ? "false" : "true");
@@ -2623,7 +2623,7 @@ static void backup_key(pkey_t k)
  * the Phosphor menu core if the stock one is loaded (Main restarts: a few seconds). */
 
 enum { PT_MAIN, PT_CONFIRM };
-enum { PT_BACKUP1, PT_BACKUP2, PT_ANALOG, PT_INPUT, PT_FIRST_FILE };
+enum { PT_BACKUP1, PT_BACKUP2, PT_FIRST_FILE };   /* the front ports are for games (SNAC), not the menu */
 static struct {
 	int mode, busy, job_ok, available, can_load, main_api, in_game, done, total, loading;
 	char job[16], message[200];
@@ -2883,14 +2883,6 @@ static void pt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		snprintf(t, n, "Back up the memory card in port %d", i == PT_BACKUP1 ? 1 : 2);
 		snprintf(val, vn, ">");
 		return;
-	case PT_INPUT:
-		snprintf(t, n, "Use them to move around Phosphor");
-		snprintf(val, vn, "<  %s  >", SETTINGS.front_pads ? "On" : "Off");
-		return;
-	case PT_ANALOG:
-		snprintf(t, n, "Switch DualShocks to analog");
-		*dim = !((pt.pad_conn[0] && pt.pad_id[0] == 0x41) || (pt.pad_conn[1] && pt.pad_id[1] == 0x41));
-		return;
 	}
 	i -= PT_FIRST_FILE;
 	pt_label_for(pt.names[i], t, n);
@@ -2960,12 +2952,6 @@ static void ports_key(pkey_t k)
 		if (k == K_A || k == K_X) { pt.mode = PT_MAIN; pt_do("restore", k == K_A ? 1 : 2, pt.pick); }
 		return;
 	}
-	if (pt_list.sel == PT_INPUT && (k == K_A || k == K_LEFT || k == K_RIGHT)) {
-		SETTINGS.front_pads = !SETTINGS.front_pads;
-		settings_save();
-		vlist_refresh(&pt_list);
-		return;
-	}
 	if (k != K_A) return;
 	if (!pt.available) {
 		if (pt.can_load) pt_do("prepare", 0, NULL);
@@ -2974,17 +2960,6 @@ static void ports_key(pkey_t k)
 	switch (pt_list.sel) {
 	case PT_BACKUP1: pt_do("backup", 1, NULL); return;
 	case PT_BACKUP2: pt_do("backup", 2, NULL); return;
-	case PT_ANALOG: {
-		int any = 0;
-		for (int p = 0; p < 2; p++) if (pt.pad_conn[p] && pt.pad_id[p] == 0x41) {
-			char q[64];
-			snprintf(q, sizeof(q), "{\"cmd\":\"pad_analog\",\"port\":%d}", p + 1);
-			cJSON_Delete(api_call("%s", q));
-			any = 1;
-		}
-		toast_show(any ? "Switched (a controller without analog stays digital)" : "No digital DualShock plugged in");
-		return;
-	}
 	}
 	int i = pt_list.sel - PT_FIRST_FILE;
 	if (i >= 0 && i < pt.nfiles) {
@@ -3252,13 +3227,12 @@ static void about_key(pkey_t k)
 }
 
 /* ---------- Welcome (first start) ----------
- * Shown once on a new install (no frontend.ini yet): network, box art lookup, accent colour, the phone
+ * Shown once on a new install (no frontend.ini yet): network, cores, accent colour, the phone
  * app and cloud saves, each optional; "Start" opens the library. Settings has all of these later too. */
 
-enum { WL_NET, WL_CORES, WL_SCRAPE, WL_ACCENT, WL_PHONE, WL_CLOUD, WL_START, WL_COUNT };
+enum { WL_NET, WL_CORES, WL_ACCENT, WL_PHONE, WL_CLOUD, WL_START, WL_COUNT };
 static vlist_t wl_list;
 static char wl_net[120];
-static int wl_scrape = -1;
 
 static const char *const WL_HINTS[] = { "A", "Choose", "\xE2\x86\x94", "Change", NULL };
 
@@ -3274,9 +3248,6 @@ static void wl_refresh_net(void)
 	else snprintf(wl_net, sizeof(wl_net), "Not connected");
 	cJSON_Delete(w);
 	cores_refresh();
-	cJSON *sc = api_call("{\"cmd\":\"scrape\"}");
-	wl_scrape = sc && api_ok(sc) ? cJSON_IsTrue(cJSON_GetObjectItem(sc, "on")) : -1;
-	cJSON_Delete(sc);
 }
 
 static void wl_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -3284,7 +3255,6 @@ static void wl_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	switch (i) {
 	case WL_NET: snprintf(t, n, "Network"); snprintf(val, vn, "%s  >", wl_net); *dim = 0; break;
 	case WL_CORES: snprintf(t, n, "Get cores and filters (MiSTer's downloader)"); cores_value(val, vn); break;
-	case WL_SCRAPE: snprintf(t, n, "Get box art and details from the internet"); snprintf(val, vn, "<  %s  >", wl_scrape > 0 ? "On" : "Off"); break;
 	case WL_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
 	case WL_PHONE: snprintf(t, n, "Phosphor app on your phone"); snprintf(val, vn, "optional  >"); break;
 	case WL_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, "optional  >"); break;
@@ -3320,11 +3290,6 @@ static void welcome_key(pkey_t k)
 	switch (i) {
 	case WL_NET: if (k == K_A) show_wifi(); break;
 	case WL_CORES: if (k == K_A) { cores_start(strcmp(wl_net, "Not connected") != 0); vlist_refresh(&wl_list); } break;
-	case WL_SCRAPE:
-		cJSON_Delete(api_call("{\"cmd\":\"scrape\",\"on\":%s}", wl_scrape > 0 ? "false" : "true"));
-		wl_refresh_net();
-		vlist_refresh(&wl_list);
-		break;
 	case WL_ACCENT: {
 		int a = ((int)theme_accent() + change + ACCENT_COUNT) % ACCENT_COUNT;
 		theme_set_accent((accent_t)a);
@@ -3683,7 +3648,7 @@ static void video_key(pkey_t k)
 
 void ui_rescan(void)
 {
-	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
+	cJSON_Delete(api_call("{\"cmd\":\"rescan\",\"identify\":true}"));
 }
 
 /* ---------- lists across systems: favorites, recently played, search ---------- */
@@ -3862,7 +3827,8 @@ void ui_key(pkey_t k)
 		if (vlist_key(&set_list, k)) break;
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
-			if (set_list.sel == SET_RESCAN && k == K_A) { ui_rescan(); toast_show("Looking for games..."); }
+			if (set_list.sel == SET_RESCAN) { if (k == K_A) { ui_rescan(); toast_show("Looking for games..."); } }
+			else if (set_list.sel == SET_SCRAPE) { if (k == K_A) settings_change(0); }
 			else if (set_list.sel == SET_SOURCES) show_sources();
 			else if (set_list.sel == SET_DIAG) show_diag();
 			else if (set_list.sel == SET_WIFI) show_wifi();
