@@ -195,6 +195,9 @@ Use a spare card, not the SS1's card. Image: `dist/phosphor-<v>-sdcard-<date>.im
 - [ ] Controllers & memory cards > Back up: the card map fills in; a card Phosphor hasn't seen asks for a name
       (keyboard, "Memory card N" offered); the same card backed up again is recognised (no question), and an
       unchanged card isn't kept twice. Backups are in phosphor/memcards/<card name>/<date>.mcd (SS1 Tool's layout).
+- [ ] Settings > Update All / Get or update cores / Scripts: the script runs in a window inside Phosphor (colours,
+      menus, boxes); D-pad = arrows, A Enter, B Esc, X Delete, Y types text, Start twice stops it; B goes back
+      when it's done. Settings > Last script's log shows what it printed (scrolls).
 - [ ] Phosphor fills the whole screen (1080p TV: drawn at 1920x1080 with bigger text; 720p: 1280x720), no box
       in the middle.
 - [ ] Settings > Share the SD card on the network (Samba): On shows \\\\<address>; the PC opens it (root / 1); Off
