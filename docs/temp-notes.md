@@ -37,7 +37,9 @@ None of these are limits of Phosphor: it's how MiSTer itself works, and Phosphor
   SS1 Tool's helper asks too, and has the same problem.
 - **"Windows says the card needs fixing" after a reflash:** exFAT's dirty flag. Linux keeps a flag that
   was already set at mount until the drive is checked; it was the NVMe in our case. Safe shut down
-  (Select + Start) leaves the drives clean; a drive already dirty needs a check (Storage > Repair).
+  (Select + Start) leaves the drives clean; a drive already dirty needs a check:
+  the NVMe or a USB drive from Storage > Repair on the SS1; the SD card only on a PC, because the
+  system runs from it.
 - **Update All and the static between it and Phosphor:** the update replaces menu.rbf; Main loads
   Phosphor's menu core (with its loading screen) wherever it would load menu.rbf.
 - **Main reads MiSTer.ini only when it starts**: changes need a restart.
