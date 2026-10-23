@@ -6,6 +6,10 @@ package main
 // remembers its size. Without Edge, the default browser.
 
 import (
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+
 	"net/http"
 	"os"
 	"os/exec"
@@ -54,4 +58,26 @@ func otherInstance() string {
 		}
 	}
 	return ""
+}
+
+var (
+	pFindWindow       = windows.NewLazySystemDLL("user32.dll").NewProc("FindWindowW")
+	pShowWindow       = windows.NewLazySystemDLL("user32.dll").NewProc("ShowWindow")
+	pIsIconic         = windows.NewLazySystemDLL("user32.dll").NewProc("IsIconic")
+	pSetForegroundWnd = windows.NewLazySystemDLL("user32.dll").NewProc("SetForegroundWindow")
+)
+
+// focusWindow: Phosphor's window (Edge app window titled "Phosphor") to the front; false if none is open
+func focusWindow() bool {
+	cls, _ := windows.UTF16PtrFromString("Chrome_WidgetWin_1")
+	t, _ := windows.UTF16PtrFromString("Phosphor")
+	h, _, _ := pFindWindow.Call(uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(t)))
+	if h == 0 {
+		return false
+	}
+	if ic, _, _ := pIsIconic.Call(h); ic != 0 {
+		pShowWindow.Call(h, 9) // SW_RESTORE
+	}
+	pSetForegroundWnd.Call(h)
+	return true
 }

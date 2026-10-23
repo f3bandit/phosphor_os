@@ -1,0 +1,55 @@
+/* phosphord: drives the storage module (SD card, NVMe and USB checks; the faulty overlap tool).
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Only fsrepair changes a file system (the checker unmounts and repairs it); speed writes and removes
+ * one file; the overlap tool is moved into phosphor/backups, never deleted, and can be put back. */
+#include "storage.h"
+#include "modjob.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static modjob_t mj = MODJOB("storage", "PHOS_STORAGE", NULL);
+static char last_target[64];
+
+static int valid_target(const char *t)
+{
+	if (!t || !*t || strstr(t, "..")) return 0;
+	if (!strcmp(t, "/media/fat")) return 1;
+	if (strncmp(t, "/media/usb", 10)) return 0;
+	for (const char *p = t + 10; *p; p++) if (*p < '0' || *p > '9') return 0;
+	return t[10] != 0;
+}
+
+int storage_start(const char *test, const char *target)
+{
+	static const char *T[] = { "quick", "windows", "partition", "boot", "kernel", "drive", "health", "speed", "fscheck", "fsrepair", NULL };
+	const char *argv[6];
+	if (!strcmp(test, "overlap-remove") || !strcmp(test, "overlap-undo")) {
+		argv[0] = "overlap"; argv[1] = test + 8; argv[2] = NULL;
+		snprintf(last_target, sizeof(last_target), "/media/fat");
+		return modjob_start(&mj, test, argv, 60);
+	}
+	int ok = 0;
+	for (int i = 0; T[i]; i++) if (!strcmp(T[i], test)) ok = 1;
+	if (!ok) return -2;
+	if (!target || !*target) target = "/media/fat";
+	if (!valid_target(target)) return -2;
+	argv[0] = "run"; argv[1] = test; argv[2] = target; argv[3] = NULL;
+	int r = modjob_start(&mj, test, argv, 3600);          /* a full surface read of a big drive takes a while */
+	if (r == 0) snprintf(last_target, sizeof(last_target), "%s", target);
+	return r;
+}
+
+void storage_state(storage_state_t *s)
+{
+	memset(s, 0, sizeof(*s));
+	s->installed = modjob_installed(&mj);
+	if (s->installed) {
+		int rc;
+		const char *t[] = { "targets", NULL }, *o[] = { "overlap", NULL };
+		s->targets = modjob_run(&mj, t, 30, &rc);
+		s->overlap = modjob_run(&mj, o, 15, &rc);
+	}
+	modjob_last(&mj, s->job, sizeof(s->job), &s->busy, &s->ok, &s->output, &s->at);
+	snprintf(s->target, sizeof(s->target), "%s", last_target);
+}

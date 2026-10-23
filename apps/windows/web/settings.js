@@ -1,0 +1,502 @@
+/* Phosphor for Windows: Settings. Laid out like the console's Settings: the sections in a list on the
+   left, the highlighted one's tools on the right, with tabs when a section has several (LB/RB or Q/E).
+   A (Enter) goes into a section's tools, B (Esc) comes back to the list. Everything advanced lives
+   here; the main screens stay the simple console view. */
+"use strict";
+
+const SET_SECTIONS = [
+	{ id: "look", name: "Look", tabs: [["Accent & texture", "tLook"]] },
+	{ id: "boxart", name: "Box art", tabs: [["Sources & logins", "tArt"]] },
+	{ grp: "SuperStation" },
+	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
+	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"], ["Backups", "tSnaps"]] },
+	{ grp: "This PC" },
+	{ id: "notifications", name: "Notifications", tabs: [["Notifications", "tNotes"]] },
+	{ id: "connection", name: "Connection", tabs: [["Connection", "tConn"]] },
+	{ id: "about", name: "About", tabs: [["About", "tAbout"]] },
+];
+const SECS = SET_SECTIONS.filter(s => s.id);
+
+/* "press again": a button that asks once before doing something that can't wait or be undone */
+function twice(btn, label, fn) {
+	const orig = btn.textContent;
+	btn.onclick = async () => {
+		if (btn.dataset.sure !== "1") {
+			btn.dataset.sure = "1"; btn.textContent = label;
+			setTimeout(() => { if (document.body.contains(btn)) { btn.dataset.sure = ""; btn.textContent = orig; } }, 4000);
+			return;
+		}
+		btn.dataset.sure = ""; btn.textContent = orig;
+		await fn();
+	};
+}
+const kb = k => { k = Number(k || 0); return k >= 1048576 ? (k / 1048576).toFixed(1) + " GB" : k >= 1024 ? Math.round(k / 1024) + " MB" : k + " KB"; };
+const gb = k => (Number(k || 0) / 1048576).toFixed(1) + " GB";
+/* sd_integrity's results, coloured like the TV: PASS green, FAIL red, WARN / INFO amber */
+function resultHTML(text) {
+	return esc(text || "").split("\n").map(l => {
+		const c = /FAIL|MEDIA FAILURE|DIRTY|ERROR/.test(l) ? "bad" : /WARN|UNVERIFIED|SKIP|older/.test(l) ? "warn" : /PASS|clean|\bOK\b/.test(l) ? "good" : "";
+		return c ? `<span class="${c}">${l}</span>` : l;
+	}).join("\n");
+}
+function ago(sec) {
+	if (!sec) return "";
+	const d = new Date(sec * 1000), now = new Date();
+	return d.toDateString() === now.toDateString() ? "today " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+class AppSettings {
+	/* sec: a section id ("storage") or number; tab: that section's tab */
+	constructor(sec = 0, tab = 0) {
+		this.si = typeof sec === "string" ? Math.max(0, SECS.findIndex(s => s.id === sec)) : Math.min(sec, SECS.length - 1);
+		this.ti = tab;
+		this.enter = typeof sec === "string";       /* opened for a tool: straight into it */
+		this.hints = [["A", "Open"], ["B", "Back"]];
+	}
+	render(root) {
+		root.append(h(`<div class="sub">${spaced("Settings")}</div><h1>Settings</h1>
+			<div class="set"><div class="sl list" id="sl"></div><div class="stool" id="tool"><div id="tb"></div><div class="tbody" id="tbody"></div></div></div>`));
+		const sl = $("#sl");
+		let k = 0;
+		for (const s of SET_SECTIONS) {
+			if (s.grp) { sl.appendChild(h(`<div class="grp">${spaced(s.grp)}</div>`).firstChild); continue; }
+			const i = k++;
+			const el = h(`<div class="row sec" data-nav><span class="n">${esc(s.name)}</span><span class="v" id="sv_${s.id}"></span></div>`).firstChild;
+			el._onfocus = () => {
+				this.listHints();
+				if (i === this.si && this.drawn === i) return;
+				this.si = i; this.ti = 0;
+				clearTimeout(this.dt); this.dt = setTimeout(() => this.drawTool(), 120);
+			};
+			el.onclick = () => this.into();
+			sl.appendChild(el);
+		}
+		this.badges();
+		const row = sl.querySelectorAll(".sec")[this.si];
+		focus(row, true);
+		this.drawTool(this.enter);
+		this.listHints();
+	}
+	restore() { this.badges(); }
+	listHints() { setHints(this.hints = [["A", "Open"], ["B", "Back"]]); }
+	toolHints(extra = []) {
+		const t = SECS[this.si].tabs.length > 1 ? [["LB/RB", "Tabs"]] : [];
+		setHints(this.hints = [["A", "Choose"], ...extra, ...t, ["B", "Sections"]]);
+	}
+	async badges() {
+		try { const p = await api("/api/ping"); const b = $("#sv_notifications"); if (b) b.textContent = p.unseen ? p.unseen + " new" : ""; } catch (e) {}
+	}
+	inTool() { return cur && $("#tool") && $("#tool").contains(cur); }
+	/* into the tools: the first thing to choose there (not the tabs) */
+	into() {
+		const f = [...$("#tbody").querySelectorAll("[data-nav]")].find(e => e.offsetParent !== null) || $("#tb .tab.on");
+		if (f) { focus(f); this.toolHints(this.extra); }
+	}
+	back() {
+		if (!this.inTool()) return false;
+		focus($("#sl").querySelectorAll(".sec")[this.si]);
+		return true;
+	}
+	tab(d) {
+		const n = SECS[this.si].tabs.length;
+		if (n < 2) return;
+		this.ti = (this.ti + d + n) % n;
+		this.drawTool(true);
+	}
+	x() { this.onX && this.inTool() && this.onX(); }
+	y() { this.onY && this.inTool() ? this.onY() : push(Search); }
+	drawTool(enter) {
+		const s = SECS[this.si];
+		this.drawn = this.si;
+		$("#sl").querySelectorAll(".sec").forEach((r, i) => r.classList.toggle("sel", i === this.si));
+		this.onX = this.onY = null; this.extra = [];
+		const tb = $("#tb"), body = $("#tbody");
+		tb.innerHTML = "";
+		if (s.tabs.length > 1) tabs(tb, s.tabs.map(t => t[0]), this.ti, i => { this.ti = i; this.drawTool(true); });
+		body.innerHTML = "";
+		const tok = this.tok = {};
+		this.alive = () => this.tok === tok && document.body.contains(body);
+		clearInterval(this.poll);
+		const r = this[s.tabs[this.ti][1]](body);
+		const after = () => { if (enter && this.alive()) this.into(); else if (this.inTool()) this.toolHints(this.extra); };
+		if (r && r.then) r.then(after); else after();
+	}
+	/* refresh a tool every ms while fn says so (a check or a job running) */
+	every(ms, fn) {
+		clearInterval(this.poll);
+		this.poll = setInterval(async () => { if (!this.alive() || !(await fn())) clearInterval(this.poll); }, ms);
+	}
+
+	/* ---------- Look ---------- */
+	async setTheme(p) { Object.assign(S, p); applyTheme(); await api("/api/theme", p); }
+	tLook(b) {
+		b.append(h(`<div class="list grow"><div class="sub" style="margin-top:.2rem">${spaced("Accent colour")}</div><div class="swatches" id="sw"></div>
+			<div class="sub" style="margin-top:1.4rem">${spaced("Background texture")}</div><div class="tex" id="tx"></div></div>`));
+		for (const [name, col] of Object.entries(ACCENTS)) {
+			const el = h(`<button class="sw${S.accent === name ? " on" : ""}" data-nav title="${name}" style="background:${col}"></button>`).firstChild;
+			el.onclick = async () => { await this.setTheme({ accent: name }); this.drawTool(true); };
+			$("#sw").appendChild(el);
+		}
+		const [r, g, bl] = rgb(ACCENTS[S.accent] || ACCENTS.amber);
+		for (const t of Texture.order) {
+			const url = Texture.tile(t, [r, g, bl], 1);
+			const el = h(`<div class="tx${S.texture === t ? " on" : ""}" data-nav style="${url ? `background-image:url(${url})` : ""}">${esc(Texture.name(t))}</div>`).firstChild;
+			el.onclick = async () => { await this.setTheme({ texture: t }); this.drawTool(); focus([...$("#tx").children].find(e => e.classList.contains("on"))); };
+			$("#tx").appendChild(el);
+		}
+	}
+
+	/* ---------- Box art: the SS1's sources (order, on/off) and their logins ---------- */
+	async tArt(b) {
+		b.append(h(`<div class="split"><div class="col"><div class="sub">${spaced("Sources, asked in this order")}</div><div class="list" id="srcs"><div class="empty"><span class="spin"></span></div></div>
+			<div class="acts"><button class="btn primary" id="runart" data-nav>Look up box art now</button></div></div>
+			<div class="panel" id="acct"></div></div>`));
+		$("#runart").onclick = async () => { try { await ss1({ cmd: "scrape", on: true }); toast("Looking up box art on the SS1"); } catch (e) { toast(e.message); } };
+		try {
+			const [src, acc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" })]);
+			this.srcs = src.sources; this.acc = acc.accounts;
+		} catch (e) { if (!this.alive()) return false; $("#srcs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		this.extra = [["X", "Move up"], ["Y", "Move down"]];
+		this.onX = () => this.moveSrc(-1); this.onY = () => this.moveSrc(1);
+		this.drawSources(undefined, true);
+	}
+	drawSources(keep, quiet) {
+		const box = $("#srcs");
+		if (!box) return;
+		box.innerHTML = "";
+		this.srcs.forEach((x, i) => {
+			const a = k => (this.acc.find(q => q.sec === x.id && q.key === k) || {}).set;
+			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" && a("user") ? "Needs a developer id" : "Needs a login";
+			const el = h(`<div class="row src" data-nav><span class="n"><b>${i + 1}. ${esc(x.name)}</b></span><span class="v">${st}</span></div>`).firstChild;
+			el.onclick = () => { this.srcs[i].on = !this.srcs[i].on; this.saveSources(i); };
+			el._onfocus = () => { this.sx = i; this.drawAccount(x); };
+			box.appendChild(el);
+		});
+		if (!quiet) focus(box.children[Math.min(keep ?? 0, box.children.length - 1)]);
+		this.drawAccount(this.srcs[keep ?? 0]);
+	}
+	async saveSources(sel) {
+		try {
+			const j = await ss1({ cmd: "scrape_sources", order: this.srcs.map(x => x.id), off: this.srcs.filter(x => !x.on).map(x => x.id) });
+			this.srcs = j.sources;
+		} catch (e) { toast(e.message); }
+		this.drawSources(sel);
+	}
+	moveSrc(d) {
+		if (!cur || !cur.classList.contains("src")) return;
+		const i = this.sx, j = i + d;
+		if (j < 0 || j >= this.srcs.length) return;
+		[this.srcs[i], this.srcs[j]] = [this.srcs[j], this.srcs[i]];
+		this.saveSources(j);
+	}
+	drawAccount(x) {
+		const p = $("#acct");
+		if (!p || !x) return;
+		const F = {
+			screenscraper: [["user", "User name", "text"], ["password", "Password", "password"], ["devid", "Developer id (only if you have one)", "text"], ["devpassword", "Developer password", "password"]],
+			thegamesdb: [["apikey", "API key (free, from thegamesdb.net)", "password"]],
+			igdb: [["client_id", "Client ID (Twitch developer app)", "text"], ["client_secret", "Client secret", "password"]],
+		}[x.id];
+		const ABOUT = {
+			libretro: "No account. Box art from libretro's thumbnails, matched by each file's content (CRC or product code), then by its exact name.",
+			arcadedb: "No account. Arcade games by their MAME set name.",
+			launchbox: "No account. LaunchBox's games database, downloaded once (about 110 MB) and kept on the SS1.",
+			thegamesdb: "Needs a free API key from thegamesdb.net.",
+			screenscraper: "ScreenScraper only answers programs with a developer id (free on request at screenscraper.fr). Your own free login on top allows more lookups a day.",
+			igdb: "Needs a free Twitch developer app (dev.twitch.tv): its Client ID and secret.",
+		};
+		let html = `<h2>${esc(x.name)}</h2><p class="note">${esc(ABOUT[x.id] || "")}</p>`;
+		if (F) {
+			for (const [k, label, type] of F) {
+				const a = this.acc.find(q => q.sec === x.id && q.key === k) || {};
+				const val = type === "password" ? "" : a.value || "";
+				const ph = type === "password" ? (a.set ? "Saved (type to change)" : "Not set") : "Not set";
+				html += `<div class="field"><label for="ac_${k}">${esc(label)}</label><input id="ac_${k}" type="${type}" data-nav autocomplete="off" placeholder="${esc(ph)}" value="${esc(val)}"></div>`;
+			}
+			html += `<div class="acts"><button class="btn primary" id="acsave" data-nav>Save</button></div><p class="note">Saved on the SS1 (phosphor/config/scraper.ini), sent over your home network only.</p>`;
+		}
+		p.innerHTML = html;
+		if (!F) return;
+		$("#acsave").onclick = async () => {
+			try {
+				for (const [k, , type] of F) {
+					const v = $("#ac_" + k).value;
+					if (type === "password" && !v) continue;        /* empty: keep what's saved */
+					const j = await ss1({ cmd: "scrape_accounts", set: { sec: x.id, key: k, value: v } });
+					this.acc = j.accounts;
+				}
+				this.srcs = (await ss1({ cmd: "scrape_sources" })).sources;
+				toast("Saved on the SS1");
+				this.drawSources(this.sx);
+			} catch (e) { toast(e.message); }
+		};
+	}
+
+	/* ---------- Power: restart, shut down, reload the TV screen ---------- */
+	tPower(b) {
+		b.append(h(`<div class="split"><div class="list">
+			<div class="card2"><div><b>Restart</b><small>Restarts the SS1. Saves are written as they happen, so nothing is lost; a game that's running is closed.</small></div><button class="btn primary" id="p_reboot" data-nav>Restart</button></div>
+			<div class="card2"><div><b>Shut down</b><small>Stops everything cleanly and marks the drives clean. When the TV goes blank (about 10 seconds), it's safe to switch the SS1 off.</small></div><button class="btn" id="p_off" data-nav>Shut down</button></div>
+			<div class="card2"><div><b>Reload the TV screen</b><small>Restarts Phosphor's screen on the TV, not the SS1: for when the screen looks stuck. A running game keeps running.</small></div><button class="btn" id="p_ui" data-nav>Reload</button></div>
+			</div><div class="panel"><h2>Power</h2><p class="note">These go through the SS1's own shutdown: modules stop, the SD card is synced, and the power check knows it was a clean stop, not a power cut.</p></div></div>`));
+		const go = async (what, msg) => {
+			try { await ss1({ cmd: "system", do: what }); toast(msg); setTimeout(refreshState, 4000); } catch (e) { toast(e.message); }
+		};
+		twice($("#p_reboot"), "Press again to restart", () => go("reboot", "Restarting the SS1…"));
+		twice($("#p_off"), "Press again to shut down", () => go("shutdown", "Shutting down: switch it off when the TV goes blank"));
+		twice($("#p_ui"), "Press again to reload", () => go("reload_ui", "Reloading the TV screen…"));
+	}
+
+	/* ---------- Updates & restore points (update-guard) ---------- */
+	async tGuard(b) {
+		b.append(h(`<div class="split"><div class="list" id="gl"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="gp"></div></div>`));
+		const draw = async () => {
+			let g;
+			try { g = await ss1({ cmd: "guard" }); } catch (e) { if (!this.alive()) return false; $("#gl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!this.alive()) return false;
+			const gl = $("#gl"), gp = $("#gp");
+			if (!g.installed) { gl.innerHTML = `<div class="empty">The update-guard module isn't installed on the SS1.</div>`; gp.innerHTML = ""; return false; }
+			const reset = (g.files || []).filter(f => f.reset);
+			const keepSel = cur && gl.contains(cur) ? [...gl.querySelectorAll("[data-nav]")].indexOf(cur) : -1;
+			gl.innerHTML = "";
+			gl.append(h(`<dl class="kv"><dt>MiSTer Linux</dt><dd>${esc(g.linux || "–")}</dd>${g.updated_at ? `<dt>Last update</dt><dd>${esc(g.updated_at)}${g.updated_from ? " (from " + esc(g.updated_from) + ")" : ""}</dd>` : ""}</dl>`));
+			if (g.awaiting && reset.length) {
+				gl.append(h(`<div class="sub" style="margin-top:1rem">${spaced("Reset by the last update")}</div>`));
+				for (const f of reset) gl.append(h(`<div class="row"><span class="n">${esc(f.path)}</span></div>`));
+				gl.append(h(`<div class="acts"><button class="btn primary" id="g_restore" data-nav>Put my settings back</button><button class="btn" id="g_keep" data-nav>Keep the new ones</button></div>`));
+			}
+			gl.append(h(`<div class="sub" style="margin-top:1rem">${spaced("Restore points")}</div>`));
+			const pts = g.points || [];
+			if (!pts.length) gl.append(h(`<div class="empty">None yet. One is saved before every update.</div>`));
+			pts.forEach(p => {
+				const el = h(`<div class="row" data-nav><span class="n">${esc(p.label || p.name)}</span><span class="v">${esc(p.created || "")}${p.complete ? "" : " · partial"}</span></div>`).firstChild;
+				el._onfocus = () => {
+					gp.innerHTML = `<h2>${esc(p.label || p.name)}</h2><dl class="kv"><dt>Saved</dt><dd>${esc(p.created)}</dd><dt>MiSTer Linux</dt><dd>${esc(p.linux || "–")}</dd></dl>
+						<p class="note">Rolling back puts MiSTer's system files as they were then (it may download that Linux release). Your games, saves and Phosphor settings aren't touched.</p>
+						<div class="acts"><button class="btn" id="g_rb" data-nav>Roll back to this</button></div>`;
+					twice($("#g_rb"), "Press again to roll back", async () => { try { await ss1({ cmd: "guard", do: "rollback", items: [p.name] }); toast("Rolling back…"); draw(); this.every(3000, draw); } catch (e) { toast(e.message); } });
+				};
+				gl.appendChild(el);
+			});
+			if (g.job && g.job.name) gl.append(h(`<div class="sub" style="margin-top:1rem">${spaced(g.job.busy ? "Working…" : "Last job: " + g.job.name)}</div><pre class="out">${resultHTML(g.job.output)}</pre>`));
+			const rs = $("#g_restore");
+			if (rs) rs.onclick = async () => {
+				const items = reset.map(f => f.path).filter(p => !/dhcpcd|hostname|\/etc\/hosts|network|wpa_/.test(p));
+				if (!items.length) { toast("Only network settings were reset: put them back on the SS1 (Settings > Updates)"); return; }
+				try { await ss1({ cmd: "guard", do: "restore", items }); toast(items.length < reset.length ? "Putting your settings back (network ones only on the SS1 itself)" : "Putting your settings back"); this.every(2000, draw); } catch (e) { toast(e.message); }
+			};
+			const kp = $("#g_keep");
+			if (kp) twice(kp, "Press again to keep the new ones", async () => { try { await ss1({ cmd: "guard", do: "keep" }); draw(); } catch (e) { toast(e.message); } });
+			if (!gp.innerHTML) gp.innerHTML = `<h2>Updates & restore points</h2><p class="note">Before every update Phosphor saves a restore point of MiSTer's system files. If an update resets your own settings (SSH keys, Samba and so on), they can be put back here; a whole update can be rolled back.</p>`;
+			if (keepSel >= 0) focus(gl.querySelectorAll("[data-nav]")[keepSel] || gl.querySelector("[data-nav]"));
+			return !!(g.job && g.job.busy);
+		};
+		if (await draw()) this.every(2000, draw);
+	}
+
+	/* ---------- File sharing (MiSTer's Samba) ---------- */
+	async tSamba(b) {
+		b.append(h(`<div class="split"><div class="list" id="sm"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>File sharing</h2><p class="note">MiSTer's own Samba file sharing: the SS1's SD card (and drives) show up on this PC's network as <b>\\\\${esc((S.address || "").replace(/:\d+$/, ""))}</b>. Anyone on your home network can open it, so turn it off when you don't need it.</p></div></div>`));
+		const draw = async () => {
+			let s;
+			try { s = await ss1({ cmd: "samba" }); } catch (e) { if (!this.alive()) return false; $("#sm").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!this.alive()) return false;
+			const sm = $("#sm"), had = cur && sm.contains(cur) ? cur.id : "";
+			if (!s.available) { sm.innerHTML = `<div class="empty">MiSTer's Samba isn't on this SD card.</div>`; return false; }
+			const state = s.busy ? (s.want ? "Starting…" : "Stopping…") : s.running ? "On" : "Off";
+			sm.innerHTML = `<dl class="kv"><dt>File sharing</dt><dd>${state}</dd><dt>At start-up</dt><dd>${s.on ? "starts with the SS1" : "off"}</dd>${s.error ? `<dt>Problem</dt><dd class="bad">${esc(s.error)}</dd>` : ""}</dl>
+				<div class="acts"><button class="btn primary" id="sm_t" data-nav>${s.on || s.running ? "Turn off" : "Turn on"}</button><button class="btn" id="sm_x" data-nav${s.running ? "" : " disabled"}>Open in File Explorer</button></div>`;
+			$("#sm_t").onclick = async () => { try { await ss1({ cmd: "samba", on: !(s.on || s.running) }); draw(); this.every(1500, draw); } catch (e) { toast(e.message); } };
+			$("#sm_x").onclick = async () => { const j = await api("/api/explore", {}); if (!j.ok) toast(j.error); };
+			if (had && $("#" + had)) focus($("#" + had));
+			return s.busy;
+		};
+		if (await draw()) this.every(1500, draw);
+	}
+
+	/* ---------- Storage: SD card, NVMe / USB (sd_integrity checks), backups ---------- */
+	async storageState() {
+		const s = await ss1({ cmd: "storage" });
+		this.st = s;
+		return s;
+	}
+	checksFor(d) {
+		const C = [["quick", "Quick check", "Partitions, file system and the error log."], ["windows", "Will Windows complain?", "Whether the drive is marked dirty (Windows offers to fix it when it's plugged into a PC)."],
+			["speed", "Speed test", "Reads and writes one temporary file."], ["fscheck", "Check the file system", "Unmounts the drive and checks it, read only. Games on it stop while it runs."]];
+		if (d.kind === "nvme") C.splice(2, 0, ["health", "Drive health", "The NVMe drive's own health report (wear, errors, temperature)."]);
+		return C;
+	}
+	driveTool(box, d, s) {
+		const L = s.last || {}, mine = L.target === d.path && L.job;
+		const busy = L.busy;
+		const warnGen = d.gen === "gen4" ? `<p class="note bad">Gen 4 NVMe drive: these cause boot and file system trouble in the SS1 dock. A Gen 3 drive is the safe choice.</p>` : "";
+		const watts = d.watts && Number(d.watts) > 7 ? `<p class="note warn">Rated at ${esc(d.watts)} W: more than the dock likes to give. If the SS1 restarts under load, this drive is a likely cause.</p>` : "";
+		box.innerHTML = `<dl class="kv"><dt>Drive</dt><dd>${esc(d.kind === "sd" ? "SD card" : (d.kind === "nvme" ? "NVMe" : "USB") + (d.model ? " · " + d.model : ""))}</dd><dt>Space</dt><dd>${gb(d.free_kb)} free of ${gb(d.size_kb)}</dd><dt>File system</dt><dd>${esc(d.fs)}</dd>${d.kind === "nvme" ? `<dt>PCIe</dt><dd>${esc({ gen4: "Gen 4", gen3: "Gen 3" }[d.gen] || "not known")}</dd>` : ""}</dl>${warnGen}${watts}
+			<div class="checks" id="cks"></div>
+			<div class="acts"><button class="btn" id="ck_fix" data-nav${busy ? " disabled" : ""}>Repair the file system…</button></div>
+			${mine ? `<div class="sub" style="margin-top:1rem">${spaced(busy ? "Checking: " + L.job : "Last: " + L.job + " · " + ago(L.at))}</div><pre class="out">${busy ? `<span class="spin"></span>` : ""}${resultHTML(L.output)}</pre>` : ""}`;
+		for (const [t, label, what] of this.checksFor(d)) {
+			const el = h(`<button class="btn chk" data-nav title="${esc(what)}"${busy ? " disabled" : ""}>${esc(label)}</button>`).firstChild;
+			el.onclick = () => this.runCheck(t, d.path);
+			$("#cks", box).appendChild(el);
+		}
+		twice($("#ck_fix", box), "Press again: it unmounts and repairs", () => this.runCheck("fsrepair", d.path));
+	}
+	async runCheck(test, target) {
+		try { await ss1({ cmd: "storage", do: "check", test, target }); toast("Checking…"); this.drawTool(); this.every(2000, async () => { const s = await this.storageState(); this.redrawStorage(s); return s.last && s.last.busy; }); }
+		catch (e) { toast(e.message); }
+	}
+	redrawStorage(s) {
+		if (!this.alive()) return;
+		const keep = cur && cur.id;
+		if (this.ti === 0 && $("#sdbox")) { const d = (s.drives || []).find(x => x.kind === "sd"); if (d) this.driveTool($("#sdbox"), d, s); this.overlap(s); }
+		if (this.ti === 1 && $("#exbox") && this.exSel) { const d = (s.drives || []).find(x => x.path === this.exSel); if (d) this.driveTool($("#exbox"), d, s); }
+		if (keep && $("#" + keep)) focus($("#" + keep), true);
+	}
+	overlap(s) {
+		const o = $("#ovl");
+		if (!o) return;
+		const f = s.overlap_tool || [];
+		o.innerHTML = f.length ? `<p class="note bad"><b>Faulty overlap "fix" tool found</b> (${f.map(x => esc(x.split("/").pop())).join(", ")}): it misreads the SS1's correct card layout and can destroy the card.</p><div class="acts"><button class="btn primary" id="ov_rm" data-nav>Remove it</button></div>`
+			: `<p class="note">No faulty overlap "fix" tool on the card.${this.ovUndo ? ` <button class="btn" id="ov_un" data-nav>Put it back</button>` : ""}</p>`;
+		const rm = $("#ov_rm");
+		if (rm) rm.onclick = async () => { try { await ss1({ cmd: "storage", do: "overlap-remove" }); this.ovUndo = true; toast("Moved into phosphor/backups/overlap-tool"); setTimeout(async () => this.overlap(await this.storageState()), 1500); } catch (e) { toast(e.message); } };
+		const un = $("#ov_un");
+		if (un) un.onclick = async () => { try { await ss1({ cmd: "storage", do: "overlap-undo" }); this.ovUndo = false; setTimeout(async () => this.overlap(await this.storageState()), 1500); } catch (e) { toast(e.message); } };
+	}
+	async tSD(b) {
+		b.append(h(`<div class="split"><div class="list" id="sdbox"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>SD card</h2><p class="note">The checks only read, except the speed test (one temporary file) and Repair, which asks first. Results also go to the SS1's /media/fat/sd_integrity.log.</p><div id="ovl"></div></div></div>`));
+		let s;
+		try { s = await this.storageState(); } catch (e) { if (!this.alive()) return false; $("#sdbox").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!this.alive()) return;
+		if (!s.installed) { $("#sdbox").innerHTML = `<div class="empty">The storage module isn't on the SS1 yet (it comes with Phosphor 0.27).</div>`; return; }
+		const d = (s.drives || []).find(x => x.kind === "sd");
+		if (!d) { $("#sdbox").innerHTML = `<div class="empty">No SD card found.</div>`; return; }
+		this.driveTool($("#sdbox"), d, s);
+		this.overlap(s);
+		if (s.last && s.last.busy) this.every(2000, async () => { const t = await this.storageState(); this.redrawStorage(t); return t.last && t.last.busy; });
+	}
+	async tExt(b) {
+		b.append(h(`<div class="split" style="grid-template-columns:18rem 1fr"><div class="list" id="exl"><div class="empty"><span class="spin"></span></div></div><div class="list" id="exbox"></div></div>`));
+		let s;
+		try { s = await this.storageState(); } catch (e) { if (!this.alive()) return false; $("#exl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!this.alive()) return;
+		const ds = (s.drives || []).filter(x => x.kind !== "sd");
+		const l = $("#exl");
+		if (!s.installed) { l.innerHTML = `<div class="empty">The storage module isn't on the SS1 yet.</div>`; return; }
+		if (!ds.length) { l.innerHTML = `<div class="empty">No NVMe or USB drive is plugged in.</div>`; return; }
+		l.innerHTML = "";
+		for (const d of ds) {
+			const el = h(`<div class="row" data-nav><span class="n"><b>${esc(d.kind === "nvme" ? "NVMe" : "USB")}${d.gen === "gen4" ? " ⚠" : ""}</b><small>${esc(d.model || d.path)} · ${gb(d.size_kb)}</small></span></div>`).firstChild;
+			el.classList.add("net");
+			el._onfocus = () => { this.exSel = d.path; this.driveTool($("#exbox"), d, this.st || s); };
+			l.appendChild(el);
+		}
+		this.exSel = ds[0].path;
+		this.driveTool($("#exbox"), ds[0], s);
+		if (s.last && s.last.busy) this.every(2000, async () => { const t = await this.storageState(); this.redrawStorage(t); return t.last && t.last.busy; });
+	}
+	/* snapshots of saves and settings (backup-agent) on the SD card, NVMe or NAS */
+	async tSnaps(b) {
+		b.append(h(`<div class="split"><div class="list" id="bk"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="bkp"></div></div>`));
+		const draw = async () => {
+			let s;
+			try { s = await ss1({ cmd: "backup" }); } catch (e) { if (!this.alive()) return false; $("#bk").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!this.alive()) return false;
+			const bk = $("#bk"), bp = $("#bkp");
+			if (!s.installed) { bk.innerHTML = `<div class="empty">The backup-agent module isn't installed on the SS1.</div>`; bp.innerHTML = ""; return false; }
+			const st = s.status || {}, busy = s.job && s.job.busy;
+			bk.innerHTML = `<dl class="kv"><dt>Kept on</dt><dd>${esc(st.dest || st.target || "–")}</dd>${st.last ? `<dt>Last backup</dt><dd>${esc(st.last)}</dd>` : ""}</dl>
+				<div class="acts"><button class="btn primary" id="bk_now" data-nav${busy ? " disabled" : ""}>${busy ? "Working…" : "Back up now"}</button></div>
+				<div class="sub" style="margin-top:1rem">${spaced("Snapshots")}</div>`;
+			const snaps = s.snapshots || [];
+			if (!snaps.length) bk.append(h(`<div class="empty">No snapshots yet.</div>`));
+			snaps.forEach(x => {
+				const el = h(`<div class="row" data-nav><span class="n">${esc(x.when || x.name)}</span><span class="v">${esc(x.reason || "")} · ${kb(x.kb)}</span></div>`).firstChild;
+				el._onfocus = () => {
+					bp.innerHTML = `<h2>${esc(x.when || x.name)}</h2><p class="note">${esc(x.reason || "")} · ${kb(x.kb)}</p><p class="note">From here only the saves and save states can be put back; a whole snapshot (with settings) is restored on the SS1 itself.</p>
+						<div class="acts"><button class="btn" id="bk_rs" data-nav>Put these saves back</button></div>`;
+					twice($("#bk_rs"), "Press again: today's saves are kept in a snapshot first", async () => {
+						try { await ss1({ cmd: "backup", do: "restore", name: x.name, only: "saves|savestates" }); toast("Putting the saves back…"); draw(); this.every(2000, draw); } catch (e) { toast(e.message); }
+					});
+				};
+				bk.appendChild(el);
+			});
+			if (s.job && s.job.name && s.job.output) bk.append(h(`<pre class="out">${esc(s.job.output)}</pre>`));
+			$("#bk_now").onclick = async () => { try { await ss1({ cmd: "backup", do: "now" }); toast("Backing up…"); draw(); this.every(2000, draw); } catch (e) { toast(e.message); } };
+			if (!bp.innerHTML) bp.innerHTML = `<h2>Backups</h2><p class="note">Snapshots of your saves, save states and settings, made by the SS1 itself on the SD card, the NVMe drive or your NAS. No PC needed.</p>`;
+			return busy;
+		};
+		if (await draw()) this.every(2000, draw);
+	}
+
+	/* ---------- Notifications (this PC) ---------- */
+	async tNotes(b) {
+		b.append(h(`<div class="split"><div class="col"><div class="list" id="nl"><div class="empty"><span class="spin"></span></div></div>
+			<div class="acts"><button class="btn" id="n_seen" data-nav>Mark all as seen</button><button class="btn" id="n_clr" data-nav>Clear</button><button class="btn" id="n_q" data-nav></button></div></div>
+			<div class="panel" id="np"><h2>Notifications</h2><p class="note">What Phosphor noticed on the SS1 while it ran, window open or not: power trouble, settings an update reset, storage problems, box art finishing. New ones also show as a Windows notification from the tray icon, which gets a red dot until they're seen.</p></div></div>`));
+		const draw = async (j) => {
+			j = j || await api("/api/notes");
+			if (!this.alive()) return;
+			const nl = $("#nl");
+			nl.innerHTML = j.notes.length ? "" : `<div class="empty">Nothing yet.</div>`;
+			for (const x of j.notes) {
+				const el = h(`<div class="row net note-${x.level}${x.seen ? "" : " new"}" data-nav><span class="n"><b>${x.level === "warn" ? "⚠ " : ""}${esc(x.title)}</b><small>${esc(x.body)}</small></span><span class="v">${esc(ago(x.at))}</span></div>`).firstChild;
+				el.onclick = () => { if (x.go) goTo(x.go); };
+				nl.appendChild(el);
+			}
+			$("#n_q").textContent = j.quiet_pc ? "Windows notifications: off" : "Windows notifications: on";
+			$("#n_q").onclick = async () => { await api("/api/quiet", { quiet: !j.quiet_pc }); draw(); };
+		};
+		await draw();
+		$("#n_seen").onclick = async () => { draw(await api("/api/notes", { do: "seen" })); this.badges(); bell(); };
+		twice($("#n_clr"), "Press again to clear", async () => { draw(await api("/api/notes", { do: "clear" })); this.badges(); bell(); });
+		/* looking at them counts as seeing them */
+		setTimeout(async () => { if (this.alive()) { await api("/api/notes", { do: "seen" }); this.badges(); bell(); } }, 2500);
+	}
+
+	/* ---------- Connection, About ---------- */
+	tConn(b) {
+		b.append(h(`<div class="split"><div class="list"><dl class="kv" style="max-width:34rem">
+			<dt>SS1</dt><dd>${esc(S.address || "not paired")}</dd><dt>Status</dt><dd>${S.connected ? "connected" : S.paired ? "not answering" : "not paired"}</dd>
+			<dt>Phosphor on the SS1</dt><dd>${esc(S.status ? S.status.version || "" : "")}</dd><dt>Games</dt><dd>${S.status ? n(S.status.games) : ""}</dd></dl>
+			<div class="acts"><button class="btn primary" id="repair" data-nav>Pair again…</button><button class="btn" id="forget" data-nav>Forget this SS1</button></div></div>
+			<div class="panel"><h2>Connection</h2><p class="note">This PC reaches the SS1 over your home network with Phosphor's remote access, paired with a code. The pairing key stays on this PC, protected for your Windows account. Nothing goes over the internet.</p></div></div>`));
+		$("#repair").onclick = () => push(Connect);
+		twice($("#forget"), "Press again to forget", async () => { await api("/api/forget", {}); await refreshState(); toast("Forgotten. To use it again, pair again."); replace(Connect); });
+	}
+	tAbout(b) {
+		b.append(h(`<div class="panel" style="max-width:46rem"><h2>Phosphor for Windows ${esc(S.appVersion || "")}</h2>
+			<p class="note">The PC companion for Phosphor on the SuperStation One: the library, box art and details, base games, and the SS1's settings and tools, from your PC.</p>
+			<p class="note">Unofficial. Not made or supported by MiSTer-devel or the makers of the SuperStation One. Free for personal, non-commercial use (PolyForm Noncommercial 1.0.0).</p>
+			<p class="note">Closing the window keeps Phosphor in the tray (bottom right, by the clock), watching for warnings. To stop it completely:</p>
+			<div class="acts"><button class="btn" id="quit" data-nav>Exit Phosphor</button></div></div>`));
+		$("#quit").onclick = async () => { await api("/api/quit", {}); window.close(); };
+	}
+}
+
+/* a place in the app, from a notification or the tray: "settings/storage/1", "notifications", "match" */
+function goTo(where) {
+	const [a, b, c] = (where || "").split("/");
+	if (a === "notifications") return push(AppSettings, "notifications");
+	if (a === "match") return push(Match);
+	if (a === "settings") {
+		const id = SECS.some(s => s.id === b) ? b : "notifications";
+		return push(AppSettings, id, Number(c || 0));
+	}
+}
+
+/* the bell in the status bar: how many new notifications */
+async function bell() {
+	try {
+		const p = await api("/api/ping");
+		const el = $("#bell");
+		el.hidden = !p.unseen;
+		el.classList.toggle("warn", p.warn > 0);
+		el.querySelector("span").textContent = p.unseen;
+		if (p.view) goTo(p.view);
+		return p;
+	} catch (e) { return null; }
+}

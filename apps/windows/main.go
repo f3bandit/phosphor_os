@@ -19,7 +19,7 @@ import (
 	"os"
 )
 
-const appVersion = "0.1.3"
+const appVersion = "0.2.0"
 
 //go:embed web
 var webFS embed.FS
@@ -32,7 +32,9 @@ func main() {
 	flag.Parse()
 
 	if url := otherInstance(); url != "" && !*noWindow { // already running: show that window
-		openWindow(url)
+		if !focusWindow() {
+			openWindow(url)
+		}
 		return
 	}
 	b := make([]byte, 16)
@@ -52,6 +54,8 @@ func main() {
 	mux.Handle("/", http.FileServer(http.FS(web)))
 	routes(mux)
 	saveInstance(url)
+	view.url = url
+	go watchSS1() // warnings from the SS1 -> notifications (in the window and from the tray)
 	if *noWindow {
 		fmt.Println(url)
 	} else {
