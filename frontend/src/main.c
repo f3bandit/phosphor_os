@@ -22,6 +22,7 @@
 #include "jpeg.h"
 #include "ui.h"
 #include "lvgl.h"
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -183,8 +184,19 @@ static void fb_black(const char *fbdev)
 	close(fd);
 }
 
+/* stopped (an update, Reload, phosphor.sh stop): the console back to text mode first, for the same reason */
+static void on_term(int sig)
+{
+	(void)sig;
+	console_text();
+	_exit(0);
+}
+
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
+	signal(SIGTERM, on_term);
+	signal(SIGINT, on_term);
+	signal(SIGHUP, on_term);
 	lv_tick_set_cb(mono_ms);
 	int mw = 0, mh = 0;
 	/* "full": 0x0, which Main turns into the size it sends to the TV */
@@ -235,7 +247,13 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		if (!active) {
 			/* a game is running: drain input so nothing happens behind it, and sleep */
 			while (input_poll(now) != KEY_NONE_) {}
-			if (was_active) plog(mainlink_script_running() ? "a script has the screen: idle" : mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
+			if (was_active) {
+				plog(mainlink_script_running() ? "a script has the screen: idle" : mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
+				/* the console back to text mode while someone else has the screen: in graphics mode Linux
+				   refuses Main's switch to its script terminal (Update All from MiSTer's menu, say), and
+				   Main waits for it forever */
+				console_text();
+			}
 			was_active = 0;
 			usleep(200000);
 			continue;
