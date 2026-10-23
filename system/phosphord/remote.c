@@ -50,7 +50,8 @@
 static const char *ALLOWED[] = {
 	"status", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "scrape_sources", "scrape_accounts", "scrape_progress",
-	"video", "video_files", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth", NULL,
+	"video", "video_files", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
+	"system", "samba", "power", "guard", NULL,
 };
 
 typedef struct {
@@ -526,6 +527,11 @@ static void do_api(req_t *r, const char *body)
 	while (cJSON_GetObjectItem(j, "bundle")) cJSON_DeleteItemFromObject(j, "bundle");
 	/* "bluetooth" may look, not pair, forget or disconnect: pairing only from the MiSTer itself */
 	if (!strcmp(cmd, "bluetooth")) while (cJSON_GetObjectItem(j, "do")) cJSON_DeleteItemFromObject(j, "do");
+	/* restore points: look, restore, keep, roll back; deleting them only from the MiSTer itself */
+	if (!strcmp(cmd, "guard")) {
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(j, "do"));
+		if (d && !strcasecmp(d, "delete")) { cJSON_Delete(j); respond_error(r->fd, 403, "deleting restore points only works on the MiSTer itself"); return; }
+	}
 	char *s = cJSON_PrintUnformatted(j);
 	cJSON_Delete(j);
 	char *out = s ? forward(s) : NULL;

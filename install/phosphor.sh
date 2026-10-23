@@ -7,6 +7,7 @@
 #   phosphor.sh boot           at boot (install.sh --boot-phosphor): phosphord, Phosphor's Main in place
 #                              of MiSTer's (if it's installed), then the shell
 #   phosphor.sh main           switch to Phosphor's Main now (MiSTer's Main comes back on the next boot)
+#   phosphor.sh reload         restart the shell (Settings > Reload, the PC app); phosphord keeps running
 #   phosphor.sh stop           stop both
 #   phosphor.sh status         what's running, versions, the library
 #   phosphor.sh log            last lines of both logs
@@ -108,6 +109,13 @@ case "${1:-status}" in
 		;;
 	service)
 		start_service && echo "phosphord is running"
+		;;
+	reload)
+		for p in $(pids phosphor); do kill "$p" 2>/dev/null; done
+		for _ in 1 2 3 4 5 6 7 8 9 10; do running phosphor || break; sleep 0.3; done
+		for p in $(pids phosphor); do kill -9 "$p" 2>/dev/null; done
+		echo "$(date '+%Y-%m-%d %H:%M:%S')  reload ui" >> "$ROOT/logs/boots.log"
+		"$0" start
 		;;
 	stop)
 		for p in $(pids phosphor) $(pids phosphord); do kill "$p" 2>/dev/null; done

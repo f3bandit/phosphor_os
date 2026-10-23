@@ -26,6 +26,7 @@
  *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
  *   scrape     [on]                         box art and details: turn on/off; replies on, running,
  *                                           pending, found, not_found, status
+ *   system     do: reboot|shutdown|reload_ui   restart, shut down cleanly, or restart the shell
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
  *   rescrape   id                           look this game up again
  *   wifi       [do: scan|connect|forget|up|down|undo] [ssid] [password] [hidden]
@@ -96,12 +97,15 @@
 #include "indexer.h"
 #include "guard.h"
 #include "power.h"
+#include "paths.h"
 #include "play.h"
 #include "scraper.h"
 #include "systems.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 
 /* games with at least one file that's here right now */
@@ -1316,6 +1320,30 @@ char *api_handle(sqlite3 *db, const char *request)
 			cJSON_AddNumberToObject(o, "at", (double)s.at);
 			cJSON_AddStringToObject(o, "line", s.line);
 			out = reply(o);
+		}
+	}
+	else if (!strcmp(c->valuestring, "system")) {
+		/* do: reboot | shutdown | reload_ui. A second later, so this reply gets out first. Reboot and
+		 * shutdown go through init (rcK: modules stop, the power check marks a clean stop, the card
+		 * is synced); reload_ui restarts the shell only (phosphor.sh reload). */
+		const char *act = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+		char sh[700];
+		if (act && !strcmp(act, "reboot")) snprintf(sh, sizeof(sh), "sleep 1; sync; reboot");
+		else if (act && !strcmp(act, "shutdown")) snprintf(sh, sizeof(sh), "sleep 1; sync; poweroff");
+		else if (act && !strcmp(act, "reload_ui")) snprintf(sh, sizeof(sh), "sleep 1; '%s/phosphor/phosphor.sh' reload", p_fat());
+		else { cJSON_Delete(req); return fail("do: reboot, shutdown or reload_ui"); }
+		plog("system: %s (asked through the API)", act);
+		if (getenv("PHOS_NO_REBOOT") && strcmp(act, "reload_ui")) out = reply(ok());     /* tests */
+		else {
+			pid_t pid = fork();
+			if (pid == 0) {
+				setsid();
+				pid_t q = fork();                   /* not our child: phosphord may be stopped by it */
+				if (q == 0) { execl("/bin/sh", "sh", "-c", sh, (char *)NULL); _exit(127); }
+				_exit(0);
+			}
+			if (pid > 0) waitpid(pid, NULL, 0);
+			out = pid > 0 ? reply(ok()) : fail("couldn't start it");
 		}
 	}
 	else if (!strcmp(c->valuestring, "samba")) {
