@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *NAMES[TEX_COUNT] = { "None", "Zigzag", "X's", "Squares", "Triangles", "Circles", "Hexagons", "8-bit tiles" };
+static const char *NAMES[TEX_COUNT] = { "None", "Zigzag", "X's", "Squares", "Triangles", "Circles", "Hexagons" };
 const char *texture_name(texture_t t) { return t < TEX_COUNT ? NAMES[t] : "?"; }
 
 #define STRENGTH 0.13f      /* how much accent colour a line gets */
@@ -79,32 +79,12 @@ static float shape(texture_t t, float x, float y, float w, float h)
 }
 
 /* 8-bit tiles: original 16 x 16 pixel art (a little gem and dots), drawn 2x */
-static const char *const PIX[16] = {
-	"................",
-	".......#........",
-	"......#.#.......",
-	".....#...#......",
-	"......#.#.......",
-	".......#........",
-	"................",
-	"..#.............",
-	"................",
-	"............##..",
-	"...........#..#.",
-	"...........#..#.",
-	"............##..",
-	"................",
-	".....#..........",
-	"................",
-};
-
 static void tile_size(texture_t t, float *w, float *h)
 {
 	switch (t) {
 	case TEX_ZIGZAG: *w = 16; *h = 16; break;
 	case TEX_TRIANGLES: *w = 40; *h = 36; break;
 	case TEX_HEX: *w = 1.7320508f * 15; *h = 45; break;
-	case TEX_PIXEL: *w = 32; *h = 32; break;
 	default: *w = 40; *h = 40; break;
 	}
 }
@@ -134,19 +114,14 @@ void texture_apply(lv_obj_t *obj, texture_t t)
 		uint8_t *row = tile->data + (size_t)y * tile->header.stride;
 		for (int x = 0; x < pw; x++) {
 			float a = 0;
-			if (t == TEX_PIXEL) {
-				int px = (int)((x / scale) / 2), py = (int)((y / scale) / 2);
-				a = PIX[py & 15][px & 15] == '#' ? 1.0f : 0.0f;
-			} else {
-				/* sample the base-size tile; wrap so lines crossing the edge join up */
-				float fx = (x + 0.5f) / scale, fy = (y + 0.5f) / scale, d = 1e9f;
-				for (int oy = -1; oy <= 1; oy++)
-					for (int ox = -1; ox <= 1; ox++) d = fminf(d, shape(t, fx + ox * bw, fy + oy * bh, bw, bh));
-				d *= scale;
-				a = half + 0.5f - d;                     /* 1 px of soft edge */
-				if (a < 0) a = 0;
-				if (a > 1) a = 1;
-			}
+			/* sample the base-size tile; wrap so lines crossing the edge join up */
+			float fx = (x + 0.5f) / scale, fy = (y + 0.5f) / scale, d = 1e9f;
+			for (int oy = -1; oy <= 1; oy++)
+				for (int ox = -1; ox <= 1; ox++) d = fminf(d, shape(t, fx + ox * bw, fy + oy * bh, bw, bh));
+			d *= scale;
+			a = half + 0.5f - d;                         /* 1 px of soft edge */
+			if (a < 0) a = 0;
+			if (a > 1) a = 1;
 			uint8_t al = (uint8_t)lroundf(a * STRENGTH * 255);
 			row[x * 4 + 0] = c.blue;
 			row[x * 4 + 1] = c.green;
