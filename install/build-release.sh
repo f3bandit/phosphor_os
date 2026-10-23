@@ -8,9 +8,11 @@ D="dist/phosphor-$V"
 rm -rf "$D"
 mkdir -p "$D/bin" "$D/config"
 # a failed build leaves the old binary behind: refuse anything older than its sources
-for pair in "frontend/build-arm/phosphor frontend/src" "system/build-arm/phosphord system/phosphord"; do
-	set -- $pair
-	newer="$(find "$2" -newer "$1" -type f \( -name '*.c' -o -name '*.h' \) | head -1)"
+pairs="frontend/build-arm/phosphor:frontend/src system/build-arm/phosphord:system/phosphord"
+[ -x ../phosphor-main/bin/MiSTer ] && pairs="$pairs ../phosphor-main/bin/MiSTer:../phosphor-main"
+for pair in $pairs; do
+	set -- "${pair%%:*}" "${pair#*:}"
+	newer="$(find "$2" -newer "$1" -type f \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) | head -1)"
 	[ -z "$newer" ] || { echo "$1 is older than $newer: build it first" >&2; exit 1; }
 done
 cp frontend/build-arm/phosphor system/build-arm/phosphord system/build-arm/phos "$D/bin/"
