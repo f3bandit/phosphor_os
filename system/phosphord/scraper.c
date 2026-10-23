@@ -4,9 +4,11 @@
  * Sources are asked in the user's order (config/scraper.ini, Settings > Box art sources). For each
  * field (description, developer, publisher, genre, year, players, region, box art) the first answer
  * wins; fields a game already has (imported, set by hand) are never replaced. The title stays the
- * file name. libretro also gives a game its official name, which the name-based sources look up;
- * nothing is ever looked up by file name, so a game nobody recognises by content is left alone
- * ("not found": link it with "Based on").
+ * file name. libretro also gives a game its official name, which the name-based sources look up.
+ * libretro matches by content first (CRC, product code); when that fails, by the file name if it is
+ * an exact list name or has exactly the same title words (same disc, the file's region first). A
+ * game nobody recognises is left for "Match to base games". Box art falls through: a picture that
+ * isn't there (404) makes the next source's art be tried; Disc 2+ borrows Disc 1's art.
  *
  * Skipped: games based on another (they use its art), unidentified games, games already looked
  * up. Runs only while the menu is up, one game at a time. Network trouble pauses it for a few
@@ -338,12 +340,51 @@ static int has_col(sqlite3 *db, long long gid, const char *col)
 	return v;
 }
 
-/* returns 1 found, 0 nobody knows it, -1 network trouble before anything was found */
+/* Disc 2, 3...: the art of the same game's Disc 1 when it has some ("Final Fantasy VII (USA) (Disc 2)") */
+static int disc1_art(sqlite3 *db, const sgame_t *g)
+{
+	const char *d = strstr(g->title, "(Disc ");
+	if (!d || d[6] == '1' || !isdigit((unsigned char)d[6])) return 0;
+	char want[520];
+	snprintf(want, sizeof(want), "%.*s(Disc 1)%s", (int)(d - g->title), g->title, strchr(d, ')') ? strchr(d, ')') + 1 : "");
+	sqlite3_stmt *st;
+	int ok = 0;
+	if (sqlite3_prepare_v2(db, "UPDATE games SET art_box=(SELECT o.art_box FROM games o WHERE o.system_id=?1 AND o.title=?2 "
+	                           "AND o.art_box IS NOT NULL LIMIT 1) WHERE id=?3 AND EXISTS (SELECT 1 FROM games o WHERE "
+	                           "o.system_id=?1 AND o.title=?2 AND o.art_box IS NOT NULL)", -1, &st, NULL) != SQLITE_OK)
+		return 0;
+	sqlite3_bind_text(st, 1, g->sys, -1, SQLITE_STATIC);
+	sqlite3_bind_text(st, 2, want, -1, SQLITE_STATIC);
+	sqlite3_bind_int64(st, 3, g->id);
+	ok = sqlite3_step(st) == SQLITE_DONE && sqlite3_changes(db) > 0;
+	sqlite3_finalize(st);
+	return ok;
+}
+
+/* the box art: the first URL that downloads and decodes. 1 stored, 0 none, -1 network trouble */
+static int fetch_art(sqlite3 *db, sgame_t *g, sres_t *r, int from)
+{
+	char tmp[600], rel[600];
+	int trouble = 0;
+	snprintf(tmp, sizeof(tmp), "%s/scrape-art.img", p_tmp());
+	for (int i = from; i < r->nart; i++) {
+		int rc = net_get_file(r->art[i], tmp);
+		if (rc < 0) { trouble = 1; continue; }
+		if (rc) continue;
+		int ok = art_store_box(g->sys, g->key, tmp, rel, sizeof(rel)) == 0;
+		unlink(tmp);
+		if (ok) { put_text(db, g->id, "art_box", rel); return 1; }
+	}
+	return trouble ? -1 : 0;
+}
+
+/* returns 1 found (with box art, or it already had some), 0 nobody has it (or no box art anywhere:
+ * then it belongs in "Match to base games"), -1 network trouble: try again later */
 static int scrape_one(sqlite3 *db, sgame_t *g)
 {
 	const source_t *src[NSRC];
 	int n = sources_in_order(src), found = 0, trouble = 0;
-	int had_art = has_col(db, g->id, "art_box");
+	int had_art = has_col(db, g->id, "art_box"), art = had_art, tried = 0;
 	sres_t r;
 	memset(&r, 0, sizeof(r));
 	/* already filled fields count as answered */
@@ -351,7 +392,15 @@ static int scrape_one(sqlite3 *db, sgame_t *g)
 	for (int i = 0; i < F_COUNT; i++) if (has_col(db, g->id, COL[i])) r.f[i] = strdup("");
 	for (int i = 0; i < n; i++) {
 		if (!source_on(src[i]) || !src[i]->ready()) continue;
-		if (sres_complete(&r, had_art)) break;
+		if (sres_complete(&r, art)) {
+			if (art) break;
+			/* every field answered and an address for the art: try it now; if it doesn't download
+			   (libretro has no picture under that name), the remaining sources are asked for art */
+			int a = fetch_art(db, g, &r, tried);
+			tried = r.nart;
+			if (a > 0) { art = 1; break; }
+			if (a < 0) trouble = 1;
+		}
 		pthread_mutex_lock(&lk);
 		snprintf(pg.source, sizeof(pg.source), "%s", src[i]->name);
 		pthread_mutex_unlock(&lk);
@@ -364,33 +413,27 @@ static int scrape_one(sqlite3 *db, sgame_t *g)
 			trouble = 1;
 		}
 	}
-	if (!found) { sres_free(&r); return trouble ? -1 : 0; }
-
-	for (int i = 0; i < F_COUNT; i++) if (r.f[i] && *r.f[i]) put_text(db, g->id, COL[i], r.f[i]);
-	if (g->official[0]) {
-		sqlite3_stmt *st;
-		if (sqlite3_prepare_v2(db, "UPDATE games SET ref_name=? WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
-			sqlite3_bind_text(st, 1, g->official, -1, SQLITE_STATIC);
-			sqlite3_bind_int64(st, 2, g->id);
-			sqlite3_step(st);
-			sqlite3_finalize(st);
+	if (found) {
+		for (int i = 0; i < F_COUNT; i++) if (r.f[i] && *r.f[i]) put_text(db, g->id, COL[i], r.f[i]);
+		if (g->official[0]) {
+			sqlite3_stmt *st;
+			if (sqlite3_prepare_v2(db, "UPDATE games SET ref_name=? WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
+				sqlite3_bind_text(st, 1, g->official, -1, SQLITE_STATIC);
+				sqlite3_bind_int64(st, 2, g->id);
+				sqlite3_step(st);
+				sqlite3_finalize(st);
+			}
 		}
-	}
-	/* box art: the first that downloads and decodes */
-	if (!had_art) {
-		char tmp[600], rel[600];
-		snprintf(tmp, sizeof(tmp), "%s/scrape-art.img", p_tmp());
-		for (int i = 0; i < r.nart; i++) {
-			int rc = net_get_file(r.art[i], tmp);
-			if (rc < 0) { trouble = 1; continue; }
-			if (rc) continue;
-			int ok = art_store_box(g->sys, g->key, tmp, rel, sizeof(rel)) == 0;
-			unlink(tmp);
-			if (ok) { put_text(db, g->id, "art_box", rel); break; }
+		if (!art) {
+			int a = fetch_art(db, g, &r, tried);
+			if (a > 0) art = 1;
+			else if (a < 0) trouble = 1;
 		}
 	}
 	sres_free(&r);
-	return 1;
+	if (!art && disc1_art(db, g)) art = 1;
+	if (art) return 1;
+	return trouble ? -1 : 0;
 }
 
 /* ---------- the queue ---------- */

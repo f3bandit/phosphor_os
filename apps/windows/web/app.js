@@ -556,21 +556,47 @@ class Match {
 			<div class="split"><div class="list" id="nf"></div><div class="panel" id="info"><p class="note">Pick a game on the left.</p></div></div>`));
 		this.load();
 	}
+	/* grouped by system, Arcade first, then by generation; LB/RB jump between them */
 	async load() {
 		const box = $("#nf");
 		try {
-			const j = await ss1({ cmd: "games", filter: "not_found", limit: 500 });
-			this.items = j.games;
+			const [j, sy] = await Promise.all([ss1({ cmd: "games", filter: "not_found", limit: 5000 }), ss1({ cmd: "systems", all: true })]);
+			const CR = { 3: 0, 1: 1, 0: 2, 2: 3, 4: 4 };   /* Arcade, cartridge consoles, disc consoles, handhelds, computers */
+			const order = new Map(sy.systems.map((x, i) => [x.id, (CR[x.category] ?? 5) * 100 + i])), names = new Map(sy.systems.map(x => [x.id, x.name]));
+			const coll = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+			this.items = j.games.sort((a, b) => ((order.get(a.system) ?? 999) - (order.get(b.system) ?? 999)) || coll.compare(a.title, b.title));
 			box.innerHTML = this.items.length ? "" : `<div class="empty">Nothing to match: every game was found, or is already linked.</div>`;
-			this.items.forEach((g, i) => {
-				const el = h(`<div class="row" data-nav><span class="n">${esc(g.title)}</span><span class="v">${esc(g.system)}</span></div>`).firstChild;
+			this.groups = [];
+			let last = null;
+			for (const g of this.items) {
+				if (g.system !== last) {
+					last = g.system;
+					const cnt = this.items.filter(x => x.system === g.system).length;
+					box.appendChild(h(`<div class="grp"><span>${spaced(names.get(g.system) || g.system)}</span><span>${cnt}</span></div>`).firstChild);
+					this.groups.push(null);
+				}
+				const el = h(`<div class="row" data-nav><span class="n">${esc(g.title)}</span></div>`).firstChild;
 				el.onclick = () => this.firstCand();
 				el._g = g;
 				el._onfocus = () => { this.g = g; this.sel = this.items.indexOf(g); clearTimeout(this.t); this.t = setTimeout(() => this.panel(g), 150); };
 				box.appendChild(el);
-			});
-			if (this.items.length) focus(box.children[Math.min(this.sel, this.items.length - 1)]);
+				if (this.groups[this.groups.length - 1] === null) this.groups[this.groups.length - 1] = el;
+			}
+			this.hints = [["A", "Link"], ["Y", "Search"], ["X", "Look up again"], ...(this.groups.length > 1 ? [["LB/RB", "Systems"]] : []), ["B", "Back"]];
+			setHints(this.hints);
+			if (this.items.length) focus(this.rows()[Math.min(this.sel, this.items.length - 1)]);
 		} catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+	}
+	rows() { return [...$("#nf").querySelectorAll(".row")]; }
+	/* the first game of the next / previous system */
+	tab(d) {
+		if (!this.groups || this.groups.length < 2) return;
+		const r = this.rows(), i = Math.max(0, r.indexOf(cur));
+		let gi = 0;
+		this.groups.forEach((el, k) => { if (r.indexOf(el) <= i) gi = k; });
+		const to = this.groups[(gi + d + this.groups.length) % this.groups.length];
+		focus(to);
+		if (to.previousElementSibling) to.previousElementSibling.scrollIntoView({ block: "start" });
 	}
 	async panel(g) {
 		const info = $("#info");
@@ -584,8 +610,9 @@ class Match {
 				<p class="note">Uses the base game's box art and details; the SS1 shows it too.</p>
 				<div class="acts"><button class="btn" id="srch" data-nav>Search…</button><button class="btn" id="again" data-nav>Look it up again</button></div>`;
 			const box = $("#cands");
-			if (!c.games.length) box.innerHTML = `<div class="empty">No likely base game on this system.</div>`;
-			for (const k of c.games) {
+			const likely = c.games.filter(k => k.score >= 400);   /* only really alike ones; Search finds the rest */
+			if (!likely.length) box.innerHTML = `<div class="empty">No likely base game in your library. Use Search to pick one.</div>`;
+			for (const k of likely) {
 				const el = h(`<div class="cand" data-nav><div class="thumb" style="background-image:url('${artURL(k.id)}')"></div><div><b>${esc(k.title)}</b><small>${esc(gg.system_name || gg.system)}</small></div></div>`).firstChild;
 				el.onclick = () => this.link(g, k);
 				box.appendChild(el);
@@ -600,10 +627,23 @@ class Match {
 			await ss1({ cmd: "link", id: g.id, base: base.id });
 			toast(`${g.title} now uses ${base.title}`);
 			gameCache.delete(g.id);
-			const rows = $("#nf").children, i = this.items.indexOf(g);
-			this.items.splice(i, 1); rows[i].remove();
+			this.items.splice(this.items.indexOf(g), 1);
 			if (!this.items.length) { $("#nf").innerHTML = `<div class="empty">All matched.</div>`; $("#info").innerHTML = ""; return; }
-			focus(rows[Math.min(i, rows.length - 1)]);
+			const r = this.rows(), i = r.findIndex(x => x._g === g), me = r[i];
+			const next = r[i + 1] || r[i - 1];
+			const hd = me.previousElementSibling;
+			if (hd && hd.classList.contains("grp")) {
+				const after = me.nextElementSibling;
+				if (!after || after.classList.contains("grp")) { this.groups = this.groups.filter(x => x !== me); hd.remove(); }   /* the system's last one */
+				else this.groups = this.groups.map(x => (x === me ? after : x));
+			}
+			me.remove();
+			for (const e of $("#nf").querySelectorAll(".grp")) {
+				let c = 0;
+				for (let x = e.nextElementSibling; x && !x.classList.contains("grp"); x = x.nextElementSibling) c++;
+				e.lastElementChild.textContent = c;
+			}
+			focus(next);
 		} catch (e) { toast(e.message); }
 	}
 	x() { const g = this.g; if (!g) return; ss1({ cmd: "rescrape", id: g.id }).then(() => toast("It'll be looked up again the next time box art runs"), e => toast(e.message)); }

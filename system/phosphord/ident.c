@@ -267,6 +267,9 @@ static void psx_serial(const char *raw, char *out, int n)
 	t[j] = 0;
 	int a = 0;
 	while (isalpha((unsigned char)t[a])) a++;
+	/* some discs boot a file with an extra letter (Dragon Warrior VII: SLUSP012.06): the code is
+	   the first four letters and the digits */
+	if (a == 5 && isdigit((unsigned char)t[a])) { memmove(t + 4, t + 5, strlen(t + 5) + 1); a = 4; }
 	if (a >= 3 && a <= 4 && t[a]) snprintf(out, (size_t)n, "%.*s-%s", a, t, t + a);
 	else snprintf(out, (size_t)n, "%s", t);
 }
@@ -652,6 +655,15 @@ void title_norm(const char *title, char *out, int n)
 	}
 }
 
+static int weak_word(const char *w)
+{
+	static const char *W[] = { "the", "of", "a", "an", "and", "to", "in", "no", "de", "la", "le", "vs", NULL };
+	if (isdigit((unsigned char)w[0])) return 1;
+	if (strspn(w, "ivxl") == strlen(w)) return 1;            /* roman numerals */
+	for (int i = 0; W[i]; i++) if (!strcmp(w, W[i])) return 1;
+	return 0;
+}
+
 int title_similarity(const char *a, const char *b)
 {
 	if (!*a || !*b) return 0;
@@ -663,10 +675,13 @@ int title_similarity(const char *a, const char *b)
 	for (char *w = strtok_r(x, " ", &s1); w && na < 64; w = strtok_r(NULL, " ", &s1)) ta[na++] = w;
 	for (char *w = strtok_r(y, " ", &s2); w && nb < 64; w = strtok_r(NULL, " ", &s2)) tb[nb++] = w;
 	if (!na || !nb) return 0;
-	int used[64] = { 0 }, common = 0;
+	/* numbers and little words alone don't make two games alike: "Dragon Warrior VII" and "Final
+	   Fantasy VII" share only "vii" */
+	int used[64] = { 0 }, common = 0, strong = 0;
 	for (int i = 0; i < na; i++)
 		for (int k = 0; k < nb; k++)
-			if (!used[k] && !strcmp(ta[i], tb[k])) { used[k] = 1; common++; break; }
+			if (!used[k] && !strcmp(ta[i], tb[k])) { used[k] = 1; common++; if (!weak_word(ta[i])) strong++; break; }
+	if (!strong) return 0;
 	int score = 2000 * common / (na + nb);
 	/* "super mario world" vs "super mario world return to dinosaur land": a hack named after its base */
 	size_t la = strlen(a), lb = strlen(b);
