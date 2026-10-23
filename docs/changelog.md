@@ -3,6 +3,22 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.4
+
+### Fixes
+- **The power window didn't open.** MiSTer's Main doesn't pass the controller's Select (and not
+  always Start) on to Phosphor; both are now read from the controller as well.
+- **NVMe drive health didn't work in Phosphor** (it needed SS1 Tool's helper). Phosphor now reads the
+  drive behind the dock's JMicron bridge itself (`phos-nvme`): temperature, wear, spare, hours,
+  unsafe shutdowns, errors. It never sends the drive an Identify request: the bridge times out on it
+  and USB resets the dock.
+
+### Changes
+- **Power window: Select + Start together** (either order), instead of holding Select. On their own
+  they're still Select and Menu (they act when let go).
+- **Home shows five whole cards;** moving past the fifth, the first goes and the next comes in.
+- **The NVMe drive's temperature** is on Phosphor for Windows' Dashboard.
+
 ## 0.27.3
 
 ### Fixes
@@ -13,7 +29,7 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   flag back, and say how each drive came out.
 
 ### Changes
-- **Power window: hold Select** anywhere in Phosphor (about a second; a quick Select is still Select).
+- **Power window** (opened with Select + Start from 0.27.4).
   Shut down safely, Restart, Reload the screen; d-pad or stick to choose, A to do it, B to cancel.
   Shut down ends on a "Safe to switch off" screen with each drive's state; Settings > Restart and
   Phosphor for Windows' Shut down and Restart go the same way (the TV shows it).
