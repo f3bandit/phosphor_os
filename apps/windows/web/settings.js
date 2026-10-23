@@ -8,7 +8,7 @@ const SET_SECTIONS = [
 	{ id: "look", name: "Look", tabs: [["Accent & texture", "tLook"]] },
 	{ id: "boxart", name: "Box art", tabs: [["Sources & logins", "tArt"]] },
 	{ grp: "SuperStation" },
-	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
+	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Update Phosphor", "tPhosUpd"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"], ["Backups", "tSnaps"]] },
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
 	{ grp: "Tools" },
@@ -261,6 +261,61 @@ class AppSettings {
 		twice($("#p_reboot"), "Press again to restart", () => go("reboot", "Restarting the SS1…"));
 		twice($("#p_off"), "Press again to shut down", () => go("shutdown", "Shutting down: the TV says when it's safe to switch off"));
 		twice($("#p_ui"), "Press again to reload", () => go("reload_ui", "Reloading the TV screen…"));
+	}
+
+	/* ---------- Update Phosphor: a release package from this PC (or found on the SS1), and roll back ---------- */
+	async tPhosUpd(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="upl"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Update Phosphor</h2><p class="note" id="upv"></p>
+			<div class="acts"><button class="btn primary" data-nav id="up_pick">Send a package from this PC…</button><input type="file" id="up_file" accept=".gz" hidden></div>
+			<p class="note">A release package is phosphor-&lt;version&gt;-armhf.tar.gz. It's checked, the installed version is backed up, and Phosphor starts again by itself, with your library, box art and settings as they were. MiSTer's own files aren't touched.</p>
+			<p class="note" id="upst"></p></div></div>`));
+		const draw = async () => {
+			let s;
+			try { s = await ss1({ cmd: "update" }); } catch (e) { if (!alive()) return false; $("#upl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
+			if (!s.available) { $("#upl").innerHTML = `<div class="empty">This SS1's Phosphor is older than the updater: install 0.27.6 once with the update script, then updates work from here.</div>`; return false; }
+			$("#upv").textContent = "Installed on the SS1: Phosphor " + (s.version || "?");
+			const st = s.state || {}, busy = st.state === "working";
+			$("#upst").innerHTML = st.msg && (busy || Date.now() / 1000 - (st.at || 0) < 600) ? `<span class="${st.state === "failed" ? "bad" : busy ? "" : "good"}">${busy ? `<span class="spin"></span> ` : ""}${esc(st.msg)}</span>` : "";
+			const l = $("#upl");
+			l.innerHTML = "";
+			const rows = [...(s.packages || []).map(p => ({ t: "Install Phosphor " + p.version, v: p.file.includes("/media/usb") ? "USB drive" : "On the SS1", q: { do: "install", file: p.file } })),
+				...(s.rollbacks || []).filter(r => r.version !== s.version).map(r => ({ t: "Roll back to Phosphor " + r.version, v: r.date, q: { do: "rollback", version: r.version } }))];
+			if (!rows.length) l.innerHTML = `<div class="empty">No packages on the SS1 yet, and no earlier version kept. Send one from this PC.</div>`;
+			for (const x of rows) {
+				const el = h(`<div class="row" data-nav><span class="n">${esc(x.t)}</span><span class="v">${esc(x.v)}</span></div>`).firstChild;
+				const v = $(".v", el);
+				el.onclick = async () => {
+					if (busy) return toast("An update is running");
+					if (el.dataset.sure !== "1") { el.dataset.sure = "1"; v.textContent = "Press again"; setTimeout(() => { el.dataset.sure = ""; v.textContent = x.v; }, 4000); return; }
+					el.dataset.sure = "";
+					try { await ss1(Object.assign({ cmd: "update" }, x.q)); toast("Updating: the TV closes Phosphor and opens it again"); } catch (e) { toast(e.message); }
+					setTimeout(draw, 1500);
+				};
+				l.appendChild(el);
+			}
+			return busy;
+		};
+		const busy = await draw();
+		$("#up_pick").onclick = () => $("#up_file").click();
+		$("#up_file").onchange = async () => {
+			const f = $("#up_file").files[0];
+			if (!f) return;
+			if (!/^phosphor-.+-armhf\.tar\.gz$/.test(f.name)) return toast("That isn't a Phosphor package (phosphor-<version>-armhf.tar.gz)");
+			toast("Sending " + f.name + "…");
+			try {
+				const r = await fetch("/api/upload?name=" + encodeURIComponent(f.name), { method: "POST", headers: { "X-Phosphor-Key": KEY }, body: await f.arrayBuffer() });
+				const j = await r.json();
+				if (!j.ok) throw new Error(j.error || "the SS1 didn't take it");
+				toast("Sent. Choose Install " + f.name.replace(/^phosphor-|-armhf\.tar\.gz$/g, "") + " to update");
+			} catch (e) { toast(e.message); }
+			$("#up_file").value = "";
+			draw();
+		};
+		this.every(2000, async () => { await draw(); return true; });
+		return busy;
 	}
 
 	/* ---------- Updates & restore points (update-guard) ---------- */

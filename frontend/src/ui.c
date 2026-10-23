@@ -33,7 +33,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -1054,7 +1054,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_MISTER, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_MISTER, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1156,6 +1156,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		if (!cr.all_available) { *dim = 1; snprintf(val, vn, "Not on the SD card"); }
 		else snprintf(val, vn, ">");
 		break;
+	case SET_PHOSUPD: snprintf(t, n, "Update Phosphor"); snprintf(val, vn, "%s  >", PHOS_VERSION); break;
 	case SET_GUARD:
 		snprintf(t, n, "Updates & restore points");
 		if (guard_resets > 0) snprintf(val, vn, "%d setting%s reset by an update  >", guard_resets, guard_resets == 1 ? "" : "s");
@@ -1739,6 +1740,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                "Takes a while on a fresh card. Cores go to the games drive when there is one." },
 	[SET_UPDATE_ALL] = { "Runs Update All: cores, plus extras such as arcade ROMs, BIOS files and other databases you've chosen in it. A restore point is saved first.",
 	                     "Use a single-port power adapter: shared multi-port chargers can cut out under the load." },
+	[SET_PHOSUPD] = { "Installs a new version of Phosphor from a release package, or goes back to the version before. Your library, box art and settings stay.",
+	                  "The installed version is backed up first; MiSTer's own files aren't touched." },
 	[SET_GUARD] = { "Linux updates can put some settings back to stock (network address, SSH keys). This shows which, puts them back, or rolls back to a restore point.", NULL },
 	[SET_SCRIPTS] = { "Runs the scripts in /media/fat/Scripts, the way MiSTer's own Scripts menu does.",
 	                  "Controllers work as keys while a script runs." },
@@ -4303,6 +4306,120 @@ static void map_requests(void)
 	}
 }
 
+/* ---------- Update Phosphor ----------
+ * Phosphor's own updates, from a release package (phosphor-<version>-armhf.tar.gz) put in
+ * phosphor/updates (over the network share, or sent by the app), at the top of the SD card or of a USB
+ * drive; and rolling back to the version before. phosphor/update.sh does the work: it checks the
+ * package, backs up the installed version, installs, and starts Phosphor again (this screen goes
+ * away while it does). */
+
+static struct {
+	int npk, nrb, busy;
+	char ver[24], pk_file[8][300], pk_ver[8][24], rb_ver[6][24], rb_date[6][24], msg[200];
+	uint32_t confirm_at;
+	int confirm_row;
+	lv_obj_t *head, *note;
+} up;
+static vlist_t up_list;
+
+static void up_apply(cJSON *r)
+{
+	if (!api_ok(r)) { cJSON_Delete(r); return; }
+	snprintf(up.ver, sizeof(up.ver), "%s", api_str(r, "version") ? api_str(r, "version") : "?");
+	cJSON *x;
+	up.npk = up.nrb = 0;
+	cJSON_ArrayForEach(x, cJSON_GetObjectItem(r, "packages")) if (up.npk < 8) {
+		snprintf(up.pk_file[up.npk], sizeof(up.pk_file[0]), "%s", api_str(x, "file") ? api_str(x, "file") : "");
+		snprintf(up.pk_ver[up.npk++], sizeof(up.pk_ver[0]), "%s", api_str(x, "version") ? api_str(x, "version") : "");
+	}
+	cJSON_ArrayForEach(x, cJSON_GetObjectItem(r, "rollbacks")) if (up.nrb < 6) {
+		const char *v = api_str(x, "version");
+		if (v && !strcmp(v, up.ver)) continue;          /* (a copy of what's installed) */
+		snprintf(up.rb_ver[up.nrb], sizeof(up.rb_ver[0]), "%s", v ? v : "");
+		snprintf(up.rb_date[up.nrb++], sizeof(up.rb_date[0]), "%s", api_str(x, "date") ? api_str(x, "date") : "");
+	}
+	cJSON *st = cJSON_GetObjectItem(r, "state");
+	up.busy = st && api_str(st, "state") && !strcmp(api_str(st, "state"), "working");
+	snprintf(up.msg, sizeof(up.msg), "%s", st && api_str(st, "msg") ? api_str(st, "msg") : "");
+	cJSON_Delete(r);
+	char h[160];
+	snprintf(h, sizeof(h), "Installed: Phosphor %s", up.ver);
+	if (up.head) lv_label_set_text(up.head, h);
+	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg :
+		"Put a release package (phosphor-<version>-armhf.tar.gz) in phosphor/updates over the network share, or send it from the Phosphor app. A USB drive works too.");
+	up_list.count = up.npk + up.nrb ? up.npk + up.nrb : 1;
+	vlist_refresh(&up_list);
+}
+
+static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	int sure = up.confirm_row == i && lv_tick_get() - up.confirm_at < 4000;
+	if (!up.npk && !up.nrb) { *dim = 1; snprintf(t, n, "No update packages found"); return; }
+	if (i < up.npk) {
+		const char *f = strrchr(up.pk_file[i], '/');
+		char where[64];
+		snprintf(where, sizeof(where), "%s", strstr(up.pk_file[i], "/media/usb") ? "USB drive" : strstr(up.pk_file[i], "/phosphor/updates/") ? "phosphor/updates" : "SD card");
+		snprintf(t, n, "Install Phosphor %s", up.pk_ver[i]);
+		snprintf(val, vn, "%s", sure ? "Press A again to install" : where);
+		(void)f;
+		return;
+	}
+	i -= up.npk;
+	snprintf(t, n, "Roll back to Phosphor %s", up.rb_ver[i]);
+	snprintf(val, vn, "%s", sure ? "Press A again to roll back" : up.rb_date[i]);
+}
+
+static const char *const UP_HINTS[] = { "A", "Choose", "B", "Back", NULL };
+
+static void show_update(void)
+{
+	cur = SCR_PUPD;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Update Phosphor");
+	up.head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(up.head, S(56), S(178));
+	vlist_create(&up_list, body, S(56), S(214), S(900), S(320));
+	up_list.fill = up_fill;
+	up_list.sel = up_list.top = 0;
+	up_list.count = 0;
+	up.confirm_row = -1;
+	up.note = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_width(up.note, S(900));
+	lv_label_set_long_mode(up.note, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(up.note, S(56), S(560));
+	footer_set(UP_HINTS);
+	up_apply(api_call("{\"cmd\":\"update\"}"));
+}
+
+static void up_key(pkey_t k)
+{
+	if (vlist_key(&up_list, k)) { up.confirm_row = -1; return; }
+	if (k == K_B || k == K_MENU) { back_to_settings(SET_PHOSUPD); return; }
+	if (k != K_A || up.busy || (!up.npk && !up.nrb)) return;
+	int s = up_list.sel;
+	if (up.confirm_row != s || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = s; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
+	up.confirm_row = -1;
+	cJSON *r = s < up.npk ? api_call("{\"cmd\":\"update\",\"do\":\"install\",\"file\":\"%s\"}", up.pk_file[s])
+	                      : api_call("{\"cmd\":\"update\",\"do\":\"rollback\",\"version\":\"%s\"}", up.rb_ver[s - up.npk]);
+	if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "The updater didn't start"); cJSON_Delete(r); return; }
+	cJSON_Delete(r);
+	lv_label_set_text(up.note, "Updating: Phosphor closes and opens again by itself in a few seconds.");
+	toast_show("Updating...");
+}
+
+/* after Phosphor started again: what the update did (once) */
+static void update_check(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"update\"}");
+	cJSON *st = r ? cJSON_GetObjectItem(r, "state") : NULL;
+	const char *s = st ? api_str(st, "state") : NULL;
+	if (s && (!strcmp(s, "done") || !strcmp(s, "failed")) && time(NULL) - (time_t)api_num(st, "at", 0) < 300) {
+		toast_show(api_str(st, "msg") ? api_str(st, "msg") : "Updated");
+		if (api_num(st, "restart", 0) > 0) plog("update: MiSTer's Main changed; a restart finishes it");
+	}
+	cJSON_Delete(r);
+}
+
 /* ---------- About this system ----------
  * Versions (Phosphor, its service, MiSTer's Linux, which Main), storage with free space, network
  * addresses and uptime: what support needs, on one page. */
@@ -5246,6 +5363,9 @@ void ui_key(pkey_t k)
 	case SCR_CTRL:
 		ct_key(k);
 		break;
+	case SCR_PUPD:
+		up_key(k);
+		break;
 	case SCR_MAP:
 		break;
 	case SCR_SETTINGS:
@@ -5259,6 +5379,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_WIFI) show_wifi();
 			else if (set_list.sel == SET_BT) show_bt();
 			else if (set_list.sel == SET_CTRL) show_ctrl();
+			else if (set_list.sel == SET_PHOSUPD) show_update();
 			else if (set_list.sel == SET_REMOTE) show_remote();
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
@@ -5312,7 +5433,7 @@ void ui_tick(void)
 	}
 	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
 	if (si_pending()) si_update();
-	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); } }   /* the alerts, once after start-up */
+	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); update_check(); } }   /* the alerts, once after start-up */
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);
@@ -5332,6 +5453,7 @@ void ui_tick(void)
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
+		if (cur == SCR_PUPD) { static int ut; if (up.busy || ++ut % 3 == 0) up_apply(api_call("{\"cmd\":\"update\"}")); }
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
 		/* (a card job is followed 4 times a second, below); otherwise the ports' state every 2 s, so the
 		   screen is right again by itself after Main restarts */

@@ -10,6 +10,8 @@
  *   POST /api     {"cmd":...}        the same JSON commands as the local socket, a safe subset
  *   GET  /art/<game id>              the game's box art (JPEG)
  *   PUT  /art/<game id>   <image>    new box art (PNG/JPEG/..., up to 16 MB), scaled and stored
+ *   PUT  /update/phosphor-<version>-armhf.tar.gz   a Phosphor package (up to 64 MB), into
+ *                                    phosphor/updates; then {"cmd":"update","do":"install",...} installs it
  *
  * Every request but /info and /pair needs "Authorization: Bearer <token>". Only a hash of each
  * token is kept (config/remote.ini). This thread doesn't touch the database: commands go through
@@ -51,7 +53,7 @@ static const char *ALLOWED[] = {
 	"status", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"video", "video_files", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
-	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", NULL,
+	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", NULL,
 };
 
 typedef struct {
@@ -625,6 +627,35 @@ static void do_art_put(req_t *r, long id)
 	free(out);
 }
 
+#define UPDATE_BODY_MAX (64L * 1024 * 1024)
+
+/* a release package, kept in phosphor/updates under its own name */
+static void do_update_put(req_t *r)
+{
+	const char *name = r->path + 8;
+	size_t n = strlen(name);
+	int ok = !strncmp(name, "phosphor-", 9) && n > 22 && n < 96 && !strcmp(name + n - 13, "-armhf.tar.gz");
+	for (const char *c = name; ok && *c; c++) ok = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '.' || *c == '-' || *c == '_';
+	if (!ok) { respond_error(r->fd, 400, "send phosphor-<version>-armhf.tar.gz"); return; }
+	if (r->clen > UPDATE_BODY_MAX) { respond_error(r->fd, 413, "too big for a Phosphor package"); return; }
+	r->deadline_ms = now_ms() + 30000 + r->clen / 50;
+	char dir[PATH_MAX], tmp[PATH_MAX], dst[PATH_MAX];
+	snprintf(dir, sizeof(dir), "%s/phosphor/updates", p_fat());
+	mkdirs(dir);
+	snprintf(tmp, sizeof(tmp), "%s/.upload.XXXXXX", dir);
+	int fd = mkstemp(tmp);
+	if (fd < 0) { respond_error(r->fd, 500, "no room for the upload"); return; }
+	int bad = read_body(r, NULL, fd);
+	if (!bad && fsync(fd)) bad = 1;
+	close(fd);
+	snprintf(dst, sizeof(dst), "%s/%s", dir, name);
+	if (bad || rename(tmp, dst)) { unlink(tmp); if (!bad) respond_error(r->fd, 500, "couldn't save the package"); return; }
+	plog("remote access: update package %s received (%lld bytes)", name, (long long)r->clen);
+	char out[700];
+	snprintf(out, sizeof(out), "{\"ok\":true,\"file\":\"%s\"}", dst);
+	respond_json(r->fd, 200, out);
+}
+
 static void handle(int fd)
 {
 	req_t *r = calloc(1, sizeof(*r));
@@ -646,7 +677,9 @@ static void handle(int fd)
 		goto done;
 	}
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
-	if (!is_api && !is_pair && !is_art) { respond_error(fd, 404, "no such path"); goto done; }
+	int is_upd = !strncmp(r->path, "/update/", 8);
+	if (!is_api && !is_pair && !is_art && !is_upd) { respond_error(fd, 404, "no such path"); goto done; }
+	if (is_upd && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
 
@@ -654,6 +687,11 @@ static void handle(int fd)
 	if (!is_pair && authorize(r, who, sizeof(who)) < 0) {
 		sleep(1);
 		respond_error(fd, 401, "pair this device first (Settings > Remote access on the MiSTer)");
+		goto done;
+	}
+	if (is_upd) {
+		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
+		else do_update_put(r);
 		goto done;
 	}
 	if (is_art) {

@@ -21,7 +21,7 @@ if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/b
 # phosphor-menu (the menu core with the front ports): its GitHub Actions build, saved next to the repo
 if [ -f ../phosphor-menu/menu_phosphor.rbf ]; then mkdir -p "$D/cores"; cp ../phosphor-menu/menu_phosphor.rbf "$D/cores/"; fi
 for f in "$D"/bin/*; do file "$f" | grep -q "ARM" || { echo "$f isn't an ARM build" >&2; exit 1; }; done
-cp install/install.sh install/uninstall.sh install/phosphor.sh LICENSE.md "$D/"
+cp install/install.sh install/uninstall.sh install/phosphor.sh install/update.sh LICENSE.md "$D/"
 # MiSTer's updaters, started from Phosphor: a restore point of MiSTer's system files first (when
 # update-guard is installed), then the updater itself, one after the other in MiSTer's terminal
 mkdir -p "$D/scripts"
@@ -74,5 +74,7 @@ if [ -d "$M/lib" ]; then
 fi
 printf '%s (%s)\n' "$V" "$(git rev-parse --short HEAD)" > "$D/VERSION"
 chmod 755 "$D"/*.sh "$D"/bin/*
+# checksums of every file, so the updater can tell a damaged package from a good one
+(cd "$D" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS)
 tar -C dist -czf "dist/phosphor-$V-armhf.tar.gz" "phosphor-$V"
 ls -la "dist/phosphor-$V-armhf.tar.gz"
