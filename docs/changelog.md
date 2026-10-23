@@ -16,6 +16,9 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   Phosphor restarts.
 
 ### New
+- **Back to Phosphor from MiSTer's menu:** Launch Phosphor is the first item on MiSTer's System page
+  (where the cursor starts), and holding the menu button for 2 seconds anywhere in MiSTer's menu
+  does the same.
 - **Phosphor's wallpaper behind MiSTer's menu** (MiSTer's menu.png), only when there's no menu.png or
   menu.jpg of your own. Uninstalling takes it away.
 

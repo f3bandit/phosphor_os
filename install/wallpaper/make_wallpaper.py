@@ -27,7 +27,7 @@ f=inter(86,"SemiBold"); tw=f.getlength("P"); d.text((x0+(s-tw)/2,y0+40),"P",font
 f=inter(20); tw=f.getlength("Phosphor"); d.text((x0+(s-tw)/2,y0+136),"Phosphor",font=f,fill=DIM)
 # bottom left: where you are, and the way back
 spaced((84,H-84-70),"MISTER MENU",mono(20),DIM,6)
-d.text((84,H-84-36),"Back to Phosphor:  System  ›  Launch Phosphor",font=inter(26),fill=(200,196,190))
+d.text((84,H-84-36),"Back to Phosphor:  hold the menu button, or  System  ›  Launch Phosphor",font=inter(26),fill=(200,196,190))
 img.save("phosphor-wallpaper.png")
 if len(sys.argv)>1:
     m=img.copy(); md=ImageDraw.Draw(m)
