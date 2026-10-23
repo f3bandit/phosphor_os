@@ -30,6 +30,10 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/kd.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 static void front_pads(uint32_t now);
 
@@ -219,37 +223,120 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 /* the controllers on the front ports (through phosphord and phosphor-main), 60 times a second while
  * the setting is on; when the ports aren't there, look again every 5 s, and once ask phosphord to
  * load the Phosphor menu core (stock menu core at boot) */
+/* The front-port controllers are asked for 60 times a second on a thread of their own (its own
+ * connection to phosphord), so the screen never waits on Main: the main loop only picks up the latest
+ * answer. */
+static struct {
+	pthread_mutex_t mu;
+	int run, seq, failed;
+	unsigned btn[2];
+	int conn[2], id[2], lx[2], ly[2];
+} fp = { .mu = PTHREAD_MUTEX_INITIALIZER };
+
+static int fp_connect(void)
+{
+	const char *t = getenv("PHOS_TMP");
+	struct sockaddr_un a = { .sun_family = AF_UNIX };
+	snprintf(a.sun_path, sizeof(a.sun_path), "%s/phosphord.sock", t && *t ? t : "/tmp/phosphor");
+	int s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (s < 0) return -1;
+	if (connect(s, (struct sockaddr *)&a, sizeof(a)) < 0) { close(s); return -1; }
+	return s;
+}
+
+/* one request, one line back (up to 500 ms); NULL on any trouble */
+static cJSON *fp_ask(int *s)
+{
+	static const char req[] = "{\"cmd\":\"pads\"}\n";
+	if (*s < 0 && (*s = fp_connect()) < 0) return NULL;
+	if (write(*s, req, sizeof(req) - 1) != (ssize_t)(sizeof(req) - 1)) { close(*s); *s = -1; return NULL; }
+	char buf[2048];
+	size_t n = 0;
+	for (;;) {
+		struct pollfd p = { *s, POLLIN, 0 };
+		if (poll(&p, 1, 500) <= 0) break;
+		ssize_t r = read(*s, buf + n, sizeof(buf) - 1 - n);
+		if (r <= 0) break;
+		n += (size_t)r;
+		char *nl = memchr(buf, '\n', n);
+		if (nl) { *nl = 0; return cJSON_Parse(buf); }
+		if (n >= sizeof(buf) - 1) break;
+	}
+	close(*s);
+	*s = -1;
+	return NULL;
+}
+
+static void *fp_thread(void *arg)
+{
+	(void)arg;
+	int s = -1;
+	for (;;) {
+		pthread_mutex_lock(&fp.mu);
+		int run = fp.run;
+		pthread_mutex_unlock(&fp.mu);
+		if (!run) { usleep(100000); continue; }
+		cJSON *r = fp_ask(&s);
+		int ok = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "ok"));
+		pthread_mutex_lock(&fp.mu);
+		fp.failed = !ok;
+		for (int i = 0; i < 2; i++) fp.conn[i] = 0;
+		if (ok) {
+			cJSON *it;
+			cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "pads")) {
+				int port = (int)api_num(it, "port", 0) - 1;
+				if (port < 0 || port > 1) continue;
+				fp.conn[port] = cJSON_IsTrue(cJSON_GetObjectItem(it, "connected"));
+				fp.id[port] = (int)api_num(it, "id", 0);
+				fp.btn[port] = fp.conn[port] ? (unsigned)api_num(it, "buttons", 0) : 0;
+				fp.lx[port] = (int)api_num(it, "lx", 128);
+				fp.ly[port] = (int)api_num(it, "ly", 128);
+			}
+		}
+		fp.seq++;
+		pthread_mutex_unlock(&fp.mu);
+		cJSON_Delete(r);
+		usleep(ok ? 16000 : 2000000);         /* nothing there: look again every 2 s */
+	}
+	return NULL;
+}
+
 static void front_pads(uint32_t now)
 {
-	static uint32_t next;
-	static int asked_load;
-	if (!SETTINGS.front_pads || (int32_t)(now - next) < 0) return;
-	cJSON *r = api_call("{\"cmd\":\"pads\"}");
-	if (!api_ok(r)) {
-		cJSON_Delete(r);
-		next = now + 5000;
-		if (!asked_load && mainlink_connected()) {
+	static int started, seen, asked_load;
+	static uint32_t next_look;
+	if (!started) {
+		pthread_t t;
+		if (pthread_create(&t, NULL, fp_thread, NULL) == 0) pthread_detach(t);
+		started = 1;
+	}
+	pthread_mutex_lock(&fp.mu);
+	fp.run = SETTINGS.front_pads;
+	int seq = fp.seq, failed = fp.failed;
+	unsigned btn[2] = { fp.btn[0], fp.btn[1] };
+	int conn[2] = { fp.conn[0], fp.conn[1] }, id[2] = { fp.id[0], fp.id[1] };
+	int lx[2] = { fp.lx[0], fp.lx[1] }, ly[2] = { fp.ly[0], fp.ly[1] };
+	pthread_mutex_unlock(&fp.mu);
+	if (!SETTINGS.front_pads || seq == seen) return;
+	seen = seq;
+	if (failed) {
+		for (int i = 0; i < 2; i++) input_pad(i, 0, 128, 128, 0, now);
+		/* the front ports aren't on yet: once, after Main has had time to look, ask phosphord to set them up */
+		if (!asked_load && mainlink_connected() && (int32_t)(now - next_look) >= 0) {
+			next_look = now + 5000;
 			cJSON *p = api_call("{\"cmd\":\"ports\"}");
 			cJSON *pp = cJSON_GetObjectItem(p, "ports");
-			if (cJSON_IsTrue(cJSON_GetObjectItem(pp, "can_load"))) {
+			if (cJSON_IsTrue(cJSON_GetObjectItem(pp, "can_load")) || cJSON_IsTrue(cJSON_GetObjectItem(pp, "available"))) {
 				asked_load = 1;
-				plog("front ports: loading the Phosphor menu core");
+				plog("front ports: turning them on");
 				cJSON_Delete(api_call("{\"cmd\":\"memcard\",\"do\":\"prepare\"}"));
 			}
 			cJSON_Delete(p);
 		}
-		for (int i = 0; i < 2; i++) input_pad(i, 0, 128, 128, 0, now);
 		return;
 	}
-	next = now + 16;
-	cJSON *it;
-	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "pads")) {
-		int port = (int)api_num(it, "port", 0) - 1, id = (int)api_num(it, "id", 0);
-		int conn = cJSON_IsTrue(cJSON_GetObjectItem(it, "connected"));
-		input_pad(port, conn ? (unsigned)api_num(it, "buttons", 0) : 0, (int)api_num(it, "lx", 128), (int)api_num(it, "ly", 128),
-			conn && (id == 0x73 || id == 0x53), now);
-	}
-	cJSON_Delete(r);
+	for (int i = 0; i < 2; i++)
+		input_pad(i, conn[i] ? btn[i] : 0, lx[i], ly[i], conn[i] && (id[i] == 0x73 || id[i] == 0x53), now);
 }
 
 int main(int argc, char **argv)
