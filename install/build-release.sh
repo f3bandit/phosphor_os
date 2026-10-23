@@ -26,6 +26,7 @@ cp install/install.sh install/uninstall.sh install/phosphor.sh LICENSE.md "$D/"
 # update-guard is installed), then the updater itself, one after the other in MiSTer's terminal
 mkdir -p "$D/scripts"
 for u in update update_all; do
+	label=before-get-cores; [ "$u" = update_all ] && label=before-update-all
 	cat > "$D/scripts/$u.sh" <<SH
 #!/bin/bash
 # Phosphor: $u.sh from MiSTer's Scripts folder, after a restore point (update-guard), so nothing
@@ -33,7 +34,7 @@ for u in update update_all; do
 G=/media/fat/phosphor/modules/update-guard/update-guard.sh
 if [ -x "\$G" ]; then
 	echo "Phosphor: saving a restore point of MiSTer's system files first..."
-	"\$G" save-point || echo "(couldn't save one; the update goes ahead)"
+	"\$G" save-point $label || echo "(couldn't save one; the update goes ahead)"
 	echo
 fi
 cd /media/fat/Scripts && exec ./$u.sh "\$@"
