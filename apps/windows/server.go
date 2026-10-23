@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,6 +53,20 @@ func routes(mux *http.ServeMux) {
 		writeJSON(w, map[string]any{"ok": true})
 	})
 	h("/api/theme", apiTheme)
+	h("/api/explore", func(w http.ResponseWriter, r *http.Request) { // the SS1's shared folders in Explorer
+		cfgMu.Lock()
+		host := cfg.Address
+		cfgMu.Unlock()
+		if i := strings.LastIndex(host, ":"); i > 0 {
+			host = host[:i]
+		}
+		if net.ParseIP(host) == nil {
+			fail(w, "not paired")
+			return
+		}
+		openFolder(`\\` + host)
+		writeJSON(w, map[string]any{"ok": true})
+	})
 	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
 		writeJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()

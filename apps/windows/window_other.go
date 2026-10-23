@@ -10,6 +10,7 @@ import (
 func openWindow(url string) { fmt.Println("open", url) }
 func otherInstance() string { return "" }
 
-func runTray(url string) { select {} }
-func closeWindows()      {}
-func quitApp()           { os.Exit(0) }
+func runTray(url string)  { select {} }
+func closeWindows()       {}
+func quitApp()            { os.Exit(0) }
+func openFolder(p string) { fmt.Println("explore", p) }

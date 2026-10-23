@@ -51,3 +51,5 @@ func closeWindows() {
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	_ = c.Run()
 }
+
+func openFolder(p string) { _ = exec.Command("explorer.exe", p).Start() }
