@@ -20,7 +20,7 @@ typedef struct {
 	char crc[16];          /* cartridges */
 	char serial[64];       /* discs: product code; arcade: MAME set name */
 	long size;             /* discs: data track size (0 if unknown) */
-	char title[512];       /* file name: never used to guess */
+	char title[512];       /* file name: matched only exactly (see src_libretro) */
 	char official[400];    /* official No-Intro/Redump name, once a source matched by content */
 	char lrsys[100];       /* libretro system the official name came from */
 	int disc, arcade;

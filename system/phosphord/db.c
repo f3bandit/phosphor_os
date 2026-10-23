@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCHEMA_VERSION 3
+#define SCHEMA_VERSION 4
 
 static const char *SCHEMA =
 	"CREATE TABLE IF NOT EXISTS systems ("
@@ -64,6 +64,14 @@ static const char *MIGRATE_3 =
 	"ALTER TABLE games ADD COLUMN ref_id INTEGER;"
 	"ALTER TABLE games ADD COLUMN ref_name TEXT;"
 	"CREATE INDEX IF NOT EXISTS games_scrape ON games(scrape);";
+
+/* 4: box art lookups got better (product codes read with an extra letter, names, art fallbacks):
+ * fix the codes already read, and look again at games nothing was found for, or found without art */
+static const char *MIGRATE_4 =
+	"UPDATE files SET serial=substr(serial,1,4)||'-'||substr(serial,6) "
+	"  WHERE serial GLOB '[A-Z][A-Z][A-Z][A-Z][A-Z][0-9][0-9]*'"
+	"  AND game_id IN (SELECT id FROM games WHERE system_id='PSX');"
+	"UPDATE games SET scrape=NULL WHERE scrape='miss' OR (scrape='done' AND art_box IS NULL AND based_on IS NULL);";
 
 /* natural order: "Quest 2" before "Quest 10"; case doesn't matter */
 int natcmp(const char *a, const char *b)
@@ -167,6 +175,7 @@ sqlite3 *db_open(void)
 		if (ver < 1 && db_exec(db, SCHEMA) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		if (ver < 2 && db_exec(db, MIGRATE_2) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		if (ver < 3 && db_exec(db, MIGRATE_3) != SQLITE_OK) { sqlite3_close(db); return NULL; }
+		if (ver < 4 && db_exec(db, MIGRATE_4) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		char v[64];
 		snprintf(v, sizeof(v), "PRAGMA user_version=%d", SCHEMA_VERSION);
 		db_exec(db, v);

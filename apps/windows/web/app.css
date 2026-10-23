@@ -99,6 +99,9 @@ h1 { flex: none; font-weight: 600; font-size: 2rem; letter-spacing: -.01em; marg
 .row .star { color: var(--acc); }
 .col { display: flex; flex-direction: column; min-height: 0; }
 .row.net { height: 3.8rem; }
+.grp { display: flex; justify-content: space-between; padding: 1.1rem 1rem .4rem 1.5rem; font: .72rem/1 PhosMono, Consolas, monospace; letter-spacing: .3em; text-transform: uppercase; color: var(--faint); }
+.grp:first-child { padding-top: .2rem; }
+.grp span:last-child { letter-spacing: 0; }
 .row.net .n b { display: block; font-weight: 500; color: var(--text); }
 .row.net .n small { display: block; font-size: .8rem; color: var(--faint); margin-top: .15rem; }
 .row.net.on .tick { color: var(--acc); }

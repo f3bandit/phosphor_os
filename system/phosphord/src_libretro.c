@@ -11,6 +11,7 @@
 #include "log.h"
 #include "net.h"
 #include "paths.h"
+#include "ident.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -295,6 +296,102 @@ static void thumb_name(const char *name, char *out, size_t n)
 	out[j] = 0;
 }
 
+/* "(Disc 2)" -> 2; 0 when not a numbered disc */
+static int disc_no(const char *name)
+{
+	const char *d = strcasestr(name, "(Disc ");
+	return d && isdigit((unsigned char)d[6]) ? atoi(d + 6) : 0;
+}
+
+/* the words in a name's first brackets, lower case: "(USA, Canada)" -> "usa, canada" */
+static void regions(const char *name, char *out, size_t n)
+{
+	region_of(name, out, n);
+	for (char *p = out; *p; p++) *p = (char)tolower((unsigned char)*p);
+}
+
+/* the title words alone, the same way on both sides: "Legend of Zelda, The - A Link..." and
+   "The Legend of Zelda - A Link..." both become "legend of zelda a link..." */
+static void name_key(const char *name, char *out, int n)
+{
+	char base[520];
+	name_base(name, base, sizeof(base));
+	title_norm(!strncasecmp(base, "The ", 4) ? base + 4 : base, out, n);
+}
+
+/* No product code or CRC in the lists (a re-dump, a different revision, a file the code couldn't be
+ * read from): the file name, when it is the list's name, or the same title words with the same disc
+ * number, the file's region first. Only an exact title counts, never a guess. */
+static long long by_name(sqlite3 *db, const char *lrs, const sgame_t *g)
+{
+	sqlite3_stmt *st;
+	long long rid = -1;
+	char sql[700];
+	snprintf(sql, sizeof(sql), "SELECT id FROM ref WHERE lrsys IN (%s) AND name=? COLLATE NOCASE LIMIT 1", lrs);
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(st, 1, g->title, -1, SQLITE_STATIC);
+		if (sqlite3_step(st) == SQLITE_ROW) rid = sqlite3_column_int64(st, 0);
+		sqlite3_finalize(st);
+	}
+	if (rid >= 0) return rid;
+	char want[512], wreg[120];
+	name_key(g->title, want, sizeof(want));
+	if (strlen(want) < 2) return -1;
+	regions(g->title, wreg, sizeof(wreg));
+	int wdisc = disc_no(g->title), best = -1;
+	/* the lists' names start with the same letter (or "The ...") */
+	char l1[8], l2[8];
+	snprintf(l1, sizeof(l1), "%c%%", want[0]);
+	snprintf(l2, sizeof(l2), "the %c%%", want[0]);
+	snprintf(sql, sizeof(sql), "SELECT id, name FROM ref WHERE lrsys IN (%s) AND (name LIKE ?1 OR name LIKE ?2)", lrs);
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return -1;
+	sqlite3_bind_text(st, 1, l1, -1, SQLITE_STATIC);
+	sqlite3_bind_text(st, 2, l2, -1, SQLITE_STATIC);
+	while (sqlite3_step(st) == SQLITE_ROW) {
+		const char *nm = (const char *)sqlite3_column_text(st, 1);
+		char k[512], reg[120];
+		name_key(nm, k, sizeof(k));
+		if (strcmp(k, want)) continue;
+		int d = disc_no(nm);
+		if (d != wdisc && !(wdisc == 0 && d == 1)) continue;
+		regions(nm, reg, sizeof(reg));
+		int score = 1;
+		if (wreg[0] && !strcmp(reg, wreg)) score = 4;                    /* same region tag */
+		else if (wreg[0] && strstr(reg, wreg)) score = 3;                /* "usa" in "usa, canada" */
+		else if (!wreg[0] && strstr(reg, "usa")) score = 2;              /* untagged file: USA first */
+		if (strstr(nm, "(Beta") || strstr(nm, "(Proto") || strstr(nm, "(Demo")) score -= 1;
+		if (score > best) { best = score; rid = sqlite3_column_int64(st, 0); }
+	}
+	sqlite3_finalize(st);
+	return rid;
+}
+
+/* libretro names its pictures after the list's names, but not always the same list version: also
+   the name with only its first region, and without the disc number */
+static void add_thumbs(sres_t *r, const char *lrsys, const char *official)
+{
+	char e1[400], tn[400], e2[700], url[1300], v[400];
+	net_escape(lrsys, e1, sizeof(e1));
+	for (int k = 0; k < 3; k++) {
+		snprintf(v, sizeof(v), "%s", official);
+		if (k == 1) {                                     /* "(USA, Canada)" -> "(USA)" */
+			char *p = strchr(v, '('), *c = p ? strchr(p, ',') : NULL, *e = p ? strchr(p, ')') : NULL;
+			if (!c || !e || c > e) continue;
+			memmove(c, e, strlen(e) + 1);
+		} else if (k == 2) {                              /* without " (Disc 1)" */
+			char *d = strstr(v, " (Disc ");
+			if (!d) continue;
+			char *e = strchr(d + 1, ')');
+			if (!e) continue;
+			memmove(d, e + 1, strlen(e + 1) + 1);
+		}
+		thumb_name(v, tn, sizeof(tn));
+		net_escape(tn, e2, sizeof(e2));
+		snprintf(url, sizeof(url), "%s/%s/Named_Boxarts/%s.png", LR_THUMBS, e1, e2);
+		sres_art(r, "libretro", url);
+	}
+}
+
 /* returns 1 found, 0 not in the lists, -1 network trouble (try again later) */
 static int lr_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 {
@@ -313,8 +410,7 @@ static int lr_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 	}
 	char ser[64] = "";
 	serial_norm(g->serial, ser, sizeof(ser));
-	if (m->disc) {
-		if (!ser[0]) return 0;
+	if (m->disc && ser[0]) {
 		/* same product code, the one with this size first */
 		snprintf(sql, sizeof(sql), "SELECT id FROM ref WHERE lrsys IN (%s) AND serial=? ORDER BY (size=?) DESC, id LIMIT 1", lrs);
 		if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
@@ -332,8 +428,7 @@ static int lr_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 			if (sqlite3_step(st) == SQLITE_ROW) rid = sqlite3_column_int64(st, 0);
 			sqlite3_finalize(st);
 		}
-	} else {
-		if (!g->crc[0]) return 0;
+	} else if (!m->disc && g->crc[0]) {
 		snprintf(sql, sizeof(sql), "SELECT id FROM ref WHERE lrsys IN (%s) AND crc=? LIMIT 1", lrs);
 		if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
 			sqlite3_bind_text(st, 1, g->crc, -1, SQLITE_STATIC);
@@ -341,6 +436,7 @@ static int lr_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 			sqlite3_finalize(st);
 		}
 	}
+	if (rid < 0) rid = by_name(db, lrs, g);
 	if (rid < 0) return 0;
 	if (sqlite3_prepare_v2(db, "SELECT name, lrsys, description, developer, publisher, genre, year, players FROM ref WHERE id=?", -1, &st, NULL) != SQLITE_OK)
 		return 0;
@@ -355,12 +451,7 @@ static int lr_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 	char region[80];
 	region_of(g->official, region, sizeof(region));
 	sres_set(r, F_REGION, region);
-	char tn[400], e1[400], e2[700], url[1300];
-	thumb_name(g->official, tn, sizeof(tn));
-	net_escape(g->lrsys, e1, sizeof(e1));
-	net_escape(tn, e2, sizeof(e2));
-	snprintf(url, sizeof(url), "%s/%s/Named_Boxarts/%s.png", LR_THUMBS, e1, e2);
-	sres_art(r, "libretro", url);
+	add_thumbs(r, g->lrsys, g->official);
 	return 1;
 }
 
