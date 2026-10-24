@@ -2,8 +2,66 @@
    from distance fields, in the accent colour at the same faint strength, repeated across the window.
    The numbers are the console's, so a texture picked here is the one picked on the TV. */
 "use strict";
+/* sprite textures (26 on, made with tools/texture-maker): SpriteTex.alpha is the same drawing as the
+   console's sprite_alpha (frontend/src/texsprite.c) and the Texture Maker's (kept identical) */
+const SpriteTex = (() => {
+	function bytes(b) {
+		if (typeof b !== "string") return b;
+		const s = atob(b), out = new Uint8Array(s.length);
+		for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+		return out;
+	}
+	/* the shade (0..15) of the sprite's pixel at (u, v) of its turned/mirrored picture */
+	function shade(sw, sh, px, o, u, v) {
+		let x = u, y = v, w = (o & 1) ? sh : sw;            /* w: the width at this step of undoing turns */
+		for (let r = o & 3; r > 0; r--) {                    /* undo one turn clockwise */
+			const nx = y, ny = w - 1 - x;
+			x = nx; y = ny;
+			w = (w === sw) ? sh : sw;
+		}
+		if (o & 4) x = sw - 1 - x;
+		const b = px[y * ((sw + 1) >> 1) + (x >> 1)];
+		return (x & 1) ? (b & 15) : (b >> 4);
+	}
+	/* coverage 0..255 a pixel, at scale screen pixels per base pixel: { pw, ph, a } */
+	function alpha(t, scale) {
+		const pw = Math.round(t.w * scale), ph = Math.round(t.h * scale);
+		const m = new Uint8Array(pw * ph);                   /* the strongest shade over each pixel */
+		const spr = t.spr.map(s => [s[0], s[1], bytes(s[2])]);
+		const tile = t.w < 1280 || t.h < 720;                /* a tile repeats: sprites over an edge come in on the other side */
+		const R = v => Math.round(v * scale);
+		for (let i = 0; i + 3 < t.pl.length; i += 4) {
+			const x0 = t.pl[i], y0 = t.pl[i + 1], o = t.pl[i + 3];
+			const [sw, sh, px] = spr[t.pl[i + 2]];
+			const ow = (o & 1) ? sh : sw, oh = (o & 1) ? sw : sh;
+			for (let wy = tile ? -1 : 0; wy <= (tile ? 1 : 0); wy++)
+				for (let wx = tile ? -1 : 0; wx <= (tile ? 1 : 0); wx++)
+					for (let v = 0; v < oh; v++)
+						for (let u = 0; u < ow; u++) {
+							const s = shade(sw, sh, px, o, u, v);
+							if (!s) continue;
+							const bx = x0 + wx * t.w + u * t.px, by = y0 + wy * t.h + v * t.px;
+							let xa = R(bx), xb = R(bx + t.px), ya = R(by), yb = R(by + t.px);
+							if (xb <= 0 || yb <= 0 || xa >= pw || ya >= ph) continue;
+							if (xa < 0) xa = 0;
+							if (ya < 0) ya = 0;
+							if (xb > pw) xb = pw;
+							if (yb > ph) yb = ph;
+							for (let y = ya; y < yb; y++)
+								for (let x = xa; x < xb; x++) if (m[y * pw + x] < s) m[y * pw + x] = s;
+						}
+		}
+		const a = new Uint8Array(pw * ph);
+		for (let i = 0; i < a.length; i++) {
+			const c = t.inv ? 15 - m[i] : m[i];
+			a[i] = Math.round(c * t.str * 255 / 15);
+		}
+		return { pw, ph, a };
+	}
+	return { alpha, shade, bytes };
+})();
 const Texture = (() => {
-	const SH = { ZIGZAG: 0, X: 1, SQUARE: 2, TRIANGLE: 3, HEX: 4, TRIGRID: 5, DIAMOND: 6, DIAGRID: 7, GRID: 8, BOARD: 9 };
+	const SH = { ZIGZAG: 0, X: 1, SQUARE: 2, TRIANGLE: 3, HEX: 4, TRIGRID: 5, DIAMOND: 6, DIAGRID: 7, GRID: 8, BOARD: 9, SPRITES: 10 };
 	const LINE = 0, FILL = 1, INVERT = 2, STRENGTH = 0.13;
 	const T = [
 		["None"],
@@ -33,6 +91,8 @@ const Texture = (() => {
 		/* one whole screen, not a repeating tile (circuit.js) */
 		["Circuit board", SH.BOARD, 1280, 720, 1, LINE],
 		["Circuit board, bold", SH.BOARD, 1280, 720, 2, LINE],
+		/* sprite textures (26 on): the 7th item is the texture's data (tex_<id>.js) */
+		/* sprite textures: entries (tools/texture-maker) */
 	];
 	const ORDER = [0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25];
 
@@ -106,12 +166,29 @@ const Texture = (() => {
 		g.putImageData(img, 0, 0);
 		return c.toDataURL("image/png");
 	}
+	/* a sprite texture: a whole screen is laid on the window's background colour like the board, a
+	   tile is left see-through like the other tiles */
+	function sprites(data, rgb, scale) {
+		const a = SpriteTex.alpha(data, scale), c = document.createElement("canvas");
+		c.width = a.pw; c.height = a.ph;
+		const g = c.getContext("2d"), img = g.createImageData(a.pw, a.ph), d = img.data;
+		const full = data.w >= 1280 && data.h >= 720;
+		const bg = (getComputedStyle(document.body).backgroundColor.match(/\d+/g) || [14, 14, 16]).map(Number);
+		for (let i = 0; i < a.a.length; i++) {
+			const k = a.a[i] / 255, j = i * 4;
+			if (full) { for (let q = 0; q < 3; q++) d[j + q] = Math.round(bg[q] * (1 - k) + rgb[q] * k); d[j + 3] = 255; }
+			else { d[j] = rgb[0]; d[j + 1] = rgb[1]; d[j + 2] = rgb[2]; d[j + 3] = a.a[i]; }
+		}
+		g.putImageData(img, 0, 0);
+		return c.toDataURL("image/png");
+	}
 	/* the tile as a data: URL, in colour rgb ([r,g,b]) at scale (screen px per console px) */
 	function tile(n, rgb, scale) {
 		const t = T[n];
 		if (!t || n === 0) return null;
 		const [, sh, bw, bh, lw, mode] = t;
 		if (sh === SH.BOARD) return board(rgb, scale, lw);
+		if (sh === SH.SPRITES) return t[6] ? sprites(t[6], rgb, scale) : null;
 		const pw = Math.round(bw * scale), ph = Math.round(bh * scale);
 		if (pw < 4 || ph < 4) return null;
 		const c = document.createElement("canvas");
@@ -140,7 +217,7 @@ const Texture = (() => {
 		name: n => (T[n] ? T[n][0] : "None"),
 		valid: n => n === 0 || !!T[n],
 		order: ORDER,
-		full: n => !!T[n] && T[n][1] === SH.BOARD,     /* one picture for the whole window, not a tile */
+		full: n => !!T[n] && (T[n][1] === SH.BOARD || (T[n][1] === SH.SPRITES && T[n][2] >= 1280 && T[n][3] >= 720)),   /* one picture for the whole window, not a tile */
 		tile,
 	};
 })();

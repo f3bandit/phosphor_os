@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Phosphor Texture Maker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#0e0e10;--panel:#17171b;--line:#2a2a31;--text:#ece8e1;--dim:#8d8a85;--faint:#5c5a57;--acc:#ffb347}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px "Segoe UI",Inter,system-ui,sans-serif}
+.app{display:grid;grid-template-columns:330px 1fr;height:100vh}
+.side{background:var(--panel);border-right:1px solid var(--line);padding:14px 16px 24px;overflow-y:auto}
+h1{font-size:16px;margin:0 0 4px;color:var(--acc);letter-spacing:.05em}
+.ver{color:var(--faint);font-size:11px;margin-bottom:6px}
+h2{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin:18px 0 8px;font-weight:600}
+.sprites{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.sp{aspect-ratio:1;background:var(--bg);border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;position:relative;overflow:hidden;cursor:default}
+.sp canvas{max-width:80%;max-height:80%;image-rendering:pixelated}
+.sp.off{opacity:.35}
+.sp .x,.sp .t{position:absolute;top:1px;font-size:11px;color:var(--faint);cursor:pointer;padding:1px 4px}
+.sp .x{right:2px}.sp .t{left:2px}
+.sp .x:hover,.sp .t:hover{color:var(--text)}
+.sp .n{position:absolute;bottom:1px;left:0;right:0;text-align:center;font-size:9px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 3px}
+.add{border:1px dashed var(--faint);color:var(--dim);font-size:24px;cursor:pointer}
+.add:hover{border-color:var(--acc);color:var(--acc)}
+.row{display:flex;justify-content:space-between;align-items:center;margin:7px 0;gap:8px}
+.row>span:first-child{white-space:nowrap}
+.val{color:var(--dim);font-size:12px;min-width:34px;text-align:right}
+input[type=range]{width:118px;accent-color:var(--acc)}
+input[type=text],input[type=number]{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit;font-size:13px}
+input[type=number]{width:64px}
+.seg{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.seg b{font-weight:500;padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+.seg b:hover{color:var(--text)}
+.seg b.on{border-color:var(--acc);color:var(--acc)}
+.btn{display:block;width:100%;padding:9px;margin-top:8px;border-radius:8px;border:1px solid var(--line);background:#1d1d22;color:var(--text);text-align:center;cursor:pointer;font:inherit}
+.btn:hover{border-color:var(--dim)}
+.btn.pri{background:var(--acc);color:#141416;border:0;font-weight:600}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.45;cursor:default}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.note{color:var(--faint);font-size:11px;margin-top:6px;line-height:1.4}
+.link{color:var(--acc);cursor:pointer;font-size:12px}
+.main{padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.dot{width:16px;height:16px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent}
+.dot.on{border-color:var(--text)}
+.big{flex:1;min-height:0;border-radius:10px;border:1px solid var(--line);position:relative;overflow:hidden;background:var(--bg);display:grid;place-items:center}
+.big canvas{max-width:100%;max-height:100%;display:block;image-rendering:pixelated}
+.lbl{position:absolute;left:12px;bottom:10px;color:var(--dim);font-size:12px;background:rgba(14,14,16,.7);padding:2px 6px;border-radius:4px}
+.swatches{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.sw{border-radius:8px;border:1px solid var(--line);position:relative;overflow:hidden;cursor:pointer}
+.sw canvas{width:100%;display:block}
+.sw span{position:absolute;left:8px;bottom:5px;font-size:11px}
+#toast{position:fixed;right:18px;bottom:18px;max-width:520px;background:#202026;border:1px solid var(--line);border-left:3px solid var(--acc);padding:10px 14px;border-radius:8px;display:none;white-space:pre-wrap;font-size:13px;z-index:9}
+#toast.err{border-left-color:#ff6b5e}
+.hint{color:var(--dim);font-size:12px}
+.drop{outline:2px dashed var(--acc);outline-offset:-6px}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:18px;width:560px}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog input[type=text]{width:100%}
+</style></head>
+<body>
+<div class="app" id="app">
+<div class="side">
+	<h1>PHOSPHOR · TEXTURE MAKER</h1><div class="ver" id="ver"></div>
+
+	<h2>Sprites (PNG)</h2>
+	<div class="sprites" id="sprites"></div>
+	<input type="file" id="file" accept="image/png,image/gif,image/bmp,image/webp" multiple hidden>
+	<div class="note">Drop PNGs here or press +. Click a sprite's ◐ to leave it out for now, ✕ to remove it. Up to 128×128 pixels each.</div>
+
+	<h2>Colours to shades</h2>
+	<div class="row"><span>Background</span><div class="seg" data-k="bg"><b data-v="auto">Auto</b><b data-v="alpha">Transparency</b><b data-v="none">None</b></div></div>
+	<div class="row"><span>Shade by</span><div class="seg" data-k="shadeBy"><b data-v="spread">Each colour</b><b data-v="bright">Brightness</b></div></div>
+	<div class="row"><span>Shades</span><input type="range" min="2" max="15" data-k="levels"><span class="val" id="v_levels"></span></div>
+	<div class="row"><span>Darkest shade</span><input type="range" min="10" max="100" data-k="floor"><span class="val" id="v_floor"></span></div>
+	<div class="row"><span>Brightest is</span><div class="seg" data-k="invShade"><b data-v="0">Strongest</b><b data-v="1">Faintest</b></div></div>
+	<div class="note">"Each colour" gives every colour in a sprite its own shade (darkest to brightest), so an outline and a fill of the same brightness still differ. "Brightness" follows how light each colour looks.</div>
+
+	<h2>Layout</h2>
+	<div class="row"><span>Canvas</span><div class="seg" data-k="canvas"><b data-v="screen">Whole screen</b><b data-v="tile">Tile</b></div></div>
+	<div class="row" id="tileRow"><span>Tile size</span><span><input type="number" min="32" max="640" step="8" data-k="tileW"> × <input type="number" min="32" max="360" step="8" data-k="tileH"></span></div>
+	<div class="row"><span>Pixel scale</span><div class="seg" data-k="px"><b data-v="1">1×</b><b data-v="2">2×</b><b data-v="3">3×</b><b data-v="4">4×</b><b data-v="5">5×</b></div></div>
+	<div class="row"><span>Density</span><input type="range" min="1" max="100" data-k="density"><span class="val" id="v_density"></span></div>
+	<div class="row"><span>Min. gap</span><input type="range" min="0" max="80" data-k="gap"><span class="val" id="v_gap"></span></div>
+	<div class="row"><span>Turn 90° steps</span><div class="seg" data-k="rot"><b data-v="1">Random</b><b data-v="0">Off</b></div></div>
+	<div class="row"><span>Mirror</span><div class="seg" data-k="mirror"><b data-v="1">Random</b><b data-v="0">Off</b></div></div>
+	<div class="row"><span>Grid snap</span><div class="seg" data-k="snap"><b data-v="1">Sprite pixels</b><b data-v="0">Off</b></div></div>
+	<div class="row"><span>Seed <span id="seedv"></span></span><span class="link" id="reroll">⟳ Re-roll</span></div>
+
+	<h2>Look</h2>
+	<div class="row"><span>Mode</span><div class="seg" data-k="inv"><b data-v="0">Sprites</b><b data-v="1">Inverted</b></div></div>
+	<div class="row"><span>Strength</span><input type="range" min="4" max="30" data-k="str"><span class="val" id="v_str"></span></div>
+	<div class="note">Phosphor's own textures use 0.13: faint, so the menu still reads as a dark screen.</div>
+
+	<h2>Export</h2>
+	<div class="row"><span>Name</span><input type="text" data-k="name" style="width:170px" maxlength="40"></div>
+	<div class="row"><span>Id</span><span class="val" id="idv" style="text-align:right"></span></div>
+	<button class="btn pri" id="export">Export</button>
+	<button class="btn" id="install">Add to Phosphor</button>
+	<div class="two"><button class="btn" id="save">Save project</button><button class="btn" id="open">Open project</button></div>
+	<input type="file" id="pfile" accept=".ptm,application/json" hidden>
+	<div class="note" id="exnote"></div>
+	<div class="row" style="margin-top:10px"><span class="link" id="folders">Folders…</span><span class="link" id="openOut">Open exports folder</span></div>
+</div>
+
+<div class="main">
+	<div class="bar">
+		<div class="seg" data-k="view"><b data-v="real">Real strength</b><b data-v="bright">Bright (check layout)</b></div>
+		<div style="flex:1"></div>
+		<span class="hint">Accent</span><span id="dots"></span>
+	</div>
+	<div class="big" id="bigwrap"><canvas id="big" width="1280" height="720"></canvas><div class="lbl" id="lbl"></div></div>
+	<div class="swatches" id="sws"></div>
+</div>
+</div>
+<div id="toast"></div>
+<dialog id="dlg">
+	<h2 style="margin-top:0">Folders</h2>
+	<div class="hint">Exports go to</div><input type="text" id="fOut">
+	<div class="hint" style="margin-top:12px">Phosphor's source (the folder with <code>frontend</code> and <code>apps</code>), for Add to Phosphor</div><input type="text" id="fPh">
+	<div class="note" id="fInfo"></div>
+	<div class="two" style="margin-top:12px"><button class="btn" id="fCancel">Cancel</button><button class="btn pri" id="fSave">Save</button></div>
+</dialog>
+<script src="spritetex.js"></script>
+<script src="app.js"></script>
+</body></html>
