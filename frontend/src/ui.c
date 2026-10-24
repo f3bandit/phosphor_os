@@ -5443,8 +5443,25 @@ static void map_key(pkey_t k)
 }
 
 /* the app asks through phosphord: <tmp>/map-request ("start VVVV:PPPP", "skip", "cancel") */
+static void script_requests(void)
+{
+	char p[300], path[600] = "";
+	const char *t = getenv("PHOS_TMP");
+	snprintf(p, sizeof(p), "%s/script-request", t && *t ? t : "/tmp/phosphor");
+	FILE *f = fopen(p, "r");
+	if (!f) return;
+	if (!fgets(path, sizeof(path), f)) path[0] = 0;
+	fclose(f);
+	unlink(p);
+	path[strcspn(path, "\r\n")] = 0;
+	if (!path[0] || strstr(path, "/../") || !strstr(path, "/Scripts/")) return;
+	plog("scripts: %s asked from the app", path);
+	run_script(path);
+}
+
 static void map_requests(void)
 {
+	script_requests();
 	char p[300], what[48] = "";
 	const char *t = getenv("PHOS_TMP");
 	snprintf(p, sizeof(p), "%s/map-request", t && *t ? t : "/tmp/phosphor");
@@ -6518,9 +6535,20 @@ static int sk_key(pkey_t k)
 	return 1;
 }
 
+/* Remote control from the Windows app: never into network, pairing or remote access settings */
+static int app_key_blocked(pkey_t k)
+{
+	if (!input_from_app()) return 0;
+	if (cur == SCR_WIFI || cur == SCR_BT || cur == SCR_REMOTE || cur == SCR_WELCOME) return k != K_B && k != K_MENU;
+	if (cur == SCR_SETTINGS && (k == K_A || k == K_LEFT || k == K_RIGHT))
+		return set_list.sel == SET_WIFI || set_list.sel == SET_BT || set_list.sel == SET_REMOTE || set_list.sel == SET_SAMBA;
+	return 0;
+}
+
 void ui_key(pkey_t k)
 {
 	if (powering) return;
+	if (app_key_blocked(k)) { toast_show("Network, Bluetooth and remote access are changed on the SuperStation itself"); return; }
 	if (k == K_POWER) saver_hide();
 	else if (saver_key()) return;
 	if (cur == SCR_MAP) { map_key(k); return; }       /* locked: only Select + Start (cancel) */

@@ -62,6 +62,8 @@ const char *input_notice(void)
 }
 
 static pkey_t queue[32];
+static unsigned char queue_app[32], last_app;   /* a key the Windows app sent (Remote control) */
+static int push_app;
 static int qh, qt;
 static pkey_t held = KEY_NONE_;
 static unsigned held_since, last_repeat;
@@ -138,11 +140,15 @@ static void fifo_poll(void)
 			if (!fifo_len) continue;
 			fifo_buf[fifo_len] = 0;
 			fifo_len = 0;
-			pkey_t k = !strcasecmp(fifo_buf, "start") ? K_MENU : key_from_name(fifo_buf);
+			/* "app:" in front: from the Windows app's Remote control (the shell keeps it out of network,
+			   pairing and remote access settings) */
+			int app = !strncmp(fifo_buf, "app:", 4);
+			const char *nm = fifo_buf + (app ? 4 : 0);
+			pkey_t k = !strcasecmp(nm, "start") ? K_MENU : key_from_name(nm);
 			char w[160];
 			snprintf(w, sizeof(w), "%s%s", fifo_buf, k == KEY_NONE_ ? " (unknown)" : "");
 			input_watch("remote", w);
-			if (k != KEY_NONE_) input_push(k);
+			if (k != KEY_NONE_) { push_app = app; input_push(k); push_app = 0; }
 		}
 	}
 }
@@ -199,7 +205,7 @@ static int virt_feeds(void) { return have_virt() && !mainlink_pads(); }
 void input_push(pkey_t k)
 {
 	int n = (qt + 1) % 32;
-	if (n != qh) { queue[qt] = k; qt = n; }
+	if (n != qh) { queue[qt] = k; queue_app[qt] = (unsigned char)push_app; qt = n; }
 }
 
 static int has_bit(const unsigned long *bits, int b)
@@ -433,6 +439,7 @@ pkey_t input_poll(unsigned now)
 	}
 	if (qh == qt) return KEY_NONE_;
 	pkey_t k = queue[qh];
+	last_app = queue_app[qh];
 	qh = (qh + 1) % 32;
 	if (k > KEY_NONE_ && k <= K_POWER) input_watch("shell", KNAMES[k]);
 	return k;
@@ -448,3 +455,5 @@ pkey_t key_from_name(const char *n)
 	for (size_t i = 0; i < sizeof(T) / sizeof(T[0]); i++) if (!strcasecmp(n, T[i].n)) return T[i].k;
 	return KEY_NONE_;
 }
+
+int input_from_app(void) { return last_app; }

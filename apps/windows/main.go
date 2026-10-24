@@ -27,6 +27,9 @@ var webFS embed.FS
 var sessionKey string
 
 func main() {
+	if runSDJob(os.Args[1:]) { // the SD card helper (as administrator): one job, then it exits
+		return
+	}
 	noWindow := flag.Bool("no-window", false, "don't open a window (print the address)")
 	port := flag.Int("port", 0, "port on 127.0.0.1 (0: any free one)")
 	flag.Parse()

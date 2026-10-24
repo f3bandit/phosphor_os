@@ -12,8 +12,14 @@ const SET_SECTIONS = [
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"]] },
 	{ id: "saves", name: "Saves & memory cards", tabs: [["Memory cards", "tMc"], ["Backups", "tSnaps"], ["Cloud saves", "tCloud"]] },
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
+	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"]] },
+	{ id: "network", name: "Network", tabs: [["Network", "tNet"]] },
+	{ id: "video", name: "Video", tabs: [["Screen filters", "tVideo"]] },
+	{ id: "remote", name: "Remote control", tabs: [["Remote control", "tRemote"]] },
+	{ id: "advanced", name: "Advanced", tabs: [["MiSTer.ini", "tIni"], ["Scripts", "tScripts"]] },
 	{ grp: "Tools" },
 	{ id: "diagnostics", name: "Diagnostics", tabs: [["Dashboard", "tDash"]] },
+	{ id: "sdcard", name: "SD card flash & health", tabs: [["Flash a card", "tFlash"], ["Card health", "tCardHealth"]] },
 	{ grp: "This PC" },
 	{ id: "notifications", name: "Notifications", tabs: [["Notifications", "tNotes"]] },
 	{ id: "connection", name: "Connection", tabs: [["Connection", "tConn"]] },
@@ -1038,6 +1044,337 @@ class AppSettings {
 			<p class="note">Closing the window keeps Phosphor in the tray (bottom right, by the clock), watching for warnings. To stop it completely:</p>
 			<div class="acts"><button class="btn" id="quit" data-nav>Exit Phosphor</button></div></div>`));
 		$("#quit").onclick = async () => { await api("/api/quit", {}); window.close(); };
+	}
+
+	/* ---------- Devices (view only: pairing and changes are made on the SS1 itself) ---------- */
+	async tDevBt(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Bluetooth</h2><p class="note">What's paired with the SuperStation, and what's connected now. Pairing, forgetting and disconnecting are done on the SS1 itself (Settings › Bluetooth), so nothing here can change them.</p></div></div>`));
+		const draw = async () => {
+			let s;
+			try { s = await ss1({ cmd: "bluetooth" }); } catch (e) { if (alive()) $("#bt").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
+			const l = $("#bt");
+			if (!s.present) { l.innerHTML = `<div class="empty">No Bluetooth adapter on the SS1.</div>`; return true; }
+			const D = s.devices || [];
+			l.innerHTML = D.length ? "" : `<div class="empty">Nothing paired yet.</div>`;
+			for (const d of D) {
+				const el = h(`<div class="row net" data-nav><span class="n"><b>${esc(d.name || d.mac)}</b><small>${esc(d.input ? "Controller / input" : d.icon || "Device")} · ${esc(d.mac)}</small></span><span class="v">${d.connected ? '<span class="mpill good">connected</span>' : '<span class="mpill muted">not connected</span>'}</span></div>`).firstChild;
+				l.appendChild(el);
+			}
+			return true;
+		};
+		if (await draw()) this.every(3000, draw);
+	}
+	async tDevPorts(b) {
+		const alive = this.alive;
+		const T = { 0x41: "Digital controller", 0x73: "DualShock (analog)", 0x53: "Analog joystick", 0x23: "neGcon", 0x12: "Mouse", 0x63: "GunCon", 0xF3: "Controller (setting up)" };
+		b.append(h(`<div class="split"><div class="list" id="fp"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Front ports</h2><p class="note">The PlayStation controllers in the SuperStation's two front ports. The live controller test is on the TV (Settings › Front ports & memory cards › Controller test); memory cards are in Saves & memory cards.</p></div></div>`));
+		const draw = async () => {
+			if (document.visibilityState !== "visible") return alive();
+			let p, pads = null;
+			try { p = (await ss1({ cmd: "ports" })).ports || {}; } catch (e) { if (alive()) $("#fp").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (p.available) try { pads = (await ss1({ cmd: "pads" })).pads || []; } catch (e) {}
+			if (!alive()) return false;
+			const l = $("#fp");
+			if (!pads) {
+				l.innerHTML = `<div class="empty">${p.in_game ? "A game is running: the front ports belong to it." : "The front ports are read through Phosphor's Main while the menu core is loaded. Open Settings › Front ports & memory cards on the TV once to get them ready."}</div>`;
+				return true;
+			}
+			l.innerHTML = [1, 2].map(n => {
+				const x = pads.find(q => q.port === n) || {};
+				return `<div class="row net"><span class="n"><b>Port ${n}</b><small>${x.connected ? esc(T[x.id] || "Controller") : "Nothing plugged in"}</small></span><span class="v">${x.connected ? '<span class="mpill good">connected</span>' : ""}</span></div>`;
+			}).join("");
+			return true;
+		};
+		if (await draw()) this.every(1500, draw);
+	}
+	async tDevUsb(b) {
+		const alive = this.alive;
+		const K = { input: "Controller / keyboard", storage: "Drive", bluetooth: "Bluetooth adapter", network: "Network adapter", audio: "Sound", vendor: "Device", other: "Device" };
+		b.append(h(`<div class="split"><div class="list" id="usb"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>USB</h2><p class="note">Everything plugged into the SuperStation's USB ports and dock (hubs left out). Drives are in Storage, controllers in Controllers.</p></div></div>`));
+		let s;
+		try { s = await ss1({ cmd: "usb" }); } catch (e) { if (alive()) $("#usb").innerHTML = `<div class="empty">${esc(/only works|unknown/i.test(e.message) ? "Update Phosphor on the SS1 to see USB devices here." : e.message)}</div>`; return; }
+		if (!alive()) return;
+		const D = s.devices || [];
+		$("#usb").innerHTML = D.length ? D.map(d => `<div class="row net" data-nav><span class="n"><b>${esc(d.product || d.id)}</b><small>${esc(K[d.kind] || "Device")}${d.maker ? " · " + esc(d.maker) : ""} · ${esc(d.id)}</small></span><span class="v">${d.mbps >= 5000 ? "USB 3" : d.mbps >= 480 ? "USB 2" : d.mbps ? "USB 1" : ""}</span></div>`).join("") : `<div class="empty">Nothing plugged in.</div>`;
+	}
+
+	/* ---------- Network (view only: WiFi and remote access are changed on the SS1 itself) ---------- */
+	async tNet(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="net"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Network</h2><p class="note">How the SuperStation is connected. WiFi, its passwords and remote access are set on the SS1 itself (Settings › WiFi, Settings › Remote access): they never leave it, and nothing here can change them.</p></div></div>`));
+		let s;
+		try { s = await ss1({ cmd: "network" }); } catch (e) { if (alive()) $("#net").innerHTML = `<div class="empty">${esc(/only works|unknown/i.test(e.message) ? "Update Phosphor on the SS1 to see this." : e.message)}</div>`; return; }
+		if (!alive()) return;
+		const w = s.wifi || {}, bars = sig => sig >= -55 ? "excellent" : sig >= -67 ? "good" : sig >= -75 ? "fair" : "weak";
+		let html = `<dl class="kv"><dt>Name on the network</dt><dd>${esc(s.hostname || "")}</dd><dt>This app talks to it at</dt><dd>${esc(S.address || "")}</dd>${s.gateway ? `<dt>Router</dt><dd>${esc(s.gateway)} (${esc(s.gateway_if || "")})</dd>` : ""}${(s.dns || []).length ? `<dt>DNS</dt><dd>${(s.dns || []).map(esc).join(", ")}</dd>` : ""}</dl>`;
+		if (w.present) html += `<div class="sub" style="margin-top:1.2rem">${spaced("WiFi")}</div><dl class="kv">${w.connected ? `<dt>Network</dt><dd>${esc(w.ssid)}</dd><dt>Signal</dt><dd>${w.signal} dBm (${bars(w.signal)})</dd>${w.freq ? `<dt>Band</dt><dd>${w.freq >= 4900 ? "5 GHz" : "2.4 GHz"}</dd>` : ""}` : `<dt>WiFi</dt><dd>not connected</dd>`}</dl>`;
+		html += `<div class="sub" style="margin-top:1.2rem">${spaced("Connections")}</div>`;
+		for (const i of s.interfaces || []) html += `<div class="row net"><span class="n"><b>${i.kind === "wifi" ? "WiFi" : "Wired"} (${esc(i.name)})</b><small>${(i.ips || []).map(esc).join(", ") || "no address"} · ${esc(i.mac || "")}${i.mbps ? ` · ${i.mbps} Mb/s` : ""}</small></span><span class="v">${i.up ? '<span class="mpill good">up</span>' : '<span class="mpill muted">down</span>'}</span></div>`;
+		$("#net").innerHTML = html;
+	}
+
+	/* ---------- Video: each system's screen filters (as the TV's Video settings): a change backs up the core's files first ---------- */
+	async tVideo(b) {
+		const alive = this.alive, me = this;
+		b.append(h(`<div class="split" style="grid-template-columns:18rem 1fr"><div class="list" id="vs"><div class="empty"><span class="spin"></span></div></div><div class="list mcw" id="vp"></div></div>`));
+		let L, files = {};
+		try { L = (await ss1({ cmd: "video" })).systems || []; } catch (e) { if (alive()) $("#vs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
+		const load = async k => files[k] || (files[k] = (await ss1({ cmd: "video_files", kind: k }).catch(() => ({ files: [] }))).files || []);
+		const vs = $("#vs");
+		if (!L.length) { vs.innerHTML = `<div class="empty">No cores with screen filters found.</div>`; return; }
+		const sel = (id, list, val, off = "Off") => `<select id="${id}" data-nav><option value="">${off}</option>${list.map(f => `<option value="${esc(f)}"${f === val ? " selected" : ""}>${esc(f.replace(/\.[^.]+$/, ""))}</option>`).join("")}</select>`;
+		const panel = async v => {
+			const [F, M, G, P] = await Promise.all(["filters", "masks", "gamma", "presets"].map(load));
+			if (!alive()) return;
+			const vp = $("#vp");
+			vp.innerHTML = `<div class="mcard"><h3>${esc(v.name)} <span class="muted" style="font-weight:400">${esc(v.core)}${v.custom ? "" : " · MiSTer.ini's defaults"}</span></h3>
+				<div class="mrow"><label style="width:9rem">Preset</label>${sel("v_pre", P, "", "Choose a preset…")}<button class="btn" id="v_preok" data-nav>Use it</button></div>
+				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Filter</label>${sel("v_filter", F, v.filter)}</div>
+				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Vertical filter</label>${sel("v_vertical", F, v.vertical)}</div>
+				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Scanlines</label>${sel("v_scanlines", F, v.scanlines)}</div>
+				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Interlaced</label>${sel("v_interlace", F, v.interlace)}</div>
+				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Shadow mask</label><select id="v_maskmode" data-nav>${["off", "1x", "2x", "1x rotated", "2x rotated"].map(m => `<option${m === v.maskmode ? " selected" : ""}>${m}</option>`).join("")}</select>${sel("v_mask", M, v.mask, "None")}</div>
+				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Gamma</label>${sel("v_gamma", G, v.gamma)}</div>
+				<div class="mrow" style="margin-top:1rem"><button class="btn" id="v_undo" data-nav>Undo the last change</button><span class="muted">Each change keeps the core's files first. It shows the next time the core starts.</span></div></div>`;
+			const set = async o => { try { const r = await ss1({ cmd: "video", system: v.system, ...o }); Object.assign(v, r.video); toast("Saved: it shows the next time " + v.name + " starts"); panel(v); } catch (e) { toast(e.message); } };
+			for (const k of ["filter", "vertical", "scanlines", "interlace", "mask", "gamma", "maskmode"]) $("#v_" + k).onchange = e => set({ set: { [k]: e.target.value || null } });
+			$("#v_preok").onclick = () => { const p = $("#v_pre").value; if (p) set({ preset: p }); };
+			$("#v_undo").onclick = () => set({ undo: true });
+		};
+		vs.innerHTML = "";
+		L.forEach((v, i) => {
+			const el = h(`<div class="row" data-nav><span class="n">${esc(v.name)}</span><span class="v">${v.custom ? "own settings" : ""}</span></div>`).firstChild;
+			el._onfocus = () => { clearTimeout(me.vt); me.vt = setTimeout(() => panel(v), 120); };
+			el.onclick = () => panel(v);
+			vs.appendChild(el);
+		});
+		panel(L[0]);
+	}
+
+	/* ---------- Remote control: Phosphor's screen on the TV, from here (not network, pairing or remote access settings) ---------- */
+	async tRemote(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list">
+			<div class="remote" id="rc">
+				<div class="rc-sh"><button class="btn" data-k="l" data-nav>L</button><span></span><button class="btn" data-k="r" data-nav>R</button></div>
+				<div class="rc-main">
+					<div class="rc-dpad"><span></span><button class="btn" data-k="up" data-nav>▲</button><span></span><button class="btn" data-k="left" data-nav>◀</button><span></span><button class="btn" data-k="right" data-nav>▶</button><span></span><button class="btn" data-k="down" data-nav>▼</button><span></span></div>
+					<div class="rc-mid"><button class="btn" data-k="select" data-nav>Select</button><button class="btn" data-k="start" data-nav>Menu</button></div>
+					<div class="rc-face"><span></span><button class="btn" data-k="y" data-nav>Y</button><span></span><button class="btn" data-k="x" data-nav>X</button><span></span><button class="btn" data-k="b" data-nav>B</button><span></span><button class="btn primary" data-k="a" data-nav>A</button><span></span></div>
+				</div>
+				<p class="note" style="margin-top:1rem">Or use this PC's keyboard while this box is selected: arrows, Enter (A), Backspace (B), X, Y, M (Menu).</p>
+			</div>
+			<div class="sub" style="margin-top:1.4rem">${spaced("Start a game on the TV")}</div>
+			<input type="search" id="rc_q" placeholder="Type part of a game's name" data-nav style="max-width:28rem;margin:.5rem 0">
+			<div id="rc_res"></div></div>
+			<div class="panel"><h2>Remote control</h2><p class="note">Works Phosphor's screen on the TV like a controller: while a game is running, the game has the controllers. WiFi, Bluetooth, remote access and file sharing settings can't be opened from here: they're changed on the SS1 itself.</p></div></div>`));
+		const press = async k => { try { await ss1({ cmd: "press", key: k }); } catch (e) { toast(/only works|unknown/i.test(e.message) ? "Update Phosphor on the SS1 for remote control" : e.message); } };
+		$("#rc").querySelectorAll("[data-k]").forEach(bt => bt.onclick = () => press(bt.dataset.k));
+		const KM = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "a", Backspace: "b", x: "x", X: "x", y: "y", Y: "y", m: "start", M: "start" };
+		$("#rc").tabIndex = 0;
+		$("#rc").onkeydown = e => { const k = KM[e.key]; if (!k) return; e.preventDefault(); e.stopPropagation(); press(k); };
+		let t;
+		$("#rc_q").oninput = e => {
+			clearTimeout(t);
+			t = setTimeout(async () => {
+				const q = e.target.value.trim(), box = $("#rc_res");
+				if (q.length < 2) { box.innerHTML = ""; return; }
+				try {
+					const j = await ss1({ cmd: "games", q, limit: 30 });
+					if (!alive()) return;
+					box.innerHTML = j.games.length ? "" : `<div class="empty">No games match.</div>`;
+					for (const g of j.games) {
+						const el = h(`<div class="row" data-nav><span class="n">${esc(g.title)}</span><span class="v">${esc(g.system)} · Start on the TV</span></div>`).firstChild;
+						el.onclick = () => launch(g);
+						box.appendChild(el);
+					}
+				} catch (er) { box.innerHTML = `<div class="empty">${esc(er.message)}</div>`; }
+			}, 250);
+		};
+	}
+
+	/* ---------- Advanced: MiSTer.ini (the old one kept on every save), Scripts (run on the TV) ---------- */
+	async tIni(b) {
+		const alive = this.alive, me = this;
+		const M = this.ini || (this.ini = { file: "MiSTer.ini" });
+		b.append(h(`<div class="split"><div class="list mcw grow" style="display:flex;flex-direction:column">
+				<div class="mrow"><label for="ini_f">File</label><select id="ini_f" data-nav></select><span class="muted" id="ini_st"></span></div>
+				<textarea id="ini_t" data-nav data-free spellcheck="false" style="flex:1;min-height:22rem;margin-top:.6rem;font-family:var(--mono, monospace);font-size:.85rem;white-space:pre"></textarea>
+				<div class="acts"><button class="btn primary" id="ini_save" data-nav>Save</button><button class="btn" id="ini_rel" data-nav>Discard my changes</button></div></div>
+			<div class="panel"><h2>MiSTer.ini</h2><p class="note">MiSTer's own settings file (video mode, scaling, controllers, ...). Every save keeps the file as it was first, in phosphor/backups/ini on the SD card: put any of those back below. Most changes show after the SS1 restarts. In the editor every key types: Esc leaves it.</p>
+				<div class="sub" style="margin-top:1.2rem">${spaced("Kept copies")}</div><div id="ini_k"></div></div></div>`));
+		let orig = "";
+		const draw = async (o = {}) => {
+			let r;
+			try { r = await ss1({ cmd: "ini", file: M.file, ...o }); } catch (e) { if (alive()) { $("#ini_st").textContent = /only works|unknown/i.test(e.message) ? "Update Phosphor on the SS1 to edit this here." : e.message; } return null; }
+			if (!alive()) return null;
+			M.file = r.file;
+			$("#ini_f").innerHTML = (r.files.length ? r.files : [r.file]).map(f => `<option${f === r.file ? " selected" : ""}>${esc(f)}</option>`).join("");
+			orig = r.text; $("#ini_t").value = r.text;
+			$("#ini_st").textContent = r.exists ? `${r.text.split("\n").length} lines` : "Not on the SD card yet: saving makes it";
+			const K = r.kept_copies || [];
+			$("#ini_k").innerHTML = K.length ? "" : `<p class="note">None yet.</p>`;
+			for (const k of K.slice(0, 30)) {
+				const m = /\.(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)/.exec(k), when = m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).toLocaleString() : k;
+				const el = h(`<div class="row"><span class="n">${esc(when)}</span><button class="btn sm" data-nav>Put back</button></div>`).firstChild;
+				twice(el.querySelector("button"), "Press again (today's is kept too)", async () => { if (await draw({ do: "restore", name: k })) toast("Put back. The one before is kept too."); });
+				$("#ini_k").appendChild(el);
+			}
+			return r;
+		};
+		$("#ini_f").onchange = e => { M.file = e.target.value; draw(); };
+		$("#ini_rel").onclick = () => { $("#ini_t").value = orig; };
+		twice($("#ini_save"), "Press again: the old one is kept first", async () => {
+			const t = $("#ini_t").value;
+			if (t === orig) return toast("Nothing changed");
+			if (!/^\s*\[/m.test(t)) return toast("That doesn't look like an ini file ([MiSTer] is missing): not saved");
+			if (await draw({ do: "save", text: t })) toast("Saved. The old one is kept in phosphor/backups/ini");
+		});
+		await draw();
+	}
+	async tScripts(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="sc"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Scripts</h2><p class="note">The scripts in the SD card's Scripts folder (as MiSTer's Scripts menu). Run one here and it runs on the TV, in MiSTer's own terminal: answer its questions with the controller there. Phosphor comes back when it's done.</p></div></div>`));
+		let s;
+		try { s = await ss1({ cmd: "scripts" }); } catch (e) { if (alive()) $("#sc").innerHTML = `<div class="empty">${esc(/only works|unknown/i.test(e.message) ? "Update Phosphor on the SS1 to run scripts from here." : e.message)}</div>`; return; }
+		if (!alive()) return;
+		const l = $("#sc"), L = s.scripts || [];
+		l.innerHTML = L.length ? "" : `<div class="empty">No scripts in the Scripts folder.</div>`;
+		for (const x of L) {
+			const el = h(`<div class="row" data-nav><span class="n">${esc(x.name.replace(/\.sh$/, "").replace(/_/g, " "))}</span><span class="v">Run on the TV</span></div>`).firstChild;
+			el.onclick = async () => {
+				if (el.dataset.sure !== "1") { el.dataset.sure = "1"; el.querySelector(".v").textContent = "Press again to run it"; setTimeout(() => { el.dataset.sure = ""; el.querySelector(".v").textContent = "Run on the TV"; }, 4000); return; }
+				el.dataset.sure = "";
+				try { await ss1({ cmd: "scripts", do: "run", name: x.name }); toast(`${x.name} is running on the TV`); } catch (e) { toast(e.message); }
+			};
+			l.appendChild(el);
+		}
+	}
+
+	/* ---------- SD card flash & health: a card in this PC's reader ---------- */
+	sdBar(st) {
+		const pct = st.total ? Math.min(100, Math.round(100 * st.done / st.total)) : 0;
+		const ph = { download: "Downloading", prepare: "Getting ready", write: "Writing", verify: "Checking what was written", read: "Reading the card", done: "Done", failed: "Didn't finish", ready: "Ready" }[st.phase] || st.phase || "";
+		return `<div class="sub" style="margin-top:1.2rem">${spaced(ph)}${st.running && st.total ? ` · ${pct}%` : ""}${st.mbps ? ` · ${st.mbps.toFixed(0)} MB/s` : ""}</div>
+			${st.running ? `<div class="mbar" style="margin:.5rem 0"><i style="width:${pct}%"></i></div>` : ""}
+			${st.message ? `<p class="note">${esc(st.message)}</p>` : ""}${st.error ? `<p class="note bad">${esc(st.error)}</p>` : ""}`;
+	}
+	async tFlash(b) {
+		const alive = this.alive, me = this;
+		const F = this.fl || (this.fl = { image: "", disk: null });
+		b.append(h(`<div class="split"><div class="list mcw grow">
+			<div class="mcard"><h3>1 · The image</h3><div id="fl_imgs"><span class="muted">Looking for the latest release…</span></div>
+				<div class="mrow" style="margin-top:.6rem"><button class="btn" id="fl_pick" data-nav>Use an image on this PC…</button><span class="muted" id="fl_img"></span></div></div>
+			<div class="mcard"><h3>2 · The card</h3><div id="fl_disks"><span class="muted">Looking…</span></div>
+				<div class="mrow" style="margin-top:.6rem"><button class="btn" id="fl_rescan" data-nav>Look again</button><button class="btn" id="fl_why" data-nav>Why isn't my card listed?</button></div><div id="fl_all"></div></div>
+			<div class="mcard"><h3>3 · Write it</h3><div class="mrow"><label for="fl_conf">Type the card's disk number to confirm</label><input id="fl_conf" style="width:5rem" data-nav><button class="btn primary" id="fl_go" data-nav>Write the card</button></div>
+				<div id="fl_st"></div></div></div>
+			<div class="panel"><h2>Flash an SD card</h2><p class="note">Puts the official SuperStation One SD card image on a card in this PC's card reader, the same way SS1 Tool does: everything on the card is replaced, the partition table is written last, and then the whole card is read back and compared.</p>
+				<p class="note">Phosphor runs on the Regular MiSTer image: once the SuperStation has set the card up, install Phosphor on it as usual.</p>
+				<p class="note">Windows asks "allow this app to make changes" when the writing starts: writing to a disk needs it. Only SD cards and USB card readers are offered, never this PC's own drives.</p></div></div>`));
+		const showImg = () => { $("#fl_img").textContent = F.image ? F.image.split(/[\\/]/).pop() : "No image chosen yet"; };
+		const imgs = async () => {
+			let j;
+			try { j = await api("/api/sd/images"); } catch (e) { j = { ok: false, error: e.message }; }
+			if (!alive()) return;
+			if (!j.ok) { $("#fl_imgs").innerHTML = `<span class="muted">${esc(j.error)} (you can still use an image on this PC)</span>`; return; }
+			$("#fl_imgs").innerHTML = `<table><tbody>${j.images.map(a => `<tr><td><b>${esc(a.label)}</b><div class="muted" style="font-size:12px">${esc(a.release)} · ${esc(a.name)}</div></td><td>${a.size ? (a.size / 1073741824).toFixed(2) + " GB" : ""}</td><td><button class="btn sm" data-kind="${esc(a.kind)}" data-nav>${a.have ? "Use it (on this PC)" : "Download"}</button></td></tr>`).join("")}</tbody></table>`;
+			$("#fl_imgs").querySelectorAll("button[data-kind]").forEach(bt => bt.onclick = async () => {
+				const r = await api("/api/sd/download", { kind: bt.dataset.kind });
+				if (!r.ok) return toast(r.error);
+				if (r.image) { F.image = r.image; showImg(); toast("Image ready"); } else poll();
+			});
+		};
+		const disks = async () => {
+			const j = await api("/api/sd/disks");
+			if (!alive()) return;
+			const D = j.ok ? j.disks : [];
+			if (!j.ok) { $("#fl_disks").innerHTML = `<span class="muted">${esc(j.error)}</span>`; return; }
+			$("#fl_disks").innerHTML = D.length ? `<table><tbody>${D.map(d => `<tr class="pick${F.disk === d.Number ? " sel" : ""}" data-n="${d.Number}" data-nav tabindex="0"><td><b>Disk ${d.Number}</b> ${esc(d.FriendlyName)}</td><td>${(d.Size / 1e9).toFixed(1)} GB</td><td>${esc(d.Letters || "")}</td><td class="muted">${esc(d.BusType)}</td></tr>`).join("")}</tbody></table>`
+				: `<span class="muted">No SD card found. Put one in this PC's card reader (or a USB card reader).</span>`;
+			$("#fl_disks").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => { F.disk = +tr.dataset.n; disks(); });
+		};
+		const poll = async () => {
+			if (me.flPolling) return; me.flPolling = true;
+			while (alive()) {
+				const j = await api("/api/sd/state").catch(() => null);
+				if (!alive() || !j) break;
+				const st = j.state;
+				$("#fl_st").innerHTML = st.job && st.job !== "readtest" ? me.sdBar(st) : "";
+				if (st.job === "download" && st.phase === "ready" && st.image) { F.image = st.image; showImg(); }
+				if (!st.running) { if (st.job === "download") imgs(); break; }
+				await new Promise(r => setTimeout(r, 700));
+			}
+			me.flPolling = false;
+		};
+		$("#fl_pick").onclick = async () => { const r = await api("/api/sd/pick", {}); if (!r.ok) return toast(r.error); if (r.image) { F.image = r.image; showImg(); } };
+		$("#fl_rescan").onclick = disks;
+		$("#fl_why").onclick = async () => {
+			const j = await api("/api/sd/disks?all=1");
+			if (!j.ok) return toast(j.error);
+			$("#fl_all").innerHTML = `<table style="margin-top:.6rem"><tbody>${j.disks.map(d => `<tr><td><b>Disk ${d.number}</b> ${esc(d.name)}</td><td>${d.size ? (d.size / 1e9).toFixed(1) + " GB" : ""}</td><td>${esc(d.bus)}</td><td class="${d.offered ? "" : "muted"}">${esc(d.reason)}</td></tr>`).join("")}</tbody></table>`;
+		};
+		twice($("#fl_go"), "Press again: everything on the card is replaced", async () => {
+			if (!F.image) return toast("Choose the image first");
+			if (F.disk === null) return toast("Choose the card first");
+			const r = await api("/api/sd/start", { job: "flash", disk: F.disk, image: F.image, confirm: $("#fl_conf").value.trim() });
+			if (!r.ok) return toast(r.error);
+			$("#fl_conf").value = "";
+			poll();
+		});
+		showImg();
+		await Promise.all([imgs(), disks()]);
+		poll();
+	}
+	async tCardHealth(b) {
+		const alive = this.alive, me = this;
+		b.append(h(`<div class="split"><div class="list mcw grow">
+			<div class="mcard"><h3>Cards in this PC</h3><div id="ch_d"><span class="muted">Looking…</span></div>
+				<div class="mrow" style="margin-top:.6rem"><button class="btn" id="ch_re" data-nav>Look again</button></div></div>
+			<div class="mcard"><h3>Read test</h3><p class="muted" style="margin:0 0 .6rem">Reads every part of the chosen card once and times it. Nothing is written. A 64 GB card takes a few minutes.</p>
+				<div class="mrow"><button class="btn primary" id="ch_go" data-nav>Test the chosen card</button></div><div id="ch_st"></div></div></div>
+			<div class="panel"><h2>Card health</h2><p class="note">For an SD card in this PC's card reader: what Windows says about it, and a read test that finds parts of the card that can't be read, and cards that are much slower than they should be (worn or fake).</p>
+				<p class="note">The SD card in the SuperStation is checked from Storage › SD card, without taking it out.</p></div></div>`));
+		let pick = null;
+		const disks = async () => {
+			const j = await api("/api/sd/disks?all=1");
+			if (!alive()) return;
+			if (!j.ok) { $("#ch_d").innerHTML = `<span class="muted">${esc(j.error)}</span>`; return; }
+			const D = j.disks.filter(d => d.offered);
+			if (pick === null && D.length) pick = D[0].number;
+			$("#ch_d").innerHTML = D.length ? `<table><thead><tr><th>Card</th><th>Size</th><th>Windows says</th><th></th></tr></thead><tbody>${D.map(d => `<tr class="pick${pick === d.number ? " sel" : ""}" data-n="${d.number}" data-nav tabindex="0"><td><b>Disk ${d.number}</b> ${esc(d.name)}</td><td>${(d.size / 1e9).toFixed(1)} GB</td><td>${d.health === "Healthy" ? '<span class="mpill good">healthy</span>' : d.health ? `<span class="mpill bad">${esc(d.health)}</span>` : ""} <span class="muted">${esc(d.status || "")}</span></td><td>${esc(d.letters || "")}</td></tr>`).join("")}</tbody></table>`
+				: `<span class="muted">No SD card found. Put one in this PC's card reader.</span>`;
+			$("#ch_d").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => { pick = +tr.dataset.n; disks(); });
+		};
+		const poll = async () => {
+			if (me.chPolling) return; me.chPolling = true;
+			while (alive()) {
+				const j = await api("/api/sd/state").catch(() => null);
+				if (!alive() || !j) break;
+				const st = j.state;
+				$("#ch_st").innerHTML = st.job === "readtest" ? me.sdBar(st) + ((st.bad || []).length ? `<p class="note bad">Couldn't read at: ${st.bad.slice(0, 20).map(x => x + " MB").join(", ")}${st.bad.length > 20 ? "…" : ""}</p>` : "") : "";
+				if (!st.running) break;
+				await new Promise(r => setTimeout(r, 700));
+			}
+			me.chPolling = false;
+		};
+		$("#ch_re").onclick = disks;
+		$("#ch_go").onclick = async () => {
+			if (pick === null) return toast("Choose a card first");
+			const r = await api("/api/sd/start", { job: "readtest", disk: pick });
+			if (!r.ok) return toast(r.error);
+			poll();
+		};
+		await disks();
+		poll();
 	}
 }
 
