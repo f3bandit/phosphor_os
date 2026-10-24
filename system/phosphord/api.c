@@ -1599,6 +1599,17 @@ char *api_handle(sqlite3 *db, const char *request)
 			out = reply(o);
 		}
 	}
+	else if (!strcmp(c->valuestring, "scrape_todo")) {
+		cJSON *o = scraper_todo(db, req);
+		cJSON_AddBoolToObject(o, "ok", 1);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "scrape_result")) {
+		const char *e = scraper_result(db, req);
+		out = e ? fail(e) : reply(ok());
+	} else if (!strcmp(c->valuestring, "scrape_pc_done")) {
+		scraper_pc_done(cJSON_GetStringValue(cJSON_GetObjectItem(req, "status")));
+		out = reply(ok());
+	}
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
 		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
