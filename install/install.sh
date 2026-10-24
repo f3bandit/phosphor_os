@@ -41,6 +41,10 @@ done
 if [ -f "$HERE/bin/phos-nvme" ]; then
 	cp "$HERE/bin/phos-nvme" "$ROOT/bin/phos-nvme.new" && chmod 755 "$ROOT/bin/phos-nvme.new" && mv -f "$ROOT/bin/phos-nvme.new" "$ROOT/bin/phos-nvme"
 fi
+# phos-ssh.sh: SSH for Settings > Remote access (Off, Password, Keys only) and its copy on another drive
+if [ -f "$HERE/bin/phos-ssh.sh" ]; then
+	cp "$HERE/bin/phos-ssh.sh" "$ROOT/bin/phos-ssh.sh.new" && chmod 755 "$ROOT/bin/phos-ssh.sh.new" && mv -f "$ROOT/bin/phos-ssh.sh.new" "$ROOT/bin/phos-ssh.sh"
+fi
 # phosphor-main (Phosphor's Main fork): only copied; nothing starts it or replaces MiSTer's Main
 if [ -f "$HERE/bin/MiSTer_phosphor" ]; then
 	cp "$HERE/bin/MiSTer_phosphor" "$ROOT/bin/MiSTer_phosphor.new" && chmod 755 "$ROOT/bin/MiSTer_phosphor.new" && mv -f "$ROOT/bin/MiSTer_phosphor.new" "$ROOT/bin/MiSTer_phosphor"

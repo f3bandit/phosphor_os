@@ -12,6 +12,8 @@ STARTUP="$FAT/linux/user-startup.sh"
 TAG="phosphor"
 
 [ -x "$ROOT/phosphor.sh" ] && "$ROOT/phosphor.sh" stop > /dev/null 2>&1
+# MiSTer's own SSH again (its own password, no keys-only)
+[ -x "$ROOT/bin/phos-ssh.sh" ] && "$ROOT/bin/phos-ssh.sh" stock > /dev/null 2>&1
 # MiSTer.ini: take out Phosphor's main= and put back the one that was there
 INI="$FAT/MiSTer.ini"
 if [ -f "$INI" ] && grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI"; then

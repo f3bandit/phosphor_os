@@ -3,6 +3,23 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.10
+
+### New
+- **SSH in Settings > Remote access:** Off, Password or Keys only.
+  - **SSH password:** MiSTer's own (1), or one you set with the on-screen keyboard (X puts MiSTer's
+    back). Only its hash is kept.
+  - **SSH keys:** the keys that can log in as root; X removes one. The Phosphor app adds this PC's keys
+    (Settings > Connection > Add this PC's SSH key), and each only gets in after a yes on the TV.
+  - Keys only can't be chosen without a key, and the last key can't be removed while it's on, so
+    nobody gets locked out. Another device can't change any of this.
+  - MiSTer's own system files aren't edited (they're read-only, and a Linux update replaces them);
+    uninstalling Phosphor gives back MiSTer's own SSH.
+- **Keep a copy:** remote access (paired devices, SSH mode, password, keys) copied to the NVMe or a
+  USB drive after each change. A freshly flashed SD card gets it back on first boot, with a notice.
+  Backup snapshots now include it too (so a NAS gets a copy when snapshots go there).
+- phosphor-link 0.4.1 logs in with the Phosphor app's key, so it still works with Keys only.
+
 ## 0.27.9
 
 ### Fixes

@@ -112,6 +112,8 @@ reports any key sent during boot. `test/mcptest.py` drives the MCP server throug
 
 ## Status
 
+0.4.1: logs in with the Phosphor app's SSH key for this PC when there is one (password after), so the link
+still works when the SS1's SSH is set to Keys only (Settings > Remote access, once the key is added there).
 0.4.0: SSH first in `auto` (the address comes from `host=` or from the Phosphor app's pairing); the
 boot log, recent output and reboot open the debug port on demand. A watchdog: SSH keepalives every
 10 s, a console that stops answering gets Ctrl-C and a check, a dead link is reopened and safe tools
