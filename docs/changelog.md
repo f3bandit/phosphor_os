@@ -3,6 +3,37 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.16
+
+### New
+- **Memory cards, save by save** (TV: Settings > Front ports & memory cards > Memory cards; app 0.2.15:
+  Saves & memory cards): SS1 Tool's memory card manager. Both front ports side by side; read a card
+  into the library (phosphor/memcards, the same layout as SS1 Tool's), copy, move or remove single
+  saves between cards, put saves back onto a real card. Every change is a new version of the card
+  and every write to a real card backs it up first. The app also adds .mcs saves and downloads .mcs
+  and .mcd files.
+- **Controller test** (TV: Settings > Front ports & memory cards > Controller test): the controller
+  in either front port, live, drawn like SS1 Tool's (DualShock or digital).
+- **Storage** (TV: Settings > Storage): every drive with its space and last check; quick check of
+  everything, speed test, drive health, file system check, repair of NVMe / USB drives (asks twice),
+  mounting a drive that dropped off, and backing up saves & settings now.
+- **The app (0.2.15)** has the rest of the SS1's settings:
+  - Devices: Bluetooth, front ports and USB, view only (pairing stays on the SS1).
+  - Network: connections, addresses, WiFi network and signal, view only.
+  - Video: each system's screen filters, scanlines, shadow mask, gamma and presets, with undo.
+  - Remote control: Phosphor's screen on the TV from the PC (buttons or the keyboard), and starting
+    a game. WiFi, Bluetooth, remote access and file sharing settings can't be opened from it.
+  - Advanced: MiSTer.ini (every save keeps the old file in phosphor/backups/ini, and any kept copy
+    can be put back) and Scripts (run on the TV, in MiSTer's terminal).
+  - SD card flash & health: the official SuperStation SD card image onto a card in the PC's reader
+    (written and read back like SS1 Tool does), and a read test of a card. Windows asks for
+    permission only when the card is written or tested.
+
+### Fixes
+- **The SS1's dock no longer leaves a phantom drive** (the JMicron bridge's empty second disk) once
+  the NVMe drive is up; the rule lives in phosphord, so a MiSTer Linux update doesn't undo it.
+- **The app's "SS1 isn't answering"** only shows when the SS1 really doesn't answer.
+
 ## 0.27.15
 
 ### Fixes
