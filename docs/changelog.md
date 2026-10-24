@@ -3,6 +3,16 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.19
+
+### Fixes
+- **Pressing Update Phosphor could start the same update several times at once**: the TV gave up
+  waiting for the updater's answer after a few seconds and said "The updater didn't start" though
+  it had, so pressing again started another one; together they broke each other's backup and left
+  MiSTer's menu on the screen instead of restarting. Now only one update runs at a time (another
+  press says "An update is already running"), the answer comes back at once, and the TV waits for
+  it.
+
 ## 0.27.18
 
 ### Fixes

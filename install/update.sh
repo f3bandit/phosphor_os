@@ -79,6 +79,14 @@ backup_installed() {
 
 md5() { md5sum "$1" 2>/dev/null | cut -c1-32; }
 
+# an install or roll back is running: its process (kept in $LOCK) is still there
+LOCK="$TMPD/update.lock"
+running() {
+	local p
+	p="$(cat "$LOCK" 2>/dev/null)"
+	[ -n "$p" ] && kill -0 "$p" 2>/dev/null
+}
+
 install_pkg() {
 	local pkg="$1" w="$TMPD/update-unpack" dir v old main_before modules m
 	[ -f "$pkg" ] || { state failed "no such package: $pkg"; return 1; }
@@ -144,11 +152,18 @@ case "${1:-}" in
 	# install and rollback stop Phosphor on the way: run on their own, so they finish whoever asked
 	install|rollback)
 		[ -n "${2:-}" ] || { echo "$1 <package|version>" >&2; exit 2; }
+		# one at a time: a second ask while one runs is turned down (exit 3), never run alongside
+		if [ -z "${PHOS_UPDATE_CHILD:-}" ]; then
+			if running; then echo "An update is already running"; exit 3; fi
+		fi
 		if [ -z "${PHOS_UPDATE_CHILD:-}" ] && [ "${3:-}" != --wait ]; then
 			state working "Starting..." "" 0
 			PHOS_UPDATE_CHILD=1 setsid "$0" "$1" "$2" < /dev/null >> "$LOG" 2>&1 &
+			echo $! > "$LOCK"
 			exit 0
 		fi
+		echo $$ > "$LOCK"
+		trap 'rm -f "$LOCK"' EXIT
 		# (a script from MiSTer's Scripts menu asks for a moment, so its window can close first)
 		[ -n "${PHOS_UPDATE_DELAY:-}" ] && sleep "$PHOS_UPDATE_DELAY"
 		if [ "$1" = install ]; then install_pkg "$2"; else rollback "$2"; fi ;;

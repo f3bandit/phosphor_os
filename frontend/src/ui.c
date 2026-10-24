@@ -5575,9 +5575,12 @@ static void up_key(pkey_t k)
 	int s = up_list.sel;
 	if (up.confirm_row != s || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = s; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
 	up.confirm_row = -1;
-	cJSON *r = s < up.npk ? api_call("{\"cmd\":\"update\",\"do\":\"install\",\"file\":\"%s\"}", up.pk_file[s])
-	                      : api_call("{\"cmd\":\"update\",\"do\":\"rollback\",\"version\":\"%s\"}", up.rb_ver[s - up.npk]);
-	if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "The updater didn't start"); cJSON_Delete(r); return; }
+	/* busy from here: a second press never starts a second update (the updater turns one down too) */
+	up.busy = 1;
+	cJSON *r = s < up.npk ? api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"install\",\"file\":\"%s\"}", up.pk_file[s])
+	                      : api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"rollback\",\"version\":\"%s\"}", up.rb_ver[s - up.npk]);
+	if (!r) { toast_show("Updating..."); return; }    /* no answer in time: it may well have started (the screen follows its state) */
+	if (!api_ok(r)) { up.busy = 0; toast_show(api_str(r, "error") ? api_str(r, "error") : "The updater didn't start"); cJSON_Delete(r); return; }
 	cJSON_Delete(r);
 	lv_label_set_text(up.note, "Updating: Phosphor closes, then the SuperStation restarts by itself to finish.");
 	toast_show("Updating...");

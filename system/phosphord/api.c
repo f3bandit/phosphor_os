@@ -1206,23 +1206,33 @@ static char *cmd_update(cJSON *req)
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 	/* the packages (each one opened to read its version) take seconds: kept, refreshed in the background;
 	   an install or roll back looks again first */
-	char *pk = (d && *d) ? bgcache_now(&c_upd_list) : bgcache_get(&c_upd_list, 1);
-	char *rb = (d && *d) ? bgcache_now(&c_upd_rb) : bgcache_get(&c_upd_rb, 1);
+	char *pk = bgcache_get(&c_upd_list, 1), *rb = bgcache_get(&c_upd_rb, 1);
 	if (d && *d) {
 		const char *arg = cJSON_GetStringValue(cJSON_GetObjectItem(req, !strcmp(d, "install") ? "file" : "version"));
-		int found = 0;
-		/* only what update.sh itself listed */
-		for (const char *l = !strcmp(d, "install") ? pk : !strcmp(d, "rollback") ? rb : NULL; arg && l && *l; ) {
-			size_t n = strcspn(l, "\n");
-			const char *bar = memchr(l, '|', n);
-			if (bar && (size_t)(bar - l) == strlen(arg) && !strncmp(l, arg, (size_t)(bar - l))) found = 1;
-			l += n + (l[n] == '\n');
+		/* only what update.sh itself listed (the kept list; looked at again only when it isn't there) */
+		for (int pass = 0; pass < 2; pass++) {
+			int found = 0;
+			for (const char *l = !strcmp(d, "install") ? pk : !strcmp(d, "rollback") ? rb : NULL; arg && l && *l; ) {
+				size_t n = strcspn(l, "\n");
+				const char *bar = memchr(l, '|', n);
+				if (bar && (size_t)(bar - l) == strlen(arg) && !strncmp(l, arg, (size_t)(bar - l))) found = 1;
+				l += n + (l[n] == '\n');
+			}
+			if (found) break;
+			if (pass) { free(pk); free(rb); cJSON_Delete(o); return fail("do: install (file from packages) or rollback (version from rollbacks)"); }
+			free(pk); free(rb);
+			pk = bgcache_now(&c_upd_list); rb = bgcache_now(&c_upd_rb);
 		}
-		if (!found) { free(pk); free(rb); cJSON_Delete(o); return fail("do: install (file from packages) or rollback (version from rollbacks)"); }
-		/* (a moment before it stops Phosphor, so this reply gets out first) */
+		/* (a moment before it stops Phosphor, so this reply gets out first); one at a time: update.sh
+		   turns down a second one with 3 */
 		snprintf(cmd, sizeof(cmd), "PHOS_UPDATE_DELAY=2 '%s' %s '%s' > /dev/null 2>&1", up, d, arg);
 		plog("update: %s %s", d, arg);
-		if (system(cmd)) { free(pk); free(rb); cJSON_Delete(o); return fail("the updater didn't start"); }
+		int rc = system(cmd);
+		if (rc != 0) {
+			free(pk); free(rb); cJSON_Delete(o);
+			return fail(WIFEXITED(rc) && WEXITSTATUS(rc) == 3 ? "An update is already running: wait for it to finish" : "the updater didn't start");
+		}
+		bgcache_stale(&c_upd_list); bgcache_stale(&c_upd_rb);
 	}
 	cJSON_AddBoolToObject(o, "available", 1);
 	snprintf(cmd, sizeof(cmd), "%s/phosphor/VERSION", p_fat());
