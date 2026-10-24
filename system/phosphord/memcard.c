@@ -385,11 +385,12 @@ static char suggest[64];
 
 /* the card read into buf goes into the library: the card it's recognised as, else fallback (NULL: ask
    for a name). 0 saved (rel, msg), 1 waiting for a name, -1 error (msg) */
-static int keep_card(unsigned char *buf, const char *fallback, char *rel, size_t rn, char *msg, size_t n)
+static int keep_card(unsigned char *buf, const char *fallback, char *rel, size_t rn, char *msg, size_t n, int force)
 {
 	char card[128];
-	double score = mclib_recognise(buf, card, sizeof(card));
-	if (score < 0.5) {
+	double score = force && fallback && *fallback ? 1.0 : mclib_recognise(buf, card, sizeof(card));
+	if (force && fallback && *fallback) snprintf(card, sizeof(card), "%s", fallback);   /* "keep the backup as" */
+	else if (score < 0.5) {
 		if (fallback && *fallback) snprintf(card, sizeof(card), "%s", fallback);
 		else {
 			pthread_mutex_lock(&slk);
@@ -444,7 +445,10 @@ static void run_job(const char *job, int port, const char *name)
 	else if (!strcmp(job, "backup")) {
 		if (read_card(port, card, msg, sizeof(msg), 0, "Reading the card")) finish(0, msg, NULL);
 		else {
-			int k = keep_card(card, NULL, file, sizeof(file), msg, sizeof(msg));
+			/* name: keep it as that library card (the app's "Keep the backup as"); else recognised by its saves */
+			char nm[128] = "";
+			if (name && *name && mclib_safe_name(name, nm, sizeof(nm))) nm[0] = 0;
+			int k = keep_card(card, nm, file, sizeof(file), msg, sizeof(msg), nm[0] != 0);
 			finish(k >= 0, msg, k == 0 ? file : NULL);
 		}
 	}
@@ -462,7 +466,7 @@ static void run_job(const char *job, int port, const char *name)
 			fclose(f);
 			/* 1: what's on the card now, kept as a backup */
 			if (read_card(port, card, msg, sizeof(msg), 0, "Backing up the card first")) finish(0, msg, NULL);
-			else if (keep_card(card, restore_card(name, fb, sizeof(fb)), file, sizeof(file), msg, sizeof(msg)) != 0) finish(0, msg, NULL);
+			else if (keep_card(card, restore_card(name, fb, sizeof(fb)), file, sizeof(file), msg, sizeof(msg), 0) != 0) finish(0, msg, NULL);
 			else {
 				pthread_mutex_lock(&slk);
 				snprintf(st.file, sizeof(st.file), "%s", file);

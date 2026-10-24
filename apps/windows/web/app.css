@@ -252,3 +252,23 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 .lockwin .hint { color: var(--dim); font-size: .9rem; }
 .lockwin .bar { height: .5rem; border-radius: .25rem; background: var(--line); margin: 1.2rem 0; overflow: hidden; }
 .lockwin .bar i { display: block; height: 100%; background: var(--acc); width: 0; transition: width .2s; }
+
+/* Memory cards: laid out like SS1 Tool's Files > Memory cards */
+.mcw .mcard { background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: 1rem 1.15rem; margin-bottom: .9rem; }
+.mcw .mcard h3 { margin: 0 0 .5rem; font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: .5rem; }
+.mcw .mrow { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.mcw label { color: var(--dim); }
+.mcw select, .mcw input:not([type]), .lockwin input:not([type]) { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: .4rem; padding: .45rem .6rem; font: inherit; }
+.mcw table { width: 100%; border-collapse: collapse; }
+.mcw td, .mcw th { padding: .4rem .5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.mcw th { color: var(--dim); font-weight: 500; }
+.mcw tr.pick { cursor: pointer; }
+.mcw tr.pick:hover, .mcw tr.pick.f { background: var(--on); }
+.mcw tr.pick.sel { box-shadow: inset 3px 0 0 var(--acc); }
+.mcw .muted { color: var(--dim); font-size: .8rem; }
+.mcw .btn.sm { height: 1.9rem; padding: 0 .7rem; font-size: .8rem; }
+.mcw .btn.danger { color: #ff6b5e; }
+.mpill { display: inline-flex; align-items: center; padding: 0 .55rem; border-radius: .8rem; font-size: .72rem; line-height: 1.6; border: 1px solid; vertical-align: middle; }
+.mpill.good { color: #3fb950; background: #3fb9501a; border-color: #3fb95059; }
+.mpill.muted { color: var(--dim); background: #9aa3b212; border-color: #9aa3b240; }
+.mpill.bad { color: #f85149; background: #f851491a; border-color: #f8514959; }

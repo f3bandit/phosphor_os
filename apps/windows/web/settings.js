@@ -9,7 +9,8 @@ const SET_SECTIONS = [
 	{ id: "boxart", name: "Box art", tabs: [["Sources & logins", "tArt"]] },
 	{ grp: "SuperStation" },
 	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Update Phosphor", "tPhosUpd"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
-	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"], ["Backups", "tSnaps"]] },
+	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"]] },
+	{ id: "saves", name: "Saves & memory cards", tabs: [["Memory cards", "tMc"], ["Backups", "tSnaps"], ["Cloud saves", "tCloud"]] },
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
 	{ grp: "Tools" },
 	{ id: "diagnostics", name: "Diagnostics", tabs: [["Dashboard", "tDash"]] },
@@ -32,6 +33,22 @@ function twice(btn, label, fn) {
 		btn.dataset.sure = ""; btn.textContent = orig;
 		await fn();
 	};
+}
+/* a name typed in the page (the app's window has no browser dialogs): resolves to the text, or null */
+function askText(title, value) {
+	return new Promise(res => {
+		const w = h(`<div class="lockwin"><div class="win" style="max-width:30rem"><div><div class="sub">${spaced(title)}</div>
+			<input id="at_in" style="width:100%;margin:.6rem 0" data-nav value="${esc(value || "")}">
+			<div class="acts"><button class="btn primary" id="at_ok" data-nav>OK</button><button class="btn" id="at_no" data-nav>Cancel</button></div></div></div></div>`).firstChild;
+		document.body.appendChild(w);
+		const prev = lockwin; lockwin = w;
+		const done = v => { lockwin = prev; w.remove(); res(v); };
+		w._esc = () => done(null);
+		$("#at_ok", w).onclick = () => done($("#at_in", w).value.trim() || null);
+		$("#at_no", w).onclick = () => done(null);
+		$("#at_in", w).onkeydown = e => { if (e.key === "Enter") done($("#at_in", w).value.trim() || null); };
+		setTimeout(() => { $("#at_in", w).focus(); $("#at_in", w).select(); }, 30);
+	});
 }
 const kb = k => { k = Number(k || 0); return k >= 1048576 ? (k / 1048576).toFixed(1) + " GB" : k >= 1024 ? Math.round(k / 1024) + " MB" : k + " KB"; };
 const gb = k => (Number(k || 0) / 1048576).toFixed(1) + " GB";
@@ -549,6 +566,166 @@ class AppSettings {
 			if (s.job && s.job.name && s.job.output) bk.append(h(`<pre class="out">${esc(s.job.output)}</pre>`));
 			$("#bk_now").onclick = async () => { try { await ss1({ cmd: "backup", do: "now" }); toast("Backing up…"); draw(); this.every(2000, draw); } catch (e) { toast(e.message); } };
 			if (!bp.innerHTML) bp.innerHTML = `<h2>Backups</h2><p class="note">Snapshots of your saves, save states and settings, made by the SS1 itself on the SD card, the NVMe drive or your NAS. No PC needed.</p>`;
+			return busy;
+		};
+		if (await draw()) this.every(2000, draw);
+	}
+
+	/* ---------- Memory cards: SS1 Tool's Files > Memory cards, through the SS1's own front ports.
+	   The card in a port is backed up into the library on the SS1 (phosphor/memcards, the same layout
+	   as SS1 Tool's); saves move between library cards (each change a new version, nothing
+	   overwritten); a card is written only from the library, always after a fresh backup. ---------- */
+	async tMc(b) {
+		const alive = this.alive, me = this;
+		const MCCOL = ["#343a50", "#38c058", "#e8c030", "#e84040", "#d070e8", "#4a9cf0"];
+		const MCLEG = [[1, "read OK"], [2, "needed a retry"], [3, "failed"], [5, "written and checked"], [0, "not done yet"]];
+		const verName = v => { const m = /^(\d{4})-(\d\d)-(\d\d)_(\d\d)(\d\d)(\d\d)/.exec(v || ""); return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).toLocaleString() : (v || ""); };
+		const icon = d => {
+			if (!d) return "";
+			const bin = atob(d), c = document.createElement("canvas"); c.width = c.height = 16;
+			const g = c.getContext("2d"), im = g.createImageData(16, 16);
+			for (let i = 0; i < bin.length && i < 1024; i++) im.data[i] = bin.charCodeAt(i);
+			g.putImageData(im, 0, 0);
+			return `<img src="${c.toDataURL()}" width="32" height="32" style="image-rendering:pixelated" alt="">`;
+		};
+		const M = this.mc || (this.mc = { sel: "", ver: "", port: 1 });
+		b.append(h(`<div class="mcw list grow">
+			<p class="note">Back up the PlayStation memory cards in the SuperStation's front ports, keep every card in a library on the SS1 (phosphor/memcards, the same as SS1 Tool's), move saves between cards, and copy saves back onto a real card. Writing to a card is only done from the library, and always after a fresh backup.</p>
+			<div class="mcard"><h3>The card in front port <select id="mc_port" data-nav><option value="1">1</option><option value="2">2</option></select></h3>
+				<div class="mrow"><label for="mc_as">Keep the backup as</label><select id="mc_as" data-nav></select><input id="mc_new" placeholder="Card name" style="display:none;width:12rem" data-nav>
+				<button class="btn primary" id="mc_backup" data-nav>Back up the card</button></div>
+				<div id="mc_job" style="display:none;margin-top:12px"><div class="mrow" style="align-items:flex-start;gap:16px"><canvas id="mc_map" width="256" height="256" style="width:256px;height:256px;image-rendering:pixelated;border-radius:4px"></canvas>
+				<div style="flex:1;min-width:220px"><b id="mc_title"></b><div id="mc_step" style="margin:4px 0"></div><div id="mc_leg" class="muted" style="margin-top:8px;font-size:12px"></div><div id="mc_msg" style="margin-top:8px"></div>
+				<div id="mc_ask" style="display:none;margin-top:8px"><label for="mc_askname">A card Phosphor hasn't seen before: name it</label> <input id="mc_askname" style="width:12rem" data-nav> <button class="btn" id="mc_askok" data-nav>Keep it</button></div></div></div></div></div>
+			<div class="mcard"><h3>Library</h3>
+				<div class="mrow" style="margin-bottom:8px"><button class="btn" id="mc_newcard" data-nav>New blank card</button><span class="muted">One folder per card, one file per version (raw 128 KB .mcd, which PC emulators open too). Nothing is ever overwritten.</span></div>
+				<div id="mc_lib"><span class="muted">Loading…</span></div></div>
+			<div class="mcard" id="mc_box" style="display:none"><h3 id="mc_name"></h3>
+				<div class="mrow" style="margin-bottom:8px"><label for="mc_ver">Version</label><select id="mc_ver" data-nav></select><span class="muted" id="mc_info"></span></div>
+				<div id="mc_saves"></div>
+				<div class="mrow" style="margin-top:10px"><label for="mc_to">Ticked saves:</label><select id="mc_to" data-nav></select><button class="btn" id="mc_copy" data-nav>Copy to that card</button><button class="btn" id="mc_move" data-nav>Move to that card</button><button class="btn danger" id="mc_rm" data-nav>Remove</button></div>
+				<div class="mrow" style="margin-top:8px"><button class="btn primary" id="mc_toport" data-nav>Copy ticked saves to the card in front port&nbsp;<span class="pn">1</span></button><button class="btn" id="mc_whole" data-nav>Put this whole card on the card in front port&nbsp;<span class="pn">1</span></button></div>
+				<div class="mrow" style="margin-top:8px"><button class="btn" id="mc_import" data-nav>Add a save (.mcs)…</button><input type="file" id="mc_file" accept=".mcs" hidden><button class="btn" id="mc_dl" data-nav>Download this version (.mcd)</button><button class="btn" id="mc_ren" data-nav>Rename</button><button class="btn danger" id="mc_delv" data-nav>Delete this version</button><button class="btn danger" id="mc_del" data-nav>Delete the card</button></div></div>
+			</div>`));
+		let L = [], card = null, polling = false;
+		const save = (data, file) => { const a = document.createElement("a"); a.href = "data:application/octet-stream;base64," + data; a.download = file; a.click(); };
+		const ticked = () => [...document.querySelectorAll(".mcSv:checked")].map(x => +x.value);
+		const portSpans = () => document.querySelectorAll("#mc_box .pn").forEach(e => e.textContent = M.port);
+		const renderLib = () => {
+			const keep = $("#mc_as").value, real = L.filter(c => c.real);
+			$("#mc_as").innerHTML = `<option value="">Recognise it (or a new card)</option>` + real.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("") + `<option value="+">New card...</option>`;
+			if ([...$("#mc_as").options].some(o => o.value === keep)) $("#mc_as").value = keep;
+			$("#mc_to").innerHTML = L.filter(c => c.name !== M.sel).map(c => `<option value="${esc(c.name)}">${esc(c.name)} (${c.free} free)</option>`).join("");
+			$("#mc_lib").innerHTML = L.length ? `<table><thead><tr><th>Card</th><th>Saves</th><th>Free blocks</th><th>Versions</th><th>Latest</th></tr></thead><tbody>` +
+				L.map((c, i) => `<tr class="pick${c.name === M.sel ? " sel" : ""}" data-i="${i}" data-nav tabindex="0"><td><b>${esc(c.name)}</b> ${c.real ? '<span class="mpill good">real card</span>' : '<span class="mpill muted">made here</span>'}</td><td>${c.saves ?? ""}</td><td>${c.free ?? 0} / 15</td><td>${c.versions.length}</td><td>${esc(verName(c.latest))}</td></tr>`).join("") + "</tbody></table>"
+				: `<span class="muted">No cards yet: back up a card, or make a blank one.</span>`;
+			$("#mc_lib").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => show(L[+tr.dataset.i].name));
+		};
+		const loadLib = async () => { try { L = (await ss1({ cmd: "memcard", do: "library" })).library || []; } catch (e) { $("#mc_lib").innerHTML = `<span class="muted">${esc(e.message)}</span>`; return; } if (!alive()) return; renderLib(); if (M.sel && !L.some(c => c.name === M.sel)) { M.sel = ""; $("#mc_box").style.display = "none"; } };
+		const show = async (name, ver) => {
+			M.sel = name; M.ver = ver || "";
+			let d;
+			try { d = await ss1({ cmd: "memcard", do: "card", name, version: M.ver }); } catch (e) { toast(e.message); return; }
+			if (!alive()) return;
+			card = d.card; M.ver = d.version;
+			const V = d.versions || [];
+			$("#mc_box").style.display = ""; $("#mc_name").textContent = name; portSpans();
+			$("#mc_ver").innerHTML = V.slice().reverse().map((v, i) => `<option value="${esc(v)}">${esc(verName(v))}${i == 0 ? " (latest)" : ""}</option>`).join(""); $("#mc_ver").value = M.ver;
+			$("#mc_info").textContent = card.formatted ? `${card.saves.length} saves · ${card.free} of 15 blocks free` : "Not formatted";
+			const S = card.saves || [];
+			$("#mc_saves").innerHTML = S.length ? `<table><thead><tr><th><input type="checkbox" id="mc_all" data-nav></th><th></th><th>Save</th><th>Game</th><th>Blocks</th><th></th></tr></thead><tbody>` +
+				S.map(s => `<tr><td><input type="checkbox" class="mcSv" value="${s.slot}" data-nav></td><td>${icon(s.icon)}</td><td><b>${esc(s.title)}</b>${s.broken ? ' <span class="mpill bad">damaged</span>' : ""}<div class="muted" style="font-size:12px">${esc(s.name)}</div></td><td>${esc(s.product || "")}${s.region ? ` <span class="muted">(${esc(s.region)})</span>` : ""}</td><td>${s.blocks.length}</td><td><button class="btn sm" data-slot="${s.slot}" data-nav>Download (.mcs)</button></td></tr>`).join("") + "</tbody></table>"
+				: `<span class="muted">No saves on this card.</span>`;
+			if ($("#mc_all")) $("#mc_all").onchange = e => document.querySelectorAll(".mcSv").forEach(x => x.checked = e.target.checked);
+			$("#mc_saves").querySelectorAll("button[data-slot]").forEach(bt => bt.onclick = async () => { try { const x = await ss1({ cmd: "memcard", do: "export", name: M.sel, version: M.ver, slot: +bt.dataset.slot }); save(x.data, x.file); } catch (e) { toast(e.message); } });
+			renderLib();
+		};
+		const edit = async (o, msg) => { try { const r = await ss1(Object.assign({ cmd: "memcard", do: "edit" }, o)); if (msg) toast(msg); await loadLib(); return r; } catch (e) { toast(e.message); return null; } };
+		/* the job in a port: SS1 Tool's live card map, one square a sector */
+		const drawJob = j => {
+			if (!j || !j.name) { $("#mc_job").style.display = "none"; return; }
+			$("#mc_job").style.display = "";
+			$("#mc_title").textContent = ({ backup: "Backing up", restore: "Writing the card", check: "Checking", prepare: "Getting the front ports ready" }[j.name] || j.name) + ` · front port ${j.port || M.port}`;
+			$("#mc_step").textContent = j.busy ? `${j.total ? Math.round(100 * j.done / j.total) : 0}%` : (j.ok ? "Done" : "Stopped");
+			$("#mc_msg").textContent = j.message || "";
+			const g = $("#mc_map").getContext("2d"), map = j.map || "";
+			for (let i = 0; i < 1024; i++) { g.fillStyle = MCCOL[+(map[i] || 0)] || MCCOL[0]; g.fillRect((i % 32) * 8, Math.floor(i / 32) * 8, 7, 7); }
+			$("#mc_leg").innerHTML = MCLEG.map(([k, t]) => `<span style="display:inline-block;width:10px;height:10px;background:${MCCOL[k]};margin:0 4px 0 10px"></span>${t}`).join("");
+			$("#mc_ask").style.display = j.ask_name && !j.busy ? "" : "none";
+			if (j.ask_name && !$("#mc_askname").value) $("#mc_askname").value = j.suggest || "";
+		};
+		const poll = async () => {
+			if (polling) return; polling = true;
+			while (alive()) {
+				let s;
+				try { s = await ss1({ cmd: "memcard" }); } catch (e) { break; }
+				if (!alive()) break;
+				drawJob(s.job);
+				if (!s.job || !s.job.busy) { await loadLib(); if (s.job && s.job.ok && M.after) { const f = M.after; M.after = null; await f(s.job); } break; }
+				await new Promise(r => setTimeout(r, 700));
+			}
+			polling = false;
+		};
+		const job = async (o, after) => { M.after = after || null; try { await ss1(Object.assign({ cmd: "memcard", port: M.port }, o)); } catch (e) { toast(e.message); return; } poll(); };
+		$("#mc_port").value = M.port;
+		$("#mc_port").onchange = e => { M.port = +e.target.value; portSpans(); };
+		$("#mc_as").onchange = e => $("#mc_new").style.display = e.target.value === "+" ? "" : "none";
+		$("#mc_backup").onclick = () => { const as = $("#mc_as").value === "+" ? $("#mc_new").value.trim() : $("#mc_as").value; job({ do: "backup", name: as }); };
+		$("#mc_askok").onclick = async () => { try { await ss1({ cmd: "memcard", do: "name", name: $("#mc_askname").value.trim() }); $("#mc_askname").value = ""; poll(); } catch (e) { toast(e.message); } };
+		$("#mc_newcard").onclick = async () => { const n = await askText("New blank card", ""); if (!n) return; const r = await edit({ op: "new", new_name: n }); if (r) show(r.name); };
+		$("#mc_ver").onchange = e => show(M.sel, e.target.value);
+		$("#mc_copy").onclick = $("#mc_move").onclick = async e => {
+			const op = e.currentTarget.id === "mc_move" ? "move" : "copy", slots = ticked(), to = $("#mc_to").value;
+			if (!slots.length) return toast("Tick the saves first");
+			if (!to) return toast("Make or back up another card first");
+			if (await edit({ op, name: M.sel, version: M.ver, slots, to }, op === "move" ? `Moved to ${to}` : `Copied to ${to}`)) show(M.sel);
+		};
+		twice($("#mc_rm"), "Press again: a new version without them", async () => { const slots = ticked(); if (!slots.length) return toast("Tick the saves first"); if (await edit({ op: "remove", name: M.sel, version: M.ver, slots }, "Removed (new version: the old one stays)")) show(M.sel); });
+		/* to a real card: back the port's card up (into its own library card), add the ticked saves to that, write it back */
+		twice($("#mc_toport"), "Press again: the card is backed up first", () => {
+			const slots = ticked(); if (!slots.length) return toast("Tick the saves first");
+			const from = M.sel, ver = M.ver;
+			job({ do: "backup", name: "" }, async j => {
+				const target = (j.file || "").split("/")[0];
+				if (!target) return toast("The card wasn't recognised: name it, then copy again");
+				if (target === from) return toast("That's the same card");
+				if (!await edit({ op: "copy", name: from, version: ver, slots, to: target })) return;
+				const v = (await ss1({ cmd: "memcard", do: "card", name: target })).version;
+				job({ do: "restore", name: `${target}/${v}.mcd` });
+			});
+		});
+		twice($("#mc_whole"), "Press again: what's on it now is backed up first", () => job({ do: "restore", name: `${M.sel}/${M.ver}.mcd` }));
+		$("#mc_import").onclick = () => $("#mc_file").click();
+		$("#mc_file").onchange = async e => {
+			const f = e.target.files[0]; if (!f) return;
+			const buf = new Uint8Array(await f.arrayBuffer()); let bin = ""; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+			if (await edit({ op: "import", name: M.sel, data: btoa(bin) }, "Save added (new version)")) show(M.sel);
+			e.target.value = "";
+		};
+		$("#mc_dl").onclick = async () => { try { const x = await ss1({ cmd: "memcard", do: "export", name: M.sel, version: M.ver }); save(x.data, x.file); } catch (e) { toast(e.message); } };
+		$("#mc_ren").onclick = async () => { const n = await askText("Rename the card", M.sel); if (!n || n === M.sel) return; const r = await edit({ op: "rename", name: M.sel, new_name: n }); if (r) show(r.name); };
+		twice($("#mc_delv"), "Press again to delete this version", async () => { if (await edit({ op: "delversion", name: M.sel, version: M.ver })) show(M.sel); });
+		twice($("#mc_del"), "Press again: every version (the real card isn't touched)", async () => { if (await edit({ op: "delete", name: M.sel })) { M.sel = ""; $("#mc_box").style.display = "none"; renderLib(); } });
+		await loadLib();
+		if (M.sel && alive()) show(M.sel, M.ver);
+		poll();
+	}
+
+	/* ---------- Cloud saves (the cloud-sync module): status, send now, what's there ---------- */
+	async tCloud(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="cl"><div class="empty"><span class="spin"></span></div></div><div class="panel"><h2>Cloud saves</h2><p class="note">Your saves, save states and core settings are sent to your own storage after each game, with older versions kept. WiFi, Bluetooth pairings and passwords are never sent. Storage is added on the TV (Settings › Cloud saves) or in the phone app; getting saves back is done on the TV, with a preview first.</p></div></div>`));
+		const draw = async () => {
+			let s;
+			try { s = await ss1({ cmd: "cloud" }); } catch (e) { if (alive()) $("#cl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
+			if (!s.installed) { $("#cl").innerHTML = `<div class="empty">The cloud-sync module isn't installed on the SS1.</div>`; return false; }
+			const st = s.status || {}, busy = s.job && s.job.busy, inuse = (s.remotes || []).find(r => r.in_use);
+			$("#cl").innerHTML = `<dl class="kv"><dt>Storage</dt><dd>${esc(inuse ? `${inuse.name} (${inuse.type})` : st.remote || "not set up")}</dd>${st.last_push ? `<dt>Last sent</dt><dd>${esc(st.last_push)}</dd>` : ""}${st.last_error ? `<dt>Last problem</dt><dd>${esc(st.last_error)}</dd>` : ""}</dl>
+				<div class="acts"><button class="btn primary" id="cl_push" data-nav${busy || !inuse ? " disabled" : ""}>${busy ? "Working…" : "Send saves now"}</button></div>
+				${(s.remotes || []).length ? `<div class="sub" style="margin-top:1rem">${spaced("Storage set up")}</div>` + s.remotes.map(r => `<div class="row"><span class="n">${esc(r.name)}</span><span class="v">${esc(r.type)}${r.in_use ? " · in use" : ""}</span></div>`).join("") : ""}
+				${s.job && s.job.output ? `<pre class="out">${esc(s.job.output)}</pre>` : ""}`;
+			if ($("#cl_push")) $("#cl_push").onclick = async () => { try { await ss1({ cmd: "cloud", do: "push" }); toast("Sending…"); draw(); this.every(2000, draw); } catch (e) { toast(e.message); } };
 			return busy;
 		};
 		if (await draw()) this.every(2000, draw);
