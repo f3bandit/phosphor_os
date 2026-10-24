@@ -145,7 +145,9 @@ func watchSS1() {
 		if name == "" || name == "Phosphor" { // the SS1 calls itself Phosphor unless it was renamed
 			name = "Your SS1"
 		}
-		if ask(`{"cmd":"gen"}`) == nil {
+		// answering is any reply at all: an SS1 from before 0.27.16 refuses "gen" from another device
+		// (HTTP 403), which isn't the same as not being there
+		if _, _, err := call(json.RawMessage(`{"cmd":"gen"}`)); err != nil {
 			misses++
 			// maybe it moved (the router gave it a new address): look for it, every minute or so
 			if misses%4 == 1 && autoReconnect() {

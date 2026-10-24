@@ -53,7 +53,7 @@
 
 /* commands a paired device may send: nothing that changes the network, pairing or remote access */
 static const char *ALLOWED[] = {
-	"status", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
+	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"video", "video_files", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
 	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "remote_ssh", "scrape_todo", "scrape_result", "scrape_pc_done", NULL,

@@ -32,7 +32,7 @@ func keyWorksAt(addr string) bool {
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, 4096))
 	r.Body.Close()
-	return r.StatusCode == 200
+	return r.StatusCode == 200 || r.StatusCode == 403 // 403: an older SS1 that knows the key but not "gen" from afar
 }
 
 func autoReconnect() bool {
