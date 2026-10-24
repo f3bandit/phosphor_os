@@ -3,6 +3,12 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.18
+
+### Fixes
+- **Box art showed "Not run yet" after every restart**, even when lookups had run: the last run's
+  result is kept now, with when it ran ("Done (last run Oct 23, 23:40)").
+
 ## 0.27.17
 
 ### Fixes
