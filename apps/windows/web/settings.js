@@ -213,7 +213,7 @@ class AppSettings {
 		box.innerHTML = "";
 		this.srcs.forEach((x, i) => {
 			const a = k => (this.acc.find(q => q.sec === x.id && q.key === k) || {}).set;
-			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" && a("user") ? "Needs a developer id" : "Needs a login";
+			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" && a("user") ? "Needs the password" : "Needs a login";
 			const el = h(`<div class="row src" data-nav><span class="n"><b>${i + 1}. ${esc(x.name)}</b></span><span class="v">${st}</span></div>`).firstChild;
 			el.onclick = () => { this.srcs[i].on = !this.srcs[i].on; this.saveSources(i); };
 			el._onfocus = () => { this.sx = i; this.drawAccount(x); };
@@ -249,7 +249,7 @@ class AppSettings {
 			arcadedb: "No account. Arcade games by their MAME set name.",
 			launchbox: "No account. LaunchBox's games database, downloaded once (about 110 MB) and kept on the SS1.",
 			thegamesdb: "Needs a free API key from thegamesdb.net.",
-			screenscraper: "ScreenScraper only answers programs with a developer id (free on request at screenscraper.fr). Your own free login on top allows more lookups a day.",
+			screenscraper: "Your screenscraper.fr login is enough (a free account). A developer login works too, if you have one; with both, the developer login is used for the program and yours for your lookups a day.",
 			igdb: "Needs a free Twitch developer app (dev.twitch.tv): its Client ID and secret.",
 		};
 		let html = `<h2>${esc(x.name)}</h2><p class="note">${esc(ABOUT[x.id] || "")}</p>`;
