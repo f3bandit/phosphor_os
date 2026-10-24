@@ -4,6 +4,7 @@
  * leaves those alone. Every restore takes a safety snapshot first (the module's own rule). */
 #include "backup.h"
 #include "modjob.h"
+#include "bgcache.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,15 +26,22 @@ int backup_start(const char *job, const char *name, const char *only)
 	return modjob_start(&mj, job, argv, 600);
 }
 
+/* the module's status and snapshot list take half a second: kept, refreshed in the background, and
+   worked out there and then when a backup or restore starts or ends */
+static char *run1(void *what) { int rc; const char *a[] = { what, NULL }; return modjob_run(&mj, a, 20, &rc); }
+static bgcache_t c_status = BGCACHE(run1, "status", 20), c_list = BGCACHE(run1, "list", 20);
+
 void backup_state(backup_state_t *s)
 {
 	memset(s, 0, sizeof(*s));
 	s->installed = modjob_installed(&mj);
-	if (s->installed) {
-		int rc;
-		const char *st[] = { "status", NULL }, *ls[] = { "list", NULL };
-		s->status = modjob_run(&mj, st, 20, &rc);
-		s->list = modjob_run(&mj, ls, 20, &rc);
-	}
 	modjob_last(&mj, s->job, sizeof(s->job), &s->busy, &s->ok, &s->output, &s->at);
+	static time_t seen;
+	static int was_busy;
+	int changed = s->at != seen || s->busy != was_busy;
+	seen = s->at; was_busy = s->busy;
+	if (s->installed) {
+		s->status = changed ? bgcache_now(&c_status) : bgcache_get(&c_status, 1);
+		s->list = changed ? bgcache_now(&c_list) : bgcache_get(&c_list, 1);
+	}
 }
