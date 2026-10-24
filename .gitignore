@@ -41,3 +41,8 @@ dist/
 # SD card image downloads
 image/cache/
 apps/windows/dist/
+
+# Texture Maker builds
+tools/texture-maker/dist/
+tools/texture-maker/texture-maker*.json
+tools/texture-maker/texture-maker-last.ptm

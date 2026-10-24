@@ -8,21 +8,27 @@
 #include "texture.h"
 #include "theme.h"
 #include "circuit_data.h"
+#include "texsprite.h"
+/* sprite textures: includes (tools/texture-maker) */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define STRENGTH 0.13f      /* how much accent colour a line gets */
 
-typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID, SH_BOARD } shape_t;
+typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID, SH_BOARD, SH_SPRITES } shape_t;
 enum { M_LINE, M_FILL, M_INVERT };
 
+/* the shape textures leave .spr out (NULL) */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 static const struct {
 	const char *name;
 	shape_t shape;
 	float w, h;          /* tile size in base pixels (1280x720) */
 	float line;          /* line width multiplier */
 	int mode;
+	const tex_sprites_t *spr;   /* SH_SPRITES: its sprites and where they go (tex_<id>.h) */
 } T[] = {
 	{ "None", 0, 0, 0, 0, 0 },
 	{ "Zigzag", SH_ZIGZAG, 16, 16, 1, M_LINE },
@@ -52,7 +58,11 @@ static const struct {
 	/* one whole screen, not a repeating tile (circuit_data.h) */
 	{ "Circuit board", SH_BOARD, 1280, 720, 1, M_LINE },
 	{ "Circuit board, bold", SH_BOARD, 1280, 720, 2, M_LINE },
+	/* sprite textures (26 on): pixel-art sprites over the whole screen or a tile, made with
+	   tools/texture-maker, which adds them here */
+	/* sprite textures: entries (tools/texture-maker) */
 };
+#pragma GCC diagnostic pop
 const int TEX_COUNT = sizeof(T) / sizeof(T[0]);
 
 /* the order Settings steps through: each shape followed by its variants */
@@ -142,6 +152,7 @@ static float shape(shape_t s, float x, float y, float w, float h, int *inside)
 	case SH_DIAGRID:                                     /* diagonal lines both ways: diamonds edge to edge */
 		return 0.70710678f * fminf(fabsf(fmodf(x + y + 4 * w, w) - w / 2), fabsf(fmodf(x - y + 4 * w, w) - w / 2));
 	case SH_BOARD:                                       /* drawn by board_alpha */
+	case SH_SPRITES:                                     /* drawn by sprite_alpha */
 		return 1e9f;
 	case SH_GRID:                                        /* squares edge to edge */
 		x = fmodf(x + 4 * w, w);
@@ -218,6 +229,8 @@ static uint8_t *board_alpha(float scale, float lw, int pw, int ph)
 uint8_t *texture_alpha(texture_t t, float scale, int *pw, int *ph)
 {
 	if (t <= TEX_NONE || !texture_valid(t)) return NULL;
+	if (T[t].shape == SH_SPRITES)
+		return T[t].spr ? sprite_alpha(T[t].spr, scale, pw, ph) : NULL;
 	if (T[t].shape == SH_BOARD) {
 		*pw = (int)lroundf(T[t].w * scale);
 		*ph = (int)lroundf(T[t].h * scale);
