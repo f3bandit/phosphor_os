@@ -9,6 +9,10 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - **After an update, MiSTer's menu came up instead of the restart**: the update restarts
   phosphord, and Phosphor's screen then asked for the restart on its old connection, which ended the
   screen. It reconnects now (and restarts the SuperStation itself if phosphord doesn't answer).
+- **Mapping a controller from Phosphor skipped its sticks** (Settings › Controllers, or from the app):
+  as a stick is pushed, MiSTer makes a D-pad press from it halfway (dpad_threshold), before the stick
+  is far enough to be recorded, and Phosphor took any press on a stick step as "no stick here". Only
+  a real button skips a stick step now, so the sticks are saved as in MiSTer's own mapping.
 - **Update Phosphor showed only the first 8 packages by file name**, so a newer one could be
   missing: the newest 8 are shown, newest first.
 
