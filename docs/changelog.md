@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.14
+
+### New
+- **Circuit board background** (Settings > Background texture, on the TV and in the app 0.2.13):
+  random traces winding across the whole screen like a maze, 45-degree bends, vias at the ends,
+  nothing crossing or looping back. One picture for the whole screen rather than a repeating tile,
+  drawn once at the TV's resolution in the accent colour. Also "Circuit board, bold".
+
 ## 0.27.13
 
 ### Fixes
