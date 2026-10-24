@@ -14,6 +14,7 @@
  * up. Runs only while the menu is up, one game at a time. Network trouble pauses it for a few
  * minutes without marking anything. */
 #include "busy.h"
+#include "cJSON.h"
 #include "scraper.h"
 #include "art.h"
 #include "db.h"
@@ -41,12 +42,17 @@ static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
 static int kicked, stop_now, running;   /* runs only when asked (Get box art), never by itself */
 static char status_text[160] = "Not run yet";
 static scrape_progress_t pg;            /* this run (under lk) */
+/* the Phosphor app looking things up on the PC (much faster): the SS1's own run waits meanwhile. A
+   lease, renewed by each request from the app; gone a minute after the app stops asking */
+static time_t pc_until;
+static char pc_by[64];
+static int pc_active(void) { return time(NULL) < pc_until; }
 
 void scraper_progress(scrape_progress_t *o)
 {
 	pthread_mutex_lock(&lk);
 	*o = pg;
-	o->running = running;
+	o->running = running || pc_active();
 	snprintf(o->status, sizeof(o->status), "%s", status_text);
 	pthread_mutex_unlock(&lk);
 }
@@ -545,6 +551,10 @@ static void *thread(void *arg)
 		stop_now = 0;
 		pthread_mutex_unlock(&lk);
 		if (!menu_up()) { scrape_status("Not while a game is running"); continue; }
+		pthread_mutex_lock(&lk);
+		int pc = pc_active();
+		pthread_mutex_unlock(&lk);
+		if (pc) continue;                   /* (the status already says who's doing it) */
 		cfg_load();
 		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");   /* network trouble last time: try again */
 		int worked = 0, fails = 0, cut = 0;
@@ -563,7 +573,7 @@ static void *thread(void *arg)
 			pthread_mutex_unlock(&lk);
 		}
 		running = 1;
-		while (!stop_now && menu_up()) {
+		while (!stop_now && menu_up() && !pc_active()) {
 			sqlite3_stmt *st;
 			if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) { plog("scrape: %s", sqlite3_errmsg(db)); break; }
 			if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); break; }
@@ -608,7 +618,8 @@ static void *thread(void *arg)
 		}
 		running = 0;
 		if (worked) plog("looked up %d game(s)", worked);
-		if (cut) scrape_status("No connection: stopped (choose Get box art to try again)");
+		if (pc_active()) { /* the app took over: its status stands */ }
+		else if (cut) scrape_status("No connection: stopped (choose Get box art to try again)");
 		else if (stop_now) scrape_status("Stopped");
 		else if (!menu_up()) scrape_status("Stopped: a game was started");
 		else scrape_status("Done");
@@ -653,8 +664,8 @@ void scraper_info(sqlite3 *db, scrape_info_t *o)
 {
 	char sql[1200];
 	memset(o, 0, sizeof(*o));
-	o->on = running || kicked;
-	o->running = running;
+	o->on = running || kicked || pc_active();
+	o->running = running || pc_active();
 	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", PENDING);
 	o->pending = count(db, sql);
 	o->done = count(db, "SELECT COUNT(*) FROM games WHERE scrape='done'");
@@ -696,4 +707,149 @@ int scraper_set_sources(sqlite3 *db, const char *order, const char *off)
 	/* look again at games that are missing something: a newly turned-on source may have it */
 	db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='miss' OR (scrape='done' AND (description IS NULL OR art_box IS NULL))");
 	return 0;
+}
+
+/* ---------- the Phosphor app looking things up on the PC ----------
+ * The app asks for the games that still need looking up (with what it needs to match them: CRC,
+ * product code, file name, which fields are already filled), looks them up with the same sources,
+ * order and accounts, makes the box art, and sends it back (PUT /art) with the details
+ * (scrape_result). Fields a game already has are never replaced; the game is marked like the SS1's
+ * own run would. */
+
+static const char *const COLS[F_COUNT] = { "description", "developer", "publisher", "genre", "year", "players", "region" };
+
+cJSON *scraper_todo(sqlite3 *db, cJSON *req)
+{
+	const char *by = cJSON_GetStringValue(cJSON_GetObjectItem(req, "from"));
+	cJSON *lim = cJSON_GetObjectItem(req, "limit");
+	int limit = cJSON_IsNumber(lim) && lim->valueint > 0 && lim->valueint <= 5000 ? lim->valueint : 500;
+	int start = cJSON_IsTrue(cJSON_GetObjectItem(req, "start"));
+	cfg_load();
+	if (start) db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");
+	char sql[1600];
+	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", PENDING);
+	int total = count(db, sql);
+	pthread_mutex_lock(&lk);
+	pc_until = time(NULL) + 60;
+	snprintf(pc_by, sizeof(pc_by), "%s", by && *by ? by : "the Phosphor app");
+	if (start) { memset(&pg, 0, sizeof(pg)); pg.total = total; }
+	snprintf(status_text, sizeof(status_text), "Being looked up by %s", pc_by);
+	stop_now = 1;                          /* the SS1's own run steps aside */
+	pthread_mutex_unlock(&lk);
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddNumberToObject(o, "total", total);
+	/* the same settings the SS1 would use (sent over the home network only) */
+	cJSON *cf = cJSON_AddObjectToObject(o, "config");
+	const source_t *src[NSRC];
+	int n = sources_in_order(src);
+	cJSON *ord = cJSON_AddArrayToObject(cf, "order");
+	for (int i = 0; i < n; i++) if (source_on(src[i])) cJSON_AddItemToArray(ord, cJSON_CreateString(src[i]->id));
+	cJSON *ac = cJSON_AddObjectToObject(cf, "accounts");
+	for (int i = 0; i < NACCT; i++) {
+		const char *v = scfg(ACCT[i][0], ACCT[i][1]);
+		if (!*v) continue;
+		cJSON *sec = cJSON_GetObjectItem(ac, ACCT[i][0]);
+		if (!sec) sec = cJSON_AddObjectToObject(ac, ACCT[i][0]);
+		cJSON_AddStringToObject(sec, ACCT[i][1], v);
+	}
+	cJSON *arr = cJSON_AddArrayToObject(o, "games");
+	snprintf(sql, sizeof(sql),
+	         "SELECT g.id, g.system_id, g.key, g.title,"
+	         " (SELECT crc32 FROM files WHERE game_id=g.id AND crc32 IS NOT NULL LIMIT 1),"
+	         " (SELECT serial FROM files WHERE game_id=g.id AND serial IS NOT NULL LIMIT 1),"
+	         " g.art_box IS NOT NULL, g.description IS NOT NULL, g.developer IS NOT NULL, g.publisher IS NOT NULL,"
+	         " g.genre IS NOT NULL, g.year IS NOT NULL, g.players IS NOT NULL, g.region IS NOT NULL"
+	         " %s ORDER BY g.system_id, g.id LIMIT %d", PENDING, limit);
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
+		while (sqlite3_step(st) == SQLITE_ROW) {
+			cJSON *g = cJSON_CreateObject();
+			const char *sys = (const char *)sqlite3_column_text(st, 1), *key = (const char *)sqlite3_column_text(st, 2);
+			cJSON_AddNumberToObject(g, "id", (double)sqlite3_column_int64(st, 0));
+			cJSON_AddStringToObject(g, "sys", sys ? sys : "");
+			cJSON_AddStringToObject(g, "key", key ? key : "");
+			cJSON_AddStringToObject(g, "title", sqlite3_column_text(st, 3) ? (const char *)sqlite3_column_text(st, 3) : "");
+			if (sqlite3_column_text(st, 4)) cJSON_AddStringToObject(g, "crc", (const char *)sqlite3_column_text(st, 4));
+			if (sqlite3_column_text(st, 5)) cJSON_AddStringToObject(g, "serial", (const char *)sqlite3_column_text(st, 5));
+			const gsys_t *gs = system_by_id(sys ? sys : "");
+			cJSON_AddBoolToObject(g, "disc", gs && gs->type == 's');
+			cJSON_AddBoolToObject(g, "arcade", gs && gs->cat == CAT_ARCADE);
+			if (gs) cJSON_AddStringToObject(g, "system", gs->name);
+			if (key && !strncmp(key, "disc:", 5)) {
+				const char *p = strchr(key + 5, ':');
+				if (p) cJSON_AddNumberToObject(g, "size", (double)atol(p + 1));
+			}
+			cJSON_AddBoolToObject(g, "has_art", sqlite3_column_int(st, 6));
+			cJSON *has = cJSON_AddArrayToObject(g, "has");
+			for (int i = 0; i < F_COUNT; i++) if (sqlite3_column_int(st, 7 + i)) cJSON_AddItemToArray(has, cJSON_CreateString(COLS[i]));
+			cJSON_AddItemToArray(arr, g);
+		}
+		sqlite3_finalize(st);
+	}
+	return o;
+}
+
+/* {"id", "found": bool, "later": bool (network trouble), "official", "fields": {description, ...},
+ *  "game": what the app is on (for the TV), "source"} after any PUT /art for it */
+const char *scraper_result(sqlite3 *db, cJSON *req)
+{
+	cJSON *idj = cJSON_GetObjectItem(req, "id");
+	if (!cJSON_IsNumber(idj)) return "id missing";
+	long long id = (long long)idj->valuedouble;
+	sqlite3_stmt *st;
+	sgame_t g;
+	memset(&g, 0, sizeof(g));
+	if (sqlite3_prepare_v2(db, "SELECT system_id, title FROM games WHERE id=?", -1, &st, NULL) != SQLITE_OK) return "database";
+	sqlite3_bind_int64(st, 1, id);
+	if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); return "no such game"; }
+	snprintf(g.sys, sizeof(g.sys), "%s", sqlite3_column_text(st, 0));
+	snprintf(g.title, sizeof(g.title), "%s", sqlite3_column_text(st, 1));
+	sqlite3_finalize(st);
+	g.id = id;
+	int found = cJSON_IsTrue(cJSON_GetObjectItem(req, "found")), later = cJSON_IsTrue(cJSON_GetObjectItem(req, "later"));
+	cJSON *f = cJSON_GetObjectItem(req, "fields");
+	for (int i = 0; found && i < F_COUNT; i++) {
+		const char *v = cJSON_GetStringValue(cJSON_GetObjectItem(f, COLS[i]));
+		if (!v || !*v) continue;
+		sres_t tmp;
+		memset(&tmp, 0, sizeof(tmp));
+		sres_set(&tmp, 0, v);                       /* trimmed, Windows line ends out */
+		if (tmp.f[0] && strlen(tmp.f[0]) < 20000) put_text(db, id, COLS[i], tmp.f[0]);
+		sres_free(&tmp);
+	}
+	const char *off = cJSON_GetStringValue(cJSON_GetObjectItem(req, "official"));
+	if (found && off && *off && strlen(off) < 400 && sqlite3_prepare_v2(db, "UPDATE games SET ref_name=? WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(st, 1, off, -1, SQLITE_STATIC);
+		sqlite3_bind_int64(st, 2, id);
+		sqlite3_step(st);
+		sqlite3_finalize(st);
+	}
+	int art = has_col(db, id, "art_box");
+	if (!art && disc1_art(db, &g)) art = 1;
+	const char *state = later && !art ? "later" : art ? "done" : "miss";
+	mark(db, id, state);
+	const char *by = cJSON_GetStringValue(cJSON_GetObjectItem(req, "from"));
+	const char *sysname = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	pthread_mutex_lock(&lk);
+	pc_until = time(NULL) + 60;
+	if (by && *by) snprintf(pc_by, sizeof(pc_by), "%s", by);
+	pg.done++;
+	if (!strcmp(state, "later")) pg.later++;
+	else if (!strcmp(state, "done")) pg.found++;
+	else pg.not_found++;
+	snprintf(pg.game, sizeof(pg.game), "%.119s", g.title);
+	snprintf(pg.system, sizeof(pg.system), "%s", sysname && *sysname ? sysname : g.sys);
+	snprintf(pg.source, sizeof(pg.source), "%.39s", pc_by);
+	snprintf(status_text, sizeof(status_text), "Being looked up by %s", pc_by);
+	pthread_mutex_unlock(&lk);
+	return NULL;
+}
+
+/* the app is done (or stopped): the SS1 may run its own again */
+void scraper_pc_done(const char *status)
+{
+	pthread_mutex_lock(&lk);
+	pc_until = 0;
+	snprintf(status_text, sizeof(status_text), "%s", status && *status ? status : "Done");
+	pthread_mutex_unlock(&lk);
 }

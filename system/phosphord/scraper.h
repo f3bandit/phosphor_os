@@ -4,6 +4,7 @@
 #define PHOSD_SCRAPER_H
 
 #include "sqlite3.h"
+#include "cJSON.h"
 
 typedef struct {
 	int on;            /* looking things up right now (asked for) */
@@ -44,5 +45,11 @@ typedef struct { char sec[16], key[16], value[128]; int set; } scrape_account_t;
 int scraper_account_ok(const char *sec, const char *key);
 int scraper_set_account(const char *sec, const char *key, const char *val);
 void scraper_accounts(scrape_account_t *out, int *n);
+
+/* the Phosphor app doing the lookups on the PC: the games to do and the settings; one game's result
+   (NULL ok, else the error); the app finished */
+cJSON *scraper_todo(sqlite3 *db, cJSON *req);
+const char *scraper_result(sqlite3 *db, cJSON *req);
+void scraper_pc_done(const char *status);
 
 #endif
