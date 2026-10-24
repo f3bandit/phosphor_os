@@ -29,5 +29,6 @@ int padview_count(void);
 const char *padview_key(int i);
 const char *padview_name(const char *key);
 int padview_index(const char *key);         /* -1: not a layout */
+const char *padview_label(const char *key, const char *id);   /* a button's name on that layout */
 
 #endif

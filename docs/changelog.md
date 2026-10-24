@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.23
+
+### New
+- **Controller test** (Settings > Controllers, Y on a controller): the controller live, in the
+  layout chosen for it. Every button lights as it's pressed, the sticks and triggers show how far
+  they go, and "MiSTer gets" shows what MiSTer's menu and the cores receive after the mapping.
+  Select + Start closes it.
+
 ## 0.27.22
 
 ### Fixes
