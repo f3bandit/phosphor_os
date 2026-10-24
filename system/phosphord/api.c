@@ -106,6 +106,7 @@
 #include "samba.h"
 #include "storage.h"
 #include "extras.h"
+#include "bgcache.h"
 #include "ctrl.h"
 #include "dash.h"
 #include "version.h"
@@ -900,6 +901,7 @@ static char *cmd_guard(cJSON *req)
 static char *cmd_cloud(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && *d) cloud_fresh();
 	if (d && *d) {
 		const char *args[24] = { 0 };
 		char store[20][300];
@@ -1187,6 +1189,14 @@ static char *run_out(const char *cmd)
 	return b;
 }
 
+static char *upd_run(void *what)
+{
+	char cmd[700];
+	snprintf(cmd, sizeof(cmd), "'%s/phosphor/update.sh' %s 2>/dev/null", p_fat(), (const char *)what);
+	return run_out(cmd);
+}
+static bgcache_t c_upd_list = BGCACHE(upd_run, "list", 20), c_upd_rb = BGCACHE(upd_run, "rollbacks", 60);
+
 static char *cmd_update(cJSON *req)
 {
 	char up[600], cmd[1400], line[600];
@@ -1194,10 +1204,10 @@ static char *cmd_update(cJSON *req)
 	cJSON *o = ok();
 	if (access(up, X_OK)) { cJSON_AddBoolToObject(o, "available", 0); return reply(o); }
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
-	snprintf(cmd, sizeof(cmd), "'%s' list 2>/dev/null", up);
-	char *pk = run_out(cmd);
-	snprintf(cmd, sizeof(cmd), "'%s' rollbacks 2>/dev/null", up);
-	char *rb = run_out(cmd);
+	/* the packages (each one opened to read its version) take seconds: kept, refreshed in the background;
+	   an install or roll back looks again first */
+	char *pk = (d && *d) ? bgcache_now(&c_upd_list) : bgcache_get(&c_upd_list, 1);
+	char *rb = (d && *d) ? bgcache_now(&c_upd_rb) : bgcache_get(&c_upd_rb, 1);
 	if (d && *d) {
 		const char *arg = cJSON_GetStringValue(cJSON_GetObjectItem(req, !strcmp(d, "install") ? "file" : "version"));
 		int found = 0;

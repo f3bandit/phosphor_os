@@ -4,12 +4,19 @@
  * one file; the overlap tool is moved into phosphor/backups, never deleted, and can be put back. */
 #include "storage.h"
 #include "modjob.h"
+#include "bgcache.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static modjob_t mj = MODJOB("storage", "PHOS_STORAGE", NULL);
 static char last_target[64];
+
+/* the drive list takes seconds (each drive's PCIe generation is read): kept, refreshed every 30 s in the
+   background and right after a check or mount */
+static char *run_targets(void *u) { (void)u; int rc; const char *a[] = { "targets", NULL }; return modjob_run(&mj, a, 30, &rc); }
+static char *run_overlap(void *u) { (void)u; int rc; const char *a[] = { "overlap", NULL }; return modjob_run(&mj, a, 15, &rc); }
+static bgcache_t c_targets = BGCACHE(run_targets, NULL, 30), c_overlap = BGCACHE(run_overlap, NULL, 60);
 
 static int valid_target(const char *t)
 {
@@ -19,6 +26,8 @@ static int valid_target(const char *t)
 	for (const char *p = t + 10; *p; p++) if (*p < '0' || *p > '9') return 0;
 	return t[10] != 0;
 }
+
+void storage_prime(void) { if (modjob_installed(&mj)) { free(bgcache_get(&c_targets, 0)); free(bgcache_get(&c_overlap, 0)); } }
 
 int storage_start(const char *test, const char *target)
 {
@@ -53,11 +62,12 @@ void storage_state(storage_state_t *s)
 	memset(s, 0, sizeof(*s));
 	s->installed = modjob_installed(&mj);
 	if (s->installed) {
-		int rc;
-		const char *t[] = { "targets", NULL }, *o[] = { "overlap", NULL };
-		s->targets = modjob_run(&mj, t, 30, &rc);
-		s->overlap = modjob_run(&mj, o, 15, &rc);
+		s->targets = bgcache_get(&c_targets, 1);
+		s->overlap = bgcache_get(&c_overlap, 1);
 	}
 	modjob_last(&mj, s->job, sizeof(s->job), &s->busy, &s->ok, &s->output, &s->at);
+	/* a check or mount just finished: the drives may have changed */
+	static time_t seen;
+	if (s->at != seen) { seen = s->at; bgcache_stale(&c_targets); bgcache_stale(&c_overlap); }
 	snprintf(s->target, sizeof(s->target), "%s", last_target);
 }

@@ -20,5 +20,6 @@ typedef struct {
  * 1: something is already running, -1: not installed / couldn't start */
 int cloud_start(const char *job, const char *const *args);
 void cloud_state(cloud_state_t *s);
+void cloud_fresh(void);   /* the next cloud_state asks rclone there and then (after a change) */
 
 #endif

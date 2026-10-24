@@ -20,5 +20,6 @@ typedef struct {
  * on target (a mount point); or job overlap-remove / overlap-undo. 0 started, 1 busy, -1 not installed, -2 bad */
 int storage_start(const char *test, const char *target);
 void storage_state(storage_state_t *s);
+void storage_prime(void);   /* at start: the drive list worked out in the background */
 
 #endif

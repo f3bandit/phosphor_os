@@ -6,6 +6,10 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 ## 0.27.18
 
 ### Fixes
+- **The TV froze for a few seconds now and then while the Windows app was open**: the app checks
+  the SS1 once a minute, and the drive list (Storage) took about 7 seconds to work out, while
+  phosphord answers one thing at a time. The drive list, the update packages and the cloud saves
+  status are worked out in the background now and kept, so every answer is instant.
 - **Box art showed "Not run yet" after every restart**, even when lookups had run: the last run's
   result is kept now, with when it ran ("Done (last run Oct 23, 23:40)").
 

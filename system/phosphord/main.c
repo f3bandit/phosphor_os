@@ -11,6 +11,7 @@
 #include "remote.h"
 #include "sshacc.h"
 #include "phantom.h"
+#include "storage.h"
 #include "memcard.h"
 #include "wifi.h"
 #include "heartbeat.h"
@@ -129,6 +130,7 @@ int main(int argc, char **argv)
 	scraper_start();
 	sshacc_boot();
 	remote_start();
+	storage_prime();                          /* the drive list, in the background */
 	memcard_start();
 	wifi_start();
 	heartbeat_start();
