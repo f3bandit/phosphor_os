@@ -10,11 +10,11 @@ const $ = id => document.getElementById(id);
 const S = {
 	sprites: [],            /* { name, src (data: URL), on, img } */
 	bg: "auto", shadeBy: "spread", levels: 4, floor: 35, invShade: 0,
-	canvas: "screen", tileW: 160, tileH: 160, px: 3, density: 40, gap: 24, rot: 1, mirror: 1, snap: 1, seed: 1847,
+	canvas: "screen", tileW: 160, tileH: 160, px: 3, density: 40, gap: 24, angle: "random", mirror: 1, snap: 1, seed: 1847,
 	inv: 0, str: 13, name: "My texture",
 	view: "real", accent: 0,
 };
-const KEYS = ["bg", "shadeBy", "levels", "floor", "invShade", "canvas", "tileW", "tileH", "px", "density", "gap", "rot", "mirror", "snap", "seed", "inv", "str", "name"];
+const KEYS = ["bg", "shadeBy", "levels", "floor", "invShade", "canvas", "tileW", "tileH", "px", "density", "gap", "angle", "mirror", "snap", "seed", "inv", "str", "name"];
 
 /* ---------------------------------------------------------------- server */
 async function api(url, body) {
@@ -163,7 +163,13 @@ function layout() {
 		/* one try at putting sprite si somewhere free */
 		const place = si => {
 			const c = conv[si];
-			const o = (S.rot ? Math.floor(R() * 4) : 0) | (S.mirror && R() < 0.5 ? 4 : 0);
+			/* turns of 90 degrees clockwise: random, or the angle picked for all of them */
+			const turns = S.angle === "random" ? Math.floor(R() * 4) : (+S.angle / 90) & 3;
+			/* flipped left to right as it shows on screen: at random, every other sprite placed, or never */
+			const flip = (S.mirror === 3 && boxes.length % 2 === 1) || (S.mirror === 1 && R() < 0.5);
+			/* the data mirrors before turning; a mirror after turning t times is the same as mirroring
+			   first and turning the other way (4 - t) */
+			const o = flip ? ((4 - turns) & 3) | 4 : turns;
 			const w = ((o & 1) ? c.h : c.w) * px, h = ((o & 1) ? c.w : c.h) * px;
 			if (!tile && (w > W || h > H)) return false;
 			if (tile && (w + gap > W || h + gap > H)) return false;   /* it would run into itself where the tile repeats */
@@ -293,7 +299,7 @@ function refresh(reconvert) {
 let lastT = 0;
 
 /* ---------------------------------------------------------------- controls */
-const NUM = new Set(["levels", "floor", "invShade", "tileW", "tileH", "px", "density", "gap", "rot", "mirror", "snap", "inv", "str", "seed"]);
+const NUM = new Set(["levels", "floor", "invShade", "tileW", "tileH", "px", "density", "gap", "mirror", "snap", "inv", "str", "seed"]);
 const CONVERT = new Set(["bg", "shadeBy", "levels", "floor", "invShade"]);
 document.querySelectorAll(".seg[data-k]").forEach(seg => seg.addEventListener("click", e => {
 	const b = e.target.closest("b");
@@ -348,6 +354,11 @@ function project() {
 async function loadProject(p) {
 	if (!p || p.kind !== "phosphor-texture-maker") throw new Error("not a Texture Maker project");
 	KEYS.forEach(k => { if (p[k] !== undefined) S[k] = p[k]; });
+	if (p.angle === undefined && p.rot !== undefined) S.angle = p.rot ? "random" : "0";   /* 1.0 projects: Turn 90° steps */
+	if (!["random", "0", "90", "180", "270"].includes(String(S.angle))) S.angle = "random";
+	S.angle = String(S.angle);
+	if (![0, 1, 3].includes(+S.mirror)) S.mirror = 1;
+	S.mirror = +S.mirror;
 	S.sprites = [];
 	for (const s of p.sprites || []) {
 		try { S.sprites.push({ name: s.name, src: s.src, on: s.on !== false, img: await loadImage(s.src) }); } catch (e) { /* a broken picture is skipped */ }

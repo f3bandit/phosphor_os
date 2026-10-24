@@ -22,7 +22,7 @@ closes by itself a few minutes after its window is closed.
 3. **Layout:**
    - The whole screen (1280×720 base pixels, no repeat) or a tile that repeats.
    - Pixel scale (base pixels per sprite pixel), density and minimum gap.
-   - Random 90° turns and mirroring, each optional.
+   - Angle: random 90° turns, or one angle for every sprite (0°, 90°, 180°, 270°); flip left to right (as it shows on screen) at random, every other sprite, or off.
    - Grid snap and a seed with **Re-roll**.
 4. **Look:** *Sprites* (accent on the sprites) or *Inverted* (accent everywhere else), and
    strength. Phosphor's own textures use 0.13.
