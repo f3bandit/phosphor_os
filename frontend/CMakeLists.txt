@@ -32,5 +32,7 @@ add_executable(phosphor ${APP_SOURCES} ${FONT_SOURCES})
 target_link_libraries(phosphor PRIVATE lvgl cjson m pthread)
 target_include_directories(phosphor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../system/third_party/stb)
 set_source_files_properties(src/jpeg.c PROPERTIES COMPILE_OPTIONS "-w")
+# sprite textures: the same arithmetic as the Windows app's JavaScript, no fused multiply-adds
+set_source_files_properties(src/texsprite.c PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 target_compile_options(phosphor PRIVATE -Wall -Wextra -Wno-unused-parameter)
 set_source_files_properties(${FONT_SOURCES} PROPERTIES COMPILE_OPTIONS "-w")
