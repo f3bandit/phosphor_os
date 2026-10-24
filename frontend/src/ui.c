@@ -5579,9 +5579,12 @@ static void up_key(pkey_t k)
 	                      : api_call("{\"cmd\":\"update\",\"do\":\"rollback\",\"version\":\"%s\"}", up.rb_ver[s - up.npk]);
 	if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "The updater didn't start"); cJSON_Delete(r); return; }
 	cJSON_Delete(r);
-	lv_label_set_text(up.note, "Updating: Phosphor closes and opens again by itself in a few seconds.");
+	lv_label_set_text(up.note, "Updating: Phosphor closes, then the SuperStation restarts by itself to finish.");
 	toast_show("Updating...");
 }
+
+static void power_run(int restart);
+static void update_restart(lv_timer_t *t) { (void)t; if (!getenv("PHOS_NO_REBOOT")) power_run(1); }
 
 /* after Phosphor started again: what the update did (once) */
 static void update_check(void)
@@ -5590,8 +5593,20 @@ static void update_check(void)
 	cJSON *st = r ? cJSON_GetObjectItem(r, "state") : NULL;
 	const char *s = st ? api_str(st, "state") : NULL;
 	if (s && (!strcmp(s, "done") || !strcmp(s, "failed")) && time(NULL) - (time_t)api_num(st, "at", 0) < 300) {
-		toast_show(api_str(st, "msg") ? api_str(st, "msg") : "Updated");
-		if (api_num(st, "restart", 0) > 0) plog("update: MiSTer's Main changed; a restart finishes it");
+		/* a finished update (or roll back) ends with a full restart, so MiSTer's Main, the drivers and
+		   every module start fresh with it: once, marked in tmp (cleared by the restart itself) */
+		char mk[300];
+		const char *t = getenv("PHOS_TMP");
+		snprintf(mk, sizeof(mk), "%s/update-restarted", t && *t ? t : "/tmp/phosphor");
+		if (!strcmp(s, "done") && access(mk, F_OK) != 0) {
+			FILE *f = fopen(mk, "w");
+			if (f) fclose(f);
+			char m[200];
+			snprintf(m, sizeof(m), "%s. Restarting the SuperStation to finish...", api_str(st, "msg") ? api_str(st, "msg") : "Updated");
+			toast_show(m);
+			lv_timer_t *tm = lv_timer_create(update_restart, 4000, NULL);
+			lv_timer_set_repeat_count(tm, 1);
+		} else toast_show(api_str(st, "msg") ? api_str(st, "msg") : "Updated");
 	}
 	cJSON_Delete(r);
 }
