@@ -33,7 +33,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -3581,7 +3581,7 @@ static void backup_key(pkey_t k)
  * the Phosphor menu core if the stock one is loaded (Main restarts: a few seconds). */
 
 enum { PT_MAIN, PT_CONFIRM };
-enum { PT_BACKUP1, PT_BACKUP2, PT_FIRST_FILE };   /* the front ports are for games (SNAC), not the menu */
+enum { PT_CARDS, PT_TEST, PT_BACKUP1, PT_BACKUP2, PT_FIRST_FILE };   /* the front ports are for games (SNAC), not the menu */
 static struct {
 	int mode, busy, job_ok, available, can_load, main_api, in_game, done, total, loading;
 	char job[16], message[200];
@@ -3739,6 +3739,8 @@ static void pt_label_for(const char *name, char *out, size_t n)
 }
 
 static void pt_apply(cJSON *r);
+static void show_mcards(void);
+static void show_padtest(void);
 
 /* a card Phosphor hasn't seen: its name, typed on the keyboard (B keeps the suggested one) */
 static void mc_name_done(const char *text)
@@ -3837,6 +3839,8 @@ static void pt_apply(cJSON *r)
 static void pt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	switch (i) {
+	case PT_CARDS: snprintf(t, n, "Memory cards: both ports, save by save"); snprintf(val, vn, ">"); return;
+	case PT_TEST: snprintf(t, n, "Controller test"); snprintf(val, vn, ">"); return;
 	case PT_BACKUP1: case PT_BACKUP2:
 		snprintf(t, n, "Back up the memory card in port %d", i == PT_BACKUP1 ? 1 : 2);
 		snprintf(val, vn, ">");
@@ -3911,11 +3915,16 @@ static void ports_key(pkey_t k)
 		return;
 	}
 	if (k != K_A) return;
+	if (pt_list.sel == PT_CARDS) { show_mcards(); return; }      /* the saved cards work without the ports */
+	if (pt_list.sel == PT_TEST && !pt.available && pt.can_load) { pt_do("prepare", 0, NULL); return; }
+	if (pt_list.sel == PT_TEST) { show_padtest(); return; }
 	if (!pt.available) {
 		if (pt.can_load) pt_do("prepare", 0, NULL);
 		return;
 	}
 	switch (pt_list.sel) {
+	case PT_CARDS: show_mcards(); return;
+	case PT_TEST: show_padtest(); return;
 	case PT_BACKUP1: pt_do("backup", 1, NULL); return;
 	case PT_BACKUP2: pt_do("backup", 2, NULL); return;
 	}
@@ -3925,6 +3934,470 @@ static void ports_key(pkey_t k)
 		pt.mode = PT_CONFIRM;
 		pt_apply(api_call("{\"cmd\":\"memcard\"}"));
 	}
+}
+
+/* ---------- Memory cards, save by save: SS1 Tool's memory card manager on the TV ----------
+ * Both front ports side by side. A side shows the card read from its port (A reads it: a backup into
+ * the library, phosphor/memcards) or a card opened from the library. A save is copied to the other
+ * side (a new version of that card; if it's the card in a port, it's written back to it, after a
+ * fresh backup, as every write). Remove makes a new version too: nothing is overwritten. */
+typedef struct { int slot, blocks; char title[96], product[16]; unsigned char icon[1024]; int has_icon; } mcs_save_t;
+#define MCS_ROWS 7
+static struct {
+	char card[2][128], ver[2][64];
+	int read[2];                    /* the card shown is the one in that port (read this session) */
+	mcs_save_t saves[2][15];
+	int nsaves[2], freeb[2], formatted[2], side, sel[2], top[2];
+	int pending, job_side;          /* a job runs for job_side: 1 read, 2 write */
+	char lib[40][128];
+	int nlib;
+	int menu, menu_sel, menu_n, menu_act[6];
+	char menu_items[6][96];
+	int armed;                      /* X pressed once: press again to copy */
+	lv_obj_t *col[2], *head[2], *sub[2], *row[2][MCS_ROWS], *ric[2][MCS_ROWS], *rti[2][MCS_ROWS], *rbl[2][MCS_ROWS], *status, *menu_box;
+	lv_draw_buf_t *ibuf[2][MCS_ROWS];
+} ms;
+static const char *const MS_HINTS[] = { "A", "Save", "X", "Copy to the other side", "Y", "Card", "\xE2\x86\x90\xE2\x86\x92", "Port", "B", "Back", NULL };
+static const char *const MS_MENU_HINTS[] = { "A", "Choose", "B", "Cancel", NULL };
+
+static int b64v(int c) { return c >= 'A' && c <= 'Z' ? c - 'A' : c >= 'a' && c <= 'z' ? c - 'a' + 26 : c >= '0' && c <= '9' ? c - '0' + 52 : c == '+' ? 62 : c == '/' ? 63 : -1; }
+static int unb64(const char *s, unsigned char *out, int max)
+{
+	unsigned v = 0;
+	int bits = 0, n = 0;
+	for (; s && *s && n < max; s++) {
+		int d = b64v((unsigned char)*s);
+		if (d < 0) continue;
+		v = v << 6 | (unsigned)d;
+		bits += 6;
+		if (bits >= 8) { bits -= 8; out[n++] = (unsigned char)(v >> bits & 255); }
+	}
+	return n;
+}
+
+static void ms_load(int side)
+{
+	ms.nsaves[side] = 0;
+	ms.formatted[side] = ms.freeb[side] = 0;
+	if (!ms.card[side][0]) return;
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "memcard");
+	cJSON_AddStringToObject(q, "do", "card");
+	cJSON_AddStringToObject(q, "name", ms.card[side]);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	free(b);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't open the card"); ms.card[side][0] = 0; cJSON_Delete(r); return; }
+	cJSON *c = cJSON_GetObjectItem(r, "card"), *it;
+	snprintf(ms.ver[side], sizeof(ms.ver[0]), "%s", api_str(r, "version") ? api_str(r, "version") : "");
+	ms.formatted[side] = cJSON_IsTrue(cJSON_GetObjectItem(c, "formatted"));
+	ms.freeb[side] = (int)api_num(c, "free", 0);
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(c, "saves")) {
+		if (ms.nsaves[side] >= 15) break;
+		mcs_save_t *sv = &ms.saves[side][ms.nsaves[side]++];
+		sv->slot = (int)api_num(it, "slot", 0);
+		sv->blocks = cJSON_GetArraySize(cJSON_GetObjectItem(it, "blocks"));
+		snprintf(sv->title, sizeof(sv->title), "%s", api_str(it, "title") ? api_str(it, "title") : "");
+		snprintf(sv->product, sizeof(sv->product), "%s", api_str(it, "product") ? api_str(it, "product") : "");
+		sv->has_icon = unb64(api_str(it, "icon"), sv->icon, 1024) == 1024;
+	}
+	cJSON_Delete(r);
+	if (ms.sel[side] >= ms.nsaves[side]) ms.sel[side] = ms.nsaves[side] ? ms.nsaves[side] - 1 : 0;
+}
+
+static void ms_draw(void)
+{
+	if (cur != SCR_MCARDS) return;
+	for (int s = 0; s < 2; s++) {
+		char h[200], sub[200];
+		if (ms.card[s][0]) snprintf(h, sizeof(h), "Port %d  \xC2\xB7  \"%s\"%s", s + 1, ms.card[s], ms.read[s] ? "" : "  (saved card)");
+		else snprintf(h, sizeof(h), "Port %d", s + 1);
+		if (!ms.card[s][0]) snprintf(sub, sizeof(sub), "A: read the card in port %d.  Y: open a saved card here.", s + 1);
+		else if (!ms.formatted[s]) snprintf(sub, sizeof(sub), "Not formatted");
+		else snprintf(sub, sizeof(sub), "%d of 15 blocks used", 15 - ms.freeb[s]);
+		lv_label_set_text(ms.head[s], h);
+		lv_label_set_text(ms.sub[s], sub);
+		lv_obj_set_style_border_color(ms.col[s], s == ms.side ? PAL.acc : PAL.line, 0);
+		if (ms.sel[s] < ms.top[s]) ms.top[s] = ms.sel[s];
+		if (ms.sel[s] >= ms.top[s] + MCS_ROWS) ms.top[s] = ms.sel[s] - MCS_ROWS + 1;
+		for (int r = 0; r < MCS_ROWS; r++) {
+			int i = ms.top[s] + r;
+			if (i >= ms.nsaves[s]) { lv_obj_set_hidden(ms.row[s][r], true); continue; }
+			lv_obj_set_hidden(ms.row[s][r], false);
+			mcs_save_t *sv = &ms.saves[s][i];
+			int on = s == ms.side && i == ms.sel[s];
+			lv_obj_set_style_bg_opa(ms.row[s][r], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+			lv_label_set_text(ms.rti[s][r], sv->title);
+			lv_obj_set_style_text_color(ms.rti[s][r], on ? PAL.text : PAL.dim, 0);
+			char bl[24];
+			snprintf(bl, sizeof(bl), "%d block%s", sv->blocks, sv->blocks == 1 ? "" : "s");
+			lv_label_set_text(ms.rbl[s][r], bl);
+			/* the save's own icon, 16x16 drawn at twice the size */
+			lv_draw_buf_t *db = ms.ibuf[s][r];
+			for (int y = 0; y < 32; y++) {
+				uint8_t *row = db->data + (size_t)y * db->header.stride;
+				for (int x = 0; x < 32; x++) {
+					const unsigned char *px = sv->icon + ((y / 2) * 16 + x / 2) * 4;
+					row[x * 4 + 0] = px[2]; row[x * 4 + 1] = px[1]; row[x * 4 + 2] = px[0];
+					row[x * 4 + 3] = sv->has_icon ? px[3] : 0;
+				}
+			}
+			lv_obj_invalidate(ms.ric[s][r]);
+		}
+	}
+	if (!ms.menu) footer_set(MS_HINTS);
+}
+
+static void ms_menu_close(void)
+{
+	if (ms.menu_box) lv_obj_delete(ms.menu_box);
+	ms.menu_box = NULL;
+	ms.menu = 0;
+	footer_set(MS_HINTS);
+}
+
+static void ms_menu_draw(void)
+{
+	if (!ms.menu_box) return;
+	for (int i = 0; i < ms.menu_n; i++) {
+		lv_obj_t *r = lv_obj_get_child(ms.menu_box, i + 1);
+		lv_obj_set_style_bg_opa(r, i == ms.menu_sel ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_style_text_color(lv_obj_get_child(r, 0), i == ms.menu_sel ? PAL.text : PAL.dim, 0);
+	}
+}
+
+/* a small list over the screen; menu: 1 save options, 2 card options, 3 open a saved card */
+static void ms_menu_open(int kind, const char *title)
+{
+	ms.menu = kind;
+	ms.menu_sel = 0;
+	ms.menu_box = mk_box(lv_layer_top(), S(560), LV_SIZE_CONTENT, PAL.panel, S(14));
+	lv_obj_set_style_border_width(ms.menu_box, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(ms.menu_box, PAL.acc, 0);
+	lv_obj_set_style_pad_all(ms.menu_box, S(18), 0);
+	lv_obj_set_flex_flow(ms.menu_box, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(ms.menu_box, S(4), 0);
+	lv_obj_center(ms.menu_box);
+	lv_obj_t *t = mk_label(ms.menu_box, FONT_NAME, PAL.text, title);
+	lv_obj_set_style_pad_bottom(t, S(8), 0);
+	for (int i = 0; i < ms.menu_n; i++) {
+		lv_obj_t *r = mk_box(ms.menu_box, LV_PCT(100), S(40), PAL.panel_on, S(8));
+		lv_obj_set_style_bg_opa(r, LV_OPA_TRANSP, 0);
+		lv_obj_t *l = mk_label(r, FONT_BODY, PAL.dim, ms.menu_items[i]);
+		lv_obj_align(l, LV_ALIGN_LEFT_MID, S(14), 0);
+	}
+	ms_menu_draw();
+	footer_set(MS_MENU_HINTS);
+}
+
+static void ms_job(const char *what, int port, const char *name, int pending)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "memcard");
+	cJSON_AddStringToObject(q, "do", what);
+	cJSON_AddNumberToObject(q, "port", port);
+	if (name) cJSON_AddStringToObject(q, "name", name);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	free(b);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"); cJSON_Delete(r); return; }
+	cJSON_Delete(r);
+	ms.pending = pending;
+	ms.job_side = port - 1;
+	lv_label_set_text(ms.status, pending == 1 ? "Reading the card..." : "Backing up the card, then writing...");
+}
+
+static void ms_name_done(const char *text);
+
+/* the job's progress; when it's done: the side shows the card that was read or written */
+static void ms_poll(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"memcard\"}");
+	if (!api_ok(r)) { cJSON_Delete(r); return; }
+	cJSON *j = cJSON_GetObjectItem(r, "job");
+	int busy = cJSON_IsTrue(cJSON_GetObjectItem(j, "busy")), ok = cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"));
+	int done = (int)api_num(j, "done", 0), total = (int)api_num(j, "total", 1);
+	char msg[220], file[160];
+	snprintf(msg, sizeof(msg), "%s", api_str(j, "message") ? api_str(j, "message") : "");
+	snprintf(file, sizeof(file), "%s", api_str(j, "file") ? api_str(j, "file") : "");
+	int ask = cJSON_IsTrue(cJSON_GetObjectItem(j, "ask_name"));
+	char sugg[64];
+	snprintf(sugg, sizeof(sugg), "%s", api_str(j, "suggest") ? api_str(j, "suggest") : "Memory card");
+	cJSON_Delete(r);
+	if (busy) {
+		char t[120];
+		snprintf(t, sizeof(t), "%s... %d%%", ms.pending == 1 ? "Reading the card" : done < total / 2 ? "Backing up the card first" : "Writing", total ? done * 100 / total : 0);
+		lv_label_set_text(ms.status, t);
+		return;
+	}
+	if (ask && !osk.open) {
+		lv_label_set_text(ms.status, "A card Phosphor hasn't seen before: give it a name");
+		osk_open("Name this memory card", "Next time Phosphor knows it by its saves.", 0, 40, ms_name_done, MS_HINTS);
+		snprintf(osk.text, sizeof(osk.text), "%s", sugg);
+		osk_draw();
+		return;
+	}
+	if (ask) return;
+	int side = ms.job_side, pending = ms.pending;
+	ms.pending = 0;
+	lv_label_set_text(ms.status, msg);
+	if (!ok) { toast_show(msg[0] ? msg : "That didn't work"); return; }
+	char *sl = strchr(file, '/');
+	if (pending == 1 && sl) {                       /* read: the card it was kept as */
+		*sl = 0;
+		snprintf(ms.card[side], sizeof(ms.card[0]), "%.127s", file);
+		ms.read[side] = 1;
+	}
+	ms_load(0);
+	ms_load(1);
+	ms_draw();
+	toast_show(pending == 1 ? "Card read" : "Written to the card");
+}
+
+static void ms_name_done(const char *text)
+{
+	char req[400], esc[200];
+	size_t k = 0;
+	const char *t = text && *text ? text : "Memory card";
+	for (const char *p = t; *p && k + 2 < sizeof(esc); p++) { if (*p == '"' || *p == '\\') esc[k++] = '\\'; esc[k++] = *p; }
+	esc[k] = 0;
+	snprintf(req, sizeof(req), "{\"cmd\":\"memcard\",\"do\":\"name\",\"name\":\"%s\"}", esc);
+	cJSON_Delete(api_call("%s", req));
+	footer_set(MS_HINTS);
+}
+
+static int ms_edit(const char *op, int from, int slot)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "memcard");
+	cJSON_AddStringToObject(q, "do", "edit");
+	cJSON_AddStringToObject(q, "op", op);
+	cJSON_AddStringToObject(q, "name", ms.card[from]);
+	cJSON_AddStringToObject(q, "version", ms.ver[from]);
+	cJSON *sl = cJSON_AddArrayToObject(q, "slots");
+	cJSON_AddItemToArray(sl, cJSON_CreateNumber(slot));
+	if (!strcmp(op, "copy")) cJSON_AddStringToObject(q, "to", ms.card[!from]);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", b);
+	free(b);
+	int ok = api_ok(r);
+	if (!ok) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "That didn't work");
+	cJSON_Delete(r);
+	return ok;
+}
+
+/* the selected save to the other side; written to the card in that port when that's where it is */
+static void ms_copy(void)
+{
+	int s = ms.side, o = !s;
+	if (!ms.nsaves[s]) return;
+	if (!ms.card[o][0]) { toast_show("Nothing on the other side: read its card (A) or open a saved one (Y)"); return; }
+	if (!strcmp(ms.card[o], ms.card[s])) { toast_show("Both sides are the same card"); return; }
+	if (!ms_edit("copy", s, ms.saves[s][ms.sel[s]].slot)) return;
+	ms_load(o);
+	ms_draw();
+	if (ms.read[o]) {
+		char rel[220];
+		snprintf(rel, sizeof(rel), "%s/%s.mcd", ms.card[o], ms.ver[o]);
+		ms_job("restore", o + 1, rel, 2);
+	} else toast_show("Copied (a new version of that card)");
+}
+
+static void show_mcards(void)
+{
+	cur = SCR_MCARDS;
+	lv_obj_clean(body);
+	screen_title("FRONT PORTS", "Memory cards");
+	int cw = (W - S(112) - S(24)) / 2, ch = S(400);
+	for (int s = 0; s < 2; s++) {
+		ms.col[s] = mk_box(body, cw, ch, PAL.panel, S(12));
+		lv_obj_set_pos(ms.col[s], S(56) + s * (cw + S(24)), S(176));
+		lv_obj_set_style_border_width(ms.col[s], LV_MAX(1, S(1)), 0);
+		ms.head[s] = mk_label(ms.col[s], FONT_NAME, PAL.text, "");
+		lv_label_set_long_mode(ms.head[s], LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_size(ms.head[s], cw - S(36), S(26));
+		lv_obj_set_pos(ms.head[s], S(18), S(16));
+		ms.sub[s] = mk_label(ms.col[s], FONT_SMALL, PAL.dim, "");
+		lv_obj_set_pos(ms.sub[s], S(18), S(46));
+		for (int r = 0; r < MCS_ROWS; r++) {
+			lv_obj_t *row = mk_box(ms.col[s], cw - S(28), S(44), PAL.panel_on, S(8));
+			lv_obj_set_pos(row, S(14), S(80) + r * S(44));
+			ms.row[s][r] = row;
+			if (!ms.ibuf[s][r]) ms.ibuf[s][r] = lv_draw_buf_create(32, 32, LV_COLOR_FORMAT_ARGB8888, 0);
+			ms.ric[s][r] = lv_image_create(row);
+			lv_image_set_src(ms.ric[s][r], ms.ibuf[s][r]);
+			lv_obj_align(ms.ric[s][r], LV_ALIGN_LEFT_MID, S(8), 0);
+			ms.rti[s][r] = mk_label(row, FONT_BODY, PAL.dim, "");
+			lv_label_set_long_mode(ms.rti[s][r], LV_LABEL_LONG_MODE_DOTS);
+			lv_obj_set_width(ms.rti[s][r], cw - S(28) - S(150));
+			lv_obj_align(ms.rti[s][r], LV_ALIGN_LEFT_MID, S(52), 0);
+			ms.rbl[s][r] = mk_label(row, FONT_SMALL, PAL.faint, "");
+			lv_obj_align(ms.rbl[s][r], LV_ALIGN_RIGHT_MID, -S(12), 0);
+		}
+	}
+	ms.status = mk_label(body, FONT_SMALL, PAL.dim, "Copies and changes make a new version of a card in the library (phosphor/memcards): nothing is overwritten.");
+	lv_obj_set_pos(ms.status, S(56), S(176) + ch + S(14));
+	ms.menu = 0;
+	ms.armed = 0;
+	for (int s = 0; s < 2; s++) ms_load(s);
+	ms_draw();
+}
+
+static void mcards_key(pkey_t k)
+{
+	if (ms.menu) {
+		if (k == K_UP && ms.menu_sel > 0) { ms.menu_sel--; ms_menu_draw(); return; }
+		if (k == K_DOWN && ms.menu_sel + 1 < ms.menu_n) { ms.menu_sel++; ms_menu_draw(); return; }
+		if (k == K_B || k == K_MENU) { ms_menu_close(); return; }
+		if (k != K_A) return;
+		int act = ms.menu_act[ms.menu_sel], kind = ms.menu, s = ms.side;
+		ms_menu_close();
+		if (kind == 3) {                             /* a saved card on this side */
+			memcpy(ms.card[s], ms.lib[act], sizeof(ms.card[0]));
+			ms.read[s] = 0;
+			ms.sel[s] = ms.top[s] = 0;
+			ms_load(s);
+			ms_draw();
+			return;
+		}
+		switch (act) {
+		case 1: ms_copy(); break;
+		case 2:
+			if (ms_edit("remove", s, ms.saves[s][ms.sel[s]].slot)) {
+				ms_load(s);
+				ms_draw();
+				if (ms.read[s]) { char rel[220]; snprintf(rel, sizeof(rel), "%s/%s.mcd", ms.card[s], ms.ver[s]); ms_job("restore", s + 1, rel, 2); }
+				else toast_show("Removed (a new version: the old one stays)");
+			}
+			break;
+		case 3: ms_job("backup", s + 1, NULL, 1); break;
+		case 4: {
+			cJSON *r = api_call("{\"cmd\":\"memcard\",\"do\":\"library\"}"), *it, *lib = r ? cJSON_GetObjectItem(r, "library") : NULL;
+			ms.nlib = 0;
+			cJSON_ArrayForEach(it, lib) if (ms.nlib < 40 && api_str(it, "name")) snprintf(ms.lib[ms.nlib++], sizeof(ms.lib[0]), "%s", api_str(it, "name"));
+			cJSON_Delete(r);
+			if (!ms.nlib) { toast_show("No saved cards yet: read a card first"); break; }
+			ms.menu_n = LV_MIN(ms.nlib, 6);
+			for (int i = 0; i < ms.menu_n; i++) { snprintf(ms.menu_items[i], sizeof(ms.menu_items[0]), "%s", ms.lib[i]); ms.menu_act[i] = i; }
+			ms_menu_open(3, "Open a saved card");
+			break;
+		}
+		case 5: {
+			char rel[220];
+			snprintf(rel, sizeof(rel), "%s/%s.mcd", ms.card[s], ms.ver[s]);
+			ms_job("restore", s + 1, rel, 2);
+			break;
+		}
+		}
+		return;
+	}
+	if (ms.pending && (k == K_A || k == K_X || k == K_Y)) { toast_show("Busy: wait for it to finish"); return; }
+	int s = ms.side;
+	if (k != K_X) ms.armed = 0;
+	switch (k) {
+	case K_LEFT: case K_L: ms.side = 0; ms_draw(); break;
+	case K_RIGHT: case K_R: ms.side = 1; ms_draw(); break;
+	case K_UP: if (ms.sel[s] > 0) { ms.sel[s]--; ms_draw(); } break;
+	case K_DOWN: if (ms.sel[s] + 1 < ms.nsaves[s]) { ms.sel[s]++; ms_draw(); } break;
+	case K_A:
+		if (!ms.card[s][0] || !ms.nsaves[s]) { ms_job("backup", s + 1, NULL, 1); break; }
+		ms.menu_n = 2;
+		snprintf(ms.menu_items[0], sizeof(ms.menu_items[0]), "Copy to the other side"); ms.menu_act[0] = 1;
+		snprintf(ms.menu_items[1], sizeof(ms.menu_items[1]), "Remove from this card"); ms.menu_act[1] = 2;
+		ms_menu_open(1, ms.saves[s][ms.sel[s]].title);
+		break;
+	case K_X:
+		if (!ms.nsaves[s]) break;
+		if (!ms.armed) { ms.armed = 1; toast_show(ms.read[!s] ? "Press X again: the card in that port is backed up first, then written" : "Press X again to copy"); break; }
+		ms.armed = 0;
+		ms_copy();
+		break;
+	case K_Y: {
+		int n = 0;
+		snprintf(ms.menu_items[n], sizeof(ms.menu_items[0]), "Read the card in port %d", s + 1); ms.menu_act[n++] = 3;
+		snprintf(ms.menu_items[n], sizeof(ms.menu_items[0]), "Open a saved card here"); ms.menu_act[n++] = 4;
+		if (ms.card[s][0] && !ms.read[s]) { snprintf(ms.menu_items[n], sizeof(ms.menu_items[0]), "Put this card on the card in port %d", s + 1); ms.menu_act[n++] = 5; }
+		ms.menu_n = n;
+		ms_menu_open(2, "Card");
+		break;
+	}
+	case K_B: case K_MENU: show_ports(); break;
+	default: break;
+	}
+}
+
+/* ---------- Controller test: a front port's PlayStation controller, live, in SS1 Tool's drawing ---------- */
+static struct {
+	int port, id, conn, lx, ly, rx, ry, layout;
+	unsigned buttons;
+	padview_t *pv;
+	lv_obj_t *head, *axis;
+} ptst;
+static const char *const PADT_HINTS[] = { "L/R", "Port", "B", "Back", NULL };
+
+static void padtest_poll(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"pads\"}"), *it, *pads = r ? cJSON_GetObjectItem(r, "pads") : NULL;
+	ptst.conn = 0;
+	cJSON_ArrayForEach(it, pads) {
+		if ((int)api_num(it, "port", 0) != ptst.port) continue;
+		ptst.conn = cJSON_IsTrue(cJSON_GetObjectItem(it, "connected"));
+		ptst.id = (int)api_num(it, "id", 0);
+		ptst.buttons = (unsigned)api_num(it, "buttons", 0);
+		ptst.lx = (int)api_num(it, "lx", 128); ptst.ly = (int)api_num(it, "ly", 128);
+		ptst.rx = (int)api_num(it, "rx", 128); ptst.ry = (int)api_num(it, "ry", 128);
+	}
+	cJSON_Delete(r);
+	if (cur != SCR_PADTEST || !ptst.pv) return;
+	int analog = ptst.conn && (ptst.id == 0x73 || ptst.id == 0x53);
+	if (analog != ptst.layout) { ptst.layout = analog; padview_layout(ptst.pv, analog ? "dualshock" : "psx"); }
+	char h[120];
+	snprintf(h, sizeof(h), ptst.conn ? "Port %d  \xC2\xB7  %s" : "Port %d  \xC2\xB7  nothing plugged in", ptst.port, pt_type(ptst.id));
+	lv_label_set_text(ptst.head, h);
+	/* the controller's bits: Select L3 R3 Start Up Right Down Left L2 R2 L1 R1 Triangle Circle Cross Square */
+	static const char *const ID[16] = { "back", "ls", "rs", "start", "up", "right", "down", "left", "l2", "r2", "l1", "r1", "y", "b", "a", "x" };
+	padstate_t st;
+	memset(&st, 0, sizeof(st));
+	st.nhas = -1;
+	for (int i = 0; i < 16; i++) if (ptst.conn && (ptst.buttons & (1u << i))) st.on[st.non++] = ID[i];
+	if (analog) {
+		st.lx = (ptst.lx - 128) / 128.f; st.ly = (ptst.ly - 128) / 128.f;
+		st.rx = (ptst.rx - 128) / 128.f; st.ry = (ptst.ry - 128) / 128.f;
+	}
+	st.l2 = (ptst.buttons & (1u << 8)) ? 1.f : 0;
+	st.r2 = (ptst.buttons & (1u << 9)) ? 1.f : 0;
+	padview_state(ptst.pv, &st);
+	char a[120];
+	if (analog) snprintf(a, sizeof(a), "L  x %+.2f  y %+.2f        R  x %+.2f  y %+.2f", st.lx, st.ly, st.rx, st.ry);
+	else snprintf(a, sizeof(a), ptst.conn ? "Digital controller: no sticks" : "Plug a controller into port %d", ptst.port);
+	lv_label_set_text(ptst.axis, a);
+}
+
+static void show_padtest(void)
+{
+	cur = SCR_PADTEST;
+	lv_obj_clean(body);
+	if (ptst.port < 1 || ptst.port > 2) ptst.port = 1;
+	screen_title("FRONT PORTS", "Controller test");
+	ptst.head = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(ptst.head, S(56), S(178));
+	ptst.pv = padview_create(body, (W - S(680)) / 2, S(214), S(680));
+	ptst.layout = 0;
+	padview_layout(ptst.pv, "psx");
+	ptst.axis = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_pos(ptst.axis, S(56), S(214) + S(680) * 345 / 600 + S(10));
+	footer_set(PADT_HINTS);
+	padtest_poll();
+}
+
+static void padtest_key(pkey_t k)
+{
+	if (k == K_L || k == K_LEFT) { ptst.port = 1; padtest_poll(); }
+	else if (k == K_R || k == K_RIGHT) { ptst.port = 2; padtest_poll(); }
+	else if (k == K_B || k == K_MENU) { ptst.pv = NULL; show_ports(); }
 }
 
 /* ---------- Bluetooth ----------
@@ -5628,6 +6101,12 @@ void ui_key(pkey_t k)
 	case SCR_BACKUP:
 		backup_key(k);
 		break;
+	case SCR_MCARDS:
+		mcards_key(k);
+		break;
+	case SCR_PADTEST:
+		padtest_key(k);
+		break;
 	case SCR_PORTS:
 		ports_key(k);
 		break;
@@ -5706,7 +6185,7 @@ static uint32_t last_status, last_poll;
 
 int ui_max_sleep(void)
 {
-	if (cur == SCR_PORTS) return 100;                         /* the card map follows a job */
+	if (cur == SCR_PORTS || cur == SCR_PADTEST || (cur == SCR_MCARDS && ms.pending)) return 50;   /* the card map, the controller test */
 	if (cur == SCR_CTRL || cur == SCR_MAP) return 100;       /* the controller, live */
 	if (si_pending()) return 100;                             /* a Settings row's status, once it rests */
 	return 500;                                               /* status bar, clock, spinners: twice a second */
@@ -5737,6 +6216,8 @@ void ui_tick(void)
 	/* a card job: the map fills in as it goes */
 	static uint32_t last_mc;
 	if (cur == SCR_PORTS && pt.busy && now - last_mc >= 250) { last_mc = now; pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
+	if (cur == SCR_MCARDS && ms.pending && now - last_mc >= 250) { last_mc = now; ms_poll(); }
+	if (cur == SCR_PADTEST && now - last_pads >= 50) { last_pads = now; padtest_poll(); }
 	/* the library changed (a scan finished): refresh what's on screen */
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
