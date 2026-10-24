@@ -3,6 +3,13 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.24
+
+### Fixes
+- **MiSTer's login prompt flashed in the top left corner between screens** (a game starting, MiSTer's
+  menu, a script, coming back): Phosphor wipes that text console whenever it takes or hands over the
+  screen, so a switch shows black.
+
 ## 0.27.23
 
 ### New
