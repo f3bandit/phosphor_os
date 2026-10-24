@@ -33,7 +33,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -1057,7 +1057,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1152,6 +1152,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_CLOUD: snprintf(t, n, "Cloud saves"); snprintf(val, vn, ">"); break;
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Front ports & memory cards"); snprintf(val, vn, ">"); break;
+	case SET_STORAGE: snprintf(t, n, "Storage"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
 	case SET_UPDATE_ALL:
@@ -1762,6 +1763,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                "WiFi, Bluetooth pairings and passwords are never sent." },
 	[SET_BACKUP] = { "Snapshots of your saves and settings, taken when you leave a game and once a day. Restore just the saves, or everything, from any snapshot.",
 	                 "Every restore takes a snapshot first, so it can be undone." },
+	[SET_STORAGE] = { "The SD card and the NVMe / USB drives: space, checks, a speed test, repairs, and putting back a drive that dropped off.",
+	                  "Only a repair changes a drive, and only after you say so twice." },
 	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
 	                "The ports are only read while this screen is open." },
 	[SET_ACCENT] = { "The colour used for highlights, the wordmark and the background texture. Left and right change it.", NULL },
@@ -4329,6 +4332,482 @@ static void mcards_key(pkey_t k)
 	}
 }
 
+/* ---------- Storage: the SD card and the NVMe / USB drives (the storage module) ----------
+ * One row per drive (space used, the last check on it), then the checks. A on a drive: its checks;
+ * X: a quick check of it. A drive that dropped off (unmounted) is mounted again with A. Only a
+ * repair changes a drive, and it asks twice. The SD card can't be repaired from here: Phosphor runs
+ * from it. Back up: the backup-agent's snapshot of saves and settings, now. */
+#define SG_MAX 8
+typedef struct { char path[64], kind[8], fs[16], model[64], gen[16]; double size_kb, free_kb; int mounted; } sg_drive_t;
+typedef struct { char target[64], job[24], summary[120]; int ok; long at; } sg_result_t;
+enum { SG_QUICKALL, SG_SPEED, SG_REPAIR, SG_BACKUP, SG_ACTIONS };
+static struct {
+	int installed, busy, bk_busy, bk_installed, n, menu, menu_sel, menu_n, confirm;
+	sg_drive_t d[SG_MAX];
+	sg_result_t res[SG_MAX];
+	int nres;
+	char job[24], target[64], output[1200], bk_last[40], bk_dest[120];
+	long last_at;
+	char queue[SG_MAX][64];
+	int nqueue;
+	char menu_title[80], menu_items[6][80], menu_job[6][24], menu_tgt[6][64];
+	lv_obj_t *menu_box;
+} sg;
+static vlist_t sg_list;
+static lv_obj_t *sg_ptitle, *sg_bar, *sg_fill, *sg_k[5], *sg_v[5], *sg_note, *sg_out;
+static const char *const SG_HINTS[] = { "A", "Open", "X", "Check now", "B", "Back", NULL };
+static const char *const SG_MENU_HINTS[] = { "A", "Choose", "B", "Cancel", NULL };
+
+static const char *sg_jobname(const char *j)
+{
+	static const struct { const char *k, *v; } N[] = {
+		{ "quick", "Quick check" }, { "fscheck", "File system check" }, { "fsrepair", "Repair" }, { "speed", "Speed test" },
+		{ "health", "Drive health" }, { "drive", "Drive check" }, { "mount", "Mount again" }, { NULL, NULL } };
+	for (int i = 0; N[i].k; i++) if (!strcmp(N[i].k, j)) return N[i].v;
+	return j;
+}
+
+static void sg_drive_name(const sg_drive_t *d, char *out, size_t n)
+{
+	const char *b = strrchr(d->path, '/');
+	b = b ? b + 1 : d->path;
+	if (!strcmp(d->kind, "sd")) snprintf(out, n, "SD card");
+	else snprintf(out, n, "%s drive (%s)", !strcmp(d->kind, "nvme") ? "NVMe" : "USB", b);
+}
+
+static void sg_gb(double kb, char *out, size_t n)
+{
+	double g = kb / 1048576.0;
+	if (g >= 1000) snprintf(out, n, "%.1f TB", g / 1024);
+	else snprintf(out, n, g >= 100 ? "%.0f GB" : "%.1f GB", g);
+}
+
+static sg_result_t *sg_result(const char *target)
+{
+	for (int i = 0; i < sg.nres; i++) if (!strcmp(sg.res[i].target, target)) return &sg.res[i];
+	return NULL;
+}
+
+/* the check's verdict: its last "RESULT: PASS - ..." line */
+static void sg_verdict(const char *out, int *ok, char *sum, size_t n)
+{
+	const char *r = NULL, *p = out;
+	while ((p = strstr(p, "RESULT:"))) { r = p; p += 7; }
+	*sum = 0;
+	if (!r) return;
+	r += 7;
+	while (*r == ' ') r++;
+	if (!strncmp(r, "PASS", 4)) *ok = 1;
+	else if (!strncmp(r, "FAIL", 4) || !strncmp(r, "WARN", 4)) *ok = 0;
+	const char *dash = strstr(r, " - ");
+	const char *s = dash && dash - r < 8 ? dash + 3 : r;
+	size_t l = strcspn(s, "\r\n");
+	snprintf(sum, n, "%.*s", (int)(l < n ? l : n - 1), s);
+}
+
+static void sg_start(const char *job, const char *target);
+static void sg_panel(void);
+
+static void sg_refresh(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"storage\"}"), *it;
+	if (api_ok(r)) {
+		int was = sg.busy;
+		sg.installed = cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"));
+		sg.n = 0;
+		cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "drives")) {
+			if (sg.n >= SG_MAX) break;
+			sg_drive_t *d = &sg.d[sg.n++];
+			snprintf(d->path, sizeof(d->path), "%s", api_str(it, "path") ? api_str(it, "path") : "");
+			snprintf(d->kind, sizeof(d->kind), "%s", api_str(it, "kind") ? api_str(it, "kind") : "usb");
+			snprintf(d->fs, sizeof(d->fs), "%s", api_str(it, "fs") ? api_str(it, "fs") : "");
+			snprintf(d->model, sizeof(d->model), "%s", api_str(it, "model") ? api_str(it, "model") : "");
+			snprintf(d->gen, sizeof(d->gen), "%s", api_str(it, "gen") ? api_str(it, "gen") : "");
+			d->size_kb = api_num(it, "size_kb", 0);
+			d->free_kb = api_num(it, "free_kb", 0);
+			d->mounted = cJSON_IsTrue(cJSON_GetObjectItem(it, "mounted"));
+		}
+		cJSON *l = cJSON_GetObjectItem(r, "last");
+		sg.busy = cJSON_IsTrue(cJSON_GetObjectItem(l, "busy"));
+		snprintf(sg.job, sizeof(sg.job), "%s", api_str(l, "job") ? api_str(l, "job") : "");
+		snprintf(sg.target, sizeof(sg.target), "%s", api_str(l, "target") ? api_str(l, "target") : "");
+		const char *o = api_str(l, "output") ? api_str(l, "output") : "";
+		size_t ol = strlen(o);
+		snprintf(sg.output, sizeof(sg.output), "%s", ol > sizeof(sg.output) - 1 ? o + ol - (sizeof(sg.output) - 1) : o);
+		long at = (long)api_num(l, "at", 0);
+		if (!sg.busy && sg.job[0] && sg.target[0] && strcmp(sg.job, "mount") && (at != sg.last_at || !sg_result(sg.target))) {
+			sg_result_t *x = sg_result(sg.target);
+			if (!x && sg.nres < SG_MAX) x = &sg.res[sg.nres++];
+			if (x) {
+				snprintf(x->target, sizeof(x->target), "%s", sg.target);
+				snprintf(x->job, sizeof(x->job), "%s", sg.job);
+				x->ok = cJSON_IsTrue(cJSON_GetObjectItem(l, "ok"));
+				x->at = at;
+				int v = x->ok;
+				sg_verdict(sg.output, &v, x->summary, sizeof(x->summary));
+				x->ok = v && x->ok;
+			}
+		}
+		if (was && !sg.busy && sg.job[0]) {
+			int ok = cJSON_IsTrue(cJSON_GetObjectItem(l, "ok"));
+			char sum[120];
+			sg_verdict(sg.output, &ok, sum, sizeof(sum));
+			char t[200];
+			snprintf(t, sizeof(t), "%s: %s", sg_jobname(sg.job), sum[0] ? sum : ok ? "passed" : "didn't pass");
+			if (!sg.nqueue) toast_show(t);
+		}
+		sg.last_at = at;
+	}
+	cJSON_Delete(r);
+	cJSON *b = api_call("{\"cmd\":\"backup\"}");
+	if (api_ok(b)) {
+		int was = sg.bk_busy;
+		cJSON *st = cJSON_GetObjectItem(b, "status");
+		sg.bk_installed = cJSON_IsTrue(cJSON_GetObjectItem(b, "installed"));
+		sg.bk_busy = cJSON_IsTrue(cJSON_GetObjectItem(b, "busy")) || (api_str(st, "busy") && !strcmp(api_str(st, "busy"), "1"));
+		snprintf(sg.bk_last, sizeof(sg.bk_last), "%s", api_str(st, "last_at") ? api_str(st, "last_at") : "");
+		snprintf(sg.bk_dest, sizeof(sg.bk_dest), "%s", api_str(st, "dest") ? api_str(st, "dest") : "");
+		if (was && !sg.bk_busy) toast_show("Saves & settings backed up");
+	}
+	cJSON_Delete(b);
+	/* Quick check of everything: one drive after another */
+	if (!sg.busy && sg.nqueue) {
+		char t[64];
+		snprintf(t, sizeof(t), "%s", sg.queue[0]);
+		memmove(sg.queue[0], sg.queue[1], sizeof(sg.queue[0]) * (SG_MAX - 1));
+		sg.nqueue--;
+		sg_start("quick", t);
+		if (!sg.nqueue) {}
+	}
+	sg_list.count = sg.installed ? sg.n + SG_ACTIONS : 1;
+	if (sg_list.sel >= sg_list.count) sg_list.sel = sg_list.count - 1;
+	if (cur == SCR_STORAGE) { vlist_refresh(&sg_list); sg_panel(); }
+}
+
+static void sg_fill_row(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*val = 0;
+	if (!sg.installed) { snprintf(t, n, "The storage module isn't installed"); *dim = 1; return; }
+	if (i < sg.n) {
+		sg_drive_t *d = &sg.d[i];
+		char nm[64], sz[24];
+		sg_drive_name(d, nm, sizeof(nm));
+		sg_gb(d->size_kb, sz, sizeof(sz));
+		if (!d->mounted) { snprintf(t, n, "%s \xC2\xB7 not mounted", nm); snprintf(val, vn, "Mount it again  >"); return; }
+		char fs[16];
+		snprintf(fs, sizeof(fs), "%s", d->fs);
+		if (!strcmp(fs, "exfat")) snprintf(fs, sizeof(fs), "exFAT");
+		else if (!strcmp(fs, "vfat")) snprintf(fs, sizeof(fs), "FAT32");
+		else if (!strcmp(fs, "ntfs")) snprintf(fs, sizeof(fs), "NTFS");
+		snprintf(t, n, "%s \xC2\xB7 %s %s", nm, sz, fs);
+		int used = d->size_kb > 0 ? (int)(100 - d->free_kb * 100 / d->size_kb + 0.5) : 0;
+		sg_result_t *x = sg_result(d->path);
+		if (sg.busy && !strcmp(sg.target, d->path)) snprintf(val, vn, "%d%% used \xC2\xB7 checking...  >", used);
+		else if (x) snprintf(val, vn, "%d%% used \xC2\xB7 %s  >", used, x->ok ? "healthy" : "check it");
+		else snprintf(val, vn, "%d%% used  >", used);
+		return;
+	}
+	switch (i - sg.n) {
+	case SG_QUICKALL: snprintf(t, n, "Quick check of everything"); snprintf(val, vn, sg.nqueue ? "%d to go  >" : ">", sg.nqueue + 1); break;
+	case SG_SPEED: snprintf(t, n, "Speed test"); snprintf(val, vn, ">"); break;
+	case SG_REPAIR: snprintf(t, n, "Repair a drive"); snprintf(val, vn, "NVMe / USB  >"); break;
+	case SG_BACKUP:
+		snprintf(t, n, "Back up saves & settings");
+		if (!sg.bk_installed) { *dim = 1; snprintf(val, vn, "Needs backup-agent"); }
+		else if (sg.bk_busy) snprintf(val, vn, "Backing up...");
+		else if (sg.bk_last[0]) snprintf(val, vn, "last: %.16s  >", sg.bk_last);
+		else snprintf(val, vn, "Never  >");
+		break;
+	}
+}
+
+static void sg_kv(int i, const char *k, const char *v)
+{
+	lv_label_set_text(sg_k[i], k);
+	lv_label_set_text(sg_v[i], v);
+	lv_obj_set_hidden(lv_obj_get_parent(sg_k[i]), !*k);
+}
+
+static void sg_panel(void)
+{
+	int i = sg_list.sel;
+	char a[160], b[160];
+	for (int r = 0; r < 5; r++) sg_kv(r, "", "");
+	lv_obj_set_hidden(sg_bar, true);
+	lv_label_set_text(sg_out, "");
+	if (!sg.installed) {
+		lv_label_set_text(sg_ptitle, "Storage");
+		lv_label_set_text(sg_note, "Install the storage module (modules/storage/install.sh in the Phosphor release).");
+		return;
+	}
+	if (i < sg.n) {
+		sg_drive_t *d = &sg.d[i];
+		sg_drive_name(d, a, sizeof(a));
+		lv_label_set_text(sg_ptitle, a);
+		int r = 0;
+		if (d->mounted && d->size_kb > 0) {
+			lv_obj_set_hidden(sg_bar, false);
+			int w = lv_obj_get_width(sg_bar);
+			lv_obj_set_width(sg_fill, LV_MAX(S(6), (int)(w * (1 - d->free_kb / d->size_kb))));
+			char s1[24], s2[24];
+			sg_gb(d->size_kb, s1, sizeof(s1));
+			sg_gb(d->free_kb, s2, sizeof(s2));
+			snprintf(b, sizeof(b), "%s, %s free", s1, s2);
+			sg_kv(r++, "Size", b);
+		} else if (!d->mounted) { sg_kv(r++, "State", "Not mounted"); }
+		snprintf(b, sizeof(b), "%s", !strcmp(d->fs, "exfat") ? "exFAT" : !strcmp(d->fs, "vfat") ? "FAT32" : !strcmp(d->fs, "ntfs") ? "NTFS" : d->fs[0] ? d->fs : "unknown");
+		sg_kv(r++, "File system", b);
+		if (d->model[0] && strcmp(d->kind, "sd")) sg_kv(r++, "Model", d->model);
+		if (!strcmp(d->kind, "nvme") && (!strcmp(d->gen, "gen3") || !strcmp(d->gen, "gen4"))) sg_kv(r++, "NVMe", !strcmp(d->gen, "gen4") ? "PCIe Gen 4" : "PCIe Gen 3");
+		sg_result_t *x = sg_result(d->path);
+		if (x) {
+			char w[40];
+			si_when(x->at, w, sizeof(w));
+			snprintf(b, sizeof(b), "%s %s \xC2\xB7 %s", sg_jobname(x->job), x->ok ? "passed" : "didn't pass", w);
+			sg_kv(r++, "Last check", b);
+		} else sg_kv(r++, "Last check", "Not since Phosphor started");
+		if (!d->mounted) lv_label_set_text(sg_note, "A: mount it again, as MiSTer does at start-up. Nothing on it is changed.");
+		else if (!strcmp(d->kind, "sd")) lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health. X: a quick check now. The SD card can only be repaired on a PC (Phosphor is running from it).");
+		else lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair. X: a quick check now.");
+	} else {
+		static const char *const T[] = { "Quick check of everything", "Speed test", "Repair a drive", "Back up saves & settings" };
+		static const char *const N[] = {
+			"A quick check of every drive, one after another: the file system's state, the partition and the boot files. Nothing is changed.",
+			"Writes one temporary file to a drive and reads it back, then removes it. Shows how fast the drive reads and writes.",
+			"Unmounts an NVMe or USB drive, asks the file system checker to repair it, and mounts it again. Asks twice first. The SD card can only be repaired on a PC.",
+			"A snapshot of your saves, save states and settings now, the same as after a game. Restore it from Settings > Backups." };
+		int k = i - sg.n;
+		lv_label_set_text(sg_ptitle, T[k]);
+		lv_label_set_text(sg_note, N[k]);
+		if (k == SG_BACKUP) {
+			sg_kv(0, "Last backup", sg.bk_last[0] ? sg.bk_last : "None yet");
+			if (sg.bk_dest[0]) sg_kv(1, "Kept in", sg.bk_dest);
+		} else {
+			int r = 0;
+			for (int j = 0; j < sg.nres && r < 5; j++) {
+				const sg_result_t *x = &sg.res[j];
+				if (k == SG_SPEED && strcmp(x->job, "speed")) continue;
+				if (k == SG_REPAIR && strcmp(x->job, "fsrepair")) continue;
+				if (k == SG_QUICKALL && strcmp(x->job, "quick")) continue;
+				for (int q = 0; q < sg.n; q++) if (!strcmp(sg.d[q].path, x->target)) sg_drive_name(&sg.d[q], a, sizeof(a));
+				snprintf(b, sizeof(b), "%s", x->summary[0] ? x->summary : x->ok ? "Passed" : "Didn't pass");
+				sg_kv(r++, a, b);
+			}
+		}
+	}
+	if (sg.busy) {
+		/* (a module's output arrives when it's done) */
+		char nm[64] = "";
+		for (int q = 0; q < sg.n; q++) if (!strcmp(sg.d[q].path, sg.target)) sg_drive_name(&sg.d[q], nm, sizeof(nm));
+		static const char *const D[] = { ".", "..", "..." };
+		snprintf(b, sizeof(b), "%s on the %s%s", sg_jobname(sg.job), nm[0] ? nm : sg.target, D[(lv_tick_get() / 1000) % 3]);
+		if (sg.nqueue) snprintf(b + strlen(b), sizeof(b) - strlen(b), "\n%d more drive%s after this", sg.nqueue, sg.nqueue == 1 ? "" : "s");
+		lv_label_set_text(sg_out, b);
+	}
+}
+
+static void sg_start(const char *job, const char *target)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "storage");
+	if (!strcmp(job, "mount")) cJSON_AddStringToObject(q, "do", "mount");
+	else { cJSON_AddStringToObject(q, "do", "check"); cJSON_AddStringToObject(q, "test", job); }
+	cJSON_AddStringToObject(q, "target", target);
+	char *s = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", s);
+	free(s);
+	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"); sg.nqueue = 0; }
+	else sg.busy = 1;
+	cJSON_Delete(r);
+	sg_refresh();
+}
+
+static void sg_menu_close(void)
+{
+	if (sg.menu_box) lv_obj_delete(sg.menu_box);
+	sg.menu_box = NULL;
+	sg.menu = 0;
+	sg.confirm = 0;
+	footer_set(SG_HINTS);
+}
+
+static void sg_menu_draw(void)
+{
+	if (!sg.menu_box) return;
+	for (int i = 0; i < sg.menu_n; i++) {
+		lv_obj_t *r = lv_obj_get_child(sg.menu_box, i + 1);
+		lv_obj_set_style_bg_opa(r, i == sg.menu_sel ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_style_text_color(lv_obj_get_child(r, 0), i == sg.menu_sel ? PAL.text : PAL.dim, 0);
+	}
+}
+
+static void sg_menu_add(const char *label, const char *job, const char *target)
+{
+	if (sg.menu_n >= 6) return;
+	snprintf(sg.menu_items[sg.menu_n], sizeof(sg.menu_items[0]), "%s", label);
+	snprintf(sg.menu_job[sg.menu_n], sizeof(sg.menu_job[0]), "%s", job);
+	snprintf(sg.menu_tgt[sg.menu_n], sizeof(sg.menu_tgt[0]), "%s", target);
+	sg.menu_n++;
+}
+
+static void sg_menu_open(const char *title)
+{
+	if (!sg.menu_n) { toast_show("No drive for that"); return; }
+	if (sg.menu_box) lv_obj_delete(sg.menu_box);
+	sg.menu = 1;
+	sg.menu_sel = 0;
+	sg.menu_box = mk_box(lv_layer_top(), S(620), LV_SIZE_CONTENT, PAL.panel, S(14));
+	lv_obj_set_style_border_width(sg.menu_box, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(sg.menu_box, PAL.acc, 0);
+	lv_obj_set_style_pad_all(sg.menu_box, S(18), 0);
+	lv_obj_set_flex_flow(sg.menu_box, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(sg.menu_box, S(4), 0);
+	lv_obj_center(sg.menu_box);
+	lv_obj_t *t = mk_label(sg.menu_box, FONT_NAME, PAL.text, title);
+	lv_obj_set_width(t, LV_PCT(100));
+	lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_style_pad_bottom(t, S(8), 0);
+	for (int i = 0; i < sg.menu_n; i++) {
+		lv_obj_t *r = mk_box(sg.menu_box, LV_PCT(100), S(40), PAL.panel_on, S(8));
+		lv_obj_set_style_bg_opa(r, LV_OPA_TRANSP, 0);
+		lv_obj_t *l = mk_label(r, FONT_BODY, PAL.dim, sg.menu_items[i]);
+		lv_obj_align(l, LV_ALIGN_LEFT_MID, S(14), 0);
+	}
+	sg_menu_draw();
+	footer_set(SG_MENU_HINTS);
+}
+
+static void sg_menu_pick(void)
+{
+	char job[24], tgt[64], lab[80];
+	snprintf(job, sizeof(job), "%s", sg.menu_job[sg.menu_sel]);
+	snprintf(tgt, sizeof(tgt), "%s", sg.menu_tgt[sg.menu_sel]);
+	snprintf(lab, sizeof(lab), "%s", sg.menu_items[sg.menu_sel]);
+	if (!job[0]) { sg_menu_close(); return; }                      /* Cancel */
+	if (!strcmp(job, "fsrepair") && !sg.confirm) {
+		/* the second ask */
+		char t[160];
+		snprintf(t, sizeof(t), "Repair %s? It's unmounted while the checker works, then mounted again.", lab);
+		sg.menu_n = 0;
+		sg_menu_add("Yes, repair it", job, tgt);
+		sg_menu_add("Cancel", "", "");
+		sg_menu_open(t);
+		sg.confirm = 1;
+		return;
+	}
+	sg_menu_close();
+	sg_start(job, tgt);
+}
+
+static void storage_key(pkey_t k)
+{
+	if (sg.menu) {
+		if (k == K_UP) { sg.menu_sel = (sg.menu_sel + sg.menu_n - 1) % sg.menu_n; sg_menu_draw(); }
+		else if (k == K_DOWN) { sg.menu_sel = (sg.menu_sel + 1) % sg.menu_n; sg_menu_draw(); }
+		else if (k == K_A) sg_menu_pick();
+		else if (k == K_B || k == K_MENU) sg_menu_close();
+		return;
+	}
+	if (vlist_key(&sg_list, k)) { sg_panel(); return; }
+	if (k == K_B || k == K_MENU) { sg.nqueue = 0; back_to_settings(SET_STORAGE); return; }
+	if (!sg.installed || (k != K_A && k != K_X)) return;
+	int i = sg_list.sel;
+	if ((sg.busy || sg.nqueue) && !(i == sg.n + SG_BACKUP)) { toast_show("A check is running: wait for it to finish"); return; }
+	char nm[64], t[120];
+	if (i < sg.n) {
+		sg_drive_t *d = &sg.d[i];
+		if (!d->mounted) { sg_start("mount", d->path); return; }
+		if (k == K_X) { sg_start("quick", d->path); return; }
+		sg_drive_name(d, nm, sizeof(nm));
+		sg.menu_n = 0;
+		sg_menu_add("Quick check", "quick", d->path);
+		sg_menu_add("File system check", "fscheck", d->path);
+		sg_menu_add("Speed test", "speed", d->path);
+		sg_menu_add("Drive health", "health", d->path);
+		if (strcmp(d->kind, "sd")) sg_menu_add("Repair the file system", "fsrepair", d->path);
+		snprintf(t, sizeof(t), "%s", nm);
+		sg_menu_open(t);
+		return;
+	}
+	switch (i - sg.n) {
+	case SG_QUICKALL:
+		sg.nqueue = 0;
+		for (int q = 0; q < sg.n; q++) if (sg.d[q].mounted) snprintf(sg.queue[sg.nqueue++], sizeof(sg.queue[0]), "%s", sg.d[q].path);
+		sg_refresh();
+		break;
+	case SG_SPEED: case SG_REPAIR:
+		sg.menu_n = 0;
+		for (int q = 0; q < sg.n; q++) {
+			if (!sg.d[q].mounted || (i - sg.n == SG_REPAIR && !strcmp(sg.d[q].kind, "sd"))) continue;
+			sg_drive_name(&sg.d[q], nm, sizeof(nm));
+			sg_menu_add(nm, i - sg.n == SG_SPEED ? "speed" : "fsrepair", sg.d[q].path);
+		}
+		sg_menu_open(i - sg.n == SG_SPEED ? "Speed test: which drive?" : "Repair which drive?");
+		break;
+	case SG_BACKUP: {
+		if (!sg.bk_installed) { toast_show("Install the backup-agent module first"); break; }
+		if (sg.bk_busy) { toast_show("Already backing up"); break; }
+		cJSON *r = api_call("{\"cmd\":\"backup\",\"do\":\"now\"}");
+		if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
+		else { sg.bk_busy = 1; toast_show("Backing up saves & settings..."); }
+		cJSON_Delete(r);
+		vlist_refresh(&sg_list);
+		break;
+	}
+	}
+}
+
+static void show_storage(void)
+{
+	cur = SCR_STORAGE;
+	lv_obj_clean(body);
+	sg.menu_box = NULL;
+	sg.menu = 0;
+	screen_title("SETTINGS", "Storage");
+	vlist_create(&sg_list, body, S(56), S(170), S(660), S(452));
+	sg_list.fill = sg_fill_row;
+	sg_list.sel = 0;
+	sg_list.top = 0;
+	sg_list.count = 0;
+	lv_obj_t *box = mk_box(body, S(464), S(430), PAL.panel, S(10));
+	lv_obj_set_pos(box, S(760), S(170));
+	lv_obj_set_style_border_color(box, PAL.line, 0);
+	lv_obj_set_style_border_width(box, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_pad_all(box, S(22), 0);
+	lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(box, S(6), 0);
+	int iw = S(464) - 2 * S(22);
+	sg_ptitle = mk_label(box, FONT_NAME, PAL.text, "");
+	lv_obj_set_width(sg_ptitle, iw);
+	lv_label_set_long_mode(sg_ptitle, LV_LABEL_LONG_MODE_DOTS);
+	sg_bar = mk_box(box, iw, S(8), PAL.line, S(4));
+	lv_obj_set_style_margin_bottom(sg_bar, S(6), 0);
+	sg_fill = mk_box(sg_bar, S(6), S(8), PAL.acc, S(4));
+	lv_obj_set_width(sg_bar, iw);
+	for (int r = 0; r < 5; r++) {
+		lv_obj_t *pr = lv_obj_create(box);
+		lv_obj_remove_style_all(pr);
+		lv_obj_set_size(pr, iw, LV_SIZE_CONTENT);
+		sg_k[r] = mk_label(pr, FONT_SMALL, PAL.dim, "");
+		sg_v[r] = mk_label(pr, FONT_SMALL, PAL.text, "");
+		lv_obj_set_width(sg_v[r], iw * 64 / 100);
+		lv_label_set_long_mode(sg_v[r], LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_pos(sg_v[r], iw * 36 / 100, 0);
+	}
+	sg_note = mk_label(box, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_width(sg_note, iw);
+	lv_label_set_long_mode(sg_note, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_style_margin_top(sg_note, S(8), 0);
+	sg_out = mk_label(box, FONT_SMALL, PAL.acc, "");
+	lv_obj_set_width(sg_out, iw);
+	lv_label_set_long_mode(sg_out, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_style_margin_top(sg_out, S(8), 0);
+	footer_set(SG_HINTS);
+	lv_obj_update_layout(box);
+	sg_refresh();
+}
+
 /* ---------- Controller test: a front port's PlayStation controller, live, in SS1 Tool's drawing ---------- */
 static struct {
 	int port, id, conn, lx, ly, rx, ry, layout;
@@ -6107,6 +6586,9 @@ void ui_key(pkey_t k)
 	case SCR_PADTEST:
 		padtest_key(k);
 		break;
+	case SCR_STORAGE:
+		storage_key(k);
+		break;
 	case SCR_PORTS:
 		ports_key(k);
 		break;
@@ -6155,6 +6637,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_CLOUD) show_cloud();
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
+			else if (set_list.sel == SET_STORAGE) show_storage();
 			else if (set_list.sel == SET_ABOUT) show_about();
 			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
 				if (set_list.sel == SET_UPDATE_ALL && !cr.all_available) { toast_show("Update All isn't on the SD card (Scripts/update_all.sh)"); break; }
@@ -6227,6 +6710,7 @@ void ui_tick(void)
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
+		if (cur == SCR_STORAGE && (sg.busy || sg.bk_busy || sg.nqueue)) sg_refresh();
 		if (cur == SCR_PUPD) { static int ut; if (up.busy || ++ut % 3 == 0) up_apply(api_call("{\"cmd\":\"update\"}")); }
 		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
 		/* (a card job is followed 4 times a second, below); otherwise the ports' state every 2 s, so the
