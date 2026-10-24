@@ -16,4 +16,9 @@ int mclib_valid(const char *rel);                               /* card/version.
 char *mclib_list(void);                                         /* rel\tbytes\tmtime lines, newest first */
 void mclib_suggest(char *out, size_t n);                        /* "Memory card N", not used yet */
 
+int mclib_load(const char *card, const char *ver, unsigned char *buf, char *got, size_t gn);   /* ver "" newest */
+char **mclib_versions(const char *card, int *n);               /* oldest first; caller frees each and the list */
+int mclib_real(const char *card);                              /* read from a real card (not made here) */
+void mclib_mark_made(const char *card);                        /* a card made here (blank, or copies) */
+
 #endif

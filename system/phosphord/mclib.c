@@ -262,3 +262,62 @@ void mclib_suggest(char *out, size_t n)
 		if (!mclib_exists(out)) return;
 	}
 }
+
+/* a version of a card into buf: ver "" or NULL for the newest; its file name in got (may be NULL) */
+int mclib_load(const char *card, const char *ver, unsigned char *buf, char *got, size_t gn)
+{
+	char v[256], path[1200];
+	if (!card || !*card || strchr(card, '/') || strstr(card, "..")) return -1;
+	if (ver && *ver) {
+		if (strchr(ver, '/') || strstr(ver, "..")) return -1;
+		snprintf(v, sizeof(v), "%s%s", ver, strstr(ver, ".mcd") ? "" : ".mcd");
+	} else if (!latest(card, v, sizeof(v))) return -1;
+	snprintf(path, sizeof(path), "%s/%s/%s", mclib_dir(), card, v);
+	if (load(path, buf)) return -1;
+	if (got) snprintf(got, gn, "%s", v);
+	return 0;
+}
+
+/* a card's versions, oldest first ("2026-10-23_221500.mcd"), n of them; caller frees */
+char **mclib_versions(const char *card, int *n)
+{
+	char d[700];
+	*n = 0;
+	snprintf(d, sizeof(d), "%s/%s", mclib_dir(), card);
+	DIR *dd = opendir(d);
+	if (!dd) return NULL;
+	char **v = NULL;
+	struct dirent *e;
+	while ((e = readdir(dd))) {
+		if (!is_version(e->d_name)) continue;
+		char **nv = realloc(v, sizeof(char *) * (size_t)(*n + 1));
+		if (!nv) break;
+		v = nv;
+		v[(*n)++] = strdup(e->d_name);
+	}
+	closedir(dd);
+	for (int i = 0; i < *n; i++)
+		for (int j = i + 1; j < *n; j++)
+			if (strcmp(v[i], v[j]) > 0) { char *t = v[i]; v[i] = v[j]; v[j] = t; }
+	return v;
+}
+
+/* "real": a card read from a port (card.json), not one made here */
+int mclib_real(const char *card)
+{
+	char p[800], b[200] = "";
+	snprintf(p, sizeof(p), "%s/%s/card.json", mclib_dir(), card);
+	FILE *f = fopen(p, "r");
+	if (!f) return 0;
+	if (!fgets(b, sizeof(b), f)) b[0] = 0;
+	fclose(f);
+	return strstr(b, "\"real\":true") != NULL;
+}
+
+void mclib_mark_made(const char *card)
+{
+	char p[800];
+	snprintf(p, sizeof(p), "%s/%s/card.json", mclib_dir(), card);
+	FILE *f = fopen(p, "w");
+	if (f) { fprintf(f, "{\"created\":%ld,\"real\":false}", (long)time(NULL)); fclose(f); }
+}
