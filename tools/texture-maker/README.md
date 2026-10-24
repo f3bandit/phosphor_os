@@ -20,9 +20,11 @@ closes by itself a few minutes after its window is closed.
    - **Shades** (how many steps), **Darkest shade** (so dark colours stay visible), and
      **Brightest is** *Strongest* or *Faintest*.
 3. **Layout:**
-   - The whole screen (1280×720 base pixels, no repeat) or a tile that repeats.
+   - The whole screen (1280×720 base pixels, no repeat) or a tile that repeats. **Auto** tile size
+     makes the tile big enough for every sprite to land about twice at the density picked, so the
+     repeat is a scatter, not a grid of one sprite.
    - Pixel scale (base pixels per sprite pixel), density and minimum gap.
-   - Angle: random 90° turns, or one angle for every sprite (0°, 90°, 180°, 270°); flip left to right (as it shows on screen) at random, every other sprite, or off.
+   - Angle: random 90° turns, or **Set** any angle (0–359.5°, typed) for every sprite; flip left to right (as it shows on screen) at random, every other sprite, or off.
    - Grid snap and a seed with **Re-roll**.
 4. **Look:** *Sprites* (accent on the sprites) or *Inverted* (accent everywhere else), and
    strength. Phosphor's own textures use 0.13.
@@ -64,6 +66,10 @@ Texture format (`texsprite.h`):
 - Placements are `x, y, sprite, orientation`: bits 0–1 are turns of 90° clockwise, and bit 2
   mirrors left to right first.
 - A sprite pixel covers `px` base pixels.
+- A free angle (`cq`, `sq`: cosine and sine × 65536, whole numbers) turns every sprite about its
+  middle after its 90° turns; bit 3 of the orientation turns it the other way (a flipped sprite).
+  The TV builds `texsprite.c` with `-ffp-contract=off` so its sums round like JavaScript's (checked
+  on x86 and on ARM).
 
 ## Building
 `./build.sh` writes `dist/PhosphorTextureMaker.exe` (and a Linux build). Go 1.22+, no other

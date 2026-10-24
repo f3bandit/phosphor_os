@@ -30,12 +30,36 @@ const SpriteTex = (() => {
 		const spr = t.spr.map(s => [s[0], s[1], bytes(s[2])]);
 		const tile = t.w < 1280 || t.h < 720;                /* a tile repeats: sprites over an edge come in on the other side */
 		const R = v => Math.round(v * scale);
+		const cq = t.cq === undefined ? 65536 : t.cq, sq = t.sq === undefined ? 0 : t.sq;
+		const free = cq !== 65536 || sq !== 0, cs = cq / 65536, sn0 = sq / 65536;
 		for (let i = 0; i + 3 < t.pl.length; i += 4) {
 			const x0 = t.pl[i], y0 = t.pl[i + 1], o = t.pl[i + 3];
 			const [sw, sh, px] = spr[t.pl[i + 2]];
 			const ow = (o & 1) ? sh : sw, oh = (o & 1) ? sw : sh;
 			for (let wy = tile ? -1 : 0; wy <= (tile ? 1 : 0); wy++)
-				for (let wx = tile ? -1 : 0; wx <= (tile ? 1 : 0); wx++)
+				for (let wx = tile ? -1 : 0; wx <= (tile ? 1 : 0); wx++) {
+					if (free) {                              /* turned by the free angle: each screen pixel looks up the sprite pixel under it */
+						const sn = (o & 8) ? -sn0 : sn0, bw = ow * t.px, bh = oh * t.px;
+						const cx = x0 + wx * t.w + bw / 2, cy = y0 + wy * t.h + bh / 2;
+						const hw = (Math.abs(bw * cs) + Math.abs(bh * sn)) / 2, hh = (Math.abs(bw * sn) + Math.abs(bh * cs)) / 2;
+						let xa = Math.floor((cx - hw) * scale), xb = Math.ceil((cx + hw) * scale);
+						let ya = Math.floor((cy - hh) * scale), yb = Math.ceil((cy + hh) * scale);
+						if (xa < 0) xa = 0;
+						if (ya < 0) ya = 0;
+						if (xb > pw) xb = pw;
+						if (yb > ph) yb = ph;
+						for (let y = ya; y < yb; y++) {
+							const dy = (y + 0.5) / scale - cy;
+							for (let x = xa; x < xb; x++) {
+								const dx = (x + 0.5) / scale - cx;
+								const u = Math.floor((dx * cs + dy * sn + bw / 2) / t.px), v = Math.floor((dy * cs - dx * sn + bh / 2) / t.px);
+								if (u < 0 || v < 0 || u >= ow || v >= oh) continue;
+								const s = shade(sw, sh, px, o, u, v);
+								if (s && m[y * pw + x] < s) m[y * pw + x] = s;
+							}
+						}
+						continue;
+					}
 					for (let v = 0; v < oh; v++)
 						for (let u = 0; u < ow; u++) {
 							const s = shade(sw, sh, px, o, u, v);
@@ -50,6 +74,7 @@ const SpriteTex = (() => {
 							for (let y = ya; y < yb; y++)
 								for (let x = xa; x < xb; x++) if (m[y * pw + x] < s) m[y * pw + x] = s;
 						}
+				}
 		}
 		const a = new Uint8Array(pw * ph);
 		for (let i = 0; i < a.length; i++) {

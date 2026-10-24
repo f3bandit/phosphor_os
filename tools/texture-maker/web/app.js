@@ -10,11 +10,11 @@ const $ = id => document.getElementById(id);
 const S = {
 	sprites: [],            /* { name, src (data: URL), on, img } */
 	bg: "auto", shadeBy: "spread", levels: 4, floor: 35, invShade: 0,
-	canvas: "screen", tileW: 160, tileH: 160, px: 3, density: 40, gap: 24, angle: "random", mirror: 1, snap: 1, seed: 1847,
+	canvas: "screen", tileAuto: 1, tileW: 640, tileH: 360, px: 3, density: 40, gap: 24, angleMode: "random", angleDeg: 0, mirror: 1, snap: 1, seed: 1847,
 	inv: 0, str: 13, name: "My texture",
 	view: "real", accent: 0,
 };
-const KEYS = ["bg", "shadeBy", "levels", "floor", "invShade", "canvas", "tileW", "tileH", "px", "density", "gap", "angle", "mirror", "snap", "seed", "inv", "str", "name"];
+const KEYS = ["bg", "shadeBy", "levels", "floor", "invShade", "canvas", "tileAuto", "tileW", "tileH", "px", "density", "gap", "angleMode", "angleDeg", "mirror", "snap", "seed", "inv", "str", "name"];
 
 /* ---------------------------------------------------------------- server */
 async function api(url, body) {
@@ -136,7 +136,35 @@ function rng(seed) {
 	let a = seed >>> 0;
 	return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
-function size() { return S.canvas === "tile" ? [S.tileW, S.tileH] : [1280, 720]; }
+/* the free part of the angle (under 90 degrees) and the whole turns */
+function angleParts() {
+	if (S.angleMode !== "set") return { turns: -1, fine: 0 };
+	let d = ((+S.angleDeg % 360) + 360) % 360;
+	const turns = Math.floor(d / 90) & 3, fine = d - Math.floor(d / 90) * 90;
+	return { turns, fine };
+}
+/* a sprite's room on screen: its turned box, then the free angle's bounding box */
+function footprint(c, o, fine) {
+	const px = S.px, bw = ((o & 1) ? c.h : c.w) * px, bh = ((o & 1) ? c.w : c.h) * px;
+	const r = fine * Math.PI / 180, cs = Math.abs(Math.cos(r)), sn = Math.abs(Math.sin(r));
+	return { bw, bh, rw: Math.ceil(bw * cs + bh * sn), rh: Math.ceil(bw * sn + bh * cs) };
+}
+/* Auto tile: big enough that every sprite fits about twice at the density picked, so the repeat
+   is a scatter, not a grid of one sprite (16:9, a multiple of 8, the whole screen at most) */
+function autoTile() {
+	const gap = S.gap, { fine } = angleParts();
+	let area = 0, big = 0;
+	for (const c of conv) {
+		const f = footprint(c, 0, fine), g = footprint(c, 1, fine);
+		area += Math.max(f.rw, g.rw) * Math.max(f.rh, g.rh) + gap * (Math.max(f.rw, g.rw) + Math.max(f.rh, g.rh)) + gap * gap;
+		big = Math.max(big, Math.max(f.rw, f.rh, g.rw, g.rh) + gap);
+	}
+	area *= 2 / (0.55 * Math.max(S.density, 5) / 100);
+	let w = Math.ceil(Math.sqrt(area * 16 / 9) / 8) * 8, hh = Math.ceil(w * 9 / 16 / 8) * 8;
+	w = Math.max(w, Math.ceil(big / 8) * 8, 64); hh = Math.max(hh, Math.ceil(big / 8) * 8, 64);
+	return [Math.min(w, 1280), Math.min(hh, 720)];
+}
+function size() { return S.canvas === "tile" ? (S.tileAuto ? autoTile() : [S.tileW, S.tileH]) : [1280, 720]; }
 let tex = null;                                      /* the texture as Phosphor gets it */
 let missing = [];                                    /* sprites that found no room at all */
 function layout() {
@@ -145,7 +173,8 @@ function layout() {
 	missing = [];
 	if (conv.length) {
 		const R = rng(S.seed);
-		const avg = conv.reduce((a, c) => a + (c.w * px + gap) * (c.h * px + gap), 0) / conv.length;
+		const ap = angleParts();
+		const avg = conv.reduce((a, c) => { const f = footprint(c, 0, ap.fine); return a + (f.rw + gap) * (f.rh + gap); }, 0) / conv.length;
 		const target = Math.max(1, Math.round(W * H / avg * 0.55 * S.density / 100));
 		const boxes = [];
 		let bag = [];
@@ -163,20 +192,25 @@ function layout() {
 		/* one try at putting sprite si somewhere free */
 		const place = si => {
 			const c = conv[si];
-			/* turns of 90 degrees clockwise: random, or the angle picked for all of them */
-			const turns = S.angle === "random" ? Math.floor(R() * 4) : (+S.angle / 90) & 3;
+			/* turns of 90 degrees clockwise: random, or the angle set for all of them */
+			const turns = ap.turns < 0 ? Math.floor(R() * 4) : ap.turns;
 			/* flipped left to right as it shows on screen: at random, every other sprite placed, or never */
 			const flip = (S.mirror === 3 && boxes.length % 2 === 1) || (S.mirror === 1 && R() < 0.5);
 			/* the data mirrors before turning; a mirror after turning t times is the same as mirroring
-			   first and turning the other way (4 - t) */
-			const o = flip ? ((4 - turns) & 3) | 4 : turns;
-			const w = ((o & 1) ? c.h : c.w) * px, h = ((o & 1) ? c.w : c.h) * px;
-			if (!tile && (w > W || h > H)) return false;
-			if (tile && (w + gap > W || h + gap > H)) return false;   /* it would run into itself where the tile repeats */
-			let x = tile ? R() * W : R() * (W - w + 1), y = tile ? R() * H : R() * (H - h + 1);
-			x = Math.floor(x / step) * step; y = Math.floor(y / step) * step;
-			if (hits(x, y, w, h)) return false;
-			boxes.push([x, y, w, h]);
+			   first and turning the other way (4 - t), and the free angle goes the other way too (bit 3) */
+			const o = flip ? ((4 - turns) & 3) | 4 | (ap.fine ? 8 : 0) : turns;
+			const f = footprint(c, o, ap.fine);
+			if (!tile && (f.rw > W || f.rh > H)) return false;
+			if (tile && (f.rw + gap > W || f.rh + gap > H)) return false;   /* it would run into itself where the tile repeats */
+			/* the room it takes (bx, by, rw x rh), and its turned box's top left inside it (x, y) */
+			let bx = tile ? R() * W : R() * (W - f.rw + 1), by = tile ? R() * H : R() * (H - f.rh + 1);
+			let x = Math.floor((bx + (f.rw - f.bw) / 2) / step) * step, y = Math.floor((by + (f.rh - f.bh) / 2) / step) * step;
+			if (tile) { x = ((x % W) + W) % W; y = ((y % H) + H) % H; }
+			else if (x < 0 || y < 0) return false;
+			bx = x - (f.rw - f.bw) / 2; by = y - (f.rh - f.bh) / 2;
+			if (!tile && (bx < -0.5 || by < -0.5 || bx + f.rw > W + 0.5 || by + f.rh > H + 0.5)) return false;
+			if (hits(bx, by, f.rw, f.rh)) return false;
+			boxes.push([bx, by, f.rw, f.rh]);
 			pl.push(x, y, si, o);
 			return true;
 		};
@@ -195,7 +229,9 @@ function layout() {
 			if (place(si)) si = pick();
 		}
 	}
+	const ap = angleParts(), r = ap.fine * Math.PI / 180;
 	tex = { w: W, h: H, px, inv: S.inv, str: S.str / 100, spr: conv.map(c => [c.w, c.h, c.bytes]), pl };
+	if (ap.fine) { tex.cq = Math.round(Math.cos(r) * 65536); tex.sq = Math.round(Math.sin(r) * 65536); }
 }
 
 /* ---------------------------------------------------------------- drawing */
@@ -279,7 +315,11 @@ function syncControls() {
 	$("v_gap").textContent = S.gap + " px";
 	$("v_str").textContent = (S.str / 100).toFixed(2);
 	$("seedv").textContent = S.seed;
-	$("tileRow").style.display = S.canvas === "tile" ? "" : "none";
+	$("tileRow").style.display = $("tileSet").style.display = S.canvas === "tile" ? "" : "none";
+	$("tileInputs").style.display = S.tileAuto ? "none" : "";
+	const [aw, ah] = size();
+	$("tileHint").textContent = S.tileAuto ? `${aw} × ${ah}, from your sprites` : "";
+	$("angleIn").style.display = $("angleDegSign").style.display = S.angleMode === "set" ? "" : "none";
 	$("idv").textContent = texId();
 	$("dots").innerHTML = ACCENTS.map(([n, c], i) => `<span class="dot${i === S.accent ? " on" : ""}" title="${n}" data-i="${i}" style="background:${c}"></span>`).join(" ");
 	$("dots").querySelectorAll(".dot").forEach(d => d.onclick = () => { S.accent = +d.dataset.i; refresh(); });
@@ -299,7 +339,7 @@ function refresh(reconvert) {
 let lastT = 0;
 
 /* ---------------------------------------------------------------- controls */
-const NUM = new Set(["levels", "floor", "invShade", "tileW", "tileH", "px", "density", "gap", "mirror", "snap", "inv", "str", "seed"]);
+const NUM = new Set(["levels", "floor", "invShade", "tileAuto", "angleDeg", "tileW", "tileH", "px", "density", "gap", "mirror", "snap", "inv", "str", "seed"]);
 const CONVERT = new Set(["bg", "shadeBy", "levels", "floor", "invShade"]);
 document.querySelectorAll(".seg[data-k]").forEach(seg => seg.addEventListener("click", e => {
 	const b = e.target.closest("b");
@@ -313,8 +353,9 @@ document.querySelectorAll("input[data-k]").forEach(inp => inp.addEventListener("
 	if (NUM.has(k)) {
 		let v = +inp.value;
 		if (!Number.isFinite(v)) return;
-		if (k === "tileW") v = Math.max(32, Math.min(640, v));
-		if (k === "tileH") v = Math.max(32, Math.min(360, v));
+		if (k === "tileW") v = Math.max(32, Math.min(1280, v));
+		if (k === "tileH") v = Math.max(32, Math.min(720, v));
+		if (k === "angleDeg") v = Math.max(0, Math.min(359.5, v));
 		S[k] = v;
 	} else S[k] = inp.value;
 	if (k === "name") { syncControls(); return; }
@@ -354,9 +395,15 @@ function project() {
 async function loadProject(p) {
 	if (!p || p.kind !== "phosphor-texture-maker") throw new Error("not a Texture Maker project");
 	KEYS.forEach(k => { if (p[k] !== undefined) S[k] = p[k]; });
-	if (p.angle === undefined && p.rot !== undefined) S.angle = p.rot ? "random" : "0";   /* 1.0 projects: Turn 90° steps */
-	if (!["random", "0", "90", "180", "270"].includes(String(S.angle))) S.angle = "random";
-	S.angle = String(S.angle);
+	/* older projects: rot (1.0.0) or angle (1.0.2) */
+	if (p.angleMode === undefined) {
+		const a = p.angle !== undefined ? String(p.angle) : p.rot === 0 ? "0" : "random";
+		S.angleMode = a === "random" || a === "null" ? "random" : "set";
+		S.angleDeg = S.angleMode === "set" ? +a || 0 : 0;
+	}
+	if (S.angleMode !== "set") S.angleMode = "random";
+	if (!Number.isFinite(+S.angleDeg)) S.angleDeg = 0;
+	if (p.tileAuto === undefined) S.tileAuto = 1;
 	if (![0, 1, 3].includes(+S.mirror)) S.mirror = 1;
 	S.mirror = +S.mirror;
 	S.sprites = [];
@@ -403,9 +450,9 @@ function files() {
 		`static const tex_sprite_t TX_${ID}_SPR[] = { ${sprC.join(", ")} };\n` +
 		`/* x, y, sprite, orientation (turns of 90 degrees clockwise; 4 = mirrored first) */\n` +
 		`static const uint16_t TX_${ID}_PL[] = {\n${wrapNums(tex.pl, 24)}\n};\n` +
-		`static const tex_sprites_t TX_${ID} = { ${tex.w}, ${tex.h}, ${tex.px}, ${tex.inv}, ${tex.str.toFixed(3)}, ${tex.spr.length}, TX_${ID}_SPR, TX_${ID}_PIX, ${n}, TX_${ID}_PL };\n`;
+		`static const tex_sprites_t TX_${ID} = { ${tex.w}, ${tex.h}, ${tex.px}, ${tex.inv}, ${tex.str.toFixed(3)}, ${tex.spr.length}, TX_${ID}_SPR, TX_${ID}_PIX, ${n}, TX_${ID}_PL, ${tex.cq || 0}, ${tex.sq || 0} };\n`;
 	const js = `/* ${head} */\n"use strict";\nconst TEX_${ID} = { w: ${tex.w}, h: ${tex.h}, px: ${tex.px}, inv: ${tex.inv}, str: ${tex.str.toFixed(3)},\n` +
-		`\tspr: [${tex.spr.map(([w, h, b]) => `[${w}, ${h}, "${b64(b)}"]`).join(", ")}],\n\tpl: [${tex.pl.join(",")}] };\n`;
+		`\tspr: [${tex.spr.map(([w, h, b]) => `[${w}, ${h}, "${b64(b)}"]`).join(", ")}],\n\tpl: [${tex.pl.join(",")}]${tex.cq !== undefined ? `,\n\tcq: ${tex.cq}, sq: ${tex.sq}` : ""} };\n`;
 	const howto =
 `"${name}" (id ${id}): exported by Phosphor Texture Maker.
 
