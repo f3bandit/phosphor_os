@@ -10,6 +10,7 @@
 #include "api.h"
 #include "remote.h"
 #include "sshacc.h"
+#include "phantom.h"
 #include "memcard.h"
 #include "wifi.h"
 #include "heartbeat.h"
@@ -142,6 +143,7 @@ int main(int argc, char **argv)
 		int r = poll(p, (nfds_t)n, 2000);   /* wakes every 2 s only to keep play time */
 		play_tick(db);
 		sshacc_tick();
+		phantom_tick();
 		if (r <= 0) continue;
 		if (p[0].revents & POLLIN) {
 			int fd = accept4(lfd, NULL, NULL, SOCK_CLOEXEC);
