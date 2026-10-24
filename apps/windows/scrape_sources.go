@@ -66,33 +66,28 @@ func adbHistory(h string) string {
 	return strings.Trim(s, "\n ")
 }
 
-func adbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
-	if !g.Arcade || g.Serial == "" {
-		return 0
-	}
+func adbQuery(ctx context.Context, set string) (map[string]any, int) {
 	adbPace.wait(ctx)
-	b, rc, _ := netRequest(ctx, "GET", "https://adb.arcadeitalia.net/service_scraper.php?ajax=query_mame&lang=en&game_name="+netEscape(g.Serial), nil, nil, 8<<20)
-	if rc < 0 {
-		return -1
-	}
+	b, rc, _ := netRequest(ctx, "GET", "https://adb.arcadeitalia.net/service_scraper.php?ajax=query_mame&lang=en&game_name="+netEscape(set), nil, nil, 8<<20)
 	if rc != 0 {
-		return 0
+		return nil, rc
 	}
 	var j map[string]any
 	if json.Unmarshal(b, &j) != nil {
-		return 0
+		return nil, 1
 	}
 	res := jarr(j, "result")
 	if len(res) == 0 {
-		return 0
+		return nil, 1
 	}
 	x, _ := res[0].(map[string]any)
 	if x == nil {
-		return 0
+		return nil, 1
 	}
-	if t := jstr(x, "title"); t != "" && g.Official == "" {
-		g.Official = t
-	}
+	return x, 0
+}
+
+func adbFill(x map[string]any, r *sres) {
 	r.set(fDev, jstr(x, "manufacturer"))
 	r.set(fPub, jstr(x, "manufacturer"))
 	r.set(fYear, jstr(x, "year"))
@@ -101,6 +96,46 @@ func adbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 		r.set(fPlayers, strconv.Itoa(int(p)))
 	}
 	r.set(fDesc, adbHistory(jstr(x, "history")))
+}
+
+// a hack or a homebrew name: never looked up by its title
+func arcadeHackName(t string) bool {
+	l := strings.ToLower(t)
+	return strings.Contains(l, "hbmame") || strings.Contains(l, "hack") || strings.Contains(l, "[h]") || strings.Contains(l, "trainer")
+}
+
+func adbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
+	if !g.Arcade || g.Serial == "" {
+		return 0
+	}
+	x, rc := adbQuery(ctx, g.Serial)
+	if rc < 0 {
+		return -1
+	}
+	if x == nil {
+		// not a MAME set (a MiSTer-only set, homebrew): its .mra name is the game's own name, so the
+		// sources that look up by name get it (LaunchBox, TheGamesDB, IGDB)
+		if g.Official == "" && !arcadeHackName(g.Title) {
+			g.Official = g.Title
+		}
+		return 0
+	}
+	if t := jstr(x, "title"); t != "" && g.Official == "" {
+		g.Official = t
+	}
+	adbFill(x, r)
+	// a clone (another region or revision) mostly has no flyer of its own: its parent's is the game's
+	if jstr(x, "url_image_flyer") == "" && jstr(x, "cloneof") != "" {
+		if p, prc := adbQuery(ctx, jstr(x, "cloneof")); prc < 0 {
+			return -1
+		} else if p != nil {
+			adbFill(p, r)
+			r.addArt("arcadedb", jstr(p, "url_image_flyer"))
+			r.addArt("arcadedb", jstr(x, "url_image_title"))
+			r.addArt("arcadedb", jstr(p, "url_image_title"))
+			return 1
+		}
+	}
 	r.addArt("arcadedb", jstr(x, "url_image_flyer"))
 	r.addArt("arcadedb", jstr(x, "url_image_title"))
 	return 1

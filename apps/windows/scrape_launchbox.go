@@ -42,7 +42,10 @@ type LBGame struct {
 	Order                                    int
 }
 
-type LBImage struct{ Region, File string }
+type LBImage struct {
+	Region, File string
+	Flyer        bool // an arcade game's flyer: used when there's no box
+}
 
 type lbData struct {
 	Saved  time.Time
@@ -58,7 +61,7 @@ var lb struct {
 	d    *lbData
 }
 
-func lbPath() string { return filepath.Join(scrapeCacheDir(), "launchbox.gob") }
+func lbPath() string { return filepath.Join(scrapeCacheDir(), "launchbox2.gob") } // 2: arcade flyers too
 
 func (d *lbData) index() {
 	d.byNorm = map[string][]*LBGame{}
@@ -100,6 +103,7 @@ func lbGet(ctx context.Context, status func(string)) (*lbData, int) {
 			return &d, 0
 		}
 	}
+	os.Remove(filepath.Join(scrapeCacheDir(), "launchbox.gob")) // the first version's (no arcade flyers)
 	zipPath := filepath.Join(scrapeCacheDir(), "launchbox-metadata.zip")
 	_ = os.MkdirAll(scrapeCacheDir(), 0o755)
 	status("Getting the LaunchBox games database (one time, about 110 MB)")
@@ -216,10 +220,14 @@ func lbImport(zipPath string) (*lbData, error) {
 			}
 		case "GameImage":
 			var im imgX
-			if dec.DecodeElement(&im, &se) != nil || im.Type != "Box - Front" || d.Games[im.DatabaseID] == nil {
+			if dec.DecodeElement(&im, &se) != nil || d.Games[im.DatabaseID] == nil {
 				continue
 			}
-			d.Images[im.DatabaseID] = append(d.Images[im.DatabaseID], LBImage{im.Region, im.FileName})
+			flyer := im.Type == "Advertisement Flyer - Front" && d.Games[im.DatabaseID].Platform == "Arcade"
+			if im.Type != "Box - Front" && !flyer {
+				continue
+			}
+			d.Images[im.DatabaseID] = append(d.Images[im.DatabaseID], LBImage{im.Region, im.FileName, flyer})
 		}
 	}
 	return d, nil
@@ -298,6 +306,9 @@ func lbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 	imgs := append([]LBImage(nil), d.Images[best.ID]...)
 	score := func(i LBImage) int {
 		v := 0
+		if !i.Flyer {
+			v += 8 // a box before a flyer
+		}
 		if i.Region == want {
 			v += 4
 		}

@@ -11,8 +11,8 @@
   "RT_VERSION": { "#1": { "0000": {
     "fixed": { "file_version": "0.2.7.0", "product_version": "0.2.7.0" },
     "info": { "0409": {
-      "CompanyName": "f3bandit", "FileDescription": "Phosphor for Windows", "FileVersion": "0.2.11",
-      "LegalCopyright": "(C) 2026 f3bandit, PolyForm Noncommercial 1.0.0", "ProductName": "Phosphor", "ProductVersion": "0.2.11"
+      "CompanyName": "f3bandit", "FileDescription": "Phosphor for Windows", "FileVersion": "0.2.12",
+      "LegalCopyright": "(C) 2026 f3bandit, PolyForm Noncommercial 1.0.0", "ProductName": "Phosphor", "ProductVersion": "0.2.12"
     } }
   } } }
 }

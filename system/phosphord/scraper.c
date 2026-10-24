@@ -18,6 +18,7 @@
 #include "scraper.h"
 #include "art.h"
 #include "db.h"
+#include "ident.h"
 #include "log.h"
 #include "net.h"
 #include "paths.h"
@@ -518,6 +519,81 @@ static int scrape_one(sqlite3 *db, sgame_t *g)
 	return trouble ? -1 : 0;
 }
 
+/* An arcade game nobody knows that lives in MiSTer's _Arcade/_alternatives/_<Game>/ folder (a hack, a
+ * MiSTer-only set, a region the lists don't have) is a version of <Game>: it's linked to it, so it
+ * shows its box art and details, as "Match to base games" would. The base: the .mra of that name in
+ * _Arcade (the same title words, or the folder's words then more: "_Act Fancer" -> "Act-Fancer
+ * Cybernetick Hyper Weapon"), else another game of the same folder that has box art. Unlink undoes it. */
+static int arcade_alt_link(sqlite3 *db, long long gid)
+{
+	sqlite3_stmt *st;
+	char path[1024] = "", sys[32] = "";
+	if (sqlite3_prepare_v2(db, "SELECT f.path, g.system_id FROM files f JOIN games g ON g.id=f.game_id WHERE g.id=? LIMIT 1", -1, &st, NULL) != SQLITE_OK) return 0;
+	sqlite3_bind_int64(st, 1, gid);
+	if (sqlite3_step(st) == SQLITE_ROW) {
+		snprintf(path, sizeof(path), "%s", sqlite3_column_text(st, 0));
+		snprintf(sys, sizeof(sys), "%s", sqlite3_column_text(st, 1));
+	}
+	sqlite3_finalize(st);
+	const gsys_t *gs = system_by_id(sys);
+	const char *a = strstr(path, "/_alternatives/_");
+	if (!gs || gs->cat != CAT_ARCADE || !a) return 0;
+	char folder[256], fnorm[300], dir[1100];
+	const char *b = a + 16, *e = strchr(b, '/');
+	if (!e) return 0;
+	snprintf(folder, sizeof(folder), "%.*s", (int)(e - b), b);
+	snprintf(dir, sizeof(dir), "%.*s%%", (int)(e - path + 1), path);
+	title_norm(folder, fnorm, sizeof(fnorm));
+	if (!fnorm[0]) return 0;
+	size_t fl = strlen(fnorm);
+	if (sqlite3_prepare_v2(db, "SELECT g.id, g.title, f.path, g.art_box IS NOT NULL FROM games g JOIN files f ON f.game_id=g.id "
+	                           "WHERE g.system_id=? AND g.id<>? AND g.based_on IS NULL AND f.online=1 "
+	                           "AND (f.path LIKE ? OR f.path NOT LIKE '%/_alternatives/%')", -1, &st, NULL) != SQLITE_OK) return 0;
+	sqlite3_bind_text(st, 1, sys, -1, SQLITE_STATIC);
+	sqlite3_bind_int64(st, 2, gid);
+	sqlite3_bind_text(st, 3, dir, -1, SQLITE_STATIC);
+	long long best = -1;
+	int best_score = 0;
+	size_t best_len = 0;
+	while (sqlite3_step(st) == SQLITE_ROW) {
+		const char *t = (const char *)sqlite3_column_text(st, 1), *p = (const char *)sqlite3_column_text(st, 2);
+		int art = sqlite3_column_int(st, 3), alt = p && strstr(p, "/_alternatives/") != NULL;
+		char n[512];
+		title_norm(t ? t : "", n, sizeof(n));
+		int score = 0;
+		if (!alt) {
+			if (!strcmp(n, fnorm)) score = 6;
+			else if (!strncmp(n, fnorm, fl) && n[fl] == ' ') score = 4;
+			if (score && art) score++;
+		} else if (art) score = 2;                 /* the same folder, with box art */
+		size_t len = strlen(n);
+		if (score > best_score || (score && score == best_score && len < best_len)) {
+			best_score = score;
+			best_len = len;
+			best = sqlite3_column_int64(st, 0);
+		}
+	}
+	sqlite3_finalize(st);
+	if (best < 0) return 0;
+	if (sqlite3_prepare_v2(db, "UPDATE games SET based_on=? WHERE id=? AND based_on IS NULL", -1, &st, NULL) != SQLITE_OK) return 0;
+	sqlite3_bind_int64(st, 1, best);
+	sqlite3_bind_int64(st, 2, gid);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+	plog("scrape: arcade game %lld is a version of %lld (same _alternatives folder)", gid, best);
+	return 1;
+}
+
+/* once: arcade games not found before 0.27.13 are looked up again (a clone now gets its parent's
+   flyer; a game of an _alternatives folder gets linked to its base) */
+static void arcade_relook_once(sqlite3 *db)
+{
+	char v[16];
+	if (db_meta_get(db, "arcade_relook_1", v, sizeof(v))[0]) return;
+	db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='miss' AND based_on IS NULL AND system_id='Arcade'");
+	db_meta_set(db, "arcade_relook_1", "1");
+}
+
 /* ---------- the queue ---------- */
 
 static const char *PENDING =
@@ -557,6 +633,7 @@ static void *thread(void *arg)
 		if (pc) continue;                   /* (the status already says who's doing it) */
 		cfg_load();
 		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");   /* network trouble last time: try again */
+		arcade_relook_once(db);
 		int worked = 0, fails = 0, cut = 0;
 		{
 			char csql[1300];
@@ -614,6 +691,7 @@ static void *thread(void *arg)
 			}
 			fails = 0;
 			mark(db, g.id, r ? "done" : "miss");
+			if (!r) arcade_alt_link(db, g.id);
 			worked++;
 		}
 		running = 0;
@@ -725,7 +803,7 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 	int limit = cJSON_IsNumber(lim) && lim->valueint > 0 && lim->valueint <= 5000 ? lim->valueint : 500;
 	int start = cJSON_IsTrue(cJSON_GetObjectItem(req, "start"));
 	cfg_load();
-	if (start) db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");
+	if (start) { db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'"); arcade_relook_once(db); }
 	char sql[1600];
 	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", PENDING);
 	int total = count(db, sql);
@@ -828,6 +906,7 @@ const char *scraper_result(sqlite3 *db, cJSON *req)
 	if (!art && disc1_art(db, &g)) art = 1;
 	const char *state = later && !art ? "later" : art ? "done" : "miss";
 	mark(db, id, state);
+	if (!strcmp(state, "miss")) arcade_alt_link(db, id);
 	const char *by = cJSON_GetStringValue(cJSON_GetObjectItem(req, "from"));
 	const char *sysname = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
 	pthread_mutex_lock(&lk);
