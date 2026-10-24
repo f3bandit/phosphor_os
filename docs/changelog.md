@@ -3,6 +3,21 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.13
+
+### Fixes
+- **Arcade games "not found" that are obviously known:**
+  - A clone set (another region or revision: Raiden (Japan), Pengo (set 3), Cameltry (US)) has no
+    flyer of its own on ArcadeDB: its parent's flyer is used, and its details fill in the gaps.
+  - A game in MiSTer's `_Arcade/_alternatives/_<Game>/` folder that nobody knows (HBMame hacks,
+    MiSTer-only sets like R-Type II (inv)) is linked to <Game> automatically, so it shows that game's
+    box art and details (unlink it on the game's page if that's wrong).
+  - An arcade set that isn't a MAME set is looked up by its .mra name on LaunchBox, TheGamesDB and
+    IGDB (never a hack's).
+  - On the PC, LaunchBox's arcade flyers are used when there's no box (its database is read again
+    once for that).
+  - Arcade games not found before are looked up again on the next run.
+
 ## 0.27.12
 
 ### Fixes
