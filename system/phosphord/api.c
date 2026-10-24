@@ -97,6 +97,7 @@
 #include "video.h"
 #include "remote.h"
 #include "sshacc.h"
+#include "mccmd.h"
 #include "cloud.h"
 #include "backup.h"
 #include "memcard.h"
@@ -1067,6 +1068,13 @@ static char *cmd_memcard(cJSON *req)
 {
 	char err[200];
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (d && (!strcmp(d, "library") || !strcmp(d, "card") || !strcmp(d, "export") || !strcmp(d, "edit"))) {
+		const char *e = NULL;
+		cJSON *o = mc_command(req, &e);
+		if (!o) return fail(e ? e : "memory card change failed");
+		cJSON_AddBoolToObject(o, "ok", 1);
+		return reply(o);
+	}
 	if (d && *d) {
 		cJSON *pt = cJSON_GetObjectItem(req, "port");
 		if (!strcmp(d, "name")) {

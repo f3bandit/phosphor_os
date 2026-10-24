@@ -34,7 +34,7 @@
 #include <unistd.h>
 
 #define MAX_CLIENTS 16
-#define LINE_MAX_ 65536
+#define LINE_MAX_ (1024 * 1024)        /* a whole memory card (.mcd) imported is ~175 KB of JSON */
 
 typedef struct {
 	int fd;
