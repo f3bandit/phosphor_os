@@ -324,7 +324,7 @@ class AppSettings {
 		b.append(h(`<div class="split"><div class="list" id="upl"><div class="empty"><span class="spin"></span></div></div>
 			<div class="panel"><h2>Update Phosphor</h2><p class="note" id="upv"></p>
 			<div class="acts"><button class="btn primary" data-nav id="up_pick">Send a package from this PC…</button><input type="file" id="up_file" accept=".gz" hidden></div>
-			<p class="note">A release package is phosphor-&lt;version&gt;-armhf.tar.gz. It's checked, the installed version is backed up, and Phosphor starts again by itself, with your library, box art and settings as they were. MiSTer's own files aren't touched.</p>
+			<p class="note">A release package is phosphor-&lt;version&gt;-armhf.tar.gz. It's checked, the installed version is backed up, and the SuperStation restarts by itself to finish, with your library, box art and settings as they were. MiSTer's own files aren't touched.</p>
 			<p class="note" id="upst"></p></div></div>`));
 		const draw = async () => {
 			let s;

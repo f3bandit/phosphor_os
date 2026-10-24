@@ -6,7 +6,8 @@
 #
 #   update.sh list                    packages found, one per line: path|version
 #                                     (phosphor/updates, the top of the SD card and of each USB drive)
-#   update.sh install <package>       check it, back up the installed version, install, restart Phosphor
+#   update.sh install <package>       check it, back up the installed version, install, start Phosphor (which
+#                                     then restarts the SuperStation to finish)
 #   update.sh rollbacks               versions kept to go back to, one per line: version|date
 #   update.sh rollback <version>      put that version back the same way
 #   update.sh state                   the last run: state=idle|working|done|failed, version, restart, msg
@@ -109,7 +110,7 @@ install_pkg() {
 	[ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ] && restart=1
 	"$ROOT/phosphor.sh" start >> "$LOG" 2>&1
 	rm -rf "$w"
-	if [ "$restart" = 1 ]; then state done "Updated to Phosphor $v. Restart to finish: MiSTer's Main changed too" "$v" 1
+	if [ "$restart" = 1 ]; then state done "Updated to Phosphor $v" "$v" 1
 	else state done "Updated to Phosphor $v" "$v" 0; fi
 }
 
@@ -132,7 +133,7 @@ rollback() {
 	[ -f "$ROOT/update.sh" ] || cp -a "$0" "$ROOT/update.sh"
 	sync
 	"$ROOT/phosphor.sh" start >> "$LOG" 2>&1
-	if [ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ]; then state done "Back to Phosphor $v. Restart to finish: MiSTer's Main changed too" "$v" 1
+	if [ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ]; then state done "Back to Phosphor $v" "$v" 1
 	else state done "Back to Phosphor $v" "$v" 0; fi
 }
 

@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.17
+
+### Fixes
+- **An update (or going back to a version) ends with a full restart of the SuperStation**, through
+  the same safe stop as Restart in the power window: MiSTer's Main, the controllers and every
+  module start fresh with the new version. Before, only Phosphor's screen restarted, and a
+  controller could stop answering until the next restart.
+
 ## 0.27.16
 
 ### New
