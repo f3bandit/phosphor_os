@@ -105,6 +105,7 @@
 #include "cores.h"
 #include "samba.h"
 #include "storage.h"
+#include "extras.h"
 #include "ctrl.h"
 #include "dash.h"
 #include "version.h"
@@ -118,6 +119,8 @@
 #include "play.h"
 #include "scraper.h"
 #include "systems.h"
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1406,6 +1409,32 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "storage")) out = cmd_storage(req);
+	else if (!strcmp(c->valuestring, "network") || !strcmp(c->valuestring, "usb") || !strcmp(c->valuestring, "ini") || !strcmp(c->valuestring, "scripts")) {
+		const char *e = NULL, *w = c->valuestring;
+		cJSON *o = !strcmp(w, "network") ? ex_network() : !strcmp(w, "usb") ? ex_usb() : !strcmp(w, "ini") ? ex_ini(req, &e) : ex_scripts(req, &e);
+		if (!o) out = fail(e ? e : "failed");
+		else { cJSON_AddBoolToObject(o, "ok", 1); out = reply(o); }
+	}
+	else if (!strcmp(c->valuestring, "press")) {
+		/* Remote control (the Windows app): a key into the shell's key FIFO, marked as the app's (the shell
+		   keeps those out of network, pairing and remote access settings) */
+		static const char *const KEYS[] = { "up", "down", "left", "right", "a", "b", "x", "y", "start", "select", "l", "r", NULL };
+		const char *k = cJSON_GetStringValue(cJSON_GetObjectItem(req, "key"));
+		int good = 0;
+		for (int i = 0; k && KEYS[i]; i++) if (!strcmp(k, KEYS[i])) good = 1;
+		if (!good) out = fail("key: up down left right a b x y start select l r");
+		else {
+			const char *fp = getenv("PHOS_KEYS");
+			int fd = open(fp && *fp ? fp : "/tmp/phosphor-keys", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+			char line[24];
+			int n = snprintf(line, sizeof(line), "app:%s\n", k);
+			struct stat sb;
+			if (fd >= 0 && (fstat(fd, &sb) || !S_ISFIFO(sb.st_mode))) { close(fd); fd = -1; }   /* only the shell's FIFO */
+			int w = fd >= 0 ? (int)write(fd, line, (size_t)n) : -1;
+			if (fd >= 0) close(fd);
+			out = w == n ? reply(ok()) : fail("Phosphor's screen isn't running (a game may be on)");
+		}
+	}
 	else if (!strcmp(c->valuestring, "update")) out = cmd_update(req);
 	else if (!strcmp(c->valuestring, "controllers")) {
 		const char *e = NULL;

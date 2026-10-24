@@ -22,6 +22,8 @@ int input_pollfds(struct pollfd *p, int max);
 int input_held(void);
 /* next key press (with repeat for held directions), or KEY_NONE_; call every frame */
 pkey_t input_poll(unsigned now_ms);
+/* the key input_poll just gave came from the Windows app (Remote control) */
+int input_from_app(void);
 /* inject keys for tests and screenshots */
 void input_push(pkey_t k);
 /* a controller button from MiSTer Main ("up", "a", "start"...; p 1 pressed, 2 held/repeat, 0 released).

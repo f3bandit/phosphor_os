@@ -272,3 +272,15 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 .mpill.good { color: #3fb950; background: #3fb9501a; border-color: #3fb95059; }
 .mpill.muted { color: var(--dim); background: #9aa3b212; border-color: #9aa3b240; }
 .mpill.bad { color: #f85149; background: #f851491a; border-color: #f8514959; }
+/* Remote control: a controller's layout */
+.remote { background: var(--panel); border: 1px solid var(--line); border-radius: .9rem; padding: 1.4rem; max-width: 40rem; outline: none; }
+.remote:focus { border-color: var(--acc); }
+.remote .btn { padding: 0; min-width: 3rem; }
+.rc-sh { display: flex; justify-content: space-between; margin-bottom: 1rem; }
+.rc-sh .btn { width: 6rem; }
+.rc-main { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.rc-dpad, .rc-face { display: grid; grid-template-columns: repeat(3, 2.7rem); grid-template-rows: repeat(3, 2.7rem); gap: .25rem; }
+.rc-dpad .btn, .rc-face .btn { width: 2.7rem; height: 2.7rem; min-width: 0; }
+.rc-face .btn { border-radius: 50%; }
+.rc-mid { display: flex; flex-direction: column; gap: .6rem; }
+.rc-mid .btn { width: 5rem; height: 2.2rem; font-size: .85rem; }

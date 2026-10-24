@@ -157,6 +157,7 @@ addEventListener("keydown", e => {
 	const k = e.key;
 	if (typing && !["ArrowUp", "ArrowDown", "Escape", "Enter", "Tab"].includes(k)) return;
 	if (typing && k === "Enter" && document.activeElement.matches("textarea")) return;
+	if (typing && document.activeElement.hasAttribute("data-free") && k !== "Escape") return;   /* an editor: every key is its own */
 	const s = topScr();
 	if (lockwin && !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " ", "Escape"].includes(k)) { e.preventDefault(); return; }
 	switch (k) {
