@@ -34,6 +34,24 @@ int padview_index(const char *key)
 }
 const char *padview_name(const char *key) { int i = padview_index(key); return i < 0 ? "" : PLAYOUTS[i].name; }
 
+/* a button's name on this layout ("LB" on Xbox-style, "L1" on PlayStation), for text */
+const char *padview_label(const char *key, const char *id)
+{
+	static const struct { const char *id, *name; } D[] = { { "up", "Up" }, { "down", "Down" }, { "left", "Left" }, { "right", "Right" } };
+	for (unsigned i = 0; i < sizeof(D) / sizeof(D[0]); i++) if (!strcmp(id, D[i].id)) return D[i].name;
+	int li = padview_index(key);
+	if (li < 0) li = padview_index("generic");
+	const char *lab = NULL;
+	for (int i = 0; li >= 0 && i < PLAYOUTS[li].n; i++) if (!strcmp(PLAYOUTS[li].it[i].id, id)) lab = PLAYOUTS[li].it[i].lab;
+	if (lab && (unsigned char)lab[0] >= 0x80) {          /* PlayStation's symbols: the font has no such glyphs */
+		if (!strcmp(id, "y")) return "Triangle";
+		if (!strcmp(id, "b")) return "Circle";
+		if (!strcmp(id, "a")) return "Cross";
+		if (!strcmp(id, "x")) return "Square";
+	}
+	return lab && *lab ? lab : id;
+}
+
 static lv_obj_t *shape(padview_t *p, int x, int y, int w, int h, int radius)
 {
 	lv_obj_t *o = mk_box(p->box, w, h, PAL.panel, radius);

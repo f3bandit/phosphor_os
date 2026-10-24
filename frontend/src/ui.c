@@ -34,7 +34,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -5121,7 +5121,7 @@ static void ct_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	}
 }
 
-static const char *const CT_HINTS[] = { "A", "Map buttons", "X", "Reset to automatic", "\xE2\x86\x94", "Drawing", "B", "Back", NULL };
+static const char *const CT_HINTS[] = { "A", "Map buttons", "Y", "Test it", "X", "Reset to automatic", "\xE2\x86\x94", "Drawing", "B", "Back", NULL };
 static const char *const CT_HINTS2[] = { "A", "Choose", "B", "Back", NULL };
 static const char *const CT_HINTS3[] = { "A", "Restore", "B", "Back", NULL };
 
@@ -5210,6 +5210,126 @@ static void ct_live(padview_t *pv, const char *ev, int idx, const char *target, 
 	cJSON_Delete(r);
 }
 
+/* ---------- Controller test: one controller, live (Settings > Controllers > Y) ----------
+ * The controller's own drawing (the layout chosen for it), lit as it's pressed; the sticks and
+ * triggers as numbers; and what MiSTer's Main passes on after its mapping. Locked like the mapping
+ * window: every button is being tested, so only Select + Start together closes it. */
+static struct {
+	int idx;
+	char ev[16], name[96], style[24], uses[12];
+	padview_t *pv;
+	lv_obj_t *what, *ask, *hint, *k[5], *v[5];
+	char got[8][12];
+	int ngot;
+} tw;
+static const char *const TW_HINTS[] = { "Select + Start", "Close", NULL };
+
+static void tw_poll(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"controllers\",\"live\":\"%s\"}", tw.ev);
+	cJSON *l = r ? cJSON_GetObjectItem(r, "live") : NULL;
+	padstate_t s;
+	memset(&s, 0, sizeof(s));
+	s.nhas = tw.idx >= 0 && tw.idx < ct.n ? ct.nhas[tw.idx] : -1;
+	for (int i = 0; i < s.nhas; i++) s.has[i] = ct.has[tw.idx][i];
+	cJSON *x;
+	cJSON_ArrayForEach(x, cJSON_GetObjectItem(l, "on"))
+		if (s.non < 40 && cJSON_IsString(x)) { snprintf(ct_live_on[s.non], 8, "%.7s", x->valuestring); s.on[s.non] = ct_live_on[s.non]; s.non++; }
+	cJSON *ls = cJSON_GetObjectItem(l, "ls"), *rs = cJSON_GetObjectItem(l, "rs");
+	if (cJSON_GetArraySize(ls) == 2) { s.lx = (float)cJSON_GetArrayItem(ls, 0)->valuedouble; s.ly = (float)cJSON_GetArrayItem(ls, 1)->valuedouble; }
+	if (cJSON_GetArraySize(rs) == 2) { s.rx = (float)cJSON_GetArrayItem(rs, 0)->valuedouble; s.ry = (float)cJSON_GetArrayItem(rs, 1)->valuedouble; }
+	s.l2 = (float)api_num(l, "l2", 0);
+	s.r2 = (float)api_num(l, "r2", 0);
+	padview_state(tw.pv, &s);
+	/* what's held, by this layout's names */
+	char t[200] = "";
+	size_t n = 0;
+	for (int i = 0; i < s.non && n < sizeof(t) - 40; i++)
+		n += (size_t)snprintf(t + n, sizeof(t) - n, "%s%s", n ? " + " : "", padview_label(tw.style, s.on[i]));
+	char a[240];
+	if (!r) snprintf(a, sizeof(a), "phosphord isn't answering");
+	else if (!l) snprintf(a, sizeof(a), "Not connected");
+	else if (n) snprintf(a, sizeof(a), "Pressing %s", t);
+	else snprintf(a, sizeof(a), "Press anything");
+	lv_label_set_text(tw.ask, a);
+	/* the sticks and triggers */
+	char v[64];
+	float sx[2] = { s.lx, s.rx }, sy[2] = { s.ly, s.ry };
+	for (int k = 0; k < 2; k++) {
+		int px = (int)(sx[k] * 100 + (sx[k] < 0 ? -0.5f : 0.5f)), py = (int)(sy[k] * 100 + (sy[k] < 0 ? -0.5f : 0.5f));
+		if (abs(px) < 3 && abs(py) < 3) snprintf(v, sizeof(v), "centred");
+		else snprintf(v, sizeof(v), "%s %d%%, %s %d%%", px < 0 ? "left" : "right", abs(px), py < 0 ? "up" : "down", abs(py));
+		lv_label_set_text(tw.v[k], v);
+	}
+	snprintf(v, sizeof(v), "%d%%", (int)(s.l2 * 100 + 0.5f)); lv_label_set_text(tw.v[2], v);
+	snprintf(v, sizeof(v), "%d%%", (int)(s.r2 * 100 + 0.5f)); lv_label_set_text(tw.v[3], v);
+	cJSON_Delete(r);
+}
+
+/* a key the shell got (MiSTer's Main, after its mapping): into "MiSTer gets" */
+static void tw_got(pkey_t k)
+{
+	static const char *const N[] = { "", "Up", "Down", "Left", "Right", "A", "B", "X", "Y", "Menu", "Select", "L", "R", "Select+Start" };
+	if (k <= KEY_NONE_ || k > K_POWER) return;
+	if (tw.ngot == 8) { memmove(tw.got[0], tw.got[1], sizeof(tw.got[0]) * 7); tw.ngot = 7; }
+	snprintf(tw.got[tw.ngot++], sizeof(tw.got[0]), "%s", N[k]);
+	char t[120] = "";
+	size_t n = 0;
+	for (int i = 0; i < tw.ngot; i++) n += (size_t)snprintf(t + n, sizeof(t) - n, "%s%s", i ? ", " : "", tw.got[i]);
+	lv_label_set_text(tw.v[4], t);
+}
+
+static void show_ctrl(void);
+static void tw_key(pkey_t k)
+{
+	if (k == K_POWER) { padview_delete(tw.pv); tw.pv = NULL; show_ctrl(); return; }    /* Select + Start */
+	tw_got(k);
+}
+
+static void show_ctest(int idx)
+{
+	memset(&tw, 0, sizeof(tw));
+	tw.idx = idx;
+	snprintf(tw.ev, sizeof(tw.ev), "%s", ct.ev[idx]);
+	snprintf(tw.name, sizeof(tw.name), "%s", ct.name[idx]);
+	snprintf(tw.style, sizeof(tw.style), "%s", ct.style[idx]);
+	snprintf(tw.uses, sizeof(tw.uses), "%s", ct.uses[idx]);
+	cur = SCR_CTEST;
+	lv_obj_clean(body);
+	free(ct.pv);
+	ct.pv = NULL;
+	char t[160];
+	snprintf(t, sizeof(t), "Testing %s", tw.name);
+	screen_title("CONTROLLERS", t);
+	snprintf(t, sizeof(t), "LIVE \xC2\xB7 %s \xC2\xB7 %s", padview_name(tw.style), !strcmp(tw.uses, "custom") ? "CUSTOM MAPPING" : "AUTOMATIC MAPPING");
+	for (char *c = t; *c; c++) *c = (char)toupper((unsigned char)*c);
+	tw.what = mk_label(body, FONT_LABEL, PAL.acc, t);
+	lv_obj_set_style_text_letter_space(tw.what, S(1), 0);
+	lv_obj_set_pos(tw.what, S(56), S(200));
+	tw.ask = mk_label(body, FONT_HEADING, PAL.text, "Press anything");
+	lv_obj_set_width(tw.ask, S(440));
+	lv_label_set_long_mode(tw.ask, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(tw.ask, S(56), S(226));
+	tw.hint = mk_label(body, FONT_BODY, PAL.dim, "Everything lights as you press it. Sticks and triggers show how far they go.");
+	lv_obj_set_width(tw.hint, S(430));
+	lv_label_set_long_mode(tw.hint, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(tw.hint, S(56), S(282));
+	const char *K[5] = { "Left stick", "Right stick", padview_label(tw.style, "l2"), padview_label(tw.style, "r2"), "MiSTer gets" };
+	for (int i = 0; i < 5; i++) {
+		tw.k[i] = mk_label(body, FONT_BODY, PAL.dim, K[i]);
+		lv_obj_set_pos(tw.k[i], S(56), S(360 + 30 * i));
+		tw.v[i] = mk_label(body, FONT_BODY, PAL.text, i == 4 ? "nothing yet" : "");
+		lv_obj_set_width(tw.v[i], S(300));
+		lv_label_set_long_mode(tw.v[i], LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_pos(tw.v[i], S(190), S(360 + 30 * i));
+	}
+	tw.pv = padview_create(body, S(520), S(196), S(704));
+	padview_layout(tw.pv, tw.style);
+	footer_set(TW_HINTS);
+	tw_poll();
+	plog("controllers: testing %s", tw.name);
+}
+
 static void show_map(int idx);
 
 static void ct_key(pkey_t k)
@@ -5243,6 +5363,8 @@ static void ct_key(pkey_t k)
 			ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
 		} else if (k == K_A) {
 			show_map(s);
+		} else if (k == K_Y) {
+			show_ctest(s);
 		} else if (k == K_X) {
 			if (strcmp(ct.uses[s], "custom")) { toast_show("This controller already uses MiSTer's automatic mapping"); return; }
 			if (ct.confirm_row != s || lv_tick_get() - ct.confirm_at > 4000) { ct.confirm_row = s; ct.confirm_at = lv_tick_get(); vlist_refresh(&ct_list); return; }
@@ -6690,7 +6812,7 @@ static void saver_tick(uint32_t now)
 {
 	if (!last_input) last_input = now ? now : 1;
 	/* mapping, or watching a controller: its buttons go to Main, not here, so they don't count as input */
-	if (cur == SCR_MAP || cur == SCR_CTRL) { last_input = now ? now : 1; if (saver) saver_hide(); return; }
+	if (cur == SCR_MAP || cur == SCR_CTRL || cur == SCR_CTEST) { last_input = now ? now : 1; if (saver) saver_hide(); return; }
 	if (saver) {
 		if (now - saver_moved >= 20000) { saver_moved = now; saver_move(); }
 		return;
@@ -6733,7 +6855,7 @@ static void sk_check(uint32_t now)
 		}
 		cJSON_Delete(r);
 	}
-	if (sk.open || osk.open || pm.open || cur == SCR_MAP || powering) return;
+	if (sk.open || osk.open || pm.open || cur == SCR_MAP || cur == SCR_CTEST || powering) return;
 	char p[300];
 	const char *t = getenv("PHOS_TMP");
 	snprintf(p, sizeof(p), "%s/ssh-key-request", t && *t ? t : "/tmp/phosphor");
@@ -6801,6 +6923,7 @@ void ui_key(pkey_t k)
 	if (k == K_POWER) saver_hide();
 	else if (saver_key()) return;
 	if (cur == SCR_MAP) { map_key(k); return; }       /* locked: only Select + Start (cancel) */
+	if (cur == SCR_CTEST) { tw_key(k); return; }    /* locked: Select + Start closes */
 	if (pm_key(k)) return;
 	if (osk_key(k)) return;
 	if (sk_key(k)) return;
@@ -6897,6 +7020,7 @@ void ui_key(pkey_t k)
 		up_key(k);
 		break;
 	case SCR_MAP:
+	case SCR_CTEST:
 		break;
 	case SCR_SETTINGS:
 		if (vlist_key(&set_list, k)) { si_update(); break; }
@@ -6946,7 +7070,7 @@ static uint32_t last_status, last_poll;
 int ui_max_sleep(void)
 {
 	if (cur == SCR_PORTS || cur == SCR_PADTEST || (cur == SCR_MCARDS && ms.pending)) return 50;   /* the card map, the controller test */
-	if (cur == SCR_CTRL || cur == SCR_MAP) return 100;       /* the controller, live */
+	if (cur == SCR_CTRL || cur == SCR_MAP || cur == SCR_CTEST) return 50;       /* the controller, live */
 	if (si_pending()) return 100;                             /* a Settings row's status, once it rests */
 	return 500;                                               /* status bar, clock, spinners: twice a second */
 }
@@ -6959,6 +7083,7 @@ void ui_tick(void)
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	if (cur == SCR_ART) { ui_activity(); art_tick(now); }
 	if (cur == SCR_MAP) { ui_activity(); static uint32_t lm; if (now - lm >= 100) { lm = now; map_tick(); } }
+	if (cur == SCR_CTEST) { ui_activity(); static uint32_t lt; if (now - lt >= 60) { lt = now; tw_poll(); } }
 	if (cur == SCR_CTRL) {
 		static uint32_t lc, lr;
 		if (now - lc >= 100 && ct.mode == 0 && ct_list.sel < ct.n) { lc = now; ct_live(ct.pv, ct.ev[ct_list.sel], ct_list.sel, NULL, NULL, 0); }
