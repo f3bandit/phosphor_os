@@ -105,7 +105,13 @@ func arcadeHackName(t string) bool {
 }
 
 func adbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
-	if !g.Arcade || g.Serial == "" {
+	if !g.Arcade {
+		return 0
+	}
+	if g.Serial == "" { // no MAME set name (a laserdisc game, a TTL machine): looked up by its name
+		if g.Official == "" && !arcadeHackName(g.Title) {
+			g.Official = g.Title
+		}
 		return 0
 	}
 	x, rc := adbQuery(ctx, g.Serial)
