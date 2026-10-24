@@ -298,7 +298,7 @@ static int cfg_save_sources(const char *order, const char *off)
 	}
 	if (!wrote_any)
 		fputs("\n; Sources that need an account or key (Phosphor works without them):\n"
-		      "[screenscraper]\n; your screenscraper.fr login (optional, faster), and Phosphor's developer id\nuser =\npassword =\ndevid =\ndevpassword =\n\n"
+		      "[screenscraper]\n; your screenscraper.fr login (enough on its own), and a developer login if you have one\nuser =\npassword =\ndevid =\ndevpassword =\n\n"
 		      "[thegamesdb]\n; API key from thegamesdb.net (free)\napikey =\n\n"
 		      "[igdb]\n; Twitch developer app (dev.twitch.tv): Client ID and Client Secret\nclient_id =\nclient_secret =\n", out);
 	fclose(out);

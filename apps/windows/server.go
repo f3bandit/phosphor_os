@@ -122,13 +122,13 @@ func routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]any{"ok": true, "auto": autoReconnect()})
 	})
-	h("/api/upload", apiUpload) // a Phosphor package to the SS1 (Settings > Update Phosphor)
+	h("/api/upload", apiUpload)                                   // a Phosphor package to the SS1 (Settings > Update Phosphor)
 	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
 		writeJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()
 	})
 	h("/api/call", apiCall)
-	h("/api/scrape", apiScrape) // box art looked up on this PC
+	h("/api/scrape", apiScrape)   // box art looked up on this PC
 	h("/api/sshkeys", apiSSHKeys) // this PC's SSH keys, to offer to the SS1 (yes on the TV)
 	h("/api/art/", apiArt)
 }

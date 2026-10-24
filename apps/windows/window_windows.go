@@ -6,6 +6,7 @@ package main
 // remembers its size. Without Edge, the default browser.
 
 import (
+	"encoding/json"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -44,6 +45,34 @@ func openWindow(url string) {
 }
 
 // otherInstance: the address of a copy that's already running (it answers), or ""
+// an older copy still running (in the tray, say) when a new version is started: it's asked to quit,
+// so the new one takes over instead of just showing the old window. "" when it went.
+func replaceOlder(url string) string {
+	c := http.Client{Timeout: 2 * time.Second}
+	r, err := c.Get(strings.Replace(url, "/?k=", "/api/state?k=", 1))
+	if err != nil {
+		return url
+	}
+	var st struct {
+		V string `json:"app_version"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&st)
+	r.Body.Close()
+	if st.V == appVersion {
+		return url
+	}
+	if r, err := c.Post(strings.Replace(url, "/?k=", "/api/quit?k=", 1), "application/json", strings.NewReader("{}")); err == nil {
+		r.Body.Close()
+	}
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if otherInstance() == "" {
+			return ""
+		}
+	}
+	return url
+}
+
 func otherInstance() string {
 	b, err := os.ReadFile(instancePath())
 	if err != nil {

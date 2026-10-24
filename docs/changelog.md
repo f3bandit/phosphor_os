@@ -3,6 +3,15 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.12
+
+### Fixes
+- **ScreenScraper works with your own screenscraper.fr login alone**; a developer login is only
+  needed if you'd rather use one (on the SS1 and in the app).
+- **Phosphor for Windows 0.2.11: starting a new version while an older one is still running** (in the
+  tray) only showed the old one, so new features seemed missing. The old one is closed now and the
+  new one takes over.
+
 ## 0.27.11
 
 ### New

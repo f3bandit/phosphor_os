@@ -19,7 +19,7 @@ import (
 	"os"
 )
 
-const appVersion = "0.2.9"
+const appVersion = "0.2.11"
 
 //go:embed web
 var webFS embed.FS
@@ -31,7 +31,11 @@ func main() {
 	port := flag.Int("port", 0, "port on 127.0.0.1 (0: any free one)")
 	flag.Parse()
 
-	if url := otherInstance(); url != "" && !*noWindow { // already running: show that window
+	url := otherInstance()
+	if url != "" {
+		url = replaceOlder(url) // an older version: it quits, this one takes over
+	}
+	if url != "" && !*noWindow { // already running: show that window
 		if !focusWindow() {
 			openWindow(url)
 		}
@@ -48,7 +52,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	url := fmt.Sprintf("http://%s/?k=%s", ln.Addr(), sessionKey)
+	url = fmt.Sprintf("http://%s/?k=%s", ln.Addr(), sessionKey)
 	mux := http.NewServeMux()
 	web, _ := fs.Sub(webFS, "web")
 	mux.Handle("/", http.FileServer(http.FS(web)))

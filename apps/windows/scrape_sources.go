@@ -172,6 +172,14 @@ func tgdbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 
 var ssLock sync.Mutex // one request at a time (a user's thread limit)
 
+// a developer login, or the regular screenscraper.fr login on its own (used for both then)
+func ssDev(s *scrapeRun, k, userK string) string {
+	if s.acct("screenscraper", "devid") != "" {
+		return s.acct("screenscraper", k)
+	}
+	return s.acct("screenscraper", userK)
+}
+
 func langText(arr []any, field string) string {
 	var first map[string]any
 	for _, x := range arr {
@@ -202,7 +210,7 @@ func ssLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 		nm = g.Serial
 	}
 	u := fmt.Sprintf("https://api.screenscraper.fr/api2/jeuInfos.php?devid=%s&devpassword=%s&softname=Phosphor&output=json&ssid=%s&sspassword=%s&systemeid=%d&romtype=rom&romnom=%s",
-		netEscape(s.acct("screenscraper", "devid")), netEscape(s.acct("screenscraper", "devpassword")),
+		netEscape(ssDev(s, "devid", "user")), netEscape(ssDev(s, "devpassword", "password")),
 		netEscape(s.acct("screenscraper", "user")), netEscape(s.acct("screenscraper", "password")), p.ss, netEscape(nm))
 	if g.CRC != "" {
 		u += "&crc=" + g.CRC

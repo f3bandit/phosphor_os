@@ -107,7 +107,16 @@ const source_t SRC_TGDB = { "thegamesdb", "TheGamesDB", "[thegamesdb] apikey", t
 
 /* ---------- ScreenScraper (screenscraper.fr: Phosphor's developer id + optional user login) ---------- */
 
-static int ss_ready(void) { return *scfg("screenscraper", "devid") && *scfg("screenscraper", "devpassword"); }
+/* a developer login, or a regular screenscraper.fr login on its own (used for both then) */
+static int ss_ready(void)
+{
+	return (*scfg("screenscraper", "devid") && *scfg("screenscraper", "devpassword")) ||
+	       (*scfg("screenscraper", "user") && *scfg("screenscraper", "password"));
+}
+static const char *ss_dev(const char *k, const char *user_k)
+{
+	return *scfg("screenscraper", "devid") ? scfg("screenscraper", k) : scfg("screenscraper", user_k);
+}
 
 /* the English text from a [{langue, text}] list, else the first */
 static const char *lang_text(cJSON *arr, const char *field)
@@ -128,8 +137,8 @@ static int ss_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 	if (!p) return 0;
 	if (!g->crc[0] && !g->serial[0]) return 0;
 	char a[200], b[200], c[200], d[200], nm[700], ser[120], url[2000];
-	net_escape(scfg("screenscraper", "devid"), a, sizeof(a));
-	net_escape(scfg("screenscraper", "devpassword"), b, sizeof(b));
+	net_escape(ss_dev("devid", "user"), a, sizeof(a));
+	net_escape(ss_dev("devpassword", "password"), b, sizeof(b));
 	net_escape(scfg("screenscraper", "user"), c, sizeof(c));
 	net_escape(scfg("screenscraper", "password"), d, sizeof(d));
 	net_escape(g->arcade ? g->serial : g->title, nm, sizeof(nm));
@@ -174,7 +183,7 @@ art_done:
 	return 1;
 }
 
-const source_t SRC_SCREENSCRAPER = { "screenscraper", "ScreenScraper", "[screenscraper] devid, devpassword (+ your user, password)", ss_ready, ss_lookup };
+const source_t SRC_SCREENSCRAPER = { "screenscraper", "ScreenScraper", "[screenscraper] user, password (or a devid, devpassword)", ss_ready, ss_lookup };
 
 /* ---------- IGDB (api.igdb.com via a Twitch developer app) ---------- */
 
