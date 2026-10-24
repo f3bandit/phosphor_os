@@ -140,8 +140,21 @@ static int menu_active(void)
 /* The Linux console (the login prompt on tty1, kernel messages) draws on the same framebuffer:
  * switch the shown console to graphics mode so only the shell draws there. Again after Main gives
  * the screen back to us, since it switches consoles itself. */
+/* tty1's text (MiSTer's login prompt, kernel messages) wiped and its cursor hidden: whenever the screen
+   shows that console for a moment (a core loading, MiSTer's menu, a hand-over) it's black, not the
+   prompt in the corner. Nothing is drawn now: in graphics mode it only changes what's kept. */
+static void console_blank(void)
+{
+	int fd = open("/dev/tty1", O_WRONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) return;
+	static const char clr[] = "\033[H\033[2J\033[3J\033[?25l";
+	if (write(fd, clr, sizeof(clr) - 1) < 0) {}
+	close(fd);
+}
+
 void console_quiet(void)
 {
+	console_blank();
 	const char *ttys[] = { "/dev/tty0", "/dev/tty1", NULL };
 	for (int i = 0; ttys[i]; i++) {
 		int fd = open(ttys[i], O_RDWR | O_CLOEXEC);
@@ -158,6 +171,7 @@ void console_quiet(void)
  * console_quiet() puts it back when the shell has the screen again. */
 void console_text(void)
 {
+	console_blank();
 	const char *ttys[] = { "/dev/tty0", "/dev/tty1", NULL };
 	for (int i = 0; ttys[i]; i++) {
 		int fd = open(ttys[i], O_RDWR | O_CLOEXEC);
@@ -248,6 +262,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			/* a game is running: drain input so nothing happens behind it, and sleep */
 			while (input_poll(now) != KEY_NONE_) {}
 			if (was_active) {
+				console_blank();                /* (what shows while the core loads: black) */
 				plog(mainlink_script_running() ? "a script has the screen: idle" : mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
 				/* only for a script: in graphics mode Linux refuses Main's switch to its script terminal
 				   (Phosphor's Main does this itself too). Not for games or MiSTer's menu: in text mode the
