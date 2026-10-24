@@ -1,0 +1,13 @@
+{
+  "name": "phosphor",
+  "description": "Phosphor OS tools for Claude",
+  "owner": { "name": "f3bandit" },
+  "plugins": [
+    {
+      "name": "phosphor-link",
+      "source": "./tools/phosphor-link/plugin",
+      "description": "Reach the SuperStation One's MiSTer from Claude: SSH when it's on the network, the dock's debug port otherwise, with a watchdog that heals the link.",
+      "version": "0.4.1"
+    }
+  ]
+}
