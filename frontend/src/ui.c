@@ -5587,7 +5587,200 @@ static void up_key(pkey_t k)
 }
 
 static void power_run(int restart);
+static void pm_close(void);
+static void saver_hide(void);
 static void update_restart(lv_timer_t *t) { (void)t; if (!getenv("PHOS_NO_REBOOT")) power_run(1); }
+
+/* ---------- Updating: the screen while Phosphor updates itself (or rolls back) ----------
+ * The updater (update.sh) keeps Phosphor's screen up when it knows the screen can show this (the
+ * note written at start-up): it only stops phosphord, and writes each step to <tmp>/update-state,
+ * read here straight from the file (phosphord is away meanwhile). Done: the SuperStation restarts.
+ * Failed: what went wrong, and back to Phosphor (nothing was changed or it was put back). */
+static struct {
+	int shown, failed, restarting;
+	char state[16], step[16], version[32], from[32], job[16], msg[200];
+	int n, total;
+	long at;
+	lv_obj_t *box, *title, *sub, *bar, *fill, *rows[5], *rk[5], *rv[5], *hint;
+} us;
+
+static const char *upd_tmp(void) { const char *t = getenv("PHOS_TMP"); return t && *t ? t : "/tmp/phosphor"; }
+
+static int upd_read(void)
+{
+	char p[300], line[300];
+	snprintf(p, sizeof(p), "%s/update-state", upd_tmp());
+	FILE *f = fopen(p, "r");
+	if (!f) return 0;
+	us.state[0] = us.step[0] = us.version[0] = us.from[0] = us.job[0] = us.msg[0] = 0;
+	us.n = us.total = 0;
+	us.at = 0;
+	while (fgets(line, sizeof(line), f)) {
+		line[strcspn(line, "\r\n")] = 0;
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		const char *k = line, *v = eq + 1;
+		if (!strcmp(k, "state")) snprintf(us.state, sizeof(us.state), "%s", v);
+		else if (!strcmp(k, "step")) snprintf(us.step, sizeof(us.step), "%s", v);
+		else if (!strcmp(k, "version")) snprintf(us.version, sizeof(us.version), "%s", v);
+		else if (!strcmp(k, "from")) snprintf(us.from, sizeof(us.from), "%s", v);
+		else if (!strcmp(k, "job")) snprintf(us.job, sizeof(us.job), "%s", v);
+		else if (!strcmp(k, "msg")) snprintf(us.msg, sizeof(us.msg), "%s", v);
+		else if (!strcmp(k, "n")) us.n = atoi(v);
+		else if (!strcmp(k, "total")) us.total = atoi(v);
+		else if (!strcmp(k, "at")) us.at = atol(v);
+	}
+	fclose(f);
+	return us.state[0] != 0;
+}
+
+static void upd_build(void)
+{
+	us.box = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(us.box);
+	lv_obj_set_size(us.box, W, H);
+	lv_obj_set_style_bg_color(us.box, PAL.bg, 0);
+	lv_obj_set_style_bg_opa(us.box, LV_OPA_COVER, 0);
+	texture_apply(us.box, (texture_t)SETTINGS.texture);
+	lv_obj_t *word = mk_label(us.box, FONT_WORD, PAL.acc, "PHOSPHOR");
+	lv_obj_set_style_text_letter_space(word, S(3), 0);
+	lv_obj_set_pos(word, S(56), S(38));
+	lv_obj_t *card = mk_box(us.box, S(560), LV_SIZE_CONTENT, PAL.panel, S(18));
+	lv_obj_set_style_border_width(card, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(card, PAL.line, 0);
+	lv_obj_set_style_pad_all(card, S(32), 0);
+	lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(card, S(8), 0);
+	lv_obj_center(card);
+	lv_obj_t *ic = icon_create(card, ICON_RESTART, S(52));
+	lv_obj_set_style_text_color(ic, PAL.acc, 0);
+	us.title = mk_label(card, FONT_HEADING, PAL.text, "");
+	us.sub = mk_label(card, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(us.sub, S(496));
+	lv_label_set_long_mode(us.sub, LV_LABEL_LONG_WRAP);
+	us.bar = mk_box(card, S(496), S(8), PAL.line, S(4));
+	lv_obj_set_style_margin_top(us.bar, S(14), 0);
+	lv_obj_set_style_margin_bottom(us.bar, S(10), 0);
+	us.fill = mk_box(us.bar, S(8), S(8), PAL.acc, S(4));
+	for (int i = 0; i < 5; i++) {
+		us.rows[i] = mk_box(card, S(496), S(30), PAL.panel, 0);
+		lv_obj_set_style_bg_opa(us.rows[i], LV_OPA_TRANSP, 0);
+		us.rk[i] = mk_label(us.rows[i], FONT_NAME, PAL.text, "");
+		lv_obj_align(us.rk[i], LV_ALIGN_LEFT_MID, 0, 0);
+		us.rv[i] = mk_label(us.rows[i], FONT_NAME, PAL.dim, "");
+		lv_obj_align(us.rv[i], LV_ALIGN_RIGHT_MID, 0, 0);
+	}
+	us.hint = mk_label(card, FONT_BODY, PAL.acc, "");
+	lv_obj_set_style_margin_top(us.hint, S(10), 0);
+	lv_obj_set_hidden(us.hint, true);
+}
+
+static void upd_draw(void)
+{
+	static const char *const STEPS[5] = { "check", "backup", "install", "modules", "restart" };
+	int rb = !strcmp(us.job, "rollback"), cur_i = 0, done = !strcmp(us.state, "done");
+	for (int i = 0; i < 5; i++) if (!strcmp(us.step, STEPS[i])) cur_i = i;
+	if (done) cur_i = 4;
+	char t[200];
+	if (us.failed) snprintf(t, sizeof(t), "%s didn't finish", rb ? "Going back" : "The update");
+	else if (done) snprintf(t, sizeof(t), "%s", us.msg[0] ? us.msg : "Updated");
+	else snprintf(t, sizeof(t), rb ? "Going back to Phosphor %s" : "Updating Phosphor", us.version);
+	lv_label_set_text(us.title, t);
+	if (us.failed) snprintf(t, sizeof(t), "%s", us.msg);
+	else if (us.from[0] && us.version[0])
+		snprintf(t, sizeof(t), "%s \xE2\x86\x92 %s. Your library, box art and settings stay as they are. Don't switch off: the SuperStation restarts by itself when it's done.", us.from, us.version);
+	else snprintf(t, sizeof(t), "Your library, box art and settings stay as they are. Don't switch off: the SuperStation restarts by itself when it's done.");
+	lv_label_set_text(us.sub, t);
+	/* the bar: each step's share, the modules counted */
+	static const int AT[5] = { 3, 12, 30, 60, 96 };
+	int pct = done ? 100 : AT[cur_i];
+	if (!done && cur_i == 3 && us.total > 0) pct = 60 + 34 * us.n / us.total;
+	lv_obj_set_width(us.fill, LV_MAX(S(8), S(496) * pct / 100));
+	lv_obj_set_hidden(us.bar, us.failed);
+	char k[5][80];
+	snprintf(k[0], 80, "Checking the package");
+	snprintf(k[1], 80, "Keeping a copy of %s", us.from[0] ? us.from : "this version");
+	snprintf(k[2], 80, rb ? "Putting back Phosphor %s" : "Installing Phosphor %s", us.version);
+	snprintf(k[3], 80, "Updating the modules");
+	snprintf(k[4], 80, "Restarting the SuperStation");
+	for (int i = 0; i < 5; i++) {
+		lv_obj_set_hidden(us.rows[i], (rb && (i == 0 || i == 3)));
+		lv_label_set_text(us.rk[i], k[i]);
+		char v[40];
+		lv_color_t c;
+		if (i < cur_i || (done && i < 4)) { snprintf(v, sizeof(v), "Done"); c = lv_color_hex(0x5cf08a); }
+		else if (i == cur_i && us.failed) { snprintf(v, sizeof(v), "Stopped"); c = lv_color_hex(0xff6b5e); }
+		else if (i == cur_i) {
+			if (i == 3 && us.total > 0) snprintf(v, sizeof(v), "%d of %d", us.n < us.total ? us.n + 1 : us.total, us.total);
+			else snprintf(v, sizeof(v), i == 4 ? "Now" : "Working");
+			c = PAL.acc;
+		} else { snprintf(v, sizeof(v), us.failed ? "" : "Next"); c = PAL.faint; }
+		lv_label_set_text(us.rv[i], v);
+		lv_obj_set_style_text_color(us.rv[i], c, 0);
+	}
+	lv_label_set_text(us.hint, "A  Back to Phosphor");
+	lv_obj_set_hidden(us.hint, !us.failed);
+}
+
+static void upd_restart_now(lv_timer_t *t)
+{
+	(void)t;
+	if (us.box) { lv_obj_delete(us.box); us.box = NULL; }
+	us.shown = 0;
+	if (!getenv("PHOS_NO_REBOOT")) power_run(1);
+}
+
+/* every half second: an update running (from the TV, the app or the Scripts menu) takes the screen */
+static void upd_poll(void)
+{
+	if (us.restarting || !upd_read()) return;
+	long age = (long)time(NULL) - us.at;
+	if (!us.shown) {
+		if (strcmp(us.state, "working") || age > 900) return;
+		us.shown = 1;
+		us.failed = 0;
+		saver_hide();
+		pm_close();
+		upd_build();
+		plog("update: the Updating screen (%s %s)", us.job, us.version);
+	}
+	if (!strcmp(us.state, "failed")) us.failed = 1;
+	upd_draw();
+	if (!strcmp(us.state, "done") && !us.restarting) {
+		us.restarting = 1;
+		/* (once: start-up's check won't restart again) */
+		char mk[300];
+		snprintf(mk, sizeof(mk), "%s/update-restarted", upd_tmp());
+		FILE *f = fopen(mk, "w");
+		if (f) fclose(f);
+		lv_timer_t *tm = lv_timer_create(upd_restart_now, 3000, NULL);
+		lv_timer_set_repeat_count(tm, 1);
+	}
+}
+
+/* the Updating screen's part of a key press: 1 when it ate it */
+static int upd_key(pkey_t k)
+{
+	if (!us.shown) return 0;
+	if (us.failed && k == K_A) {
+		lv_obj_delete(us.box);
+		us.box = NULL;
+		us.shown = us.failed = 0;
+		/* (phosphord is started again by the next request) */
+		toast_show("Back to Phosphor");
+	}
+	return 1;
+}
+
+/* tells the updater this screen can stay up during an update (see upd_poll) */
+static void upd_note(void)
+{
+	char p[300];
+	snprintf(p, sizeof(p), "%s/shell-update-screen", upd_tmp());
+	FILE *f = fopen(p, "w");
+	if (f) { fprintf(f, "%d\n", (int)getpid()); fclose(f); }
+}
 
 /* after Phosphor started again: what the update did (once) */
 static void update_check(void)
@@ -6566,6 +6759,7 @@ static int app_key_blocked(pkey_t k)
 void ui_key(pkey_t k)
 {
 	if (powering) return;
+	if (upd_key(k)) return;
 	if (app_key_blocked(k)) { toast_show("Network, Bluetooth and remote access are changed on the SuperStation itself"); return; }
 	if (k == K_POWER) saver_hide();
 	else if (saver_key()) return;
@@ -6723,6 +6917,8 @@ int ui_max_sleep(void)
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
+	{ static uint32_t lu; if (now - lu >= 500) { lu = now; upd_poll(); } }
+	if (us.shown) { ui_activity(); return; }        /* an update has the screen: nothing else asks phosphord */
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	if (cur == SCR_ART) { ui_activity(); art_tick(now); }
 	if (cur == SCR_MAP) { ui_activity(); static uint32_t lm; if (now - lm >= 100) { lm = now; map_tick(); } }
@@ -6782,6 +6978,7 @@ void ui_init(int w, int h)
 	}
 	lv_obj_set_style_bg_color(root, PAL.bg, 0);
 	texture_apply(root, (texture_t)SETTINGS.texture);    /* redrawn in the accent colour */
+	upd_note();
 	status_bar();
 	body = mk_box(root, w, h, PAL.bg, 0);
 	lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
