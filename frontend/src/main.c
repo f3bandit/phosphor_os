@@ -288,6 +288,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
  * load the Phosphor menu core (stock menu core at boot) */
 int main(int argc, char **argv)
 {
+	signal(SIGPIPE, SIG_IGN);                 /* a socket whose other end went away is an error, not the end of the shell */
 	const char *snap = NULL, *keys = NULL, *fb = "/dev/fb0", *serial = NULL, *fb_mode = "full";
 	int w = 1280, h = 720, fb_rb = 1;
 	for (int i = 1; i < argc; i++) {

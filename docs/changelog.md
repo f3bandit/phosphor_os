@@ -3,6 +3,15 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.22
+
+### Fixes
+- **After an update, MiSTer's menu came up instead of the restart**: the update restarts
+  phosphord, and Phosphor's screen then asked for the restart on its old connection, which ended the
+  screen. It reconnects now (and restarts the SuperStation itself if phosphord doesn't answer).
+- **Update Phosphor showed only the first 8 packages by file name**, so a newer one could be
+  missing: the newest 8 are shown, newest first.
+
 ## 0.27.21
 
 ### Fixes
