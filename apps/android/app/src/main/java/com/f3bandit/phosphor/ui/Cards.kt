@@ -1,4 +1,5 @@
-// Phosphor for Android: Controllers & memory cards (the SuperStation One's front ports).
+// Phosphor for Android: Saves > Memory cards (the SuperStation One's front ports): back up a card, put one back,
+// and the DualShock analog switch. The controller tester is on the MiSTer itself.
 // Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor.ui
 
@@ -46,8 +47,8 @@ fun CardsContent(
     onLoad: () -> Unit, onBackup: (Int) -> Unit, onAnalog: () -> Unit, onPick: (CardBackup) -> Unit,
     onRestore: (Int) -> Unit, onBack: () -> Unit,
 ) {
-    Screen("Settings", if (pick != null) "Put back" else "Controllers & cards", onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+    Screen("Saves", if (pick != null) "Put back" else "Saves", onBack = if (pick != null) onBack else null) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             if (error != null) Text(error, style = T.small.copy(color = P.bad))
             if (st == null) { if (error == null) Loading(); return@Column }
             if (st.busy) {
@@ -78,19 +79,13 @@ fun CardsContent(
                 Spacer(Modifier.height(24.dp))
                 return@Column
             }
-            Label("Controllers")
-            Card {
-                (1..2).forEach { n ->
-                    val p = pads.firstOrNull { it.port == n }
-                    if (p == null || !p.connected) Row2("Port $n", value = "nothing plugged in", dim = true)
-                    else {
-                        val sticks = if (p.id == 0x73 || p.id == 0x53) "L ${p.lx},${p.ly}  R ${p.rx},${p.ry}" else null
-                        Row2("Port $n  ·  ${padType(p.id)}", sub = listOfNotNull(padButtons(p.buttons).ifEmpty { null }, sticks).joinToString("   ").ifEmpty { "No buttons held" })
-                    }
-                }
+            // the live controller view is in the MiSTer's own Controllers screen: here only the analog switch
+            val digital = pads.filter { it.connected && it.id == 0x41 }
+            if (digital.isNotEmpty()) {
+                Card { Row2("DualShock in digital mode", sub = "Port ${digital.joinToString(" and ") { "${it.port}" }}: some games need analog", accent = true) }
+                Button("Switch DualShocks to analog", Modifier.fillMaxWidth(), onClick = onAnalog)
             }
-            if (pads.any { it.connected && it.id == 0x41 }) Button("Switch DualShocks to analog", Modifier.fillMaxWidth(), onClick = onAnalog)
-            Label("Memory cards", Modifier.padding(top = 8.dp))
+            Label("Memory cards", Modifier.padding(top = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button("Back up port 1", Modifier.weight(1f), primary = true, enabled = !st.busy, onClick = { onBackup(1) })
                 Button("Back up port 2", Modifier.weight(1f), enabled = !st.busy, onClick = { onBackup(2) })

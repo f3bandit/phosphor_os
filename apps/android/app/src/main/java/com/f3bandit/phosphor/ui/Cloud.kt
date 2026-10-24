@@ -42,8 +42,8 @@ fun CloudContent(
     onSend: () -> Unit, onGetBack: () -> Unit, onDevice: (String) -> Unit, onConfirm: () -> Unit, onUse: (String) -> Unit,
     onAdd: () -> Unit, onForm: (AddForm) -> Unit, onSubmit: () -> Unit, onSetup: () -> Unit, onTest: () -> Unit, onBack: () -> Unit,
 ) {
-    Screen("Cloud saves", when (mode) { CloudMode.DEVICES -> "Whose saves?"; CloudMode.PREVIEW -> "Get saves back"; CloudMode.ADD -> "Add a storage place"; else -> "Cloud saves" }, onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+    Screen("Saves", when (mode) { CloudMode.DEVICES -> "Whose saves?"; CloudMode.PREVIEW -> "Get saves back"; CloudMode.ADD -> "Add a storage place"; else -> "Saves" }, onBack = if (mode != CloudMode.MAIN) onBack else null) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             if (error != null) Text(error, style = T.small.copy(color = P.bad))
             if (st == null) { if (error == null) Loading(); return@Column }
             if (st.busy) Text(busyText(st.job), style = T.small.copy(color = P.acc))

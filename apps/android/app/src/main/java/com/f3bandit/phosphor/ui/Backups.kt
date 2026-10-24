@@ -28,8 +28,8 @@ fun BackupsContent(
     st: BackupState?, error: String?, preview: Snapshot?, files: List<String>,
     onNow: () -> Unit, onPick: (Snapshot) -> Unit, onRestoreSaves: () -> Unit, onRestoreAll: () -> Unit, onBack: () -> Unit,
 ) {
-    Screen("Backups", if (preview != null) "Restore" else "Backups", onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+    Screen("Saves", if (preview != null) "Restore" else "Saves", onBack = if (preview != null) onBack else null) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             if (error != null) Text(error, style = T.small.copy(color = P.bad))
             if (st == null) { if (error == null) Loading(); return@Column }
             if (st.busy) Text(when (st.job) { "now" -> "Backing up..."; "restore" -> "Restoring..."; else -> "Looking inside..." }, style = T.small.copy(color = P.acc))

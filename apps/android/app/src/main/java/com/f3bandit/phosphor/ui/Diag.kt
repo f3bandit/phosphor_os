@@ -22,8 +22,8 @@ private val ORDER = listOf("fail", "warn", "info", "ok")
 
 @Composable
 fun DiagContent(st: DiagState?, error: String?, onRun: () -> Unit, onBack: () -> Unit) {
-    Screen("Settings", "Diagnostics", onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+    Screen("Diagnostics", "Diagnostics") {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             if (error != null) Text(error, style = T.small.copy(color = P.bad))
             if (st == null) { if (error == null) Loading(); return@Column }
             if (!st.installed) { Card { Row2("Not installed", sub = "The diag module comes with Phosphor", dim = true) }; return@Column }

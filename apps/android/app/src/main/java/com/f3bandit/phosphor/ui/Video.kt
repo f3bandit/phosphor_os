@@ -36,8 +36,8 @@ private fun short(p: String?) = p?.substringAfterLast('/')?.substringBeforeLast(
 
 @Composable
 fun VideoListContent(list: List<VideoSys>?, error: String?, onPick: (VideoSys) -> Unit, onBack: () -> Unit) {
-    Screen("Settings", "Screen filters", onBack = onBack) {
-        LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Gap) {
+    Screen("Video", "Screen filters") {
+        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Gap) {
             if (error != null) item { Text(error, style = T.small.copy(color = P.bad)) }
             if (list == null) { if (error == null) item { Loading() }; return@LazyColumn }
             item { Text("Per system, from the MiSTer's own Filters, Shadow_Masks and Gamma folders. A change shows the next time that core starts.", style = T.small) }
@@ -58,9 +58,9 @@ fun VideoSysContent(
     v: VideoSys?, error: String?, picking: VideoSlot?, choices: List<String>?,
     onSlot: (VideoSlot) -> Unit, onPresets: () -> Unit, onChoose: (String?) -> Unit, onUndo: () -> Unit, onBack: () -> Unit,
 ) {
-    Screen(v?.name ?: "Screen filters", picking?.label ?: "Screen filters", onBack = onBack) {
+    Screen("Video", picking?.label ?: v?.name ?: "Screen filters", onBack = onBack) {
         if (picking != null) {
-            LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Gap) {
+            LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Gap) {
                 if (choices == null) { item { Loading() }; return@LazyColumn }
                 item {
                     Card {
@@ -73,7 +73,7 @@ fun VideoSysContent(
             }
             return@Screen
         }
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             if (error != null) Text(error, style = T.small.copy(color = P.bad))
             if (v == null) { Loading(); return@Column }
             Card { VIDEO_SLOTS.forEach { s -> Row2(s.label, value = if (s.what == "maskmode") v.maskmode else short(v.value(s.what)), onClick = { onSlot(s) }) } }

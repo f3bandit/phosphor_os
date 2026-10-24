@@ -12,6 +12,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 
@@ -22,6 +25,45 @@ class AppModel(private val store: PairingStore) : ViewModel() {
 
     /** bumps when something changed that lists should reload for */
     var changes by mutableStateOf(0)
+
+    /** does the MiSTer answer (null: not known yet), and its Phosphor version; for the connection pill */
+    var reachable by mutableStateOf<Boolean?>(null)
+    var version by mutableStateOf("")
+
+    /** a section to open, from a notification ("power/2": Power & updates, its third tab) */
+    var go by mutableStateOf<String?>(null)
+
+    private var watching = false
+
+    /** while the app is open: is the MiSTer there (every 30 s), and the notifications check (every minute) */
+    fun watch(context: Context) {
+        if (watching) return
+        watching = true
+        val app = context.applicationContext
+        viewModelScope.launch {
+            var n = 0
+            while (true) {
+                val a = api
+                if (a != null) {
+                    val ok = runCatching { a.ping() }.getOrDefault(false)
+                    reachable = ok
+                    if (ok && version.isEmpty()) runCatching { a.cmd(org.json.JSONObject().put("cmd", "status")).optString("version") }.getOrNull()?.let { version = it }
+                    if (ok && n % 2 == 0 && Prefs.notify) runCatching { Notes.check(app, a) }
+                } else reachable = null
+                n++
+                delay(30_000)
+            }
+        }
+    }
+
+    /** the MiSTer moved (the router gave it a new address): the same key, a new address */
+    fun moveTo(address: String) {
+        val p = pairing ?: return
+        val q = Pairing(PhosphorApi.normalize(address), p.token)
+        store.save(q)
+        pairing = q
+        reachable = null
+    }
 
     suspend fun pair(address: String, code: String, deviceName: String = Build.MODEL ?: "Android phone") {
         val a = PhosphorApi.normalize(address)
@@ -34,11 +76,14 @@ class AppModel(private val store: PairingStore) : ViewModel() {
     fun forget() {
         store.clear()
         pairing = null
+        version = ""
+        reachable = null
     }
 
     /** a 401 means the MiSTer forgot this phone: back to pairing */
     fun handle(e: Throwable): String {
         if (e is PhosphorError && e.code == 401) forget()
+        if (e is PhosphorError && e.code == 0) reachable = false
         return e.message ?: "Something went wrong"
     }
 }

@@ -89,6 +89,43 @@ data class CloudState(
     val job: String, val busy: Boolean, val jobOk: Boolean, val output: String, val at: Long,
 )
 
+data class Category(val id: Int, val name: String, val games: Int)
+
+data class ScrapeSource(val id: String, val name: String, val on: Boolean, val ready: Boolean, val needs: String?)
+
+data class ScrapeAccount(val sec: String, val key: String, val set: Boolean, val value: String)
+
+/** the MiSTer's own box art run (scrape_progress) */
+data class ScrapeProgress(val running: Boolean, val status: String, val system: String, val game: String, val source: String,
+                          val total: Int, val done: Int, val found: Int, val notFound: Int, val later: Int)
+
+data class PowerEvent(val at: Long, val what: String)
+data class PowerState(val installed: Boolean, val count: Int, val warnAt: Int, val warn: Boolean, val events: List<PowerEvent>)
+
+data class Job(val name: String, val busy: Boolean, val ok: Boolean, val output: String)
+
+data class GuardFile(val path: String, val reset: Boolean)
+data class RestorePoint(val name: String, val label: String, val created: String, val linux: String, val complete: Boolean)
+data class GuardState(val installed: Boolean, val linux: String, val updatedAt: String, val updatedFrom: String, val awaiting: Boolean,
+                      val files: List<GuardFile>, val points: List<RestorePoint>, val job: Job?)
+
+data class Drive(val path: String, val kind: String, val fs: String, val sizeKb: Long, val freeKb: Long, val model: String,
+                 val gen: String, val watts: String, val mounted: Boolean)
+data class StorageCheck(val job: String, val target: String, val busy: Boolean, val ok: Boolean, val at: Long, val output: String)
+data class StorageState(val installed: Boolean, val drives: List<Drive>, val overlapTool: List<String>, val last: StorageCheck)
+
+data class UpdatePackage(val file: String, val version: String)
+data class Rollback(val version: String, val date: String)
+data class UpdateState(val available: Boolean, val version: String, val packages: List<UpdatePackage>, val rollbacks: List<Rollback>,
+                       val state: String, val msg: String, val at: Long)
+
+/** compares dotted versions: "0.27.16" > "0.27.9" */
+fun versionNewer(a: String, b: String): Boolean {
+    val x = a.split('.', '-').map { it.toIntOrNull() ?: 0 }; val y = b.split('.', '-').map { it.toIntOrNull() ?: 0 }
+    for (i in 0 until maxOf(x.size, y.size)) { val p = x.getOrElse(i) { 0 }; val q = y.getOrElse(i) { 0 }; if (p != q) return p > q }
+    return false
+}
+
 private fun JSONObject.str(k: String): String? = if (isNull(k)) null else optString(k).takeIf { it.isNotEmpty() }
 
 /** One paired MiSTer. Every call does network I/O: call from a coroutine (they switch to Dispatchers.IO). */
@@ -292,6 +329,120 @@ class PhosphorApi(val address: String, private val token: String?) {
             sm.optString("level"), sm.optString("text"), r.optString("error"),
             (0 until a.length()).map { a.getJSONObject(it) }.map { DiagItem(it.optString("area"), it.optString("key"), it.optString("level"), it.optString("message")) },
         )
+    }
+
+    suspend fun categories(): List<Category> {
+        val a = cmd(obj("cmd" to "categories")).optJSONArray("categories") ?: JSONArray()
+        return (0 until a.length()).map { a.getJSONObject(it) }.map { Category(it.optInt("id"), it.optString("name"), it.optInt("games")) }
+    }
+
+    /** a category's systems that have games (all categories: null) */
+    suspend fun systemsIn(category: Int?): List<SystemItem> {
+        val a = cmd(obj("cmd" to "systems", "category" to category)).getJSONArray("systems")
+        return (0 until a.length()).map { a.getJSONObject(it) }.filter { it.optInt("games") > 0 }
+            .map { SystemItem(it.getString("id"), it.getString("name"), it.optInt("games")) }
+    }
+
+    /** the game played last, or null */
+    suspend fun last(): Game? = cmd(obj("cmd" to "last")).optJSONObject("game")?.let { parseGame(it) }
+
+    /** look for new games and work out what they are (runs only when asked) */
+    suspend fun rescan() { cmd(obj("cmd" to "rescan")) }
+
+    /** the MiSTer's own box art lookup: on starts it */
+    suspend fun scrapeOn() { cmd(obj("cmd" to "scrape", "on" to true)) }
+
+    suspend fun scrapeProgress(): ScrapeProgress {
+        val r = cmd(obj("cmd" to "scrape_progress"))
+        return ScrapeProgress(r.optBoolean("running"), r.optString("status"), r.optString("system"), r.optString("game"), r.optString("source"),
+            r.optInt("total"), r.optInt("done"), r.optInt("found"), r.optInt("not_found"), r.optInt("later"))
+    }
+
+    /** the sources, in the order they're asked; with order/off, saves them first */
+    suspend fun scrapeSources(order: List<String>? = null, off: List<String>? = null): List<ScrapeSource> {
+        val r = cmd(obj("cmd" to "scrape_sources", "order" to order?.let { JSONArray(it) }, "off" to off?.let { JSONArray(it) }))
+        val a = r.optJSONArray("sources") ?: JSONArray()
+        return (0 until a.length()).map { a.getJSONObject(it) }.map {
+            ScrapeSource(it.optString("id"), it.optString("name"), it.optBoolean("on"), it.optBoolean("ready"), it.str("needs"))
+        }
+    }
+
+    /** the logins saved on the MiSTer (secrets only as set or not); with sec/key, saves one value first */
+    suspend fun scrapeAccounts(sec: String? = null, key: String? = null, value: String? = null): List<ScrapeAccount> {
+        val set = if (sec != null && key != null) JSONObject().put("sec", sec).put("key", key).put("value", value ?: "") else null
+        val a = cmd(obj("cmd" to "scrape_accounts", "set" to set)).optJSONArray("accounts") ?: JSONArray()
+        return (0 until a.length()).map { a.getJSONObject(it) }.map { ScrapeAccount(it.optString("sec"), it.optString("key"), it.optBoolean("set"), it.optString("value")) }
+    }
+
+    /** the power check (health-watch); ack dismisses the warning */
+    suspend fun power(ack: Boolean = false): PowerState {
+        val r = cmd(obj("cmd" to "power", "do" to if (ack) "ack" else null))
+        val a = r.optJSONArray("events") ?: JSONArray()
+        return PowerState(r.optBoolean("installed"), r.optInt("count"), r.optInt("warn_at", 3), r.optBoolean("warn"),
+            (0 until a.length()).map { a.getJSONObject(it) }.map { PowerEvent(it.optDouble("at").toLong(), it.optString("what")) })
+    }
+
+    /** restart, shut down (safely) or reload the TV screen */
+    suspend fun system(what: String) { cmd(obj("cmd" to "system", "do" to what), 30_000) }
+
+    private fun job(j: JSONObject?) = j?.takeIf { it.optString("name").isNotEmpty() }?.let { Job(it.optString("name"), it.optBoolean("busy"), it.optBoolean("ok"), it.optString("output")) }
+
+    /** updates & restore points (update-guard); what: restore, keep, rollback (items: paths or a point's name) */
+    suspend fun guard(what: String? = null, items: List<String>? = null): GuardState {
+        val r = cmd(obj("cmd" to "guard", "do" to what, "items" to items?.let { JSONArray(it) }))
+        val fa = r.optJSONArray("files") ?: JSONArray(); val pa = r.optJSONArray("points") ?: JSONArray()
+        return GuardState(
+            r.optBoolean("installed"), r.optString("linux"), r.optString("updated_at"), r.optString("updated_from"), r.optBoolean("awaiting"),
+            (0 until fa.length()).map { fa.getJSONObject(it) }.map { GuardFile(it.optString("path"), it.optBoolean("reset")) },
+            (0 until pa.length()).map { pa.getJSONObject(it) }.map { RestorePoint(it.optString("name"), it.optString("label"), it.optString("created"), it.optString("linux"), it.optBoolean("complete", true)) },
+            job(r.optJSONObject("job")),
+        )
+    }
+
+    /** the drives (sd_integrity); what: check (test, target) or mount (target) */
+    suspend fun storage(what: String? = null, test: String? = null, target: String? = null): StorageState {
+        val r = cmd(obj("cmd" to "storage", "do" to what, "test" to test, "target" to target), 30_000)
+        val da = r.optJSONArray("drives") ?: JSONArray(); val oa = r.optJSONArray("overlap_tool") ?: JSONArray()
+        val l = r.optJSONObject("last") ?: JSONObject()
+        return StorageState(
+            r.optBoolean("installed"),
+            (0 until da.length()).map { da.getJSONObject(it) }.map {
+                Drive(it.optString("path"), it.optString("kind"), it.optString("fs"), it.optDouble("size_kb").toLong(), it.optDouble("free_kb").toLong(),
+                    it.optString("model"), it.optString("gen"), it.optString("watts"), it.optBoolean("mounted", true))
+            },
+            (0 until oa.length()).map { oa.getString(it) },
+            StorageCheck(l.optString("job"), l.optString("target"), l.optBoolean("busy"), l.optBoolean("ok"), l.optDouble("at").toLong(), l.optString("output")),
+        )
+    }
+
+    /** Phosphor's own updates: packages on the MiSTer, versions to roll back to; what: install (file) or rollback (version) */
+    suspend fun update(what: String? = null, arg: String? = null): UpdateState {
+        val r = cmd(obj("cmd" to "update", "do" to what, "file" to if (what == "install") arg else null, "version" to if (what == "rollback") arg else null), 30_000)
+        val pa = r.optJSONArray("packages") ?: JSONArray(); val ra = r.optJSONArray("rollbacks") ?: JSONArray()
+        val st = r.optJSONObject("state") ?: JSONObject()
+        return UpdateState(
+            r.optBoolean("available"), r.optString("version"),
+            (0 until pa.length()).map { pa.getJSONObject(it) }.map { UpdatePackage(it.optString("file"), it.optString("version")) },
+            (0 until ra.length()).map { ra.getJSONObject(it) }.map { Rollback(it.optString("version"), it.optString("date")) },
+            st.optString("state"), st.optString("msg"), st.optLong("at"),
+        )
+    }
+
+    // ---- box art looked up on the phone (the same protocol as Phosphor for Windows) ----
+
+    /** the games still to look up, with the MiSTer's source order and logins (start: a new run) */
+    suspend fun scrapeTodo(start: Boolean, limit: Int = 400): JSONObject = cmd(obj("cmd" to "scrape_todo", "start" to start, "limit" to limit), 60_000)
+
+    suspend fun scrapeResult(id: Long, found: Boolean, later: Boolean, official: String, fields: Map<String, String>, system: String) {
+        cmd(obj("cmd" to "scrape_result", "id" to id, "found" to found, "later" to later, "official" to official,
+            "fields" to JSONObject(fields as Map<*, *>), "system" to system))
+    }
+
+    suspend fun scrapePcDone(status: String) { cmd(obj("cmd" to "scrape_pc_done", "status" to status)) }
+
+    /** answers at all (any reply, even a refusal, means it's there) */
+    suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
+        try { request("GET", "/info", timeoutMs = 4000); true } catch (e: PhosphorError) { e.code != 0 }
     }
 
     /** the game's box art (JPEG), or null when it has none */
