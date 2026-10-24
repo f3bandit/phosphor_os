@@ -3,6 +3,21 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.20
+
+### New
+- **Updating screen**: Phosphor's screen stays on through an update or roll back and shows each
+  step (checking the package, keeping a copy of the old version, installing, the modules counted)
+  with a progress bar, then restarts the SuperStation. MiSTer's menu no longer shows up in the
+  middle. If an update stops, the screen says why and goes back to Phosphor. (The update to 0.27.20
+  itself still looks the old way: the version doing it doesn't know this screen yet.)
+
+### Fixes
+- **Controller sticks weren't saved when mapping some controllers** (an 8BitDo Ultimate 2, for
+  one): the stick's own button, which some pads send as the stick moves, counted as "no stick here"
+  and skipped the stick steps, so the sticks did nothing in Phosphor and in games. Map the
+  controller again after this update.
+
 ## 0.27.19
 
 ### Fixes
