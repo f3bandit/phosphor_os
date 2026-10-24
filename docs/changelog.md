@@ -3,6 +3,13 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.21
+
+### Fixes
+- **A controller mapping with no sticks in it** (the 8BitDo Ultimate 2's, for one) gets its sticks
+  when it's loaded: from MiSTer's controller database, or else the controller's own stick axes. The
+  sticks work in Phosphor's menu and in games without mapping again.
+
 ## 0.27.20
 
 ### New
