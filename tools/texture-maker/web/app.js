@@ -138,9 +138,11 @@ function rng(seed) {
 }
 function size() { return S.canvas === "tile" ? [S.tileW, S.tileH] : [1280, 720]; }
 let tex = null;                                      /* the texture as Phosphor gets it */
+let missing = [];                                    /* sprites that found no room at all */
 function layout() {
 	const [W, H] = size(), px = S.px, gap = S.gap, tile = S.canvas === "tile";
 	const pl = [];
+	missing = [];
 	if (conv.length) {
 		const R = rng(S.seed);
 		const avg = conv.reduce((a, c) => a + (c.w * px + gap) * (c.h * px + gap), 0) / conv.length;
@@ -157,19 +159,34 @@ function layout() {
 			}
 			return false;
 		};
-		let si = pick();
-		for (let tries = 0; tries < target * 80 && boxes.length < target; tries++) {
+		const step = S.snap ? px : 1;
+		/* one try at putting sprite si somewhere free */
+		const place = si => {
 			const c = conv[si];
 			const o = (S.rot ? Math.floor(R() * 4) : 0) | (S.mirror && R() < 0.5 ? 4 : 0);
 			const w = ((o & 1) ? c.h : c.w) * px, h = ((o & 1) ? c.w : c.h) * px;
-			if (!tile && (w > W || h > H)) { si = pick(); continue; }
-			const step = S.snap ? px : 1;
+			if (!tile && (w > W || h > H)) return false;
+			if (tile && (w + gap > W || h + gap > H)) return false;   /* it would run into itself where the tile repeats */
 			let x = tile ? R() * W : R() * (W - w + 1), y = tile ? R() * H : R() * (H - h + 1);
 			x = Math.floor(x / step) * step; y = Math.floor(y / step) * step;
-			if (hits(x, y, w, h)) continue;
+			if (hits(x, y, w, h)) return false;
 			boxes.push([x, y, w, h]);
-			pl.push(x, y, conv.indexOf(c), o);
-			si = pick();
+			pl.push(x, y, si, o);
+			return true;
+		};
+		/* every sprite once first (biggest first, so the big ones still find room), then more of them
+		   in turn until the density is reached */
+		const first = conv.map((_, i) => i).sort((a, b) => conv[b].w * conv[b].h - conv[a].w * conv[a].h);
+		for (const si of first) {
+			let ok = false;
+			for (let t = 0; t < 4000 && !ok; t++) ok = place(si);
+			if (!ok) missing.push(S.sprites[conv[si].idx].name);
+		}
+		const goal = Math.max(target, boxes.length);
+		let si = pick();
+		for (let tries = 0; tries < goal * 80 && boxes.length < goal; tries++) {
+			if (missing.includes(S.sprites[conv[si].idx].name)) { si = pick(); continue; }
+			if (place(si)) si = pick();
 		}
 	}
 	tex = { w: W, h: H, px, inv: S.inv, str: S.str / 100, spr: conv.map(c => [c.w, c.h, c.bytes]), pl };
@@ -227,8 +244,12 @@ function drawPreview() {
 	const big = $("big"), rgb = hex2rgb(ACCENTS[S.accent][1]);
 	paint(big, 1, rgb, S.view === "bright");
 	const n = tex.pl.length / 4, [W, H] = size();
+	const used = new Set();
+	for (let i = 2; i < tex.pl.length; i += 4) used.add(tex.pl[i]);
+	const miss = missing.length ? ` · didn't fit: ${missing.join(", ")} (bigger tile, smaller scale or gap)` : "";
+	$("lbl").style.color = missing.length ? "#ff6b5e" : "";
 	$("lbl").textContent = conv.length
-		? `${S.canvas === "tile" ? `${W} × ${H} tile, repeated` : "1280 × 720, whole screen"} · ${n} sprite${n === 1 ? "" : "s"} placed · ${ACCENTS[S.accent][0]}${S.view === "bright" ? " · bright view" : ""}`
+		? `${S.canvas === "tile" ? `${W} × ${H} tile, repeated` : "1280 × 720, whole screen"} · ${n} placed, ${used.size} of ${conv.length} sprite${conv.length === 1 ? "" : "s"} used · ${ACCENTS[S.accent][0]}${S.view === "bright" ? " · bright view" : ""}${miss}`
 		: "Add sprites to start";
 	const sws = $("sws");
 	if (!sws.children.length) ACCENTS.forEach(([nm, col], i) => {
@@ -420,6 +441,7 @@ function previewSheet() {
 function ready() {
 	if (!conv.length) { toast("Add a sprite first.", true); return false; }
 	if (!tex.pl.length) { toast("No sprite fits: try a smaller pixel scale, a smaller gap or a bigger tile.", true); return false; }
+	if (missing.length && !confirm(`These sprites didn't fit and aren't in the texture: ${missing.join(", ")}.\n\nA bigger tile, a smaller pixel scale or a smaller gap makes room. Go on without them?`)) return false;
 	if (!S.name.trim()) { toast("Give the texture a name.", true); return false; }
 	return true;
 }
