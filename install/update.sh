@@ -25,8 +25,11 @@ LOG="$ROOT/logs/update.log"
 KEEP=3
 mkdir -p "$TMPD" "$ROOT/logs" "$ROOT/updates"
 
+# the step the TV's Updating screen ticks off: check, backup, install, modules (N of TOTAL), restart
+STEP="" N=0 TOTAL=0 FROM="" JOB=""
 state() { # state, message, version, restart
-	printf 'state=%s\nversion=%s\nrestart=%s\nmsg=%s\nat=%s\n' "$1" "${3:-}" "${4:-0}" "$2" "$(date +%s)" > "$STATE.new" && mv -f "$STATE.new" "$STATE"
+	printf 'state=%s\nversion=%s\nrestart=%s\nmsg=%s\nat=%s\nstep=%s\nn=%s\ntotal=%s\nfrom=%s\njob=%s\n' "$1" "${3:-}" "${4:-0}" "$2" "$(date +%s)" \
+		"$STEP" "$N" "$TOTAL" "$FROM" "$JOB" > "$STATE.new" && mv -f "$STATE.new" "$STATE"
 	echo "$(date '+%Y-%m-%d %H:%M:%S')  $1: $2" >> "$LOG"
 	echo "$2"
 }
@@ -79,6 +82,21 @@ backup_installed() {
 
 md5() { md5sum "$1" 2>/dev/null | cut -c1-32; }
 
+# Phosphor's screen stays on through an update when it can show the Updating screen (it says so in
+# $TMPD/shell-update-screen): then only phosphord is stopped and started, and the screen restarts the
+# SuperStation at the end. An older screen is stopped and started as before.
+screen_stays() { [ -f "$TMPD/shell-update-screen" ] && pidof phosphor > /dev/null 2>&1; }
+stop_for_update() {
+	if screen_stays; then
+		for p in $(pidof phosphord); do kill "$p" 2>/dev/null; done
+		sleep 0.5
+		for p in $(pidof phosphord); do kill -9 "$p" 2>/dev/null; done
+	else "$ROOT/phosphor.sh" stop > /dev/null 2>&1; fi
+}
+start_after_update() { # (the screen's still up: just phosphord, for its safe stop)
+	if screen_stays; then "$ROOT/phosphor.sh" service >> "$LOG" 2>&1; else "$ROOT/phosphor.sh" start >> "$LOG" 2>&1; fi
+}
+
 # an install or roll back is running: its process (kept in $LOCK) is still there
 LOCK="$TMPD/update.lock"
 running() {
@@ -89,6 +107,7 @@ running() {
 
 install_pkg() {
 	local pkg="$1" w="$TMPD/update-unpack" dir v old main_before modules m
+	JOB=install STEP=check FROM="$(installed_version)"
 	[ -f "$pkg" ] || { state failed "no such package: $pkg"; return 1; }
 	state working "Checking the package..." "" 0
 	rm -rf "$w" && mkdir -p "$w"
@@ -100,37 +119,49 @@ install_pkg() {
 	fi
 	v="$(cut -d' ' -f1 "$dir/VERSION")"
 	old="$(installed_version)"
-	state working "Backing up Phosphor $old..." "$v" 0
+	STEP=backup
+	state working "Keeping a copy of Phosphor $old..." "$v" 0
 	backup_installed || { state failed "Couldn't back up the installed version: nothing was changed" "$v"; return 1; }
 	main_before="$(md5 "$ROOT/bin/MiSTer_phosphor")"
 	modules="$(ls -1 "$ROOT/modules" 2>/dev/null)"
+	STEP=install
 	state working "Installing Phosphor $v..." "$v" 0
-	# the installer stops Phosphor, copies, and keeps the library, art and settings
-	PHOS_FAT="$FAT" bash "$dir/install.sh" $(boot_flag) >> "$LOG" 2>&1 || { state failed "The installer stopped: see phosphor/logs/update.log. Roll back to $old from Settings > Update Phosphor" "$v"; "$ROOT/phosphor.sh" start > /dev/null 2>&1; return 1; }
+	# the installer copies and keeps the library, art and settings (it stops phosphord, and the screen
+	# too when the screen can't show this)
+	stop_for_update
+	PHOS_FAT="$FAT" bash "$dir/install.sh" $(boot_flag) >> "$LOG" 2>&1 || { state failed "The installer stopped: see phosphor/logs/update.log. Roll back to $old from Settings > Update Phosphor" "$v"; start_after_update; return 1; }
 	# the modules that were installed get their new versions too (each installer keeps its settings)
+	STEP=modules N=0 TOTAL=0
+	for m in $modules; do case "$m" in lib) ;; *) [ -x "$dir/modules/$m/install.sh" ] && TOTAL=$((TOTAL + 1)) ;; esac; done
 	for m in $modules; do
 		case "$m" in lib) continue ;; esac
-		[ -x "$dir/modules/$m/install.sh" ] && PHOSPHOR_ROOT="$ROOT" "$dir/modules/$m/install.sh" >> "$LOG" 2>&1
+		[ -x "$dir/modules/$m/install.sh" ] || continue
+		state working "Updating the modules ($m)..." "$v" 0
+		PHOSPHOR_ROOT="$ROOT" "$dir/modules/$m/install.sh" >> "$LOG" 2>&1
+		N=$((N + 1))
 	done
 	cp -f "$dir/update.sh" "$ROOT/update.sh" 2>/dev/null && chmod 755 "$ROOT/update.sh"
 	sync
 	local restart=0
 	[ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ] && restart=1
-	"$ROOT/phosphor.sh" start >> "$LOG" 2>&1
+	start_after_update
 	rm -rf "$w"
-	if [ "$restart" = 1 ]; then state done "Updated to Phosphor $v" "$v" 1
-	else state done "Updated to Phosphor $v" "$v" 0; fi
+	STEP=restart
+	state done "Updated to Phosphor $v" "$v" 1
 }
 
 rollback() {
 	local v="$1" d="$ROOT/backup/versions/$1" main_before
 	case "$v" in */*|*..*|"") state failed "no such version"; return 1 ;; esac
 	[ -f "$d/VERSION" ] || { state failed "Phosphor $v isn't kept"; return 1; }
-	state working "Putting back Phosphor $v..." "$v" 0
+	JOB=rollback FROM="$(installed_version)" STEP=backup
+	state working "Keeping a copy of Phosphor $FROM..." "$v" 0
 	local now; now="$(installed_version)"
 	[ "$now" != "$v" ] && backup_installed
 	main_before="$(md5 "$ROOT/bin/MiSTer_phosphor")"
-	"$ROOT/phosphor.sh" stop > /dev/null 2>&1
+	STEP=install
+	state working "Putting back Phosphor $v..." "$v" 0
+	stop_for_update
 	for x in bin modules cores; do
 		[ -d "$d/$x" ] || continue
 		rm -rf "$ROOT/$x.old" && mv "$ROOT/$x" "$ROOT/$x.old" 2>/dev/null
@@ -140,9 +171,9 @@ rollback() {
 	# a version without the updater keeps this one, so it can come forward again
 	[ -f "$ROOT/update.sh" ] || cp -a "$0" "$ROOT/update.sh"
 	sync
-	"$ROOT/phosphor.sh" start >> "$LOG" 2>&1
-	if [ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ]; then state done "Back to Phosphor $v" "$v" 1
-	else state done "Back to Phosphor $v" "$v" 0; fi
+	start_after_update
+	STEP=restart
+	state done "Back to Phosphor $v" "$v" 1
 }
 
 case "${1:-}" in

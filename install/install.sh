@@ -30,8 +30,11 @@ for f in bin/phosphor bin/phosphord bin/phos phosphor.sh uninstall.sh VERSION; d
 done
 [ -d "$FAT" ] || { echo "$FAT not found" >&2; exit 1; }
 
-# stop a running copy before replacing it
-[ -x "$ROOT/phosphor.sh" ] && "$ROOT/phosphor.sh" stop > /dev/null 2>&1
+# stop a running copy before replacing it (during an update, update.sh has done that: the screen may
+# stay up showing its Updating screen, and every file is put in place with a rename, so it runs on)
+if [ -z "${PHOS_UPDATE_CHILD:-}" ] || [ ! -f "${PHOS_TMP:-/tmp/phosphor}/shell-update-screen" ]; then
+	[ -x "$ROOT/phosphor.sh" ] && "$ROOT/phosphor.sh" stop > /dev/null 2>&1
+fi
 
 mkdir -p "$ROOT/bin" "$ROOT/config" "$ROOT/data" "$ROOT/logs" "$ROOT/backup" || exit 1
 for f in phosphor phosphord phos; do
