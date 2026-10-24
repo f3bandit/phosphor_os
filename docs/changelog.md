@@ -3,6 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.9
+
+### Fixes
+- **MiSTer's logo showed over Phosphor's wallpaper** in MiSTer's menu. Phosphor's Main leaves it out
+  (MiSTer.ini isn't touched; after uninstalling, stock Main shows it again as set there).
+- **The Linux login prompt flashed between transitions** (starting a game, going to MiSTer's menu).
+  The console only goes back to text mode for a script now, the one case that needs it.
+
+### Changed
+- **Settings wraps around:** Up on the first item goes to the last, Down on the last to the first.
+
 ## 0.27.8
 
 ### Fixes
