@@ -3,7 +3,7 @@
    The numbers are the console's, so a texture picked here is the one picked on the TV. */
 "use strict";
 const Texture = (() => {
-	const SH = { ZIGZAG: 0, X: 1, SQUARE: 2, TRIANGLE: 3, HEX: 4, TRIGRID: 5, DIAMOND: 6, DIAGRID: 7, GRID: 8 };
+	const SH = { ZIGZAG: 0, X: 1, SQUARE: 2, TRIANGLE: 3, HEX: 4, TRIGRID: 5, DIAMOND: 6, DIAGRID: 7, GRID: 8, BOARD: 9 };
 	const LINE = 0, FILL = 1, INVERT = 2, STRENGTH = 0.13;
 	const T = [
 		["None"],
@@ -30,8 +30,11 @@ const Texture = (() => {
 		["Diamond lattice", SH.DIAGRID, 20, 20, 1, LINE],
 		["Square grid", SH.GRID, 20, 20, 1, LINE],
 		["Square grid, bold", SH.GRID, 20, 20, 2.4, LINE],
+		/* one whole screen, not a repeating tile (circuit.js) */
+		["Circuit board", SH.BOARD, 1280, 720, 1, LINE],
+		["Circuit board, bold", SH.BOARD, 1280, 720, 2, LINE],
 	];
-	const ORDER = [0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16];
+	const ORDER = [0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25];
 
 	function seg(px, py, ax, ay, bx, by) {
 		const vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay, l2 = vx * vx + vy * vy;
@@ -66,11 +69,49 @@ const Texture = (() => {
 		}
 		return 1e9;
 	}
+	/* the circuit board: the console's traces and vias (circuit.js), the same sizes */
+	function board(rgb, scale, lw) {
+		const pw = Math.round(1280 * scale), ph = Math.round(720 * scale), C = CIRCUIT.cell, H = C / 2;
+		const c = document.createElement("canvas");
+		c.width = pw; c.height = ph;
+		const g = c.getContext("2d"), P = v => (v * C + H) * scale;
+		g.strokeStyle = g.fillStyle = "#fff";
+		g.lineWidth = 1.4 * lw * scale; g.lineJoin = "round"; g.lineCap = "round";
+		g.beginPath();
+		for (let t = 0; t < CIRCUIT.traces.length; t += 2) {
+			const a = CIRCUIT.traces[t], n = CIRCUIT.traces[t + 1];
+			for (let i = a; i < a + n; i++) {
+				const x = P(CIRCUIT.pts[i * 2]), y = P(CIRCUIT.pts[i * 2 + 1]);
+				if (i === a) g.moveTo(x, y); else g.lineTo(x, y);
+			}
+		}
+		g.stroke();
+		const ro = (2.8 + (lw - 1) * 0.6) * scale, rh = 1.5 * scale;
+		for (let i = 0; i < CIRCUIT.vias.length; i += 2) {
+			const x = P(CIRCUIT.vias[i]), y = P(CIRCUIT.vias[i + 1]);
+			g.beginPath(); g.arc(x, y, ro, 0, 2 * Math.PI); g.arc(x, y, rh, 0, 2 * Math.PI, true); g.fill("evenodd");
+			g.globalCompositeOperation = "destination-out";
+			g.beginPath(); g.arc(x, y, rh, 0, 2 * Math.PI); g.fill();
+			g.globalCompositeOperation = "source-over";
+		}
+		/* laid on the window's background colour, not left see-through: a picture this faint loses its
+		   colour in a see-through PNG (the vias came out green) */
+		const bg = (getComputedStyle(document.body).backgroundColor.match(/\d+/g) || [14, 14, 16]).map(Number);
+		const img = g.getImageData(0, 0, pw, ph), d = img.data;
+		for (let i = 0; i < d.length; i += 4) {
+			const a = d[i + 3] / 255 * STRENGTH;
+			for (let k = 0; k < 3; k++) d[i + k] = Math.round(bg[k] * (1 - a) + rgb[k] * a);
+			d[i + 3] = 255;
+		}
+		g.putImageData(img, 0, 0);
+		return c.toDataURL("image/png");
+	}
 	/* the tile as a data: URL, in colour rgb ([r,g,b]) at scale (screen px per console px) */
 	function tile(n, rgb, scale) {
 		const t = T[n];
 		if (!t || n === 0) return null;
 		const [, sh, bw, bh, lw, mode] = t;
+		if (sh === SH.BOARD) return board(rgb, scale, lw);
 		const pw = Math.round(bw * scale), ph = Math.round(bh * scale);
 		if (pw < 4 || ph < 4) return null;
 		const c = document.createElement("canvas");
@@ -99,6 +140,7 @@ const Texture = (() => {
 		name: n => (T[n] ? T[n][0] : "None"),
 		valid: n => n === 0 || !!T[n],
 		order: ORDER,
+		full: n => !!T[n] && T[n][1] === SH.BOARD,     /* one picture for the whole window, not a tile */
 		tile,
 	};
 })();

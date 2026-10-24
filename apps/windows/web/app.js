@@ -54,9 +54,13 @@ function applyTheme() {
 	const mix = (c, d) => Math.round(c * 0.2 + d * 0.8);          /* the shell's panel_on: 20% accent */
 	document.documentElement.style.setProperty("--acc", acc);
 	document.documentElement.style.setProperty("--on", `rgb(${mix(r, 0x14)},${mix(g, 0x14)},${mix(b, 0x16)})`);
-	const scale = parseFloat(getComputedStyle(document.documentElement).fontSize) / 16;
+	const full = Texture.full(S.texture);
+	const scale = full ? Math.max(innerWidth / 1280, innerHeight / 720) * (devicePixelRatio || 1)
+		: parseFloat(getComputedStyle(document.documentElement).fontSize) / 16;
 	const url = Texture.tile(S.texture, [r, g, b], scale);
 	document.body.style.backgroundImage = url ? `url(${url})` : "none";
+	document.body.style.backgroundSize = full ? "cover" : "";
+	document.body.style.backgroundPosition = full ? "center" : "";
 }
 let themeT;
 addEventListener("resize", () => { clearTimeout(themeT); themeT = setTimeout(applyTheme, 200); });

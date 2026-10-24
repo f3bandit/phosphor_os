@@ -7,7 +7,8 @@
 #include <stdint.h>
 
 /* a texture is a number into the table in texture.c (saved in frontend.ini; 0 = none). The first
- * seven keep their old numbers (5 and 7 are retired: the old circles and 8-bit tiles); the variants come after. */
+ * seven keep their old numbers (5 and 7 are retired: the old circles and 8-bit tiles); the variants come after;
+ * 24 and 25 are the circuit board, one whole screen rather than a tile. */
 typedef int texture_t;
 #define TEX_NONE 0
 extern const int TEX_COUNT;

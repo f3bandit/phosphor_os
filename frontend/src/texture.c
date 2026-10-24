@@ -7,13 +7,14 @@
  * bolder lines, filled, or inverted (the colour everywhere but the lines). */
 #include "texture.h"
 #include "theme.h"
+#include "circuit_data.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define STRENGTH 0.13f      /* how much accent colour a line gets */
 
-typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID } shape_t;
+typedef enum { SH_ZIGZAG, SH_X, SH_SQUARE, SH_TRIANGLE, SH_HEX, SH_TRIGRID, SH_DIAMOND, SH_DIAGRID, SH_GRID, SH_BOARD } shape_t;
 enum { M_LINE, M_FILL, M_INVERT };
 
 static const struct {
@@ -48,11 +49,14 @@ static const struct {
 	{ "Diamond lattice", SH_DIAGRID, 20, 20, 1, M_LINE },
 	{ "Square grid", SH_GRID, 20, 20, 1, M_LINE },
 	{ "Square grid, bold", SH_GRID, 20, 20, 2.4f, M_LINE },
+	/* one whole screen, not a repeating tile (circuit_data.h) */
+	{ "Circuit board", SH_BOARD, 1280, 720, 1, M_LINE },
+	{ "Circuit board, bold", SH_BOARD, 1280, 720, 2, M_LINE },
 };
 const int TEX_COUNT = sizeof(T) / sizeof(T[0]);
 
 /* the order Settings steps through: each shape followed by its variants */
-static const int ORDER[] = { 0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16 };
+static const int ORDER[] = { 0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25 };
 
 int texture_valid(texture_t t) { return t >= 0 && t < TEX_COUNT && T[t].name; }
 const char *texture_name(texture_t t) { return texture_valid(t) ? T[t].name : "None"; }
@@ -137,6 +141,8 @@ static float shape(shape_t s, float x, float y, float w, float h, int *inside)
 	}
 	case SH_DIAGRID:                                     /* diagonal lines both ways: diamonds edge to edge */
 		return 0.70710678f * fminf(fabsf(fmodf(x + y + 4 * w, w) - w / 2), fabsf(fmodf(x - y + 4 * w, w) - w / 2));
+	case SH_BOARD:                                       /* drawn by board_alpha */
+		return 1e9f;
 	case SH_GRID:                                        /* squares edge to edge */
 		x = fmodf(x + 4 * w, w);
 		y = fmodf(y + 4 * h, h);
@@ -145,9 +151,78 @@ static float shape(shape_t s, float x, float y, float w, float h, int *inside)
 	return 1e9f;
 }
 
+/* the circuit board: traces and vias drawn where they are (each only over its own few pixels), not a
+   distance test at every pixel of the screen for every trace */
+static void board_line(float *a, int pw, int ph, float s, float ax, float ay, float bx, float by, float half)
+{
+	int x0 = (int)floorf(fminf(ax, bx) * s - half - 2), x1 = (int)ceilf(fmaxf(ax, bx) * s + half + 2);
+	int y0 = (int)floorf(fminf(ay, by) * s - half - 2), y1 = (int)ceilf(fmaxf(ay, by) * s + half + 2);
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > pw) x1 = pw;
+	if (y1 > ph) y1 = ph;
+	for (int y = y0; y < y1; y++)
+		for (int x = x0; x < x1; x++) {
+			float d = seg((x + 0.5f) / s, (y + 0.5f) / s, ax, ay, bx, by) * s;
+			float v = half + 0.5f - d;
+			if (v <= 0) continue;
+			if (v > 1) v = 1;
+			float *p = &a[(size_t)y * pw + x];
+			if (v > *p) *p = v;
+		}
+}
+
+static void board_via(float *a, int pw, int ph, float s, float cx, float cy, float r_out, float r_hole)
+{
+	int x0 = (int)floorf((cx - r_out) * s - 2), x1 = (int)ceilf((cx + r_out) * s + 2);
+	int y0 = (int)floorf((cy - r_out) * s - 2), y1 = (int)ceilf((cy + r_out) * s + 2);
+	if (x0 < 0) x0 = 0;
+	if (y0 < 0) y0 = 0;
+	if (x1 > pw) x1 = pw;
+	if (y1 > ph) y1 = ph;
+	for (int y = y0; y < y1; y++)
+		for (int x = x0; x < x1; x++) {
+			float dx = (x + 0.5f) / s - cx, dy = (y + 0.5f) / s - cy, r = sqrtf(dx * dx + dy * dy) * s;
+			float out = r_out * s + 0.5f - r, in = r - r_hole * s + 0.5f;
+			if (out > 1) out = 1;
+			if (in > 1) in = 1;
+			float v = out < in ? out : in;                /* a ring: filled out to r_out, hollow inside r_hole */
+			float *p = &a[(size_t)y * pw + x];
+			if (v > 0) *p = fmaxf(*p, v);
+			else if (r < r_hole * s) *p = fminf(*p, fmaxf(0, in));   /* the hole stays dark where a trace ends */
+		}
+}
+
+static uint8_t *board_alpha(float scale, float lw, int pw, int ph)
+{
+	float *a = calloc((size_t)pw * ph, sizeof(float));
+	uint8_t *a8 = malloc((size_t)pw * ph);
+	if (!a || !a8) { free(a); free(a8); return NULL; }
+	const float C = CIRCUIT_CELL, H = C / 2;
+	float half = 0.7f * scale * lw;
+	int nt = (int)(sizeof(CIRCUIT_TRACES) / sizeof(CIRCUIT_TRACES[0])) / 2;
+	for (int t = 0; t < nt; t++) {
+		int first = CIRCUIT_TRACES[t * 2], n = CIRCUIT_TRACES[t * 2 + 1];
+		for (int i = first; i + 1 < first + n; i++)
+			board_line(a, pw, ph, scale, CIRCUIT_PTS[i * 2] * C + H, CIRCUIT_PTS[i * 2 + 1] * C + H,
+			           CIRCUIT_PTS[i * 2 + 2] * C + H, CIRCUIT_PTS[i * 2 + 3] * C + H, half);
+	}
+	int nv = (int)(sizeof(CIRCUIT_VIAS) / sizeof(CIRCUIT_VIAS[0])) / 2;
+	for (int i = 0; i < nv; i++)
+		board_via(a, pw, ph, scale, CIRCUIT_VIAS[i * 2] * C + H, CIRCUIT_VIAS[i * 2 + 1] * C + H, 2.8f + (lw - 1) * 0.6f, 1.5f);
+	for (size_t i = 0; i < (size_t)pw * ph; i++) a8[i] = (uint8_t)lroundf(a[i] * STRENGTH * 255);
+	free(a);
+	return a8;
+}
+
 uint8_t *texture_alpha(texture_t t, float scale, int *pw, int *ph)
 {
 	if (t <= TEX_NONE || !texture_valid(t)) return NULL;
+	if (T[t].shape == SH_BOARD) {
+		*pw = (int)lroundf(T[t].w * scale);
+		*ph = (int)lroundf(T[t].h * scale);
+		return board_alpha(scale, T[t].line, *pw, *ph);
+	}
 	float bw = T[t].w, bh = T[t].h;
 	*pw = (int)lroundf(bw * scale);
 	*ph = (int)lroundf(bh * scale);
