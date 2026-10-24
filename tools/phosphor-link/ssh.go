@@ -37,14 +37,14 @@ func OpenSSH(cfg Config) (*SSHLink, error) {
 	}
 	conf := &ssh.ClientConfig{
 		User: cfg.SSHUser,
-		Auth: []ssh.AuthMethod{ssh.Password(cfg.SSHPassword), ssh.KeyboardInteractive(
+		Auth: append(phosphorKey(), ssh.Password(cfg.SSHPassword), ssh.KeyboardInteractive(
 			func(user, instr string, qs []string, echos []bool) ([]string, error) {
 				a := make([]string, len(qs))
 				for i := range a {
 					a[i] = cfg.SSHPassword
 				}
 				return a, nil
-			})},
+			})),
 		// Every stock MiSTer ships the same host keys and a reflash makes new ones, so pinning them
 		// would only break the link after each reflash. A changed key is accepted and logged.
 		HostKeyCallback: noteHostKey,
@@ -227,4 +227,24 @@ func (l *SSHLink) Close() error {
 		close(l.stop)
 	}
 	return l.c.Close()
+}
+
+// phosphorKey: the Phosphor app's SSH key for this PC (%APPDATA%\\Phosphor\\ssh_key), tried first, so the
+// link still gets in when the SS1's SSH is set to Keys only (once the key was added there, with a yes
+// on the TV). No key: passwords only, as before.
+func phosphorKey() []ssh.AuthMethod {
+	d, err := os.UserConfigDir()
+	if err != nil {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Join(d, "Phosphor", "ssh_key"))
+	if err != nil {
+		return nil
+	}
+	signer, err := ssh.ParsePrivateKey(b)
+	if err != nil {
+		log.Printf("ssh: the Phosphor app's key can't be read: %v", err)
+		return nil
+	}
+	return []ssh.AuthMethod{ssh.PublicKeys(signer)}
 }

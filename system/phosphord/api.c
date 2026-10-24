@@ -96,6 +96,7 @@
 #include "wifi.h"
 #include "video.h"
 #include "remote.h"
+#include "sshacc.h"
 #include "cloud.h"
 #include "backup.h"
 #include "memcard.h"
@@ -1303,13 +1304,21 @@ static char *cmd_remote(cJSON *req)
 {
 	cJSON *on = cJSON_GetObjectItem(req, "on");
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	const char *note = NULL;
 	if (cJSON_IsBool(on) && remote_set_on(cJSON_IsTrue(on))) return fail("can't save remote.ini");
 	if (d && !strcmp(d, "pair")) { if (remote_pair_start()) return fail("no random numbers"); }
 	else if (d && !strcmp(d, "stop")) remote_pair_stop();
 	else if (d && !strcmp(d, "forget")) {
 		const char *id = cJSON_GetStringValue(cJSON_GetObjectItem(req, "id"));
 		if (!id || remote_forget(id)) return fail("no such device");
-	} else if (d) return fail("do: pair, stop or forget");
+	} else if (d && (!strncmp(d, "ssh_", 4) || !strncmp(d, "keep", 4) || !strcmp(d, "restored_seen"))) {
+		char msg[200];
+		const char *e = sshacc_do(req, msg, sizeof(msg));
+		if (e) return fail(e);
+		if (msg[0]) note = msg;
+	} else if (d) return fail("do: pair, stop, forget, ssh_..., keep");
+	if (d && (!strcmp(d, "forget") || !strcmp(d, "pair"))) sshacc_changed();
+	if (cJSON_IsBool(on)) sshacc_changed();
 	remote_info_t ri;
 	remote_info(&ri);
 	cJSON *o = ok();
@@ -1334,6 +1343,29 @@ static char *cmd_remote(cJSON *req)
 		cJSON_AddNumberToObject(x, "last_seen", (double)ri.dev[i].last_seen);
 		cJSON_AddItemToArray(ds, x);
 	}
+	cJSON_AddItemToObject(o, "ssh", sshacc_json(cJSON_IsTrue(cJSON_GetObjectItem(req, "places"))));
+	if (note) cJSON_AddStringToObject(o, "note", note);
+	return reply(o);
+}
+
+/* what a paired device may see of remote access (the "remote" command itself only works on the MiSTer),
+   and offering it SSH keys: they wait for a yes on the TV */
+static char *cmd_remote_ssh(cJSON *req)
+{
+	cJSON *keys = cJSON_GetObjectItem(req, "offer");
+	cJSON *o = ok();
+	if (keys) {
+		const char *e = NULL;
+		const char *from = cJSON_GetStringValue(cJSON_GetObjectItem(req, "from"));
+		int n = sshacc_offer(keys, from, &e);
+		if (!n) { cJSON_Delete(o); return fail(e ? e : "no keys"); }
+		cJSON_AddNumberToObject(o, "offered", n);
+	}
+	cJSON *s = sshacc_json(0);
+	cJSON_DeleteItemFromObject(s, "places");
+	cJSON *ks;
+	cJSON_ArrayForEach(ks, cJSON_GetObjectItem(s, "pending")) cJSON_DeleteItemFromObject(ks, "n");
+	cJSON_AddItemToObject(o, "ssh", s);
 	return reply(o);
 }
 
@@ -1360,6 +1392,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "edit")) out = cmd_edit(db, req);
 	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);
+	else if (!strcmp(c->valuestring, "remote_ssh")) out = cmd_remote_ssh(req);
 	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
 	else if (!strcmp(c->valuestring, "power")) out = cmd_power(req);
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
