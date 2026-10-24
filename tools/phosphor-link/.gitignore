@@ -3,3 +3,4 @@ phosphor-link
 phosphor-link.exe
 phosphor-link.ini
 phosphor-link.log
+!plugin/server/phosphor-link.exe
