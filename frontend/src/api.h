@@ -13,6 +13,7 @@ const char *category_name(category_t c);
 cJSON *api_call(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /* the same for one slow request (up to ms), never retried */
+void api_reset(void);   /* a new connection for the next request */
 cJSON *api_call_slow(int ms, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
 /* reply helpers */

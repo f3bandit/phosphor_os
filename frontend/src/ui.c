@@ -20,6 +20,7 @@
 #include "texture.h"
 #include "padview.h"
 #include "theme.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -5498,15 +5499,44 @@ static struct {
 } up;
 static vlist_t up_list;
 
+/* 0.27.21 against 0.27.6: number by number */
+static int ver_cmp(const char *a, const char *b)
+{
+	while (*a || *b) {
+		if (isdigit((unsigned char)*a) && isdigit((unsigned char)*b)) {
+			long x = strtol(a, (char **)&a, 10), y = strtol(b, (char **)&b, 10);
+			if (x != y) return x < y ? -1 : 1;
+		} else {
+			if (*a != *b) return (unsigned char)*a < (unsigned char)*b ? -1 : 1;
+			a++; b++;
+		}
+	}
+	return 0;
+}
+
 static void up_apply(cJSON *r)
 {
 	if (!api_ok(r)) { cJSON_Delete(r); return; }
 	snprintf(up.ver, sizeof(up.ver), "%s", api_str(r, "version") ? api_str(r, "version") : "?");
 	cJSON *x;
 	up.npk = up.nrb = 0;
-	cJSON_ArrayForEach(x, cJSON_GetObjectItem(r, "packages")) if (up.npk < 8) {
-		snprintf(up.pk_file[up.npk], sizeof(up.pk_file[0]), "%s", api_str(x, "file") ? api_str(x, "file") : "");
-		snprintf(up.pk_ver[up.npk++], sizeof(up.pk_ver[0]), "%s", api_str(x, "version") ? api_str(x, "version") : "");
+	/* the newest 8, newest first (phosphord lists them by file name: 0.27.6 after 0.27.21) */
+	{
+		cJSON *pa = cJSON_GetObjectItem(r, "packages");
+		int na = cJSON_GetArraySize(pa);
+		cJSON **v = na > 0 ? malloc(sizeof(*v) * (size_t)na) : NULL;
+		for (int i = 0; v && i < na; i++) v[i] = cJSON_GetArrayItem(pa, i);
+		for (int i = 1; v && i < na; i++)                /* (a handful: insertion sort, newest first) */
+			for (int j = i; j > 0; j--) {
+				const char *a1 = api_str(v[j - 1], "version"), *b1 = api_str(v[j], "version");
+				if (ver_cmp(a1 ? a1 : "", b1 ? b1 : "") >= 0) break;
+				cJSON *t = v[j]; v[j] = v[j - 1]; v[j - 1] = t;
+			}
+		for (int i = 0; v && i < na && up.npk < 8; i++) {
+			snprintf(up.pk_file[up.npk], sizeof(up.pk_file[0]), "%s", api_str(v[i], "file") ? api_str(v[i], "file") : "");
+			snprintf(up.pk_ver[up.npk++], sizeof(up.pk_ver[0]), "%s", api_str(v[i], "version") ? api_str(v[i], "version") : "");
+		}
+		free(v);
 	}
 	cJSON_ArrayForEach(x, cJSON_GetObjectItem(r, "rollbacks")) if (up.nrb < 6) {
 		const char *v = api_str(x, "version");
@@ -5728,6 +5758,7 @@ static void upd_restart_now(lv_timer_t *t)
 	(void)t;
 	if (us.box) { lv_obj_delete(us.box); us.box = NULL; }
 	us.shown = 0;
+	api_reset();                                     /* phosphord was restarted by the update */
 	if (!getenv("PHOS_NO_REBOOT")) power_run(1);
 }
 
@@ -6546,7 +6577,13 @@ static void power_run(int restart)
 		lv_label_set_text(sp_title, "Restarting");
 		lv_refr_now(NULL);
 		usleep(1200000);
-		cJSON_Delete(api_call("{\"cmd\":\"system\",\"do\":\"reboot_now\"}"));
+		cJSON *rr = api_call("{\"cmd\":\"system\",\"do\":\"reboot_now\"}");
+		if (!rr && !getenv("PHOS_NO_REBOOT")) {          /* phosphord not answering: restart from here */
+			plog("power: phosphord didn't answer, restarting from the shell");
+			sync();
+			if (system("reboot") != 0 && system("reboot -f") != 0) plog("power: reboot didn't run");
+		}
+		cJSON_Delete(rr);
 	} else {
 		lv_label_set_text(sp_title, "Safe to switch off");
 		lv_obj_set_style_text_color(sp_title, PAL.acc, 0);

@@ -81,7 +81,7 @@ static void hang_up(void)
 static int send_all(const char *s, size_t n)
 {
 	while (n) {
-		ssize_t w = write(fd, s, n);
+		ssize_t w = send(fd, s, n, MSG_NOSIGNAL);      /* phosphord restarted (an update): an error, not SIGPIPE */
 		if (w < 0) { if (errno == EINTR) continue; return -1; }
 		s += w;
 		n -= (size_t)w;
@@ -178,10 +178,14 @@ cJSON *api_call_slow(int ms, const char *fmt, ...)
 	req[n++] = '\n';
 	req[n] = 0;
 	if (ensure() != 0) return NULL;
-	if (send_all(req, (size_t)n) != 0) { hang_up(); return NULL; }
+	/* not sent (phosphord restarted since the last request, an update): sent again on a new connection */
+	if (send_all(req, (size_t)n) != 0) { hang_up(); if (ensure() != 0 || send_all(req, (size_t)n) != 0) { hang_up(); return NULL; } }
 	char *line = read_line(ms);
 	if (!line) { hang_up(); return NULL; }
 	cJSON *r = cJSON_Parse(line);
 	free(line);
 	return r;
 }
+
+/* a fresh connection for the next request (phosphord was restarted under us, by an update) */
+void api_reset(void) { hang_up(); }
