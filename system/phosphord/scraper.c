@@ -750,9 +750,26 @@ void scraper_info(sqlite3 *db, scrape_info_t *o)
 	o->pending = count(db, sql);
 	o->done = count(db, "SELECT COUNT(*) FROM games WHERE scrape='done'");
 	o->missing = count(db, "SELECT COUNT(*) FROM games WHERE scrape='miss' AND based_on IS NULL");
+	/* the last run's result outlives a restart: kept in the library (meta scrape_last: "<time>|<status>") */
+	char saved[200];
 	pthread_mutex_lock(&lk);
-	snprintf(o->status, sizeof(o->status), "%s", status_text);
+	int fresh = !strcmp(status_text, "Not run yet"), busy = o->running || kicked;
+	char now_status[160];
+	snprintf(now_status, sizeof(now_status), "%s", status_text);
 	pthread_mutex_unlock(&lk);
+	db_meta_get(db, "scrape_last", saved, sizeof(saved));
+	char *bar = strchr(saved, '|');
+	if (!fresh && !busy && (!bar || strcmp(bar + 1, now_status))) {
+		char v[200];
+		snprintf(v, sizeof(v), "%ld|%s", (long)time(NULL), now_status);
+		db_meta_set(db, "scrape_last", v);
+	}
+	if (fresh && !busy && bar) {
+		time_t t = (time_t)atol(saved);
+		char when[40];
+		strftime(when, sizeof(when), "%b %d, %H:%M", localtime(&t));
+		snprintf(o->status, sizeof(o->status), "%.100s (last run %s)", bar + 1, when);
+	} else snprintf(o->status, sizeof(o->status), "%s", now_status);
 }
 
 int scraper_retry(sqlite3 *db, long long gid)
