@@ -249,10 +249,10 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			while (input_poll(now) != KEY_NONE_) {}
 			if (was_active) {
 				plog(mainlink_script_running() ? "a script has the screen: idle" : mainlink_hidden() ? "MiSTer's menu has the screen: idle" : "game running: idle");
-				/* the console back to text mode while someone else has the screen: in graphics mode Linux
-				   refuses Main's switch to its script terminal (Update All from MiSTer's menu, say), and
-				   Main waits for it forever */
-				console_text();
+				/* only for a script: in graphics mode Linux refuses Main's switch to its script terminal
+				   (Phosphor's Main does this itself too). Not for games or MiSTer's menu: in text mode the
+				   console draws its login prompt, and that showed between transitions */
+				if (mainlink_script_running()) console_text();
 			}
 			was_active = 0;
 			usleep(200000);

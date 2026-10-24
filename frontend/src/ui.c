@@ -229,6 +229,7 @@ static void toast_show(const char *msg)
 typedef struct {
 	lv_obj_t *box, *rows[VL_MAX_ROWS], *lab[VL_MAX_ROWS], *val[VL_MAX_ROWS], *bar[VL_MAX_ROWS], *thumb;
 	int vis, count, sel, top, row_h;
+	int wrap;                           /* Up on the first row goes to the last, and Down on the last to the first */
 	signed char shown[VL_MAX_ROWS];     /* what each row last looked like: -1 unknown, else on*2+dim */
 	void (*fill)(int i, char *text, size_t n, char *value, size_t vn, int *dim);
 } vlist_t;
@@ -302,6 +303,8 @@ static int vlist_key(vlist_t *v, pkey_t k)
 	int old = v->sel;
 	if (k == K_UP && v->sel > 0) v->sel--;
 	else if (k == K_DOWN && v->sel + 1 < v->count) v->sel++;
+	else if (k == K_UP && v->wrap && v->count > 1) v->sel = v->count - 1;
+	else if (k == K_DOWN && v->wrap && v->count > 1) v->sel = 0;
 	else if (k == K_L) v->sel = LV_MAX(0, v->sel - v->vis);
 	else if (k == K_R) v->sel = LV_MIN(v->count - 1, v->sel + v->vis);
 	else return 0;
@@ -2077,6 +2080,7 @@ static void show_settings(void)
 	vlist_create(&set_list, body, S(56), S(176), S(700), S(440));
 	set_list.count = SET_COUNT;
 	set_list.fill = set_fill;
+	set_list.wrap = 1;
 	set_list.sel = 0;
 	set_list.top = 0;
 	vlist_refresh(&set_list);
