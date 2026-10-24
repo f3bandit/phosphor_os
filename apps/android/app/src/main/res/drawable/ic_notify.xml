@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification icon: the app icon's "P" in a screen outline, one colour (Android tints it) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="60" android:viewportHeight="60">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M6,6 h48 a6,6 0 0 1 6,6 v36 a6,6 0 0 1 -6,6 h-48 a6,6 0 0 1 -6,-6 v-36 a6,6 0 0 1 6,-6 z M8,10 a2,2 0 0 0 -2,2 v36 a2,2 0 0 0 2,2 h44 a2,2 0 0 0 2,-2 v-36 a2,2 0 0 0 -2,-2 z" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M21,17 h11 a8,8 0 0 1 0,16 h-6 v10 h-5 z M26,22 v6 h6 a3,3 0 0 0 0,-6 z" />
+</vector>

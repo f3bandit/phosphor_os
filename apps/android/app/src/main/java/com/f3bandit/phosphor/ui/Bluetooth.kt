@@ -16,8 +16,8 @@ import com.f3bandit.phosphor.BtState
 
 @Composable
 fun BluetoothContent(st: BtState?, error: String?, onBack: () -> Unit) {
-    Screen("Settings", "Bluetooth", onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+    Screen("Bluetooth", "Bluetooth") {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             if (error != null) Text(error, style = T.small.copy(color = P.bad))
             if (st == null) { if (error == null) Loading(); return@Column }
             if (!st.present) { Card { Row2("No Bluetooth adapter", sub = "Plug one into the MiSTer", dim = true) }; return@Column }

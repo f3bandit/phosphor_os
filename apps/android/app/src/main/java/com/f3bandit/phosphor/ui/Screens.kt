@@ -67,25 +67,6 @@ import kotlinx.coroutines.sync.withPermit
 // ---------- shared bits ----------
 
 @Composable
-fun Screen(label: String, title: String, onBack: (() -> Unit)? = null, action: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxSize().background(P.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (onBack != null) {
-                Text("←", style = T.title.copy(color = P.acc), modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(end = 14.dp, top = 2.dp, bottom = 2.dp))
-            }
-            Text("PHOSPHOR", style = T.word, modifier = Modifier.weight(1f))
-            action?.invoke()
-        }
-        Column(Modifier.padding(horizontal = 20.dp).padding(top = 18.dp, bottom = 10.dp)) {
-            Label(label)
-            Spacer(Modifier.height(4.dp))
-            Text(title, style = T.heading, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Box(Modifier.weight(1f)) { content() }
-    }
-}
-
-@Composable
 fun Field(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, singleLine: Boolean = true, number: Boolean = false, big: Boolean = false, password: Boolean = false) {
     BasicTextField(
         value = value, onValueChange = onChange, singleLine = singleLine,
@@ -148,7 +129,7 @@ fun ConnectContent(
     onAddress: (String) -> Unit, onCode: (String) -> Unit, onSearch: () -> Unit, onPick: (Info) -> Unit, onPair: () -> Unit,
 ) {
     Screen("Connect", "Pair with your MiSTer") {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             Text("On the MiSTer: Settings › Remote access. Turn it on, then choose Pair a device. The TV shows the address and a 6-digit code.", style = T.small)
             Spacer(Modifier.height(4.dp))
             Label("On this WiFi")
@@ -168,60 +149,6 @@ fun ConnectContent(
     }
 }
 
-// ---------- Home ----------
-
-@Composable
-fun HomeContent(
-    address: String, status: Status?, systems: List<SystemItem>, error: String?,
-    onFilter: (String, String) -> Unit, onSystem: (SystemItem) -> Unit, onSearch: () -> Unit, onSettings: () -> Unit,
-) {
-    Screen("Library", "Your MiSTer", action = {
-        Text("Search", style = T.small.copy(color = P.acc), modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSearch).padding(8.dp))
-        Text("Settings", style = T.small.copy(color = P.acc), modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSettings).padding(8.dp))
-    }) {
-        LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp), verticalArrangement = Gap) {
-            item {
-                Card {
-                    if (status == null && error == null) Loading()
-                    if (error != null) Row2("Not reachable", sub = error, dim = true)
-                    if (status != null) {
-                        val busy = when {
-                            status.indexing -> "Looking for games..."
-                            status.identifying -> "Identifying games..."
-                            status.scraperRunning -> status.scraperStatus.ifEmpty { "Getting box art..." }
-                            else -> null
-                        }
-                        Row2("${status.games} games", value = address, sub = busy ?: "Phosphor ${status.version}  ·  box art ${if (status.scraperOn) "on" else "off"}")
-                    }
-                }
-            }
-            if (status != null && (status.missingArt + status.missingDetails + status.notFound) > 0) {
-                item { Label("Needs attention", Modifier.padding(top = 8.dp)) }
-                item {
-                    Card {
-                        if (status.missingArt > 0) Row2("No box art", value = "${status.missingArt}", accent = true, onClick = { onFilter("missing_art", "No box art") })
-                        if (status.missingDetails > 0) Row2("No details", value = "${status.missingDetails}", accent = true, onClick = { onFilter("missing_details", "No details") })
-                        if (status.notFound > 0) Row2("Not found by the scraper", value = "${status.notFound}", onClick = { onFilter("not_found", "Not found") })
-                    }
-                }
-            }
-            if (status != null) {
-                item {
-                    Card {
-                        Row2("Favorites", value = "›", onClick = { onFilter("favorites", "Favorites") })
-                        Row2("Recently played", value = "›", onClick = { onFilter("recent", "Recently played") })
-                    }
-                }
-            }
-            if (systems.isNotEmpty()) {
-                item { Label("Systems", Modifier.padding(top = 8.dp)) }
-                item { Card { systems.forEach { s -> Row2(s.name, value = "${s.games}", onClick = { onSystem(s) }) } } }
-            }
-            item { Spacer(Modifier.height(20.dp)) }
-        }
-    }
-}
-
 // ---------- Games ----------
 
 val FILTERS = listOf(null to "All", "missing_art" to "No box art", "missing_details" to "No details", "not_found" to "Not found", "linked" to "Based on")
@@ -234,7 +161,7 @@ fun GamesContent(
 ) {
     Screen("Games", title, onBack = onBack) {
         Column {
-            Column(Modifier.padding(horizontal = 20.dp)) { Field(query, onQuery, "Search titles") }
+            Column(Modifier.padding(horizontal = 16.dp)) { Field(query, onQuery, "Search titles") }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FILTERS.forEach { (f, name) -> Pill(name, filter == f) { onFilter(f) } }
             }
@@ -288,7 +215,7 @@ fun GameContent(
 ) {
     Screen(game?.systemName ?: "Game", game?.title ?: "", onBack = onBack) {
         if (game == null) { if (error != null) Message(error, true) else Loading(); return@Screen }
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Cover(cover, Modifier.width(132.dp).aspectRatio(0.75f), game.title)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -346,7 +273,7 @@ fun gameValues(g: Game) = mapOf("title" to g.title, "year" to (g.year ?: ""), "d
 @Composable
 fun EditContent(title: String, values: Map<String, String>, busy: Boolean, error: String?, onChange: (String, String) -> Unit, onSave: () -> Unit, onBack: () -> Unit) {
     Screen("Edit details", title, onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Gap) {
             EDIT_FIELDS.forEach { (k, name) ->
                 Label(name)
                 Field(values[k] ?: "", { onChange(k, it) }, if (k == "description") "A few sentences about the game" else "", singleLine = k != "description",
@@ -368,7 +295,7 @@ fun BasedOnContent(title: String, current: String?, query: String, results: List
     Screen("Based on", title, onBack = onBack) {
         Column {
             Text("For a hack, mod, translation or other version: pick the original, and this game uses its box art and details (unless it has its own).",
-                style = T.small, modifier = Modifier.padding(horizontal = 20.dp))
+                style = T.small, modifier = Modifier.padding(horizontal = 16.dp))
             if (current != null) {
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
                     Card { Row2("Now: $current", value = "Remove", accent = true, onClick = onUnlink) }
@@ -383,36 +310,6 @@ fun BasedOnContent(title: String, current: String?, query: String, results: List
                     items(results, key = { it.id }) { c -> Row2(c.title, value = if (c.score >= 400) "close match" else null, onClick = { onPick(c) }) }
                 }
             }
-        }
-    }
-}
-
-// ---------- Settings ----------
-
-@Composable
-fun SettingsContent(address: String, version: String, onForget: () -> Unit, onBack: () -> Unit, onCloud: () -> Unit = {}, onBackups: () -> Unit = {}, onCards: () -> Unit = {}, onBluetooth: () -> Unit = {}, onVideo: () -> Unit = {}, onDiag: () -> Unit = {}) {
-    Screen("Settings", "Phosphor app", onBack = onBack) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Gap) {
-            Label("MiSTer")
-            Card {
-                Row2("Paired with", value = address)
-                Row2("Cloud saves", value = "›", onClick = onCloud)
-                Row2("Backups", value = "›", onClick = onBackups)
-                Row2("Controllers & memory cards", value = "›", onClick = onCards)
-                Row2("Bluetooth", value = "›", onClick = onBluetooth)
-                Row2("Screen filters", value = "›", onClick = onVideo)
-                Row2("Diagnostics", value = "›", onClick = onDiag)
-                Row2("Forget this MiSTer", value = "›", accent = true, onClick = onForget)
-            }
-            Text("To remove this phone on the MiSTer too: Settings › Remote access, select the phone, press X.", style = T.small)
-            Label("About", Modifier.padding(top = 8.dp))
-            Card {
-                Row2("Phosphor for Android", value = version)
-                Row2("Works with", value = "phosphord 0.12.1 or later")
-            }
-            Text("The app only talks to your MiSTer, on your home network. It collects nothing and sends nothing anywhere else.\n\n" +
-                "Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).", style = T.small)
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

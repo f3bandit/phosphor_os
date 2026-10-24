@@ -20,6 +20,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,16 +37,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.f3bandit.phosphor.R
 
+/** the accent colours, the same five as the MiSTer shell and Phosphor for Windows */
+val ACCENTS = linkedMapOf(
+    "amber" to Color(0xFFFFB347), "red" to Color(0xFFFF6B5E), "green" to Color(0xFF5CF08A),
+    "blue" to Color(0xFF6CB6FF), "purple" to Color(0xFFC792FF),
+)
+
 object P {
     val bg = Color(0xFF0E0E10)
+    val bar = Color(0xFF141417)          // app bar, bottom bar and rail (SS1 Tool's --ab, in Phosphor's greys)
     val panel = Color(0xFF17171B)
+    val panel2 = Color(0xFF212127)
     val line = Color(0xFF2A2A31)
     val text = Color(0xFFECE8E1)
     val dim = Color(0xFF8D8A85)
     val faint = Color(0xFF5C5A57)
-    val acc = Color(0xFFFFB347)
-    val panelOn = lerp(Color(0xFF141416), acc, 0.08f)
+    /** the chosen accent (Settings > Look); amber unless changed */
+    var accent by mutableStateOf(ACCENTS.getValue("amber"))
+    val acc: Color get() = accent
+    val panelOn: Color get() = lerp(Color(0xFF141416), accent, 0.08f)
+    /** the selected item's pill in the bottom bar and rail */
+    val navOn: Color get() = lerp(bar, accent, 0.22f)
     val bad = Color(0xFFFF6B5E)
+    val warn = Color(0xFFFFC857)
+    val good = Color(0xFF5CF08A)
 }
 
 val Inter = FontFamily(
@@ -60,7 +77,8 @@ object T {
     val body = TextStyle(fontFamily = Inter, fontSize = 15.sp, lineHeight = 22.sp, color = P.text)
     val small = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp, color = P.dim)
     val label = TextStyle(fontFamily = Mono, fontSize = 11.sp, letterSpacing = 2.5.sp, color = P.dim)
-    val word = TextStyle(fontFamily = Mono, fontSize = 17.sp, letterSpacing = 3.sp, color = P.acc)
+    val word: TextStyle get() = TextStyle(fontFamily = Mono, fontSize = 17.sp, letterSpacing = 3.sp, color = P.acc)
+    val bar = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 20.sp, color = P.text)
 }
 
 @Composable
@@ -99,7 +117,7 @@ fun Row2(
         }
         Column(Modifier.weight(1f)) {
             Text(title, style = T.name.copy(color = if (dim) P.dim else P.text), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (sub != null) Text(sub, style = T.small, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (sub != null) Text(sub, style = T.small, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         if (value != null) {
             Spacer(Modifier.width(12.dp))
