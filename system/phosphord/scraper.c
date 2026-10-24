@@ -596,8 +596,10 @@ static void arcade_relook_once(sqlite3 *db)
 
 /* ---------- the queue ---------- */
 
+/* identified games; arcade ones too when the .mra has no MAME set name (laserdisc games, TTL
+   machines): they are looked up by their .mra name */
 static const char *PENDING =
-	"FROM games g WHERE g.scrape IS NULL AND g.based_on IS NULL AND g.key NOT LIKE 'n:%' "
+	"FROM games g WHERE g.scrape IS NULL AND g.based_on IS NULL AND (g.key NOT LIKE 'n:%' OR g.system_id='Arcade') "
 	"AND EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)";
 
 static void mark(sqlite3 *db, long long gid, const char *state)

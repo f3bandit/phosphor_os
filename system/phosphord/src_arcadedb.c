@@ -70,7 +70,11 @@ static int hack_name(const char *t)
 static int adb_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 {
 	(void)db;
-	if (!g->arcade || !g->serial[0]) return 0;
+	if (!g->arcade) return 0;
+	if (!g->serial[0]) {                 /* no MAME set name (a laserdisc game, a TTL machine): by its name */
+		if (!g->official[0] && !hack_name(g->title)) snprintf(g->official, sizeof(g->official), "%s", g->title);
+		return 0;
+	}
 	cJSON *j;
 	int rc;
 	cJSON *x = adb_query(g->serial, &j, &rc);

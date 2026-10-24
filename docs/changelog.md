@@ -3,6 +3,13 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.15
+
+### Fixes
+- **Arcade games without a MAME set name** (Dragon's Lair and the other laserdisc games, Cliff
+  Hanger, Computer Space and other TTL machines) were never looked up: they're looked up by their
+  .mra name now, and the ones in an `_alternatives` folder get linked to their main game like the rest.
+
 ## 0.27.14
 
 ### New
