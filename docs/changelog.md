@@ -3,6 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.11
+
+### New
+- **Box art looked up on the PC** (Phosphor for Windows 0.2.9, Settings > Box art > Look up on this
+  PC). The PC fetches the game lists, the LaunchBox database and the pictures, matches each game with
+  the SS1's own rules and sources (in your order, with your logins), makes the box art and sends it
+  finished to the SS1; several games at once. Much faster than on the SS1. Fields a game already has
+  are never replaced; Disc 2 and later still borrow Disc 1's art. The SS1's own lookup waits while
+  the PC works, and the TV's box art screen says who's doing it. "Look up on the SS1" stays for when
+  there's no PC.
+
 ## 0.27.10
 
 ### New

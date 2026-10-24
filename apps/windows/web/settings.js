@@ -163,9 +163,41 @@ class AppSettings {
 	async tArt(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="col"><div class="sub">${spaced("Sources, asked in this order")}</div><div class="list" id="srcs"><div class="empty"><span class="spin"></span></div></div>
-			<div class="acts"><button class="btn primary" id="runart" data-nav>Look up box art now</button></div></div>
+			<div class="acts"><button class="btn primary" id="runpc" data-nav>Look up on this PC</button><button class="btn" id="runart" data-nav>Look up on the SS1</button></div>
+			<div class="note" id="scr_st" style="margin-top:.6rem"></div></div>
 			<div class="panel" id="acct"></div></div>`));
-		$("#runart").onclick = async () => { try { await ss1({ cmd: "scrape", on: true }); toast("Looking up box art on the SS1"); } catch (e) { toast(e.message); } };
+		/* this PC: lists and pictures fetched here, matched with the SS1's own rules, finished box art sent to
+		   the SS1 (much faster); the SS1: its own run, for when the PC is off */
+		const scrDraw = st => {
+			const el = $("#scr_st");
+			if (!el || !st) return;
+			const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
+			el.innerHTML = st.running
+				? `<b>${esc(st.status || "Looking up box art")}</b>${st.total ? ` \u00B7 ${n(st.done)} of ${n(st.total)} (${pct}%)` : ""}<br>${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.game ? `<br><span class="dim">${esc(st.system || "")} \u203A ${esc(st.game)}</span>` : ""}`
+				: st.started ? `${esc(st.status || "Done")}: ${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}` : "";
+			if (st.notes && st.notes.length) el.innerHTML += `<br>${st.notes.map(esc).join("<br>")}`;
+			$("#runpc").textContent = st.running ? "Stop" : "Look up on this PC";
+		};
+		const scrPoll = async () => {
+			while (alive()) {
+				let j;
+				try { j = await api("/api/scrape"); } catch (e) { return; }
+				if (!alive()) return;
+				scrDraw(j.state);
+				if (!j.state.running) return;
+				await new Promise(r => setTimeout(r, 1000));
+			}
+		};
+		$("#runpc").onclick = async () => {
+			try {
+				const cur = await api("/api/scrape");
+				if (cur.state.running) { await api("/api/scrape", { do: "stop" }); toast("Stopping"); }
+				else { await api("/api/scrape", { do: "start" }); toast("Looking up box art on this PC"); }
+			} catch (e) { toast(e.message); }
+			scrPoll();
+		};
+		$("#runart").onclick = async () => { try { await ss1({ cmd: "scrape", on: true }); toast("Looking up box art on the SS1 (slower)"); } catch (e) { toast(e.message); } };
+		scrPoll();
 		try {
 			const [src, acc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" })]);
 			this.srcs = src.sources; this.acc = acc.accounts;
