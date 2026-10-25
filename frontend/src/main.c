@@ -276,6 +276,12 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			usleep(200000);
 			continue;
 		}
+		if (!was_active && ui_ingame_open()) {
+			/* over a game: the in-game menu drew itself in full before it was shown; another full
+			   repaint (below) would flicker on top of it */
+			plog("in-game menu");
+			was_active = 1;
+		}
 		if (!was_active) {
 			plog("back in the menu");
 			was_active = 1;
