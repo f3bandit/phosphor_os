@@ -426,6 +426,7 @@ static void load_home_data(void)
 
 static char ig_title[160];         /* the game just started (the in-game menu's title) */
 static int ig_from_disc;           /* ... and whether it plays from the dock's drive */
+static cJSON *ig_game;             /* ... its details: box art and description beside the in-game menu */
 static void play_id(long long id)
 {
 	cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
@@ -434,9 +435,11 @@ static void play_id(long long id)
 	else {
 		toast_show("Starting...");
 		cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", id);
-		cJSON *gg = api_ok(g) ? cJSON_GetObjectItem(g, "game") : NULL;
+		cJSON *gg = api_ok(g) ? cJSON_DetachItemFromObject(g, "game") : NULL;
 		snprintf(ig_title, sizeof(ig_title), "%s", gg && api_str(gg, "title") ? api_str(gg, "title") : "");
 		ig_from_disc = 0;
+		cJSON_Delete(ig_game);
+		ig_game = cJSON_IsObject(gg) ? gg : (cJSON_Delete(gg), NULL);
 		cJSON_Delete(g);
 	}
 	cJSON_Delete(r);
@@ -449,6 +452,7 @@ static void play_id(long long id)
  * yet. Disc support: Main_MiSTer_Physical_Disc by Anime0t4ku and bonna79. (docs/discs.md) */
 static struct {
 	int known, enabled, in, playable, tries;
+	long long game_id;                 /* the same game in the library (its details), else 0 */
 	char state[16], title[200], system[64], serial[32], reason[96], art[700];
 } dk = { .enabled = 1 };
 static void systems_disc_update(void);
@@ -475,6 +479,7 @@ static void disc_refresh(void)
 		DKS(state, "state"); DKS(title, "title"); DKS(system, "system"); DKS(serial, "serial"); DKS(reason, "reason"); DKS(art, "art");
 #undef DKS
 		dk.playable = cJSON_IsTrue(cJSON_GetObjectItem(d, "playable"));
+		dk.game_id = (long long)api_num(d, "game_id", 0);
 		dk.in = dk.enabled && (!strcmp(dk.state, "reading") || !strcmp(dk.state, "ready") || !strcmp(dk.state, "unreadable"));
 	}
 	cJSON_Delete(r);
@@ -496,6 +501,20 @@ static void disc_play_now(void)
 		toast_show("Starting...");
 		snprintf(ig_title, sizeof(ig_title), "%.159s", dk.title);
 		ig_from_disc = 1;
+		/* the in-game menu's details: the library game with the same disc code, else what the drive says */
+		cJSON_Delete(ig_game);
+		ig_game = NULL;
+		if (dk.game_id > 0) {
+			cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", dk.game_id);
+			cJSON *gg = api_ok(g) ? cJSON_DetachItemFromObject(g, "game") : NULL;
+			if (cJSON_IsObject(gg)) ig_game = gg; else cJSON_Delete(gg);
+			cJSON_Delete(g);
+		}
+		if (!ig_game) {
+			ig_game = cJSON_CreateObject();
+			cJSON_AddStringToObject(ig_game, "title", dk.title);
+			if (dk.art[0]) cJSON_AddStringToObject(ig_game, "art", dk.art);
+		}
 	}
 	cJSON_Delete(r);
 }
@@ -7774,6 +7793,59 @@ static void ingame_open(void)
 	lv_obj_set_style_border_side(sheet, LV_BORDER_SIDE_LEFT, 0);
 	lv_obj_set_style_border_width(sheet, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(sheet, PAL.line, 0);
+	/* the game on the left: its box art and what it's about (as on its page in the library). Started
+	   some other way (the phone, Phosphor for Windows) or the shell restarted: the last game launched */
+	if (!ig_game) {
+		cJSON *r = api_call("{\"cmd\":\"last\"}");
+		cJSON *gg = api_ok(r) ? cJSON_DetachItemFromObject(r, "game") : NULL;
+		if (cJSON_IsObject(gg)) { ig_game = gg; if (!ig_title[0] && api_str(gg, "title")) snprintf(ig_title, sizeof(ig_title), "%s", api_str(gg, "title")); }
+		else cJSON_Delete(gg);
+		cJSON_Delete(r);
+	}
+	if (ig_game) {
+		int lx = S(56), ly = S(110), aw = S(240), ah = S(300);
+		lv_obj_t *art = mk_box(body, aw, ah, lv_color_hex(0x2a2119), S(10));
+		lv_obj_set_style_clip_corner(art, true, 0);
+		lv_obj_set_pos(art, lx, ly);
+		const char *a = api_str(ig_game, "art");
+		if (a) {
+			static char src[1100];
+			snprintf(src, sizeof(src), "A:%s", a);
+			lv_obj_t *img = lv_image_create(art);
+			lv_obj_set_size(img, aw, ah);
+			lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CONTAIN);
+			lv_image_set_src(img, src);
+			lv_obj_center(img);
+		} else {
+			lv_obj_t *aic = icon_create(art, ig_from_disc ? ICON_DISC : ICON_CARTRIDGE, S(64));
+			lv_obj_set_style_text_color(aic, PAL.acc, 0);
+			lv_obj_center(aic);
+		}
+		int tx = lx + aw + S(32), tw = W - S(460) - S(40) - tx;
+		lv_obj_t *t = mk_label(body, FONT_HEADING, PAL.text, api_str(ig_game, "title") ? api_str(ig_game, "title") : "");
+		lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(t, tw);
+		lv_obj_set_pos(t, tx, ly);
+		char meta[200] = "";
+		const char *keys[] = { "year", "developer", "players", "genre" };
+		for (int i = 0; i < 4; i++) {
+			const char *v = api_str(ig_game, keys[i]);
+			if (!v || !*v) continue;
+			size_t l = strlen(meta);
+			snprintf(meta + l, sizeof(meta) - l, "%s%s%s", l ? "  \xC2\xB7  " : "", v, !strcmp(keys[i], "players") ? (strchr(v, 'p') ? "" : " players") : "");
+		}
+		lv_obj_t *m = mk_label(body, FONT_SMALL, PAL.acc, meta);
+		lv_label_set_long_mode(m, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(m, tw);
+		lv_obj_set_pos(m, tx, ly + S(48));
+		const char *desc = api_str(ig_game, "description");
+		if (desc && *desc) {
+			lv_obj_t *d = mk_label(body, FONT_BODY, PAL.dim, desc);
+			lv_label_set_long_mode(d, LV_LABEL_LONG_MODE_DOTS);
+			lv_obj_set_size(d, tw, S(380));
+			lv_obj_set_pos(d, tx, ly + S(88));
+		}
+	}
 	char eb[200];
 	snprintf(eb, sizeof(eb), "%s%s", ig_title[0] ? ig_title : "In game", ig_from_disc ? "  \xC2\xB7  from the disc" : "");
 	lv_obj_t *e = mk_label(sheet, FONT_LABEL, PAL.dim, eb);
