@@ -7814,6 +7814,15 @@ static void ingame_key(int k)
 	}
 }
 
+/* a game is running and the shell sleeps (main.c): the menu button (the in-game menu), and Main
+   taking the in-game screen back. Also from ui_tick while the menu is open. */
+void ui_game_events(void)
+{
+	if (mainlink_menu_button()) { if (cur == SCR_INGAME) ingame_close(1); else ingame_open(); }
+	if (mainlink_ingame_ended() && cur == SCR_INGAME) ingame_close(0);
+}
+int ui_ingame_open(void) { return cur == SCR_INGAME; }
+
 static uint32_t last_status, last_poll;
 
 int ui_max_sleep(void)
@@ -7842,8 +7851,7 @@ void ui_tick(void)
 	/* the dock's drive changed; the menu button in a game; Main took the in-game screen back */
 	if (mainlink_disc_changed()) disc_refresh();
 	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_refresh(); } }
-	if (mainlink_menu_button()) { if (cur == SCR_INGAME) ingame_close(1); else ingame_open(); }
-	if (mainlink_ingame_ended() && cur == SCR_INGAME) ingame_close(0);
+	ui_game_events();
 	sk_check(now);
 	vk_check(0);
 	vk_tick();
