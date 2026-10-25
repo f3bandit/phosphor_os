@@ -176,7 +176,7 @@ class AppSettings {
 	async tArt(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="col"><div class="sub">${spaced("Sources, asked in this order")}</div><div class="list" id="srcs"><div class="empty"><span class="spin"></span></div></div>
-			<div class="acts"><button class="btn primary" id="runpc" data-nav>Look up on this PC</button><button class="btn" id="runart" data-nav>Look up on the SS1</button></div>
+			<div class="acts"><button class="btn primary" id="runpc" data-nav>Look up on this PC</button><button class="btn" id="runart" data-nav>Look up on the SS1</button><button class="btn" id="amrev" data-nav hidden>Review matches</button></div>
 			<div class="note" id="scr_st" style="margin-top:.6rem"></div></div>
 			<div class="panel" id="acct"></div></div>`));
 		/* this PC: lists and pictures fetched here, matched with the SS1's own rules, finished box art sent to
@@ -187,10 +187,21 @@ class AppSettings {
 			const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
 			el.innerHTML = st.running
 				? `<b>${esc(st.status || "Looking up box art")}</b>${st.total ? ` \u00B7 ${n(st.done)} of ${n(st.total)} (${pct}%)` : ""}<br>${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.matched ? `, ${n(st.matched)} matched to base games` : ""}${st.game ? `<br><span class="dim">${esc(st.system || "")} \u203A ${esc(st.game)}</span>` : ""}`
-				: st.started ? `${esc(st.status || "Done")}: ${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.matched ? `, ${n(st.matched)} matched to base games (Library › Match)` : ""}` : "";
+				: st.started ? `${esc(st.status || "Done")}: ${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.matched ? `, ${n(st.matched)} matched to base games` : ""}` : "";
 			if (st.notes && st.notes.length) el.innerHTML += `<br>${st.notes.map(esc).join("<br>")}`;
 			$("#runpc").textContent = st.running ? "Stop" : "Look up on this PC";
+			if (!st.running) amRev();
 		};
+		/* the automatic matches waiting for a look: straight to them */
+		const amRev = async () => {
+			let k = 0;
+			try { k = (await api("/api/automatch")).matches.filter(m => !m.kept).length; } catch (e) {}
+			const b = $("#amrev");
+			if (!b || !alive()) return;
+			b.hidden = !k;
+			b.textContent = `Review ${n(k)} match${k === 1 ? "" : "es"}`;
+		};
+		$("#amrev").onclick = () => push(Match, 1);
 		const scrPoll = async () => {
 			while (alive()) {
 				let j;
