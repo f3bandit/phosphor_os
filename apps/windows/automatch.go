@@ -99,6 +99,7 @@ var (
 	amVerRe     = regexp.MustCompile(`(?i)[\s._-]*v?\d+(\.\d+)+[a-z]?$`)
 	amDotRe     = regexp.MustCompile(`([A-Za-z0-9])\.([A-Za-z])`)
 	amCamelRe   = regexp.MustCompile(`([a-z])([A-Z])`)
+	amDiscRe    = regexp.MustCompile(`(?i)\s*-?\s*\bdisc\s*(\d+)\b`)
 	amRoman     = map[string]string{"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10",
 		"xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15", "xvi": "16"}
 )
@@ -109,6 +110,9 @@ func amClean(t string) string {
 	t = strings.ReplaceAll(t, "_", " ")
 	t = amVerRe.ReplaceAllString(t, "")
 	t = amDotRe.ReplaceAllString(t, "$1 $2")
+	if !strings.Contains(strings.ToLower(t), "(disc") {
+		t = amDiscRe.ReplaceAllString(t, " (Disc $1)") // "Star Ocean - The Second Story - Disc 2" -> "... (Disc 2)"
+	}
 	if !strings.Contains(strings.TrimSpace(t), " ") { // one word: joined by capitals or hyphens
 		t = amCamelRe.ReplaceAllString(t, "$1 $2")
 		if !strings.Contains(t, " ") {
@@ -267,28 +271,54 @@ func amLibBase(g *sgame, lib []amLibGame) *amLibGame {
 
 // ---------- in the lists: the same game under a longer or shorter name ----------
 
-// amLoose (SS1 Tool's lrLoose): the same words without "the", "of" ...; or the same main title when the
-// list has at most two games under it (more means a series: "Castlevania - ..." is several games).
-// exact: the same words; otherwise the same main title only (another subtitle, or none)
-func amLoose(all []*LREntry, title string) (*LREntry, bool) {
+// amLoose (SS1 Tool's lrLoose, tightened): a game in the lists under the same name written differently.
+//
+//	exact: the same words ("Legend of Zelda, The", "Sa-Ga", "II" for "2");
+//	main:  the same main title, when the list has one game under it ("Rockman 7" -> "Rockman 7 - Shukumei
+//	       no Taiketsu!"); more means a series ("Castlevania - ..." is several games);
+//	fuzzy: the same main title and a subtitle sharing most of its words with one game only ("Super Saiyan
+//	       Densetsu" -> "Super Saiya Densetsu").
+//
+// The same disc number and the plain release (fewest tags) are preferred.
+func amLoose(all []*LREntry, title string) (*LREntry, string) {
 	base := amStrip(amClean(title))
 	want := amKey(base)
 	if want == "" {
-		return nil, false
+		return nil, ""
 	}
 	main := amMain(base)
 	mainK := amKey(main)
 	wreg := strings.ToLower(regionOf(title))
+	wdisc := discNo(amClean(title))
+	// a subtitle's telling words: no numbers, no "super" (every other game has those)
+	words := func(t string) []string {
+		var out []string
+		for _, w := range strings.Fields(amWords(t)) {
+			if w != "super" && strings.Trim(w, "0123456789") != "" {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+	var sub []string // our subtitle's words
+	if main != base {
+		sub = words(strings.TrimSpace(strings.TrimPrefix(base, main)))
+	}
+	type sharing struct{ n, theirs int }
 	type cand struct {
 		e     *LREntry
 		score int
 	}
+	score := func(e *LREntry) int {
+		v := amRegionScore(e.Name, wreg) - 8*(len(amTagRe.FindAllString(e.Name, -1))-1)
+		if d := discNo(e.Name); d == wdisc || (wdisc == 0 && d <= 1) {
+			v += 60
+		}
+		return v
+	}
 	var exact []cand
 	groups := map[string][]cand{}
-	tw := map[string]bool{}
-	for _, w := range strings.Fields(amWords(base)) {
-		tw[w] = true
-	}
+	shared := map[string]sharing{}
 	for _, e := range all {
 		if k, _ := amKind(e.Name); k != "" {
 			continue
@@ -296,19 +326,26 @@ func amLoose(all []*LREntry, title string) (*LREntry, bool) {
 		nb := amStrip(e.Name)
 		nk := amKey(nb)
 		if nk == want {
-			exact = append(exact, cand{e, amRegionScore(e.Name, wreg)})
+			exact = append(exact, cand{e, score(e)})
 			continue
 		}
 		if len(mainK) < 4 || amKey(amMain(nb)) != mainK {
 			continue
 		}
-		shared := 0
-		for _, w := range strings.Fields(amWords(nb)) {
-			if tw[w] {
-				shared++
+		if _, ok := groups[nk]; !ok {
+			tw := words(strings.TrimPrefix(nb, amMain(nb)))
+			n := 0
+			for _, w := range sub {
+				for _, x := range tw {
+					if amSameWord(w, x) {
+						n++
+						break
+					}
+				}
 			}
+			shared[nk] = sharing{n, len(tw)}
 		}
-		groups[nk] = append(groups[nk], cand{e, shared*100 + amRegionScore(e.Name, wreg)})
+		groups[nk] = append(groups[nk], cand{e, score(e)})
 	}
 	best := func(cs []cand) *LREntry {
 		var b *LREntry
@@ -321,20 +358,44 @@ func amLoose(all []*LREntry, title string) (*LREntry, bool) {
 		return b
 	}
 	if len(exact) > 0 {
-		return best(exact), true
+		return best(exact), "exact"
 	}
-	limit := 2
-	if main == base {
-		limit = 1
+	if len(groups) == 1 {
+		for k, cs := range groups {
+			// both have a subtitle and they share nothing: another game in the series ("Ziria", "Deden no Den")
+			if len(sub) > 0 && shared[k].theirs > 0 && shared[k].n == 0 {
+				return nil, ""
+			}
+			return best(cs), "main"
+		}
 	}
-	if len(groups) == 0 || len(groups) > limit {
-		return nil, false
+	// several games under the main title: the one whose subtitle shares most of ours, if only one does,
+	// and most of its own words are ours too
+	if len(sub) >= 2 {
+		top, second, pick := 0, 0, ""
+		for k, x := range shared {
+			if x.n > top {
+				second, top, pick = top, x.n, k
+			} else if x.n > second {
+				second = x.n
+			}
+		}
+		if top >= 2 && top > second && top*3 >= len(sub)*2 && top*2 >= shared[pick].theirs {
+			return best(groups[pick]), "fuzzy"
+		}
 	}
-	var all2 []cand
-	for _, cs := range groups {
-		all2 = append(all2, cs...)
+	return nil, ""
+}
+
+// amSameWord: the same word, or one spelt a little shorter ("Saiya" / "Saiyan", "Gokuu" / "Goku")
+func amSameWord(a, b string) bool {
+	if a == b {
+		return true
 	}
-	return best(all2), false
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return len(a) >= 4 && len(b)-len(a) <= 2 && strings.HasPrefix(b, a)
 }
 
 // ---------- the run ----------
@@ -431,7 +492,9 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 	}
 	type try struct{ name, kind string }
 	var tries []try
-	seen := map[string]bool{strings.ToLower(g.Title): true}
+	// its own name counts too: the first lookup didn't search the sources by name (only by checksum,
+	// disc code and libretro's names)
+	seen := map[string]bool{}
 	add := func(n, k string) {
 		if n = strings.TrimSpace(n); n != "" && !seen[strings.ToLower(n)] {
 			seen[strings.ToLower(n)] = true
@@ -467,16 +530,16 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 			if n == "" {
 				continue
 			}
-			if hit, exact := amLoose(all, n); hit != nil {
+			if hit, how := amLoose(all, n); hit != nil {
 				k := kind
 				if k == "" {
 					switch {
-					case exact:
+					case how == "exact":
 						k = "spelling" // the same words, written a little differently ("Legend of Zelda, The", "Sa-Ga")
-					case amMain(base) != base:
+					case how == "main" && amMain(base) != base:
 						k = "related" // its own subtitle, and the list's game another (or none): built on it, most likely
 					default:
-						k = "name" // a longer or shorter name ("Rockman 7" -> "Rockman 7 - Shukumei no Taiketsu!")
+						k = "name" // a longer or shorter name, or a subtitle spelt differently
 					}
 				}
 				add(hit.Name, k)
@@ -486,7 +549,10 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 	}
 	for _, t := range tries {
 		g2 := *g
-		g2.Title, g2.CRC, g2.Serial, g2.Official, g2.LRSys = t.name, "", "", "", ""
+		// the name is given as the official one, so every source looks it up (LaunchBox's alternate names
+		// too: "Treasure of the Rudras"); libretro replaces it with its own when it knows the game. Every
+		// match here is listed for review, so a name lookup is safe.
+		g2.Title, g2.CRC, g2.Serial, g2.Official, g2.LRSys = t.name, "", "", t.name, ""
 		rc, r := s.one(&g2)
 		if rc <= 0 {
 			if rc < 0 {

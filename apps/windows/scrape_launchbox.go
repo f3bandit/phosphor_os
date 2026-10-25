@@ -53,6 +53,8 @@ type lbData struct {
 	Alt    map[string][]int64
 	Images map[int64][]LBImage
 	byNorm map[string][]*LBGame // platform|norm
+	byKey  map[string][]*LBGame // platform|amKey: no "the", "of", spaces or hyphens, II = 2
+	altKey map[string][]int64   // amKey of an alternate name
 }
 
 var lb struct {
@@ -71,6 +73,18 @@ func (d *lbData) index() {
 	}
 	for _, l := range d.byNorm {
 		sort.Slice(l, func(a, b int) bool { return l[a].Order < l[b].Order })
+	}
+	// the same names compared loosely: "Treasure Of Rudras" finds the alternate name "Treasure of the Rudras"
+	d.byKey, d.altKey = map[string][]*LBGame{}, map[string][]int64{}
+	for _, g := range d.Games {
+		if k := amKey(g.Norm); k != "" {
+			d.byKey[g.Platform+"|"+k] = append(d.byKey[g.Platform+"|"+k], g)
+		}
+	}
+	for n, ids := range d.Alt {
+		if k := amKey(n); k != "" {
+			d.altKey[k] = append(d.altKey[k], ids...)
+		}
 	}
 }
 
@@ -285,6 +299,18 @@ func lbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 	}
 	for _, id := range d.Alt[norm] {
 		consider(d.Games[id])
+	}
+	if best == nil { // the same name written a little differently
+		if k := amKey(norm); k != "" {
+			for _, p := range plats {
+				for _, x := range d.byKey[p+"|"+k] {
+					consider(x)
+				}
+			}
+			for _, id := range d.altKey[k] {
+				consider(d.Games[id])
+			}
+		}
 	}
 	if best == nil {
 		return 0

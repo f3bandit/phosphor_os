@@ -3,6 +3,30 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.33
+
+### New
+- **Better matching to base games** (Phosphor for Windows 0.2.23), from a dry run against a real library:
+  - names made readable first: underscores, dots, joined words and trailing version numbers
+    (`Zeldas.Adventure.DX.v2.0.0`, `SuperMarioBrosMini`, `Glory Hunters 1.3`), a system's short name stuck
+    on the end (`kid-icarusnes`), "- Disc 2";
+  - compared loosely: Roman and Arabic numbers the same (Final Fantasy 2 / II), hyphens and spaces ignored
+    (Romancing SaGa / Sa-Ga, Dragon-Ball), a subtitle spelt a little differently (Super Saiyan / Saiya
+    Densetsu); a main title alone only when the lists have one game under it, and never when both
+    subtitles share nothing (Tengai Makyou - Ziria isn't Deden no Den); the same disc number first;
+  - more tags: `(English v1.2)`, ENG DUB, Rebalanced, Major Fixes, Black Label, SA-1, Special Version,
+    Arcade Colors, 6-Button Support, Master Patched, Un-Worked Designs;
+  - every source is asked by name while matching (LaunchBox's alternate names too, compared loosely:
+    Treasure Of Rudras -> Rudra no Hihou), the game's own name included; libretro's Satellaview list for
+    SNES (also on the SS1).
+- **Not games**: boot files, test ROMs, cheat discs and tools (`mister-boot`, BtnTest, PadTest, tonyhax,
+  UNIROM, GameShark, service discs, trainers) are set aside by matching, or by hand with **Not a game**:
+  out of Not found, no box art looked up, still in the library. Library › Match has a **Not games** tab to
+  put one back. phosphord: `not_game`, filter `not_game`.
+
+### Fixed
+- Library › Match: the tab could switch back to Not found by itself while a game was chosen.
+
 ## 0.27.32
 
 ### New
