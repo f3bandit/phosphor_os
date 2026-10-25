@@ -181,12 +181,12 @@ func TestFanart(t *testing.T) {
 		{"Roll-chan 6 (MM8)", "Roll-chan 6"},
 		{"Roll-chan No Constancy (v1.3)(normal)", "Roll-chan No Constancy"},
 	} {
-		g := m["NES|"+fanKey(c.title)]
+		g := fanFind(m, "NES", c.title)
 		if g == nil || g.Names[0] != c.want {
 			t.Errorf("%q: got %v, want %q", c.title, g, c.want)
 		}
 	}
-	if m["SNES|"+fanKey("Roll-chan 2")] != nil {
+	if fanFind(m, "SNES", "Roll-chan 2") != nil {
 		t.Error("fan art is per system")
 	}
 }

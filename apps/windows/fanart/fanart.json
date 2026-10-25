@@ -98,6 +98,737 @@
    "hack_by": "Sfon",
    "cover_from": "https://cdromance.org/nes-roms/roll-chan-no-constancy-hack/",
    "developer": "Sfon"
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS Dynami Tracer (English v1.0)"
+   ],
+   "art": "https://images.launchbox-app.com/r2_08cf8e41-7b23-417f-8e5e-7559ac4581a9.jpg",
+   "pack": "snes-bs-dynami-tracer-english-v1-0.jpg",
+   "hack_by": "Krokodyl (translation)",
+   "cover_from": "https://cdromance.org/snes-rom/dynami-tracer-japan/",
+   "description": "Translation of Dynami Tracer (Satellaview, Square 1996). By Krokodyl (translation)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS Radical Dreamers"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2021/05/Radical-Dreamers-snes-cover.jpg",
+   "pack": "snes-bs-radical-dreamers.jpg",
+   "hack_by": "Demiforce (English v1.4)",
+   "cover_from": "https://cdromance.org/snes-rom/radical-dreamers/",
+   "description": "Translation of Radical Dreamers: Nusumenai Houseki (Satellaview). By Demiforce (English v1.4)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS Super Famicom Wars"
+   ],
+   "art": "https://images.launchbox-app.com/b21b3d24-b740-4ae2-a201-1f5e34cc919f.png",
+   "pack": "snes-bs-super-famicom-wars.jpg",
+   "hack_by": "Intelligent Systems / Nintendo",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/169957-super-famicom-wars-bs-version-hagoromojima",
+   "description": "Satellaview game: Super Famicom Wars BS Ban: Hagoromo-jima. By Intelligent Systems / Nintendo."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS The Legend of Zelda Ancient Stone Tablets (Part 1)"
+   ],
+   "art": "https://images.launchbox-app.com/r2_7ba12f57-613d-4bf8-98de-3b8a48b8ac03.png",
+   "pack": "snes-bs-the-legend-of-zelda-ancient-stone-tablets-part-1.jpg",
+   "hack_by": "Euclid (translation)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/375335-bs-zelda-no-densetsu-inishie-no-sekiban-dai-1-wa",
+   "description": "Translation of BS Zelda no Densetsu: Inishie no Sekiban, part 1. By Euclid (translation)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS The Legend of Zelda Ancient Stone Tablets (Part 2)"
+   ],
+   "art": "https://images.launchbox-app.com/r2_12284191-67c5-4b8f-b3eb-bf32e504d371.png",
+   "pack": "snes-bs-the-legend-of-zelda-ancient-stone-tablets-part-2.jpg",
+   "hack_by": "Euclid (translation)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/76710-bs-zelda-no-densetsu-inishie-no-sekiban-dai-2-wa",
+   "description": "Translation of BS Zelda no Densetsu: Inishie no Sekiban, part 2. By Euclid (translation)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS The Legend of Zelda Ancient Stone Tablets (Part 3)"
+   ],
+   "art": "https://images.launchbox-app.com/r2_c56bd8e7-9868-4221-8e64-2d17926f0732.png",
+   "pack": "snes-bs-the-legend-of-zelda-ancient-stone-tablets-part-3.jpg",
+   "hack_by": "Euclid (translation)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/76752-bs-zelda-no-densetsu-inishie-no-sekiban-dai-3-wa",
+   "description": "Translation of BS Zelda no Densetsu: Inishie no Sekiban, part 3. By Euclid (translation)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS The Legend of Zelda Ancient Stone Tablets (Part 4)"
+   ],
+   "art": "https://images.launchbox-app.com/r2_a1560d6c-0018-4a70-8a1d-3c49714585ee.png",
+   "pack": "snes-bs-the-legend-of-zelda-ancient-stone-tablets-part-4.jpg",
+   "hack_by": "Euclid (translation)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/76753-bs-zelda-no-densetsu-inishie-no-sekiban-dai-4-wa",
+   "description": "Translation of BS Zelda no Densetsu: Inishie no Sekiban, part 4. By Euclid (translation)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS Treasure Conflix"
+   ],
+   "art": "https://images.launchbox-app.com/d7cce3b2-3248-4ac7-94c7-7a6a49b34ecf.jpg",
+   "pack": "snes-bs-treasure-conflix.jpg",
+   "hack_by": "Krokodyl (translation v1.1)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/408824-treasure-conflix",
+   "description": "Translation of Treasure Conflix (Satellaview, Square 1996). By Krokodyl (translation v1.1)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "BS Zelda no Densetsu (3rd Quest)"
+   ],
+   "art": "https://images.launchbox-app.com/r2_1ebf6c4e-c543-428c-98f1-62ae35b19415.jpg",
+   "pack": "snes-bs-zelda-no-densetsu-3rd-quest.jpg",
+   "hack_by": "Con (on Dreamer_Nom's timer patch)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/159704-bs-the-legend-of-zelda-third-quest",
+   "description": "Hack of BS Zelda no Densetsu (The Legend of Zelda - Third Quest). By Con (on Dreamer_Nom's timer patch)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Castlevania"
+   ],
+   "art": "https://images.launchbox-app.com/0c08d143-256e-4fbf-9bd7-50f2999da1b7.png",
+   "pack": "snes-castlevania.jpg",
+   "hack_by": "Rumbleminze (port)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/425172-castlevania",
+   "description": "Port of Castlevania (NES) to SNES with MSU-1. By Rumbleminze (port)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Chatting Parodius Live! (Fastrom)"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2023/03/4290782-jikkyo-oshaberi-parodius-snes-front-cover.jpg",
+   "pack": "snes-chatting-parodius-live-fastrom.jpg",
+   "hack_by": "advancedpillow (translation); FastROM by kandowontu",
+   "cover_from": "https://cdromance.org/snes-rom/jikkyou-oshaberi-parodius/",
+   "description": "Translation of Jikkyou Oshaberi Parodius + FastROM. By advancedpillow (translation); FastROM by kandowontu."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Demon Child Zenki - Battle Raiden"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2016/03/KDZRR-front-e1454969079506-2.jpg",
+   "pack": "snes-demon-child-zenki-battle-raiden.jpg",
+   "hack_by": "Dynamic-Designs",
+   "cover_from": "https://cdromance.org/snes-rom/demon-child-zenki-battle-raiden/",
+   "description": "Translation of Kishin Douji Zenki: Rettou Raiden. By Dynamic-Designs."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Der Langrisser"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2016/03/58600-der-langrisser-snes-front-cover1.jpg",
+   "pack": "snes-der-langrisser.jpg",
+   "hack_by": "Near's team; v1.31 by Trysdyn",
+   "cover_from": "https://cdromance.org/snes-rom/der-langrisser/",
+   "description": "Translation of Der Langrisser. By Near's team; v1.31 by Trysdyn."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Dragon Quest 1 & 2"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2016/02/25398_front.jpg",
+   "pack": "snes-dragon-quest-1-2.jpg",
+   "hack_by": "RPGONE (translation); addendum by Rod Merida",
+   "cover_from": "https://cdromance.org/snes-rom/dragon-quest-i-and-ii-english-patched/",
+   "description": "Translation of Dragon Quest I & II (SFC). By RPGONE (translation); addendum by Rod Merida."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Dragon Squadron - Danzarb"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2016/03/2638084-ryuki_heidan_danzalv_sfc1.jpg",
+   "pack": "snes-dragon-squadron-danzarb.jpg",
+   "hack_by": "Aeon Genesis",
+   "cover_from": "https://cdromance.org/snes-rom/ryuuki-heidan-danzarb-english-patched/",
+   "description": "Translation of Ryuuki Heidan Danzarb. By Aeon Genesis."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Dragon-Ball-Z - Super Gokuden 2"
+   ],
+   "art": "https://images.launchbox-app.com/54f788b1-1778-4760-ba5f-56a86af8f9ab.png",
+   "pack": "snes-dragon-ball-z-super-gokuden-2.jpg",
+   "hack_by": "translation: romhacking.net #316 (author not confirmed)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/3388-dragon-ball-z-super-goku-den-kakusei-hen",
+   "description": "Translation of Dragon Ball Z: Super Gokuden: Kakusei-hen. By translation: romhacking.net #316 (author not confirmed)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "EarthBound Beginnings (USA)"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2026/06/Front.jpg",
+   "pack": "snes-earthbound-beginnings-usa.jpg",
+   "hack_by": "Gabbi and the EBBR team",
+   "cover_from": "https://retrogametalk.com/repo/snes-rom/earthbound-beginnings/",
+   "description": "EarthBound Beginnings SNES remake (Mother 1 in the EarthBound engine). By Gabbi and the EBBR team."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Emiko's Dream SFC Edition (v1.1)"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2024/08/Umihara_Kawase_-_Emikos_Dream_Cover.jpg",
+   "pack": "snes-emiko-s-dream-sfc-edition-v1-1.jpg",
+   "hack_by": "MariallenaHax (hack); box art by Don Patch",
+   "cover_from": "https://cdromance.org/snes-rom/emikos-dream/",
+   "description": "Hack of Umihara Kawase. By MariallenaHax (hack); box art by Don Patch."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Fire Emblem 4"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2015/05/24221_front.jpg",
+   "pack": "snes-fire-emblem-4.jpg",
+   "hack_by": "Dark Twilkitri / Gharnef / DDSTranslation (Project Naga)",
+   "cover_from": "https://cdromance.org/snes-rom/fire-emblem-seisen-no-keifu/",
+   "description": "Translation of Fire Emblem: Seisen no Keifu. By Dark Twilkitri / Gharnef / DDSTranslation (Project Naga)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Kunio-kun no Dodge Ball - Zenin Shuugou!"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2015/08/42505_front.jpg",
+   "pack": "snes-kunio-kun-no-dodge-ball-zenin-shuugou.jpg",
+   "hack_by": "Azelistic (translation v1.00)",
+   "cover_from": "https://cdromance.org/snes-rom/kunio-kun-no-dodge-ball-zenin-shuugou-usa/",
+   "description": "Translation of Kunio-kun no Dodge Ball da yo Zenin Shuugou!. By Azelistic (translation v1.00)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Laplace's Demon"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2018/10/Laplace-no-Ma.jpg",
+   "pack": "snes-laplace-s-demon.jpg",
+   "hack_by": "Aeon Genesis (translation v2.00)",
+   "cover_from": "https://cdromance.org/snes-rom/laplaces-demon-english-patched/",
+   "description": "Translation of Laplace no Ma. By Aeon Genesis (translation v2.00)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Macross Scrambled Valkyrie Plus (sram)"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2018/10/37528_front.jpg",
+   "pack": "snes-macross-scrambled-valkyrie-plus-sram.jpg",
+   "hack_by": "blizzz, advancedpillow",
+   "cover_from": "https://cdromance.org/snes-rom/macross-scrambled-valkyrie-plus-sram-overtech-edition-hack/",
+   "description": "Hack of Choujikuu Yousai Macross: Scrambled Valkyrie. By blizzz, advancedpillow."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Majyuo King of Demons"
+   ],
+   "art": "https://images.launchbox-app.com/r2_f11537ac-722d-48c5-b12c-062107c6767b.jpg",
+   "pack": "snes-majyuo-king-of-demons.jpg",
+   "hack_by": "Aeon Genesis (translation 'King of Demons')",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/24822-majuu-ou",
+   "description": "Translation of Majuu Ou. By Aeon Genesis (translation 'King of Demons')."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Micro Mages"
+   ],
+   "art": "https://images.launchbox-app.com/83671951-e714-4d77-ae09-882cd019047e.jpg",
+   "pack": "snes-micro-mages.jpg",
+   "hack_by": "Morphcat Games",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/424472-micro-mages",
+   "description": "Homebrew (SNES port of the NES game). By Morphcat Games."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Micro Mages Second Quest"
+   ],
+   "art": "https://images.launchbox-app.com/128fc99a-9fa0-436f-b83a-08992a5e58d1.jpg",
+   "pack": "snes-micro-mages-second-quest.jpg",
+   "hack_by": "Morphcat Games",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/424471-micro-mages-second-quest",
+   "description": "Homebrew (SNES port). By Morphcat Games."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Mobile Suit Gundam Wing - Endless Duel (Fastrom)"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2016/12/gw1.jpg",
+   "pack": "snes-mobile-suit-gundam-wing-endless-duel-fastrom.jpg",
+   "hack_by": "Aeon Genesis; FastROM by kandowontu",
+   "cover_from": "https://cdromance.org/snes-rom/mobile-suit-gundam-wing-endless-duel/",
+   "description": "Translation of Shin Kidou Senki Gundam W: Endless Duel + FastROM. By Aeon Genesis; FastROM by kandowontu."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Mysterious Dungeon 2 - Shiren the Wanderer"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2026/07/2703916-fushigishiren_sfc1-1.jpg",
+   "pack": "snes-mysterious-dungeon-2-shiren-the-wanderer.jpg",
+   "hack_by": "Aeon Genesis; English Addendum by iggypoop",
+   "cover_from": "https://cdromance.org/snes-rom/shiren-2/",
+   "description": "Translation of Fushigi no Dungeon 2: Fuurai no Shiren. By Aeon Genesis; English Addendum by iggypoop."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Nankoku Shounen Papuwa-kun"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2018/11/306332_front.jpg",
+   "pack": "snes-nankoku-shounen-papuwa-kun.jpg",
+   "hack_by": "F.H. (v1.0 Beta)",
+   "cover_from": "https://cdromance.org/snes-rom/nangoku-shounen-papuwa-kun-japan/",
+   "description": "Translation of Nangoku Shounen Papuwa-kun. By F.H. (v1.0 Beta)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Return of the Dark Sorcerer"
+   ],
+   "art": "https://images.launchbox-app.com/b205ff62-2203-4968-ad4d-c72b1e1a1d3f.jpg",
+   "pack": "snes-return-of-the-dark-sorcerer.jpg",
+   "hack_by": "Gi Nattak",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/124689-final-fantasy-vi-return-of-the-dark-sorcerer",
+   "description": "Hack of Final Fantasy VI. By Gi Nattak."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Super Metroid Ascent"
+   ],
+   "art": "https://images.launchbox-app.com/176f0106-0dc8-4053-a693-344c7fda825b.png",
+   "pack": "snes-super-metroid-ascent.jpg",
+   "hack_by": "Benox50",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/133529-super-metroid-ascent",
+   "description": "Hack of Super Metroid. By Benox50."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Super Zero Mission"
+   ],
+   "art": "https://images.launchbox-app.com/0c108bb3-a635-4234-bba0-9a7f2e28342e.png",
+   "pack": "snes-super-zero-mission.jpg",
+   "hack_by": "Metroid Construction hack #19 (author not confirmed)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/88378",
+   "description": "Hack of Super Metroid. By Metroid Construction hack #19 (author not confirmed)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "The Legend of Zelda SNES"
+   ],
+   "art": "https://images.launchbox-app.com/f0674dbc-736d-4b16-bd16-9c255c94bd3c.png",
+   "pack": "snes-the-legend-of-zelda-snes.jpg",
+   "hack_by": "infidelity",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/403157-the-legend-of-zelda",
+   "description": "Port of The Legend of Zelda (NES) to SNES with MSU-1. By infidelity."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "The Magical Land of Wozz"
+   ],
+   "art": "https://images.launchbox-app.com/8086d3ce-f471-4b16-bd18-ba6122b1a345.jpg",
+   "pack": "snes-the-magical-land-of-wozz.jpg",
+   "hack_by": "Translation Corporation (Nightcrawler)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/14325-chou-mahou-tairiku-wozz",
+   "description": "Translation of Chou Mahou Tairiku Wozz. By Translation Corporation (Nightcrawler)."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "Treasure Of Rudras"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2025/07/Treasure-of-the-Rudras-by-Dyne.jpg",
+   "pack": "snes-treasure-of-rudras.jpg",
+   "hack_by": "Aeon Genesis; cover art by Dyne",
+   "cover_from": "https://cdromance.org/snes-rom/rudra-no-hihou/",
+   "description": "Translation of Rudra no Hihou. By Aeon Genesis; cover art by Dyne."
+  },
+  {
+   "sys": "SNES",
+   "names": [
+    "kid-icarusnes"
+   ],
+   "art": "https://images.launchbox-app.com/f9dd301e-9307-474f-957a-23b84c4b4fae.png",
+   "pack": "snes-kid-icarusnes.jpg",
+   "hack_by": "rumbleminze",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/424317-kid-icarus",
+   "description": "Port of Kid Icarus (NES) to SNES with MSU-1. By rumbleminze."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "2021 Moon Escape"
+   ],
+   "art": "https://images.launchbox-app.com/5d845144-6ac6-43db-b9d4-12a974e318f6.jpg",
+   "pack": "gameboy-2021-moon-escape.jpg",
+   "hack_by": "Mike Yamato (Incube8 Games)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/375600-2021-moon-escape",
+   "description": "Homebrew. By Mike Yamato (Incube8 Games)."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "AkiraGBC1.35"
+   ],
+   "art": "https://img.itch.zone/aW1nLzE0MzI0ODQ0LnBuZw==/original/ULLdTB.png",
+   "pack": "gameboy-akiragbc1-35.jpg",
+   "hack_by": "KanedaAkira (rigbyisagoodboy)",
+   "cover_from": "https://rigbyisagoodboy.itch.io/akira-gbc",
+   "description": "Homebrew (Akira DX). By KanedaAkira (rigbyisagoodboy)."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Atelier Marie GB (English v1.0)"
+   ],
+   "art": "https://images.launchbox-app.com/ce82a4ae-bb2f-4041-a025-c2b20296fbf8.jpg",
+   "pack": "gameboy-atelier-marie-gb-english-v1-0.jpg",
+   "hack_by": "mayday (translation); game by Imagineer/Gust",
+   "cover_from": "https://cdromance.org/gameboy-color-roms/marie-no-atelier-gb-english-patched/",
+   "description": "Translation of Marie no Atelier GB. By mayday (translation); game by Imagineer/Gust."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "ENCELADUS"
+   ],
+   "art": "https://img.itch.zone/aW1nLzEzMzUxNTQ2LnBuZw==/original/vHK3xP.png",
+   "pack": "gameboy-enceladus.jpg",
+   "hack_by": "Zeitfresser Games (mr.papshmir)",
+   "cover_from": "https://mrpapshmir.itch.io/enceladus",
+   "description": "Homebrew. By Zeitfresser Games (mr.papshmir)."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Glory Hunters 1.3"
+   ],
+   "art": "https://img.itch.zone/aW1nLzE1ODMyNTkyLnBuZw==/original/Tcdbus.png",
+   "pack": "gameboy-glory-hunters-1-3.jpg",
+   "hack_by": "2think design studio",
+   "cover_from": "https://2think.itch.io/glory-hunters",
+   "description": "Homebrew. By 2think design studio."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Metroid Dread Demake"
+   ],
+   "art": "https://images.launchbox-app.com/36e219fa-39b1-41d2-b30a-54d05cacee3f.png",
+   "pack": "gameboy-metroid-dread-demake.jpg",
+   "hack_by": "Elvies",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/430783-metroid-dread-demake",
+   "description": "Homebrew. By Elvies."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Pokemon Prism"
+   ],
+   "art": "https://images.launchbox-app.com/a75aec23-ffff-4e4c-8c8f-7f968bd3b842.png",
+   "pack": "gameboy-pokemon-prism.jpg",
+   "hack_by": "Koolboyman / Rainbow Devs",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/73007-pokmon-prism",
+   "description": "Hack of Pokemon Crystal. By Koolboyman / Rainbow Devs."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Repugnant Bounty"
+   ],
+   "art": "https://images.launchbox-app.com/61edf343-4d8b-471b-b40a-1f2331782b04.jpg",
+   "pack": "gameboy-repugnant-bounty.jpg",
+   "hack_by": "Starlab Games (skittlesfiddles)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/169143-repugnant-bounty",
+   "description": "Homebrew. By Starlab Games (skittlesfiddles)."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Zeldas.Adventure.DX.v2.0.0"
+   ],
+   "art": "https://img.itch.zone/aW1nLzIzOTg2MjA5LnBuZw==/original/6ZmRX5.png",
+   "pack": "gameboy-zeldas-adventure-dx-v2-0-0.jpg",
+   "hack_by": "john-lay",
+   "cover_from": "https://john-lay.itch.io/zeldas-adventure",
+   "description": "Homebrew (Zelda's Adventure demake). By john-lay."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "tinkercore"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2025/01/Tinkercore.jpg",
+   "pack": "gameboy-tinkercore.jpg",
+   "hack_by": "Spicyfuse (box art by teone)",
+   "cover_from": "https://cdromance.org/gameboy-color-roms/tinkercore-homebrew-gbc/",
+   "description": "Homebrew. By Spicyfuse (box art by teone)."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Castlevania Aria of Sorrow - Persephone"
+   ],
+   "art": "https://images.launchbox-app.com/12d89d11-acbf-44dd-b804-41be9b29ee14.jpg",
+   "pack": "gba-castlevania-aria-of-sorrow-persephone.jpg",
+   "hack_by": "caminopreacher",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/159041-castlevania-aria-of-sorrow-persephone",
+   "description": "Hack of Castlevania: Aria of Sorrow. By caminopreacher."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Fire Emblem - The Binding Blade"
+   ],
+   "art": "https://images.launchbox-app.com/952174ca-ddd5-4ccb-8e53-0d0eeb3f4c99.png",
+   "pack": "gba-fire-emblem-the-binding-blade.jpg",
+   "hack_by": "Dark Twilkitri, revised by gringe",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/10735-fire-emblem-the-binding-blade",
+   "description": "Translation of Fire Emblem: Fuuin no Tsurugi. By Dark Twilkitri, revised by gringe."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Glory Hunters 1.3"
+   ],
+   "art": "https://img.itch.zone/aW1nLzE1ODMyNTkyLnBuZw==/original/Tcdbus.png",
+   "pack": "gba-glory-hunters-1-3.jpg",
+   "hack_by": "2think design studio",
+   "cover_from": "https://2think.itch.io/glory-hunters",
+   "description": "Homebrew (a Game Boy game in the GBA folder). By 2think design studio."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Pokemon Unbound Battle Frontier"
+   ],
+   "art": "https://gamesdb-images.launchbox.gg/r2_4f39f4d2-001d-4b4e-b2e5-c7d6148ea6e0.png",
+   "pack": "gba-pokemon-unbound-battle-frontier.jpg",
+   "hack_by": "Skeli",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/123415-pokmon-unbound-battle-frontier",
+   "description": "Hack of Pokemon FireRed. By Skeli."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Pokémon Unbound"
+   ],
+   "art": "https://images.launchbox-app.com/9b162cca-f021-4d05-98bd-de0fd49eb8f4.png",
+   "pack": "gba-pok-mon-unbound.jpg",
+   "hack_by": "Skeli",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/154122-pokmon-unbound",
+   "description": "Hack of Pokemon FireRed. By Skeli."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Super Metroid - GBA edition"
+   ],
+   "art": "https://images.launchbox-app.com/5d3aea3d-55c6-42b9-995b-9edc3ec83245.jpg",
+   "pack": "gba-super-metroid-gba-edition.jpg",
+   "hack_by": "The Brothers Crafters",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/162508-super-metroid-gba-edition",
+   "description": "Hack of Metroid: Zero Mission recreating Super Metroid. By The Brothers Crafters."
+  },
+  {
+   "sys": "Genesis",
+   "names": [
+    "Barver Battle Saga - Tai Kong Zhan Shi"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2024/05/Barver-Battle-Saga-Tai-Kong-Zhan-Shi.jpg",
+   "pack": "genesis-barver-battle-saga-tai-kong-zhan-shi.jpg",
+   "hack_by": "Djinn (English patch v1.00, 2010)",
+   "cover_from": "https://retrogametalk.com/repo/sega_genesis_roms/barver-battle-saga-tai-kong-zhan-shi-english-patched/",
+   "description": "Translation of Brave Battle Saga: Tai Kong Zhan Shi (1996 Chinese unlicensed Mega Drive RPG by Chuanpu). By Djinn (English patch v1.00, 2010)."
+  },
+  {
+   "sys": "Genesis",
+   "names": [
+    "Phantasy Star Gen4 - Purist",
+    "Phantasy Star Gen4 - Working Designs"
+   ],
+   "art": "https://images.launchbox-app.com/d86d9369-2980-4f3f-93c7-749556ba15a9.jpg",
+   "pack": "genesis-phantasy-star-gen4-purist.jpg",
+   "hack_by": "gamesdonelegit",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/156876-phantasy-star-generation4",
+   "description": "Hack of Phantasy Star IV (Phantasy Star Generation 4 relocalization, Purist). By gamesdonelegit."
+  },
+  {
+   "sys": "Genesis",
+   "names": [
+    "Truxton-Tatsujin - Arcade Colors-Sprites-Backgrounds-Sounds"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2021/06/21677_front.jpg",
+   "pack": "genesis-truxton-tatsujin-arcade-colors-sprites-backgrounds-s.jpg",
+   "hack_by": "fusaru, Dauntless",
+   "cover_from": "https://retrogametalk.com/repo/sega_genesis_roms/truxton-tatsujin-arcade-colors-sprites-backgrounds-sounds-hack/",
+   "description": "Hack of Truxton (arcade colors, sprites, backgrounds, sounds). By fusaru, Dauntless."
+  },
+  {
+   "sys": "Genesis",
+   "names": [
+    "doukutsu-en"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2022/05/Cave-Story-MD-Doukutsu-Monogatari-SEGA-Genesis.jpg",
+   "pack": "genesis-doukutsu-en.jpg",
+   "hack_by": "andwn; original by Studio Pixel",
+   "cover_from": "https://cdromance.org/sega_genesis_roms/cave-story-md-doukutsu-monogatari/",
+   "description": "Homebrew: Cave Story MD (fan port of Cave Story). By andwn; original by Studio Pixel."
+  },
+  {
+   "sys": "N64",
+   "names": [
+    "Mayjinsen 3"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2024/03/Mayjinsen-3-English.jpg",
+   "pack": "n64-mayjinsen-3.jpg",
+   "hack_by": "Zoinkity (English patch v2.0)",
+   "cover_from": "https://retrogametalk.com/repo/n64-roms/mayjinsen-3-english-patched/",
+   "description": "Translation of Mayjinsen 3 (Seta 2000, Aleck 64 shogi). By Zoinkity (English patch v2.0)."
+  },
+  {
+   "sys": "N64",
+   "names": [
+    "Shiren 2 Oni Invasion! Shiren Castle!"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2021/09/310419_front.jpg",
+   "pack": "n64-shiren-2-oni-invasion-shiren-castle.jpg",
+   "hack_by": "ozidual (English patch v1.02)",
+   "cover_from": "https://retrogametalk.com/repo/n64-roms/shiren-the-wanderer-2-english-patched/",
+   "description": "Translation of Fushigi no Dungeon: Fuurai no Shiren 2. By ozidual (English patch v1.02)."
+  },
+  {
+   "sys": "N64",
+   "names": [
+    "Sin and Punishment - Successor of the Earth"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2021/10/10833_front.jpg",
+   "pack": "n64-sin-and-punishment-successor-of-the-earth.jpg",
+   "hack_by": "Zoinkity (English patch v1.0)",
+   "cover_from": "https://retrogametalk.com/repo/n64-roms/sin-and-punishment-successor-of-the-earth-english-patched/",
+   "description": "Translation of Tsumi to Batsu: Chikyuu no Keishousha. By Zoinkity (English patch v1.0)."
+  },
+  {
+   "sys": "N64",
+   "names": [
+    "riqa-a_14_02_2000",
+    "riqafinal1_24_03_2000",
+    "riqafinal1_28_05_2000",
+    "riqafinal2_27_03_2000 [13_27]"
+   ],
+   "art": "https://images.launchbox-app.com/3c610aee-f66e-47bb-9215-92a21f779e2a.jpg",
+   "pack": "n64-riqa-a-14-02-2000.jpg",
+   "hack_by": "Bits Studios (fan-made box art on LaunchBox)",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/395890-riqa",
+   "description": "Demo: RiQa prototype (Bits Studios, cancelled). By Bits Studios (fan-made box art on LaunchBox)."
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Recca - Barrage Limit Change",
+    "Recca - Pure"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2023/03/Summer-Carnival-92-Recca-Japan.jpg",
+   "pack": "nes-recca-barrage-limit-change.jpg",
+   "hack_by": "N·K (v1.0, 2021)",
+   "cover_from": "https://cdromance.org/nes-roms/recca-barrage-limit-change-hack/",
+   "description": "Hack of Summer Carnival '92: Recca (bullet limit raised). By N·K (v1.0, 2021)."
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "overobj"
+   ],
+   "art": "https://images.launchbox-app.com/bb5e3a84-3136-4507-a7f7-e53b302ad9c5.jpg",
+   "pack": "nes-overobj.jpg",
+   "hack_by": "Little Sound Soft",
+   "cover_from": "https://gamesdb.launchbox-app.com/games/details/370443-overobj",
+   "description": "Homebrew: Over Obj (2023 Famicom shmup). By Little Sound Soft."
+  },
+  {
+   "sys": "SMS",
+   "names": [
+    "smb"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2026/04/You_Doodle_2026-04-04T15_48_29Z.jpg",
+   "pack": "sms-smb.jpg",
+   "hack_by": "LackofTrack (v1.10, 2026)",
+   "cover_from": "https://retrogametalk.com/repo/sms_roms/super-mario-bros-homebrew-demo-sega-master-system/",
+   "description": "Homebrew: Super Mario Bros. port to the Master System. By LackofTrack (v1.10, 2026)."
+  },
+  {
+   "sys": "TGFX16",
+   "names": [
+    "The Fortress of Necros (English v1.3)"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2026/03/rgt_featured_1_1772645904512-1.jpg",
+   "pack": "tgfx16-the-fortress-of-necros-english-v1-3.jpg",
+   "hack_by": "washbear (v1.3, 2026)",
+   "cover_from": "https://cdromance.org/turbografx-16/necros-no-yousai-english-patched/",
+   "description": "Translation of Necros no Yousai (ASK Kodansha 1990). By washbear (v1.3, 2026)."
+  },
+  {
+   "sys": "TGFX16CD",
+   "names": [
+    "Tengai Makyou - Ziria (English v1.2)"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2022/12/179835-tengai-makyo-ziria-turbografx-cd-front-cover.jpg",
+   "pack": "tgfx16cd-tengai-makyou-ziria-english-v1-2.jpg",
+   "hack_by": "LIPEMCO! (v1.2, 2024)",
+   "cover_from": "https://cdromance.org/turbografx-cd/far-east-of-eden-tengai-makyou-ziria-japan/",
+   "description": "Translation of Tengai Makyou: Ziria (Hudson 1989). By LIPEMCO! (v1.2, 2024)."
+  },
+  {
+   "sys": "GAMEBOY",
+   "names": [
+    "Stardust"
+   ],
+   "art": "https://img.itch.zone/aW1nLzcwNzk0MjUucG5n/original/GEEtVC.png",
+   "pack": "gameboy-stardust.jpg",
+   "hack_by": "Dan Cramp; music and sound by Adam Audio",
+   "cover_from": "https://dancramp.itch.io/gbjam9",
+   "description": "Homebrew: sci-fi action adventure made in GB Studio for GB Jam 9. By Dan Cramp; music and sound by Adam Audio."
+  },
+  {
+   "sys": "GBA",
+   "names": [
+    "Super Makai Village Girls Love Edition"
+   ],
+   "art": "https://thumbnails.libretro.com/Nintendo%20-%20Game%20Boy%20Advance/Named_Boxarts/Super%20Ghouls'n%20Ghosts%20(USA,%20Europe).png",
+   "pack": "gba-super-makai-village-girls-love-edition.jpg",
+   "hack_by": "hack author unknown; original game by Capcom",
+   "cover_from": "https://thumbnails.libretro.com/Nintendo%20-%20Game%20Boy%20Advance/Named_Boxarts/",
+   "description": "Hack of Super Ghouls'n Ghosts (GBA); cover is the original game's box. Original game by Capcom."
   }
  ]
 }
