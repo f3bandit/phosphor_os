@@ -23,6 +23,10 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - Settings › Box art: a **Review N matches** button under the lookup buttons, straight to the matches
   (Phosphor for Windows 0.2.21).
 
+### Fixed
+- Phosphor for Windows 0.2.22: a tile under the mouse turned see-through, showing the background texture
+  through it; the hover tint now sits on the tile's own colour.
+
 ## 0.27.31
 
 ### Changed

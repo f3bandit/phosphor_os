@@ -218,7 +218,9 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 @media (max-width: 1100px) { .dash { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* the pointer shows what it's over, without moving the highlight */
 @media (hover: hover) {
-	.row[data-nav]:not(.f):hover, .card[data-nav]:not(.f):hover, .tool[data-nav]:not(.f):hover, .cand[data-nav]:not(.f):hover { background: rgba(255, 255, 255, .04); }
+	.row[data-nav]:not(.f):hover, .card[data-nav]:not(.f):hover, .tool[data-nav]:not(.f):hover, .cand[data-nav]:not(.f):hover {
+		background-image: linear-gradient(rgba(255, 255, 255, .04), rgba(255, 255, 255, .04));   /* over the tile's own colour: the texture never shows through */
+	}
 	.btn:not(.f):not(.primary):hover { border-color: var(--dim); }
 	[data-nav] { cursor: pointer; }
 	input[data-nav], textarea[data-nav] { cursor: text; }
