@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestAmKind(t *testing.T) {
 	for _, c := range []struct{ in, kind, tag string }{
@@ -163,6 +168,50 @@ func TestAmKey(t *testing.T) {
 	} {
 		if k, _ := amKind(c.in); k != c.kind {
 			t.Errorf("%q: %q, want %q", c.in, k, c.kind)
+		}
+	}
+}
+
+func TestFanart(t *testing.T) {
+	m := fanartIndex(fanartBuiltIn)
+	for _, c := range []struct{ title, want string }{
+		{"Roll-chan (MM1)", "Roll-chan"},
+		{"Roll-chan 2 (MM11)", "Roll-chan 2"},
+		{"Roll-chan 3 Improvement (Classic)", "Roll-chan 3"},
+		{"Roll-chan 6 (MM8)", "Roll-chan 6"},
+		{"Roll-chan No Constancy (v1.3)(normal)", "Roll-chan No Constancy"},
+	} {
+		g := m["NES|"+fanKey(c.title)]
+		if g == nil || g.Names[0] != c.want {
+			t.Errorf("%q: got %v, want %q", c.title, g, c.want)
+		}
+	}
+	if m["SNES|"+fanKey("Roll-chan 2")] != nil {
+		t.Error("fan art is per system")
+	}
+}
+
+func TestFanpack(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	b, err := os.ReadFile("fanart/pack.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.MkdirAll(filepath.Dir(fanpackPath()), 0o755)
+	if err := os.WriteFile(fanpackPath(), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := fanartIndex(fanartBuiltIn)
+	for _, g := range m {
+		img, rc := fanpackGet(context.Background(), g.Pack)
+		if rc != 0 || len(img) < 1000 {
+			t.Fatalf("%s: rc %d, %d bytes", g.Pack, rc, len(img))
+		}
+		if _, err := makeBoxArt(img); err != nil {
+			t.Fatalf("%s: %v", g.Pack, err)
+		}
+		if g.HackBy == "" || g.CoverFrom == "" {
+			t.Errorf("%s: no credit", g.Names[0])
 		}
 	}
 }

@@ -3,7 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.33
+## Phosphor for Windows 0.2.24
+
+### New
+- **Fan-made box art** for games no database has (ROM hacks, homebrew): `apps/windows/fanart/fanart.json`
+  lists each game, where its cover was posted, and who made it. Box art lookups ask it first, by the
+  game's name with tags and versions taken out, so every version of a hack gets its cover (Roll-chan 2
+  (MM1), (MM8) and (MM11) all get Roll-chan 2's). The list is read from GitHub, so new entries reach
+  everyone without an update. When a cover's link stops working, Phosphor's copy in `fanart/pack.zip` is
+  used (downloaded once, only then). Every cover is credited in `fanart/README.md` and in the pack.
+- First entries: the Roll-chan series (1–6 by Zynk Oxhyde, No Constancy by Sfon).
+
 
 ### New
 - **Better matching to base games** (Phosphor for Windows 0.2.23), from a dry run against a real library:

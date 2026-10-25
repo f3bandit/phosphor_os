@@ -1,0 +1,103 @@
+{
+ "about": "Fan-made box art for games no database has (ROM hacks, homebrew). Phosphor for Windows reads this list from GitHub when it looks up box art, so new entries reach everyone without an update. Each cover is fetched from where it was posted (\"art\"); if that link is gone, from Phosphor's copy in pack.zip (\"pack\"). Every cover is credited (\"hack_by\", \"cover_from\"); see README.md. A game matches by its name with tags, versions and fan-version words taken out: 'Roll-chan 2 (MM8)' and 'Roll-chan 2 (MM11)' are both 'Roll-chan 2'.",
+ "games": [
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2024/03/Roll-chan-Hack-4.jpg",
+   "year": "2023",
+   "genre": "Action, Platform",
+   "description": "Mega Man (NES) hack: Roll in Mega Man's place, in her Mega Man 1, 8 or 11 look.",
+   "pack": "roll-chan.jpg",
+   "hack_by": "Zynk Oxhyde",
+   "cover_from": "https://cdromance.org/nes-roms/roll-chan-hack/",
+   "developer": "Zynk Oxhyde"
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan 2"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2024/03/Roll-chan-2-Hack.jpg",
+   "year": "2024",
+   "genre": "Action, Platform",
+   "description": "Mega Man 2 (NES) hack: Roll in Mega Man's place, in her Mega Man 1, 8 or 11 look.",
+   "pack": "roll-chan-2.jpg",
+   "hack_by": "Zynk Oxhyde",
+   "cover_from": "https://cdromance.org/nes-roms/roll-chan-2-hack/",
+   "developer": "Zynk Oxhyde"
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan 3"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2022/08/Roll-chan-3-Hack.jpg",
+   "year": "2024",
+   "genre": "Action, Platform",
+   "description": "Mega Man 3 (NES) hack: Roll in Mega Man's place, on Kuja Killer's Mega Man 3 Improvement.",
+   "pack": "roll-chan-3.jpg",
+   "hack_by": "Zynk Oxhyde, Kuja Killer",
+   "cover_from": "https://cdromance.org/nes-roms/roll-chan-3-improvement-hack/",
+   "developer": "Zynk Oxhyde, Kuja Killer"
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan 4"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2022/08/Roll-chan-4-Hack.jpg",
+   "year": "2024",
+   "genre": "Action, Platform",
+   "description": "Mega Man 4 (NES) hack: Roll in Mega Man's place, in her Mega Man 1, 8 or 11 look.",
+   "pack": "roll-chan-4.jpg",
+   "hack_by": "Zynk Oxhyde",
+   "cover_from": "https://retrogametalk.com/repo/nes-roms/roll-chan-4-hack/",
+   "developer": "Zynk Oxhyde"
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan 5"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2022/08/Roll-chan-5-Hack.jpg",
+   "year": "2024",
+   "genre": "Action, Platform",
+   "description": "Mega Man 5 (NES) hack: Roll in Mega Man's place, in her Mega Man 1, 8 or 11 look.",
+   "pack": "roll-chan-5.jpg",
+   "hack_by": "Zynk Oxhyde",
+   "cover_from": "https://retrogametalk.com/repo/nes-roms/roll-chan-5-hack/",
+   "developer": "Zynk Oxhyde"
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan 6"
+   ],
+   "art": "https://retrogametalk.com/repo/wp-content/uploads/2022/08/Roll-chan-6-Hack.jpg",
+   "year": "2024",
+   "genre": "Action, Platform",
+   "description": "Mega Man 6 (NES) hack: Roll in Mega Man's place, in her Mega Man 1, 8 or 11 look.",
+   "pack": "roll-chan-6.jpg",
+   "hack_by": "Zynk Oxhyde",
+   "cover_from": "https://retrogametalk.com/repo/nes-roms/roll-chan-6-hack/",
+   "developer": "Zynk Oxhyde"
+  },
+  {
+   "sys": "NES",
+   "names": [
+    "Roll-chan No Constancy"
+   ],
+   "art": "https://cdromance.org/wp-content/uploads/2022/08/Roll-chan-No-Constancy-Hack.jpg",
+   "year": "2019",
+   "genre": "Action, Platform",
+   "description": "Rockman No Constancy hack with Roll.",
+   "pack": "roll-chan-no-constancy.jpg",
+   "hack_by": "Sfon",
+   "cover_from": "https://cdromance.org/nes-roms/roll-chan-no-constancy-hack/",
+   "developer": "Sfon"
+  }
+ ]
+}
