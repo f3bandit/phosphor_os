@@ -3,6 +3,13 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.31
+
+### Changed
+- **The heartbeat log is gone.** phosphord no longer writes `phosphor/logs/heartbeat.log` every 10 seconds
+  (a testing aid for the sudden resets, now covered by Diagnostics > Power). The old log files are deleted
+  when phosphord starts.
+
 ## 0.27.30
 
 ### New
