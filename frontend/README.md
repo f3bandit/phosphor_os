@@ -80,6 +80,10 @@ shell starts it if it isn't running.
 
   ![Bluetooth](docs/bluetooth.png)
 
+- **Video** (Settings): MiSTer's own video settings, explained (src/video_opts.h, made from the apps'
+  video-options.js by tools/gen_video_opts.js). Left/Right pick a value, A tries it, X tries the settings from
+  before the last change, L/R the profile; phosphord puts a try back by itself after 35 s unless Keep comes.
+  The Keep window shows over any screen while a try waits, whoever started it (A keep, B put back).
 - **Backups** (Settings): the backup-agent snapshots with date, reason and size; Back up now; pick one to
   see the saves in it, then A restores saves only or X everything (settings too). A safety backup is
   taken first, so a restore can be undone from the same list.

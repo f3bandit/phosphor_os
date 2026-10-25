@@ -284,3 +284,8 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 .rc-face .btn { border-radius: 50%; }
 .rc-mid { display: flex; flex-direction: column; gap: .6rem; }
 .rc-mid .btn { width: 5rem; height: 2.2rem; font-size: .85rem; }
+
+/* Video: the DIP switches an analog setting needs */
+.dipbox { border: 1px dashed var(--acc); border-radius: .6rem; padding: .8rem 1rem; margin-top: 1rem; }
+.dipbox > b { color: var(--acc); font-size: .875rem; }
+.dipbox .kv { margin: .4rem 0; }

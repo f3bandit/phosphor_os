@@ -40,3 +40,19 @@ const VOPT={
  video_info:{n:"Show resolution after a change",g:"other",d:"0",r:"safe",v:[["0","0 - Off"],["2","2 seconds"],["5","5 seconds"],["10","10 seconds"]],t:"Shows the resolution and refresh rate in the corner for a few seconds when they change. Handy while trying settings."},
  fb_terminal:{n:"Linux screen for scripts",g:"other",d:"1",r:"safe",v:[["1","1 - On"],["0","0 - Off"]],t:"If scripts misbehave on a CRT or analog display, MiSTer's docs suggest turning this off."}
 };
+
+/* which DIP switches on the side of the SS1 a set of analog settings needs (SS1 Tool's setup wizard;
+   the switch table on the SuperStation wiki): [[switch, position], ...] */
+const DIP_NOTE_UNITS = "SuperStation One units made after December 2025.";
+function dipFor(v, profileLabel) {
+	const mode = v.vga_mode || "rgb", csync = v.composite_sync !== "0", pal = v.menu_pal === "1";
+	const reg = pal ? "Up (PAL)" : "Down (NTSC)";
+	const lab = (profileLabel || "").toLowerCase();
+	if (mode === "subcarrier") return [["3", "Down (Sony encoder)"], ["1", reg], ["2", reg], ["4", "Up (off)"]];
+	if (mode === "svideo" || mode === "cvbs") return [["3", "Up (FPGA encoder)"], ["1", reg], ["2", reg], ["4", "Up (off)"]];
+	if (mode === "ypbpr") return [["4", "Down (sync on Y)"]];
+	if (mode === "rgb" && !csync) return [["4", "Up (off)"]];
+	if (lab === "rgsb") return [["4", "Down (sync on green)"]];
+	return [["4", "Up for SCART and RGB with separate sync; Down for sync on green"]];
+}
+const ANALOG_KEYS = new Set(["vga_mode", "composite_sync", "vga_sog", "menu_pal"]);
