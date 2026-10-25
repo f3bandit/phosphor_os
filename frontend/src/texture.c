@@ -62,13 +62,15 @@ static const struct {
 	{ "Circuit board, bold", SH_BOARD, 1280, 720, 2, M_LINE },
 	/* sprite textures (26 on): pixel-art sprites over the whole screen or a tile, made with
 	   tools/texture-maker, which adds them here */
+	{ "mario", SH_SPRITES, 1280, 720, 1, M_LINE, &TX_MARIO },   /* 26 */
+	{ "zelda", SH_SPRITES, 1280, 720, 1, M_LINE, &TX_ZELDA },   /* 27 */
 	/* sprite textures: entries (tools/texture-maker) */
 };
 #pragma GCC diagnostic pop
 const int TEX_COUNT = sizeof(T) / sizeof(T[0]);
 
 /* the order Settings steps through: each shape followed by its variants */
-static const int ORDER[] = { 0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25 };
+static const int ORDER[] = { 0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25, 26, 27 };
 
 int texture_valid(texture_t t) { return t >= 0 && t < TEX_COUNT && T[t].name; }
 const char *texture_name(texture_t t) { return texture_valid(t) ? T[t].name : "None"; }
