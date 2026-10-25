@@ -3,6 +3,33 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.37, Phosphor for Windows 0.2.30, Phosphor for Android 0.9.5
+
+### New
+- **Discs from the dock's CD/DVD drive** (#135). PlayStation, Saturn, Mega-CD, PC Engine CD, Neo Geo CD,
+  CD-i and 3DO discs, and MSU-1 / MD+ discs. Disc support is Main_MiSTer_Physical_Disc by **Anime0t4ku and
+  bonna79** (GPL-3.0), merged into Phosphor's Main.
+  - Put a disc in and open **Library › Disc**: it's at the top as **In the drive**, with its name (your
+    library's game with the same disc code, else libretro's lists) and box art. A plays it, Y ejects.
+  - A disc icon in the status bar while one is in. Nothing starts by itself, also at power-on.
+  - **Play last** (X) plays the disc when it was the last game and is still in; otherwise the last game
+    from storage.
+  - **Settings › Discs**: Discs on/off (off: the drive isn't watched or read at all), the drive, Eject.
+  - Music CDs and DVDs are recognised but not played yet.
+  - Phosphor for Windows and Android show the disc in Library › Disc (Play on TV, Eject) and have
+    Settings › Discs. phosphord's remote access has `disc`, `disc_play`, `disc_eject`, `disc_enable` and
+    `GET /art/disc`.
+  - Upstream's own launcher (Auto Disc Discovery) stays off: `PHYSICAL_DISC_MGL=1` in MiSTer.ini turns it on.
+- **Phosphor's in-game menu.** In a game, a short press of the menu button opens Phosphor's menu over it:
+  the game's box art and description, Back to the game, Change disc (disc games), MiSTer menu, Quit to
+  Phosphor. The game keeps running behind it (the screen behind the menu is black). Hold the button for a
+  count of 3 Mississippi and let go for MiSTer's own menu, as before. Not much longer on an 8BitDo
+  controller: it turns itself off.
+- How it fits together and what was decided: `docs/discs.md`.
+
+### Not tested yet
+- Game discs: only a music CD has been in the drive so far. Tests with PlayStation discs come next.
+
 ## 0.27.36, Phosphor for Windows 0.2.29, Phosphor for Android 0.9.4
 
 ### Changed
