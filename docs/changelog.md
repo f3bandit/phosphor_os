@@ -3,6 +3,24 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.35, Phosphor for Windows 0.2.28, Phosphor for Android 0.9.3
+
+### Changed
+- **ScreenScraper's login works like Console Mode's** (#137). Every lookup needs a developer ID (Phosphor's
+  own once ScreenScraper gives it, built in from a build secret; until then your own) and your
+  screenscraper.fr login. Your login is no longer sent as the developer ID: ScreenScraper always refused
+  that. A missing part is named; a refused developer ID, a refused login, a used-up day, maintenance and a
+  blocked version each get their own message and stop ScreenScraper for the rest of the run; three failed
+  requests in a row stop it too. The other sources carry on. **Check login** (Windows and Android, Box art ›
+  Sources › ScreenScraper) asks ScreenScraper whether it works and how many lookups are used today.
+  `scrape_progress` gives the SS1's own run a `note` with the reason a source stopped.
+- **Translated titles find the original** (#142), in matching to base games and in the SS1's "Based on"
+  list: the same subtitle under another main title (Demon Child Zenki / Kishin Douji Zenki - Battle
+  Raiden), two telling words in both parts with the numbers matching (Mysterious Dungeon 2 - Shiren /
+  Fushigi no Dungeon 2 - Fuurai no Shiren), one long word spelt one letter differently (Nankoku /
+  Nangoku). Each only when it points at one game; checked against a real list of 151 misses (7 found, no
+  wrong ones).
+
 ## Phosphor for Windows 0.2.27
 
 ### Changed

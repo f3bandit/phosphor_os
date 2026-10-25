@@ -106,7 +106,10 @@ class MatchTest {
         val all = listOf("Rockman 7 - Shukumei no Taiketsu! (Japan)", "Mega Man 7 (USA)", "Castlevania - Dracula X (USA)", "Castlevania - Bloodlines (USA)",
             "Castlevania (USA)", "Legend of Zelda, The - A Link to the Past (USA)", "Dragon Ball Z - Super Saiya Densetsu (Japan)",
             "Dragon Ball Z - Super Butouden (Japan)", "Dragon Ball Z - Super Butouden 2 (Japan)", "Tengai Makyou - Deden no Den (Japan)",
-            "Tengai Makyou - Fuuun Kabuki Den (Japan)", "Star Ocean - The Second Story (USA) (Disc 1)", "Star Ocean - The Second Story (USA) (Disc 2)")
+            "Tengai Makyou - Fuuun Kabuki Den (Japan)", "Star Ocean - The Second Story (USA) (Disc 1)", "Star Ocean - The Second Story (USA) (Disc 2)",
+            "Kishin Douji Zenki - Battle Raiden (Japan)", "Kishin Douji Zenki - Tenchi Meidou (Japan)", "Fushigi no Dungeon 2 - Fuurai no Shiren (Japan)",
+            "Nangoku Shounen Papuwa-kun (Japan)", "Final Fantasy Legend, The (USA)", "Final Fantasy Adventure (USA)", "Final Fantasy Mystic Quest (USA)",
+            "Army Men - World War - Final Front (USA)")
             .map { LrEntry(it, "", "", 0, "") }
         for ((t, want) in listOf(
             "Rockman 7 (Japan)" to "Rockman 7 - Shukumei no Taiketsu! (Japan)",
@@ -116,6 +119,11 @@ class MatchTest {
             "Tengai Makyou - Ziria (English v1.2)" to "",
             "Dragon-Ball-Z - Super Gokuden 2" to "",
             "Star Ocean - The Second Story - Disc 2 (U) [UNDUB]" to "Star Ocean - The Second Story (USA) (Disc 2)",
+            "Demon Child Zenki - Battle Raiden" to "Kishin Douji Zenki - Battle Raiden (Japan)",
+            "Mysterious Dungeon 2 - Shiren the Wanderer" to "Fushigi no Dungeon 2 - Fuurai no Shiren (Japan)",
+            "Nankoku Shounen Papuwa-kun" to "Nangoku Shounen Papuwa-kun (Japan)",
+            "Final Fantasy Tactics" to "",
+            "Final Fantasy Tactics FF6 - World of Ruin" to "",
         )) assertEquals(t, want, amLoose(all, t).first?.name ?: "")
     }
 
@@ -128,5 +136,29 @@ class MatchTest {
             "Roll-chan 6 (MM8)" to "Roll-chan 6", "Roll-chan No Constancy (v1.3)(normal)" to "Roll-chan No Constancy"))
             assertEquals(t, want, find("NES", t)?.names?.first())
         assertEquals(null, find("SNES", "Roll-chan 2"))
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class SsLoginTest {
+    @Test fun answers() {
+        val dev = com.f3bandit.phosphor.scrape.ssAnswer(2, 403, "Erreur de login : Vérifier vos identifiants développeur !".toByteArray())
+        assertTrue(dev.second && "developer ID" in dev.first)
+        val user = com.f3bandit.phosphor.scrape.ssAnswer(2, 403, "Erreur de login : Vérifier les identifiants utilisateurs !".toByteArray())
+        assertTrue(user.second && "your login" in user.first)
+        assertTrue(com.f3bandit.phosphor.scrape.ssAnswer(1, 430, null).second)
+        assertEquals("" to false, com.f3bandit.phosphor.scrape.ssAnswer(0, 200, "{}".toByteArray()))
+        assertEquals(false, com.f3bandit.phosphor.scrape.ssAnswer(-1, 0, null).second)
+    }
+
+    @Test fun missing() {
+        fun acct(m: Map<String, String>): (String, String) -> String = { _, k -> m[k] ?: "" }
+        assertTrue("developer ID" in com.f3bandit.phosphor.scrape.ssMissing(acct(mapOf("user" to "u", "password" to "p"))))
+        assertEquals("", com.f3bandit.phosphor.scrape.ssMissing(acct(mapOf("user" to "u", "password" to "p", "devid" to "d", "devpassword" to "x"))))
+        com.f3bandit.phosphor.scrape.ssBuiltinId = "phosphor"; com.f3bandit.phosphor.scrape.ssBuiltinPw = "s"
+        try {
+            assertEquals("", com.f3bandit.phosphor.scrape.ssMissing(acct(mapOf("user" to "u", "password" to "p"))))
+        } finally { com.f3bandit.phosphor.scrape.ssBuiltinId = ""; com.f3bandit.phosphor.scrape.ssBuiltinPw = "" }
     }
 }

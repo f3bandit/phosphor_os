@@ -100,8 +100,11 @@ var scrapeSources = []scrapeSource{
 	{"launchbox", "LaunchBox", func(*scrapeRun) bool { return true }, lbLookup},
 	{"thegamesdb", "TheGamesDB", func(s *scrapeRun) bool { return s.acct("thegamesdb", "apikey") != "" }, tgdbLookup},
 	{"screenscraper", "ScreenScraper", func(s *scrapeRun) bool {
-		return (s.acct("screenscraper", "devid") != "" && s.acct("screenscraper", "devpassword") != "") ||
-			(s.acct("screenscraper", "user") != "" && s.acct("screenscraper", "password") != "")
+		if m := ssMissing(s.acct); m != "" {
+			s.note(m)
+			return false
+		}
+		return s.ss.off == ""
 	}, ssLookup},
 	{"igdb", "IGDB", func(s *scrapeRun) bool {
 		return s.acct("igdb", "client_id") != "" && s.acct("igdb", "client_secret") != ""
@@ -126,6 +129,7 @@ type scrapeRun struct {
 	mu       sync.Mutex
 	st       scrapeState
 	only     bool // only match the not-found games to their base games
+	ss       ssGate
 }
 
 type scrapeState struct {

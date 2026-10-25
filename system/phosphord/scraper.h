@@ -26,7 +26,9 @@ typedef struct {
 	int total, done, found, not_found, later;   /* games: at the start of the run, looked at, ... */
 	char system[48], game[120], source[40];     /* what it's on now (source: the one being asked) */
 	char status[160];
+	char note[200];     /* a source that stopped for this run, and why ("" when none) */
 } scrape_progress_t;
+void scrape_note(const char *t);          /* sets this run's note (the first one wins) */
 void scraper_progress(scrape_progress_t *out);
 
 void scraper_start(void);                  /* background thread */

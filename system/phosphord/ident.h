@@ -23,6 +23,7 @@ int ident_pending(sqlite3 *db, int (*should_stop)(void));
 
 /* Title tidied for comparing: lower case, no (tags) or [tags], no hack/patch/translation words */
 void title_norm(const char *title, char *out, int n);
+void title_subtitle(const char *title, char *out, int n);   /* the subtitle after " - " (2+ words, 10+ letters), or "" */
 /* 0..1000: how alike two tidied titles are */
 int title_similarity(const char *a, const char *b);
 

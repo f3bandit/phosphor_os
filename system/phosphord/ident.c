@@ -664,6 +664,38 @@ static int weak_word(const char *w)
 	return 0;
 }
 
+/* two words of 6 letters or more with one letter changed, added or left out ("nankoku" / "nangoku"):
+ * a translated title spelt the other way (#142) */
+static int one_letter(const char *a, const char *b)
+{
+	size_t la = strlen(a), lb = strlen(b);
+	if (la < 6 || lb < 6 || !strcmp(a, b)) return 0;
+	if (la > lb) { const char *t = a; a = b; b = t; size_t u = la; la = lb; lb = u; }
+	if (lb - la > 1) return 0;
+	size_t i = 0;
+	while (i < la && a[i] == b[i]) i++;
+	return la == lb ? !strcmp(a + i + 1, b + i + 1) : !strcmp(a + i, b + i + 1);
+}
+
+/* the subtitle after the first " - ", as title_norm words ("" when there is none, or it's shorter than
+ * two words and 10 letters: too common to tell games apart) */
+void title_subtitle(const char *title, char *out, int n)
+{
+	out[0] = 0;
+	char t[512];
+	snprintf(t, sizeof(t), "%s", title);
+	char *p = strchr(t, '(');                 /* tags aside */
+	char *q = strchr(t, '[');
+	if (q && (!p || q < p)) p = q;
+	if (p) *p = 0;
+	const char *d = strstr(t, " - ");
+	if (!d) return;
+	title_norm(d + 3, out, n);
+	int words = 1, letters = 0;
+	for (const char *c = out; *c; c++) { if (*c == ' ') words++; else letters++; }
+	if (words < 2 || letters < 10) out[0] = 0;
+}
+
 int title_similarity(const char *a, const char *b)
 {
 	if (!*a || !*b) return 0;
@@ -680,7 +712,7 @@ int title_similarity(const char *a, const char *b)
 	int used[64] = { 0 }, common = 0, strong = 0;
 	for (int i = 0; i < na; i++)
 		for (int k = 0; k < nb; k++)
-			if (!used[k] && !strcmp(ta[i], tb[k])) { used[k] = 1; common++; if (!weak_word(ta[i])) strong++; break; }
+			if (!used[k] && (!strcmp(ta[i], tb[k]) || one_letter(ta[i], tb[k]))) { used[k] = 1; common++; if (!weak_word(ta[i])) strong++; break; }
 	if (!strong) return 0;
 	int score = 2000 * common / (na + nb);
 	/* "super mario world" vs "super mario world return to dinosaur land": a hack named after its base */

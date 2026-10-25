@@ -35,6 +35,7 @@ window.PhosNative = {
 		const r = { state: { paired: true, address: "200.200.200.23:8767", reachable: true, version: "0.27.25", appVersion: "0.9.0", notesUnseen: 1, look: { accent: "amber", texture: 0 } },
 			discover: { found: [{ address: "200.200.200.23:8767", version: "0.27.25" }] },
 			phoneScrape: { running: false, started: 0 },
+			ssCheck: { works: false, message: "ScreenScraper needs a developer ID and password (Phosphor's own is on its way from ScreenScraper; until then, your own if you have one)" },
 			automatch: { undone: 0, matches: [
 				{ id: 11, title: "Super Mario Bros. (SNES Port)", sys: "SNES", system: "SNES", kind: "port", tag: "(SNES Port)", how: "library", base_id: 3, base_title: "Super Mario Bros. (World)", found_by: [], fields: [], art: false, at: 1792904000, kept: false },
 				{ id: 12, title: "Bahamut Lagoon (Japan) [T-En by DeJap]", sys: "SNES", system: "SNES", kind: "translation", tag: "[T-En by DeJap]", how: "lookup", base_id: 0, base_title: "Bahamut Lagoon (Japan)", found_by: ["libretro", "LaunchBox"], fields: ["description", "year"], art: true, at: 1792904000, kept: false },
@@ -83,6 +84,12 @@ window.PhosNative = {
 		await page.screenshot({ path: out + "/video_change.png" });
 		await page.click('[data-act="try"]'); await page.waitForTimeout(1500);
 		await page.screenshot({ path: out + "/video_trying.png" });
+	}
+	if (process.env.SSCHECK) {   /* Box art › Sources › ScreenScraper, then Check login */
+		await page.evaluate(() => { location.hash = "boxart/sources"; }); await page.waitForTimeout(700);
+		await page.click('[data-act="sel"][data-arg="4"]'); await page.waitForTimeout(300);
+		await page.click('[data-act="sscheck"]'); await page.waitForTimeout(500);
+		await page.screenshot({ path: out + "/sources_sscheck.png", fullPage: true });
 	}
 	console.log("errors:", errs.length ? errs.join("\n") : "none");
 	await b.close(); srv.close();

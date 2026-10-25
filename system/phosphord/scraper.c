@@ -58,6 +58,15 @@ void scraper_progress(scrape_progress_t *o)
 	pthread_mutex_unlock(&lk);
 }
 
+void scrape_note(const char *t)
+{
+	pthread_mutex_lock(&lk);
+	if (!pg.note[0]) snprintf(pg.note, sizeof(pg.note), "%s", t);
+	pthread_mutex_unlock(&lk);
+}
+
+void ss_run_reset(void);   /* src_accounts.c */
+
 void scrape_status(const char *fmt, ...)
 {
 	va_list ap;
@@ -666,6 +675,7 @@ static void *thread(void *arg)
 			pg.total = total;
 			pthread_mutex_unlock(&lk);
 		}
+		ss_run_reset();
 		running = 1;
 		while (!stop_now && menu_up() && !pc_active()) {
 			sqlite3_stmt *st;

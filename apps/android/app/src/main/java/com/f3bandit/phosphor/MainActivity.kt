@@ -291,6 +291,14 @@ class MainActivity : ComponentActivity() {
                 }
                 AutoMatch.list().toString()
             }
+            // Check login (Box art › Sources › ScreenScraper), with the login saved on the MiSTer
+            "ssCheck" -> {
+                val api = model.api ?: throw PhosphorError("Not paired")
+                val todo = api.scrapeTodoMiss(0, 1) ?: throw PhosphorError("Update Phosphor on the MiSTer (0.27.32 or later) to check the login from here")
+                val acc = todo.optJSONObject("config")?.optJSONObject("accounts") ?: JSONObject()
+                val (msg, works) = com.f3bandit.phosphor.scrape.ssCheck { sec, key -> acc.optJSONObject(sec)?.optString(key) ?: "" }
+                JSONObject().put("message", msg).put("works", works).toString()
+            }
             "notGame" -> {
                 val api = model.api ?: throw PhosphorError("Not paired")
                 api.notGame(a.optLong("id"), a.optBoolean("on"))
