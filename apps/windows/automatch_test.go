@@ -20,6 +20,10 @@ func TestAmKind(t *testing.T) {
 		{"Super Mario World (USA)", "", ""},
 		{"Hackers (USA)", "", ""},
 		{"Translation Party (World)", "", ""}, // a real game: only "(Translation)" or [T-..] count
+		{"Super Mario Bros. (SNES Port)", "port", "(SNES Port)"},
+		{"Zelda II - The Adventure of Link NES2SNES", "port", "NES2SNES"},
+		{"Metroid (NES Conversion v1.1)", "port", ""},
+		{"Port Royale (Europe)", "", ""},
 	} {
 		k, tag := amKind(c.in)
 		if k != c.kind || (c.tag != "" && tag != c.tag) {
@@ -35,6 +39,8 @@ func TestAmStrip(t *testing.T) {
 		{"Super Metroid Redux", "Super Metroid"},
 		{"Gradius III FastROM (USA)", "Gradius III"},
 		{"Chrono Trigger v1.1 (USA)", "Chrono Trigger"},
+		{"Zelda II - The Adventure of Link NES2SNES", "Zelda II - The Adventure of Link"},
+		{"Super Mario Bros. (SNES Port)", "Super Mario Bros."},
 	} {
 		if got := amStrip(c.in); got != c.out {
 			t.Errorf("%q: got %q, want %q", c.in, got, c.out)
@@ -213,5 +219,16 @@ func TestFanpack(t *testing.T) {
 		if g.HackBy == "" || g.CoverFrom == "" {
 			t.Errorf("%s: no credit", g.Names[0])
 		}
+	}
+}
+
+func TestAmPortFrom(t *testing.T) {
+	if amPortFrom("SNES", "(SNES Port)") != "NES" || amPortFrom("SNES", "NES2SNES") != "NES" || amPortFrom("NES", "(Port)") != "" {
+		t.Error("ports to the SNES are NES games")
+	}
+	// the NES original in the library: found from the SNES port's name
+	lib := []amLibGame{{1, "Super Mario Bros. (World)", false, true}, {2, "Metroid (USA)", false, true}}
+	if b := amLibBase(&sgame{ID: 9, Title: "Super Mario Bros. (SNES Port)"}, lib); b == nil || b.ID != 1 {
+		t.Errorf("got %v", b)
 	}
 }

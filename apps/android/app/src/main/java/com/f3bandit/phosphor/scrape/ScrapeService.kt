@@ -43,6 +43,7 @@ class ScrapeService : Service() {
         val p = KeystorePairingStore(this).load()
         if (p == null) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY }
         val api = PhosphorApi(p.address, p.token)
+        val only = intent?.getBooleanExtra(EXTRA_ONLY, false) == true
         run = scope.launch {
             val ticker = launch {
                 while (true) {
@@ -52,11 +53,11 @@ class ScrapeService : Service() {
                     nm.notify(ID, progress(if (s.total > 0) "${s.done} of ${s.total}  ·  ${s.found} found" else s.status))
                 }
             }
-            try { ScrapeRun(applicationContext, api).run() } finally {
+            try { ScrapeRun(applicationContext, api, only).run() } finally {
                 ticker.cancel()
                 val s = PhoneScrape.state
                 Notes.add(this@ScrapeService, "phone-art-${s.started}", "info", "Box art is done",
-                    "${s.status}: ${s.found} found, ${s.notFound} not found on the phone.", "boxart")
+                    if (only) "${s.status}: ${s.matched} matched to base games." else "${s.status}: ${s.found} found, ${s.notFound} not found, ${s.matched} matched to base games on the phone.", "boxart")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -94,7 +95,9 @@ class ScrapeService : Service() {
                 NotificationChannel(CHANNEL, "Box art lookup", NotificationManager.IMPORTANCE_LOW).apply { description = "Shows a box art lookup running on the phone" })
         }
 
-        fun start(c: Context) { c.startForegroundService(Intent(c, ScrapeService::class.java)) }
+        private const val EXTRA_ONLY = "only"
+        /** only: just match the not-found games to their base games */
+        fun start(c: Context, only: Boolean = false) { c.startForegroundService(Intent(c, ScrapeService::class.java).putExtra(EXTRA_ONLY, only)) }
         fun stop(c: Context) { c.startService(Intent(c, ScrapeService::class.java).setAction(ACTION_STOP)) }
     }
 }

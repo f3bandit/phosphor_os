@@ -3,6 +3,19 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.34, Phosphor for Windows 0.2.26, Phosphor for Android 0.9.2
+
+### New
+- **Ports**: a game ported from another system (`Super Mario Bros. (SNES Port)`, `Zelda II NES2SNES`,
+  `(NES Conversion)`) is matched as the game it came from: linked to the NES original when it's in the
+  library, otherwise looked up in the NES lists for its box art and details. Listed in Matched
+  automatically as "Port", with Keep and Undo. `link` takes `"port":true` to link across systems.
+- **The SS1 asks the fan art list too** (its own lookup, before the other sources), with the backup pack
+  when a cover's link is gone.
+- **Android catches up with Windows**: fan art first, matching to base games (Match all automatically,
+  Matched automatically with Keep, Undo and Pick another, Not a game / It's a game on a game, the Not
+  games filter), LaunchBox names compared loosely, libretro's Satellaview list for SNES.
+
 ## Phosphor for Windows 0.2.25
 
 ### New

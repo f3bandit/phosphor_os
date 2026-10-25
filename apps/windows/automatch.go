@@ -92,7 +92,10 @@ var (
 		`enhanced( colou?rs)?|enhancement|improvement|undub|purist|redux|remastered|msu-?1|sram|redesign(ed)?|rebalanced|` +
 		`major fixes( for)?|black label|sa-?1|arcade colou?rs|6-button( support)?|master patched|patched|un-?worked designs|` +
 		`grind-be-gone|v\d+(\.\d+)*[a-z]?)\b`)
-	amWordRe = regexp.MustCompile(`(?i)\b(rom ?hack|hack(ed)?|kaizo|translat(ed|ion)|eng(lish)? ?(dub(bed)?|patch(ed)?|trans(lation)?))\b`)
+	amWordRe = regexp.MustCompile(`(?i)\b(rom ?hack|hack(ed)?|kaizo|translat(ed|ion)|eng(lish)? ?(dub(bed)?|patch(ed)?|trans(lation)?)|` +
+		`(nes|famicom|fc|snes)[ -]?(port(ed)?|conversion)|nes ?2 ?snes)\b`)
+	// a game ported from another system: "Super Mario Bros. (SNES Port)", "Zelda II NES2SNES"
+	amPortRe = regexp.MustCompile(`(?i)\((?:[^)]*\b)?(?:port(?:ed)?|conversion)\b[^)]*\)|\b(?:nes|famicom|fc|snes)[ -]?(?:port(?:ed)?|conversion)\b|\bnes ?2 ?snes\b`)
 	amStop   = map[string]bool{"the": true, "of": true, "a": true, "an": true, "and": true}
 	// not games at all: boot files, test ROMs, cheat discs, tools
 	amNotGameRe = regexp.MustCompile(`(?i)^(mister[- ](boot|demo)|boot ?\d*|empty|bootdisc)$|\b(btn ?test|pad ?test|controller (tester|test)|test ?rom|service disc|game ?shark|action replay|tonyhax|unirom|rom flasher|boot ?disc|trainer)\b`)
@@ -147,6 +150,9 @@ func amNotGame(t string) string {
 
 // amKind: what the name says the game is, and the words that said it
 func amKind(title string) (kind, tag string) {
+	if m := amPortRe.FindString(title); m != "" {
+		return "port", strings.TrimSpace(m)
+	}
 	if m := amTransRe.FindString(title); m != "" {
 		return "translation", strings.TrimSpace(m)
 	}
@@ -157,6 +163,18 @@ func amKind(title string) (kind, tag string) {
 		return "fan", m
 	}
 	return "", ""
+}
+
+// amPortFrom: the system a port came from ("" when it isn't known): the SNES ports are NES games
+func amPortFrom(sys, tag string) string {
+	t := strings.ToLower(tag)
+	switch {
+	case sys == "SNES" && !strings.Contains(t, "snes to"):
+		return "NES"
+	case strings.Contains(t, "nes") && !strings.Contains(t, "snes") && sys != "NES":
+		return "NES"
+	}
+	return ""
 }
 
 // amWords: the title's words for comparing, no tags, no "the", "of" ...; Roman numbers as digits
@@ -463,25 +481,39 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 	}
 	kind, tag := amKind(clean)
 	e.Kind, e.Tag = kind, tag
-	// 1. the base game is in the library: link it
-	if kind != "" {
-		lib, ok := libs[g.Sys]
-		if !ok {
-			var j struct {
-				Games []amLibGame `json:"games"`
-			}
-			if err := ss1Call(map[string]any{"cmd": "games", "system": g.Sys, "limit": 100000}, &j); err != nil {
-				s.status("The SS1 didn't answer: " + err.Error())
-				return true
-			}
-			lib = j.Games
-			libs[g.Sys] = lib
+	// a port is looked up as the game it was ported from: in that system's library and lists
+	look := g.Sys
+	from := ""
+	if kind == "port" {
+		if from = amPortFrom(g.Sys, tag); from != "" {
+			look = from
 		}
-		if b := amLibBase(g, lib); b != nil {
-			if err := ss1Call(map[string]any{"cmd": "link", "id": g.ID, "base": b.ID}, nil); err == nil {
-				e.How, e.BaseID, e.BaseTitle = "library", b.ID, b.Title
-				s.amAdd(e)
-				return false
+	}
+	// 1. the base game is in the library: link it (a port: the original first)
+	if kind != "" {
+		systems := []string{g.Sys}
+		if from != "" {
+			systems = []string{from, g.Sys}
+		}
+		for _, sys := range systems {
+			lib, ok := libs[sys]
+			if !ok {
+				var j struct {
+					Games []amLibGame `json:"games"`
+				}
+				if err := ss1Call(map[string]any{"cmd": "games", "system": sys, "limit": 100000}, &j); err != nil {
+					s.status("The SS1 didn't answer: " + err.Error())
+					return true
+				}
+				lib = j.Games
+				libs[sys] = lib
+			}
+			if b := amLibBase(g, lib); b != nil {
+				if err := ss1Call(map[string]any{"cmd": "link", "id": g.ID, "base": b.ID, "port": sys != g.Sys}, nil); err == nil {
+					e.How, e.BaseID, e.BaseTitle = "library", b.ID, b.Title
+					s.amAdd(e)
+					return false
+				}
 			}
 		}
 	}
@@ -515,7 +547,7 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 		add(gl+reg, map[bool]string{true: kind, false: "spelling"}[kind != ""])
 	}
 	// 3. the lists: the same words written differently, or the same main title
-	if m, ok := lrSystems[g.Sys]; ok {
+	if m, ok := lrSystems[look]; ok {
 		var all []*LREntry
 		for _, lr := range m.lr {
 			l, rc := libretro.get(s.ctx, lr, m.disc, s.status)
@@ -553,6 +585,7 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 		// too: "Treasure of the Rudras"); libretro replaces it with its own when it knows the game. Every
 		// match here is listed for review, so a name lookup is safe.
 		g2.Title, g2.CRC, g2.Serial, g2.Official, g2.LRSys = t.name, "", "", t.name, ""
+		g2.Sys = look // a port: the original's system
 		rc, r := s.one(&g2)
 		if rc <= 0 {
 			if rc < 0 {

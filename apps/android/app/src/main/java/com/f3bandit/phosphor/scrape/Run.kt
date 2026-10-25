@@ -59,7 +59,7 @@ class SRes {
 data class PhoneScrapeState(
     val running: Boolean = false, val status: String = "", val total: Int = 0, val done: Int = 0, val found: Int = 0,
     val notFound: Int = 0, val later: Int = 0, val game: String = "", val system: String = "", val notes: List<String> = emptyList(),
-    val started: Long = 0, val ended: Long = 0,
+    val started: Long = 0, val ended: Long = 0, val matched: Int = 0,
 )
 
 object PhoneScrape {
@@ -71,7 +71,8 @@ object PhoneScrape {
 
 private class Source(val id: String, val name: String, val ready: (ScrapeRun) -> Boolean, val lookup: suspend (ScrapeRun, SGame, SRes) -> Int)
 
-class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
+/** only: just match the not-found games to their base games (Match all automatically) */
+class ScrapeRun(private val context: Context, private val api: PhosphorApi, private val only: Boolean = false) {
     private var accounts: Map<String, Map<String, String>> = emptyMap()
     private val order = ArrayList<Source>()
     private val cache = File(context.cacheDir, "boxart-lists")
@@ -98,10 +99,16 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
     private suspend fun fetchArt(g: SGame, r: SRes, from: Int): Int {
         var trouble = false
         for (i in from until r.art.size) {
-            val res = netRequest("GET", r.art[i].second, max = 32L shl 20)
-            if (res.rc < 0) { trouble = true; continue }
-            if (res.rc != 0 || res.body == null) continue
-            val jpg = makeBoxArt(res.body) ?: continue
+            val u = r.art[i].second
+            val body: ByteArray = if (u.startsWith("pack:")) {          // Phosphor's own copy of a fan-made cover (FanArt)
+                FanArt.packGet(context, u.removePrefix("pack:")) ?: continue
+            } else {
+                val res = netRequest("GET", u, max = 32L shl 20)
+                if (res.rc < 0) { trouble = true; continue }
+                if (res.rc != 0 || res.body == null) continue
+                res.body
+            }
+            val jpg = makeBoxArt(body) ?: continue
             ArtStore.save(g.id, g.title, g.system, jpg)
             try {
                 api.setArt(g.id, jpg)
@@ -122,6 +129,8 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
         for (h in g.has) FIELD_COLS.indexOf(h).let { if (it >= 0) r.f[it] = "" }
         var art = g.hasArt
         var found = false; var trouble = false; var tried = 0
+        // fan-made box art first: only games no database has are in that list, by their exact name
+        if (FanArt.lookup(context, g, r) > 0) { found = true; r.foundBy.add("Phosphor's fan art list") }
         for (src in order) {
             if (!currentCoroutineContext().isActive) return -1 to r
             if (!src.ready(this)) continue
@@ -154,6 +163,109 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
             j.optBoolean("disc"), j.optBoolean("arcade"), j.optBoolean("has_art"), (0 until has.length()).map { has.optString(it) })
     }
 
+    /** the sources' order and logins, as the MiSTer has them */
+    private fun config(todo: JSONObject) {
+        val cfg = todo.optJSONObject("config") ?: JSONObject()
+        val acc = cfg.optJSONObject("accounts") ?: JSONObject()
+        accounts = acc.keys().asSequence().associateWith { sec ->
+            val o = acc.optJSONObject(sec) ?: JSONObject()
+            o.keys().asSequence().associateWith { o.optString(it) }
+        }
+        order.clear()
+        val ord = cfg.optJSONArray("order") ?: JSONArray()
+        for (i in 0 until ord.length()) sources.firstOrNull { it.id == ord.optString(i) }?.let { order.add(it) }
+    }
+
+    // ---------- matching to base games (Match.kt) ----------
+
+    /** every game nothing was found for, matched by its name; a reason when it had to stop */
+    private suspend fun matchPhase(): String {
+        AutoMatch.init(context)
+        status("Matching to base games")
+        val games = ArrayList<SGame>()
+        var off = 0
+        while (currentCoroutineContext().isActive) {
+            val todo = try { api.scrapeTodoMiss(off) } catch (e: CancellationException) { throw e } catch (e: Exception) { return "The MiSTer didn't answer: ${e.message}" }
+                ?: return "Update Phosphor on the MiSTer (0.27.32 or later) for matching to base games"
+            val a = todo.optJSONArray("games") ?: JSONArray()
+            games.addAll(parseGames(a))
+            if (a.length() < 1000) break
+            off += 1000
+        }
+        val libs = HashMap<String, List<AmLibGame>>()
+        for (g in games) {
+            if (!currentCoroutineContext().isActive) return ""
+            if (AutoMatch.isUndone(g.id) || g.arcade) continue
+            PhoneScrape.update { it.copy(game = g.title, system = g.system) }
+            val why = matchOne(g, libs)
+            if (why.isNotEmpty()) return why
+        }
+        return ""
+    }
+
+    private suspend fun matchOne(g: SGame, libs: HashMap<String, List<AmLibGame>>): String {
+        val clean = amClean(g.title)
+        // 0. not a game at all
+        amNotGame(clean).takeIf { it.isNotEmpty() }?.let { w ->
+            try { api.notGame(g.id, true); added(AmEntry(g.id, g.title, g.sys, g.system, "notgame", w, how = "skip")) }
+            catch (e: CancellationException) { throw e } catch (e: Exception) { if ("unknown cmd" in (e.message ?: "")) note("Update Phosphor on the MiSTer (0.27.33 or later) to set test ROMs and tools aside") }
+            return ""
+        }
+        val (kind, tag) = amKind(clean)
+        val e = AmEntry(g.id, g.title, g.sys, g.system, kind, tag)
+        // a port is looked up as the game it was ported from: in that system's library and lists
+        val from = if (kind == "port") amPortFrom(g.sys, tag) else ""
+        val look = from.ifEmpty { g.sys }
+        // 1. the base game is in the library: link it (a port: the original first)
+        if (kind.isNotEmpty()) {
+            for (sys in if (from.isNotEmpty()) listOf(from, g.sys) else listOf(g.sys)) {
+                val lib = libs.getOrPut(sys) {
+                    try { api.games(system = sys, limit = 100000).second.map { AmLibGame(it.id, it.title, it.linked, it.art) } }
+                    catch (x: CancellationException) { throw x } catch (x: Exception) { return "The MiSTer didn't answer: ${x.message}" }
+                }
+                amLibBase(g.id, g.title, lib)?.let { b ->
+                    if (runCatching { api.link(g.id, b.id, port = sys != g.sys) }.isSuccess) { e.how = "library"; e.baseId = b.id; e.baseTitle = b.title; added(e); return "" }
+                }
+            }
+        }
+        // 2. the sources, asked by the base game's name, or by the name made readable
+        val reg = regionOf(g.title).takeIf { it.isNotEmpty() && '[' !in it && ']' !in it }?.let { " ($it)" } ?: ""
+        val tries = ArrayList<Pair<String, String>>()
+        val seen = HashSet<String>()
+        fun add(n0: String, k: String) { val n = n0.trim(); if (n.isNotEmpty() && seen.add(n.lowercase())) tries.add(n to k) }
+        val base = amStrip(clean)
+        if (kind.isNotEmpty()) {
+            add(base + reg, kind)
+            amMain(base).let { m -> if (m != base && amWords(m).length >= 4) add(m + reg, kind) }
+        } else add(clean, "spelling")
+        val glued = amGlued(base)
+        for (gl in glued) add(gl + reg, kind.ifEmpty { "spelling" })
+        // 3. the lists: the same words written differently, or the same main title
+        val all = libretro.all(look, ::status) ?: return "No connection: stopped (Look up box art to try again)"
+        for (n in listOf(clean) + glued) {
+            val (hit, how) = amLoose(all, n)
+            if (hit != null) {
+                add(hit.name, kind.ifEmpty { when { how == "exact" -> "spelling"; how == "main" && amMain(base) != base -> "related"; else -> "name" } })
+                break
+            }
+        }
+        for ((n, k) in tries) {
+            // the name is given as the official one, so every source looks it up (LaunchBox's alternate names too)
+            val g2 = SGame(g.id, look, g.system, n, "", "", g.size, g.disc, g.arcade, g.hasArt, g.has).also { it.official = n }
+            val (rc, r) = one(g2)
+            if (rc <= 0) { if (rc < 0) PhoneScrape.update { it.copy(later = it.later + 1) }; continue }
+            try { report(g2, rc, r) } catch (x: CancellationException) { throw x } catch (x: Exception) { return "The MiSTer didn't answer: ${x.message}" }
+            e.fields = (0 until F_COUNT).filter { r.f[it]?.isNotEmpty() == true && FIELD_COLS[it] !in g.has }.map { FIELD_COLS[it] }
+            e.how = "lookup"; e.art = !g.hasArt; e.foundBy = r.foundBy.toList(); e.kind = k
+            e.baseTitle = g2.official.ifEmpty { n }
+            added(e)
+            return ""
+        }
+        return ""
+    }
+
+    private fun added(e: AmEntry) { AutoMatch.add(e); PhoneScrape.update { it.copy(matched = it.matched + 1) } }
+
     /** the whole run; returns when every game has been looked up, the run was stopped, or the MiSTer stopped answering */
     suspend fun run() {
         PhoneScrape.update { PhoneScrapeState(running = true, status = "Starting", started = System.currentTimeMillis()) }
@@ -162,24 +274,23 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
             var first = true
             val fails = AtomicInteger(0)
             val seen = HashSet<Long>()
-            while (currentCoroutineContext().isActive) {
+            var through = only
+            if (only) {
+                val cfg = runCatching { api.scrapeTodoMiss(0, 1) }.getOrNull()
+                if (cfg == null) { stoppedBy = "Update Phosphor on the MiSTer (0.27.32 or later) for matching to base games"; status(stoppedBy); return }
+                config(cfg)
+            }
+            while (!only && currentCoroutineContext().isActive) {
                 val todo: JSONObject = try { api.scrapeTodo(first) } catch (e: CancellationException) { throw e } catch (e: Exception) {
                     stoppedBy = "The MiSTer didn't answer: ${e.message}"; status(stoppedBy); return
                 }
                 if (first) {
-                    val cfg = todo.optJSONObject("config") ?: JSONObject()
-                    val acc = cfg.optJSONObject("accounts") ?: JSONObject()
-                    accounts = acc.keys().asSequence().associateWith { sec ->
-                        val o = acc.optJSONObject(sec) ?: JSONObject()
-                        o.keys().asSequence().associateWith { o.optString(it) }
-                    }
-                    val ord = cfg.optJSONArray("order") ?: JSONArray()
-                    for (i in 0 until ord.length()) sources.firstOrNull { it.id == ord.optString(i) }?.let { order.add(it) }
+                    config(todo)
                     PhoneScrape.update { it.copy(total = todo.optInt("total")) }
                     first = false
                 }
                 val games = parseGames(todo.optJSONArray("games") ?: JSONArray()).filter { seen.add(it.id) }
-                if (games.isEmpty()) return
+                if (games.isEmpty()) { through = true; break }
                 // Disc 2 and later after Disc 1: they borrow its art
                 val sorted = games.sortedBy { if (discNo(it.title) <= 1) 0 else 1 }
                 status("Looking up box art")
@@ -217,6 +328,10 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
                 }
                 if (stopped.get()) return
             }
+            if (through && currentCoroutineContext().isActive) {
+                val why = matchPhase()
+                if (why.isNotEmpty()) { stoppedBy = why; status(why) }
+            }
         } finally {
             val cancelled = !currentCoroutineContext().isActive
             val st = PhoneScrape.state
@@ -224,7 +339,7 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi) {
             PhoneScrape.update { it.copy(running = false, status = msg, ended = System.currentTimeMillis()) }
             // tell the MiSTer, even when stopped (its own lookup waits for this)
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                runCatching { api.scrapePcDone("$msg (looked up on the phone: ${st.found} found, ${st.notFound} not found)") }
+                runCatching { api.scrapePcDone("$msg (looked up on the phone: ${st.found} found, ${st.notFound} not found, ${st.matched} matched to base games)") }
             }
         }
     }

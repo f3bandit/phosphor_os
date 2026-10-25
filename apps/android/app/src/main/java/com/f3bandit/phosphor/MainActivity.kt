@@ -35,6 +35,7 @@ import com.f3bandit.phosphor.scrape.ArtStore
 import com.f3bandit.phosphor.scrape.PhoneScrape
 import com.f3bandit.phosphor.scrape.PhoneScrapeState
 import com.f3bandit.phosphor.scrape.ScrapeService
+import com.f3bandit.phosphor.scrape.AutoMatch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -160,7 +161,7 @@ class MainActivity : ComponentActivity() {
     private fun phoneJson(s: PhoneScrapeState) = JSONObject()
         .put("running", s.running).put("status", s.status).put("total", s.total).put("done", s.done).put("found", s.found)
         .put("notFound", s.notFound).put("later", s.later).put("game", s.game).put("system", s.system)
-        .put("notes", JSONArray(s.notes)).put("started", s.started).put("ended", s.ended).toString()
+        .put("notes", JSONArray(s.notes)).put("started", s.started).put("ended", s.ended).put("matched", s.matched).toString()
 
     // ---------------------------------------------------------------- box art for the page
 
@@ -273,10 +274,27 @@ class MainActivity : ComponentActivity() {
                             askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
                             d.await()
                         }
-                        ScrapeService.start(ctx)
+                        ScrapeService.start(ctx, a.optBoolean("only"))
                     }
                 }
                 phoneJson(PhoneScrape.state)
+            }
+            // games matched to their base games (Match.kt): list, keep, undo
+            "automatch" -> {
+                AutoMatch.init(ctx)
+                val id = a.optLong("id")
+                when (a.optString("do")) {
+                    "keep" -> AutoMatch.keep(id)
+                    "keep_all" -> AutoMatch.keep(null)
+                    "forget" -> AutoMatch.forget(id)
+                    "undo" -> AutoMatch.undo(model.api ?: throw PhosphorError("Not paired"), id)
+                }
+                AutoMatch.list().toString()
+            }
+            "notGame" -> {
+                val api = model.api ?: throw PhosphorError("Not paired")
+                api.notGame(a.optLong("id"), a.optBoolean("on"))
+                "{}"
             }
             "phoneStorage" -> {
                 val lists = File(cacheDir, "boxart-lists")

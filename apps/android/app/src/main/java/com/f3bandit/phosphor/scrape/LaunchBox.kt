@@ -43,7 +43,7 @@ class LaunchBox(private val dir: File) {
     /** when getting it last failed (not a connection problem): not tried again for an hour */
     private var failedAt = 0L
 
-    private val dbFile get() = File(dir, "launchbox.db")
+    private val dbFile get() = File(dir, "launchbox2.db")   // 2: with the loose keys (amKey)
 
     private fun fresh(d: SQLiteDatabase): Boolean = runCatching {
         d.rawQuery("SELECT v FROM meta WHERE k='saved'", null).use { c -> c.moveToFirst() && System.currentTimeMillis() - c.getLong(0) < FRESH_MS }
@@ -80,13 +80,13 @@ class LaunchBox(private val dir: File) {
     }
 
     private suspend fun importZip(zipPath: File) {
-        val tmp = File(dir, "launchbox.db.new")
+        val tmp = File(dir, "launchbox2.db.new")
         tmp.delete()
         val out = SQLiteDatabase.openOrCreateDatabase(tmp, null)
         try {
             out.execSQL("CREATE TABLE meta(k TEXT PRIMARY KEY, v INTEGER)")
-            out.execSQL("CREATE TABLE games(id INTEGER PRIMARY KEY, platform TEXT, norm TEXT, overview TEXT, dev TEXT, pub TEXT, genre TEXT, year TEXT, players TEXT, ord INTEGER)")
-            out.execSQL("CREATE TABLE alt(norm TEXT, id INTEGER)")
+            out.execSQL("CREATE TABLE games(id INTEGER PRIMARY KEY, platform TEXT, norm TEXT, overview TEXT, dev TEXT, pub TEXT, genre TEXT, year TEXT, players TEXT, ord INTEGER, k TEXT)")
+            out.execSQL("CREATE TABLE alt(norm TEXT, id INTEGER, k TEXT)")
             out.execSQL("CREATE TABLE images(id INTEGER, region TEXT, file TEXT, flyer INTEGER)")
             val keep = lbPlatforms.values.flatten().toSet()
             val platformOf = HashMap<Long, String>()
@@ -98,8 +98,8 @@ class LaunchBox(private val dir: File) {
                     runCatching { xp.setFeature("http://xmlpull.org/v1/doc/features.html#relaxed", true) }
                     xp.setInput(stream, "UTF-8")
                     out.beginTransaction()
-                    val insG = out.compileStatement("INSERT OR REPLACE INTO games VALUES(?,?,?,?,?,?,?,?,?,?)")
-                    val insA = out.compileStatement("INSERT INTO alt VALUES(?,?)")
+                    val insG = out.compileStatement("INSERT OR REPLACE INTO games VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+                    val insA = out.compileStatement("INSERT INTO alt VALUES(?,?,?)")
                     val insI = out.compileStatement("INSERT INTO images VALUES(?,?,?,?)")
                     var order = 0; var n = 0
                     var ev = xp.eventType
@@ -130,7 +130,8 @@ class LaunchBox(private val dir: File) {
                                             order++
                                             platformOf[id] = plat
                                             insG.clearBindings()
-                                            insG.bindLong(1, id); insG.bindString(2, plat); insG.bindString(3, titleNorm(f["Name"] ?: ""))
+                                            val nm = titleNorm(f["Name"] ?: "")
+                                            insG.bindLong(1, id); insG.bindString(2, plat); insG.bindString(3, nm); insG.bindString(11, amKey(nm))
                                             insG.bindString(4, f["Overview"] ?: ""); insG.bindString(5, f["Developer"] ?: ""); insG.bindString(6, f["Publisher"] ?: "")
                                             insG.bindString(7, (f["Genres"] ?: "").replace(";", ",")); insG.bindString(8, year); insG.bindString(9, pl); insG.bindLong(10, order.toLong())
                                             insG.executeInsert()
@@ -138,7 +139,7 @@ class LaunchBox(private val dir: File) {
                                     }
                                     "GameAlternateName" -> if (id in platformOf) {
                                         val norm = titleNorm(f["AlternateName"] ?: "")
-                                        if (norm.isNotEmpty()) { insA.bindString(1, norm); insA.bindLong(2, id); insA.executeInsert() }
+                                        if (norm.isNotEmpty()) { insA.bindString(1, norm); insA.bindLong(2, id); insA.bindString(3, amKey(norm)); insA.executeInsert() }
                                     }
                                     "GameImage" -> platformOf[id]?.let { plat ->
                                         val type = f["Type"] ?: ""
@@ -156,6 +157,8 @@ class LaunchBox(private val dir: File) {
                     }
                     out.execSQL("CREATE INDEX g_norm ON games(platform, norm)")
                     out.execSQL("CREATE INDEX a_norm ON alt(norm)")
+                    out.execSQL("CREATE INDEX g_k ON games(platform, k)")
+                    out.execSQL("CREATE INDEX a_k ON alt(k)")
                     out.execSQL("CREATE INDEX i_id ON images(id)")
                     out.execSQL("INSERT INTO meta VALUES('saved', ${System.currentTimeMillis()})")
                     out.setTransactionSuccessful()
@@ -166,7 +169,8 @@ class LaunchBox(private val dir: File) {
             out.close()
         }
         db?.close(); db = null
-        File(dir, "launchbox.db-journal").delete()
+        File(dir, "launchbox2.db-journal").delete()
+        File(dir, "launchbox.db").delete()   // the first kind, without the loose keys
         if (!tmp.renameTo(dbFile)) error("can't keep the database")
     }
 
@@ -196,6 +200,10 @@ class LaunchBox(private val dir: File) {
             }
             for (p in plats) game(d, "platform=? AND norm=?", arrayOf(p, norm)).sortedBy { it.order }.forEach { consider(it) }
             game(d, "id IN (SELECT id FROM alt WHERE norm=?)", arrayOf(norm)).forEach { consider(it) }
+            if (best == null) amKey(norm).takeIf { it.isNotEmpty() }?.let { k ->   // the same name written a little differently
+                for (p in plats) game(d, "platform=? AND k=?", arrayOf(p, k)).sortedBy { it.order }.forEach { consider(it) }
+                game(d, "id IN (SELECT id FROM alt WHERE k=?)", arrayOf(k)).forEach { consider(it) }
+            }
             best
         } ?: return 0
         r.set(F_DESC, best.overview); r.set(F_DEV, best.dev); r.set(F_PUB, best.pub); r.set(F_GENRE, best.genre)

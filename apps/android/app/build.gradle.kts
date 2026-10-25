@@ -11,8 +11,8 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.9.1"
+        versionCode = 12
+        versionName = "0.9.2"
     }
 
     buildTypes {
@@ -61,6 +61,7 @@ val webShared by tasks.registering {
     val win = rootProject.file("../windows/web")
     val out = layout.buildDirectory.dir("generated/webshared/web")
     inputs.dir(win)
+    inputs.file(rootProject.file("../windows/fanart/fanart.json"))
     outputs.dir(out)
     doLast {
         val dir = out.get().asFile
@@ -74,6 +75,8 @@ val webShared by tasks.registering {
         val js = names.take(upTo + 1).joinToString("\n") { n -> "/* ---- $n */\n" + File(win, n).readText() }
         File(dir, "look.js").writeText("/* made by the build from apps/windows/web: don't edit */\n$js")
         File(win, "video-options.js").copyTo(File(dir, "video-options.js"), true)
+        // the fan art list (FanArt.kt reads it when GitHub can't be reached)
+        File(win, "../fanart/fanart.json").copyTo(File(dir, "fanart.json"), true)
     }
 }
 tasks.named("preBuild") { dependsOn(webShared) }
