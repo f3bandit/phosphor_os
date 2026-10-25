@@ -55,8 +55,8 @@ by itself: the user picks the disc.
 ## The in-game menu
 
 A **short press** of the menu button in a game opens Phosphor's menu over the running game; a **long
-press** (held more than 0.7 s, then let go) opens MiSTer's OSD as before. 8BitDo controllers turn
-themselves off when the home button is held about 3 s, so let go before that.
+press** (a count of 3 Mississippi, then let go; anything over 0.7 s counts) opens MiSTer's OSD as
+before. Not much longer: 8BitDo controllers turn themselves off when the home button is held too long.
 
 - Main (API 5) shows Linux's screen over the core: `ingame on` (`video_chvt(1)`, `video_fb_enable(1)`);
   the game keeps running and playing sound; the screen behind the menu is black.
