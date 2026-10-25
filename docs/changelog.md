@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## Phosphor for Windows 0.2.25
+
+### New
+- Fan art list: 66 more covers for ROM hacks, fan translations, homebrew and prototypes (Satellaview
+  games, SNES ports of NES games with MSU-1, Game Boy homebrew from itch.io, RiQa's N64 prototypes ...),
+  each credited in `fanart/README.md`. A game's exact name is matched first ("BS Zelda ... (Part 3)"),
+  then its name with tags and versions out, only when that points at one cover.
+
 ## Phosphor for Windows 0.2.24
 
 ### New

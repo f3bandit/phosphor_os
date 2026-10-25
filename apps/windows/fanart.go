@@ -55,19 +55,55 @@ func fanartIndex(b []byte) map[string]*fanGame {
 	if json.Unmarshal(b, &f) != nil {
 		return nil
 	}
+	// "=" + the exact name (tags too: "(Part 3)"), and the loose name (tags and versions out: every
+	// version of a hack) unless two entries share it
 	m := map[string]*fanGame{}
+	clash := map[string]bool{}
 	for _, g := range f.Games {
-		for _, n := range g.Names {
-			if k := fanKey(n); k != "" && g.Art != "" {
-				m[g.Sys+"|"+k] = g
-			}
+		if g.Art == "" {
+			continue
 		}
+		for _, n := range g.Names {
+			if k := fanExact(n); k != "" {
+				m["="+g.Sys+"|"+k] = g
+			}
+			k := g.Sys + "|" + fanKey(n)
+			if fanKey(n) == "" {
+				continue
+			}
+			if o, ok := m[k]; ok && o != g {
+				clash[k] = true
+			}
+			m[k] = g
+		}
+	}
+	for k := range clash {
+		delete(m, k)
 	}
 	return m
 }
 
-// fanKey: the name as fan art is matched by
+// fanKey: the name as fan art is matched by, loosely
 func fanKey(t string) string { return amKey(amStrip(amClean(t))) }
+
+// fanExact: the name with only spaces, case and punctuation ignored
+func fanExact(t string) string {
+	var b strings.Builder
+	for _, c := range strings.ToLower(t) {
+		if c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c > 127 {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
+}
+
+// fanFind: a game's entry: its exact name first, then the loose one
+func fanFind(m map[string]*fanGame, sys, title string) *fanGame {
+	if g := m["="+sys+"|"+fanExact(title)]; g != nil {
+		return g
+	}
+	return m[sys+"|"+fanKey(title)]
+}
 
 // fanartFor: the fan art for a game, if the list has it (the list is read again after an hour)
 func fanartFor(ctx context.Context, sys, title string) *fanGame {
@@ -82,7 +118,7 @@ func fanartFor(ctx context.Context, sys, title string) *fanGame {
 		}
 		fanart.byKey, fanart.at = m, time.Now()
 	}
-	return fanart.byKey[sys+"|"+fanKey(title)]
+	return fanFind(fanart.byKey, sys, title)
 }
 
 // fanartLookup: a source like the others (scrape_run.go asks it first)
