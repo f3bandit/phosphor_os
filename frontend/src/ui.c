@@ -7874,10 +7874,13 @@ static void ingame_open(void)
 	static const char *const hints[] = { "A", "Select", "B", "Back to the game", NULL };
 	footer_set(hints);
 	ui_activity();
-	/* drawn in full first, then shown over the game: no flash of the old screen while it draws */
+	/* Main shows Linux's screen over the game first (it switches consoles, which can wipe what's
+	   there), then the menu is drawn once, in full: drawn before, it's lost; drawn twice, it jitters */
+	if (mainlink_ingame(1)) { show_home(); return; }
+	usleep(150000);
+	console_quiet();
 	lv_obj_invalidate(lv_screen_active());
 	lv_refr_now(NULL);
-	if (mainlink_ingame(1)) show_home();
 }
 static void ingame_close(int to_game)
 {
