@@ -144,6 +144,24 @@ func apiState(w http.ResponseWriter, r *http.Request) {
 		if b, code, err := call(json.RawMessage(`{"cmd":"status"}`)); err == nil && code == 200 {
 			st["connected"] = true
 			st["status"] = json.RawMessage(b)
+			// the app takes the TV's look (Settings > Look on the SS1), kept for when it's offline
+			if lb, lc, le := call(json.RawMessage(`{"cmd":"look"}`)); le == nil && lc == 200 {
+				var l struct {
+					OK      bool   `json:"ok"`
+					Accent  string `json:"accent"`
+					Texture int    `json:"texture"`
+				}
+				if json.Unmarshal(lb, &l) == nil && l.OK && accents[l.Accent] {
+					cfgMu.Lock()
+					changed := cfg.Accent != l.Accent || cfg.Texture != l.Texture
+					cfg.Accent, cfg.Texture = l.Accent, l.Texture
+					cfgMu.Unlock()
+					if changed {
+						_ = saveConfig()
+					}
+					st["accent"], st["texture"] = l.Accent, l.Texture
+				}
+			}
 		} else {
 			st["connected"] = false
 			if err != nil {
