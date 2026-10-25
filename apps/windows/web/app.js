@@ -141,8 +141,17 @@ function back() {
 	if (stack.length > 1) { stack.pop(); const s = stack[stack.length - 1]; show(s); if (s.restore) s.restore(); }
 }
 function topScr() { return stack[stack.length - 1]; }
+/* The hints name the PC's keys: the controller in the SS1's ports can't drive this window. Only after a
+   controller plugged into the PC is used do they name its buttons (and the keys again after a key press). */
+const KEYS = { A: "Enter", B: "Esc", X: "X", Y: "Y", "LB/RB": "Q/E", Start: "M", "☰": "M" };
+let hintList = [], padMode = false;
 function setHints(list) {
-	$("#hints").innerHTML = list.map(([k, t]) => `<span class="hint"><kbd>${esc(k)}</kbd>${esc(t)}</span>`).join("");
+	hintList = list;
+	$("#hints").classList.toggle("pad", padMode);
+	$("#hints").innerHTML = list.map(([k, t]) => `<span class="hint"><kbd>${esc(padMode ? k : KEYS[k] || k)}</kbd>${esc(t)}</span>`).join("");
+}
+function inputMode(pad) {
+	if (pad !== padMode) { padMode = pad; setHints(hintList); }
 }
 /* tabs: buttons with data-tab inside .tabs; LB/RB or Q/E switch */
 function tabs(root, names, cur0, onSwitch) {
@@ -155,6 +164,7 @@ function tabs(root, names, cur0, onSwitch) {
 /* ---------- input: keys, mouse, controller ---------- */
 addEventListener("keydown", e => {
 	touched = true;
+	inputMode(false);
 	const typing = document.activeElement && document.activeElement.matches("input, textarea");
 	const k = e.key;
 	if (typing && !["ArrowUp", "ArrowDown", "Escape", "Enter", "Tab"].includes(k)) return;
@@ -173,7 +183,7 @@ addEventListener("keydown", e => {
 	case "e": case "PageDown": s && s.tab && s.tab(1); break;
 	case "x": case "X": s && s.x && s.x(); break;
 	case "y": case "Y": case "/": s && s.y ? s.y() : push(Search); break;
-	case "F1": case "m": push(AppSettings); break;
+	case "F1": case "m": case "M": s && s.start ? s.start() : push(AppSettings); break;   /* the controller's Start */
 	default: return;
 	}
 	e.preventDefault();
@@ -220,7 +230,7 @@ function padLoop() {
 			lb: () => s && s.tab && s.tab(-1), rb: () => s && s.tab && s.tab(1), start: () => (s && s.start ? s.start() : push(AppSettings)),
 		};
 		for (const k in st) {
-			if (st[k] && !pad.held[k]) { touched = true; act[k](); pad.next[k] = now + 400; }
+			if (st[k] && !pad.held[k]) { touched = true; inputMode(true); act[k](); pad.next[k] = now + 400; }
 			else if (st[k] && ["up", "down", "left", "right"].includes(k) && now >= pad.next[k]) { act[k](); pad.next[k] = now + 90; }
 			pad.held[k] = st[k];
 		}

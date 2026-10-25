@@ -149,6 +149,7 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.45; }
 .hint { display: flex; align-items: center; gap: .7rem; color: var(--dim); font-size: 1rem; }
 .hint kbd { min-width: 1.75rem; height: 1.75rem; padding: 0 .45rem; border: 1.5px solid var(--text); border-radius: 1rem; display: inline-flex;
 	align-items: center; justify-content: center; font: 600 .8125rem Inter, sans-serif; color: var(--text); }
+#hints:not(.pad) .hint kbd { border-radius: .35rem; }   /* the PC's keys look like keys, a controller's buttons stay round */
 #toast { position: fixed; left: 50%; bottom: 5.5rem; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--acc);
 	border-radius: .7rem; padding: .8rem 1.3rem; box-shadow: 0 1rem 3rem #0008; max-width: 40rem; }
 .spin { display: inline-block; width: 1em; height: 1em; border: 2px solid var(--line); border-top-color: var(--acc); border-radius: 50%;
