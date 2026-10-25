@@ -21,7 +21,7 @@ if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/b
 # phosphor-menu (the menu core with the front ports): its GitHub Actions build, saved next to the repo
 if [ -f ../phosphor-menu/menu_phosphor.rbf ]; then mkdir -p "$D/cores"; cp ../phosphor-menu/menu_phosphor.rbf "$D/cores/"; fi
 for f in "$D"/bin/*; do case "$f" in *.sh) continue ;; esac; file "$f" | grep -q "ARM" || { echo "$f isn't an ARM build" >&2; exit 1; }; done
-cp install/install.sh install/uninstall.sh install/phosphor.sh install/update.sh LICENSE.md "$D/"
+cp install/install.sh install/uninstall.sh install/phosphor.sh install/update.sh install/ss1_video_ini.sh LICENSE.md "$D/"
 mkdir -p "$D/wallpaper" && cp install/wallpaper/phosphor-wallpaper.png "$D/wallpaper/"
 # MiSTer's updaters, started from Phosphor: a restore point of MiSTer's system files first (when
 # update-guard is installed), then the updater itself, one after the other in MiSTer's terminal

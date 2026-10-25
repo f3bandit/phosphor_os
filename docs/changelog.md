@@ -3,6 +3,29 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.36, Phosphor for Windows 0.2.29, Phosphor for Android 0.9.4
+
+### Changed
+- **The SS1's video ini files are set to Taki's settings** (#165). The SuperStation has its own video
+  hardware: a Sony encoder for S-Video and composite that needs `vga_mode=subcarrier`. Taki ships
+  `MiSTer.ini` plus four profiles (RGHV, RGsB, SVID, YPbP). The installer now edits just the video lines
+  (`vga_mode`, `composite_sync`, `vga_sog`, `video_info`, `logo`) to his values, in place, adds a missing
+  profile, and renames `MiSTer_example.ini` to `MiSTer_example.ini.txt`. Everything else in each file
+  (`main=`, HDMI settings, per-core sections) stays. Copies go to `phosphor/backup/video-ini-<date>`. It
+  runs once per card: a fresh install, the first update with it, and the SD image. After that your own
+  changes stay. The list of changes is in `phosphor/backup/video-ini-taki.done`.
+- **Four video profiles** instead of three. MiSTer's Main offers only the first three `MiSTer_*.ini` it
+  finds, so one of Taki's four was always hidden (two, with the example file). Phosphor's Main and
+  Settings › Video (TV, Windows, Android) now offer all four. MiSTer's own OSD picker still shows three.
+- New card: `MiSTer.ini` starts from MiSTer's example (either name) and gets Taki's video settings.
+- Why and where, for anyone changing this later: `docs/ss1-video.md`.
+
+### Fixed
+- **Update Phosphor from MiSTer's Scripts menu** (`update_phosphor.sh`) ran MiSTer's own updater instead
+  of Phosphor's. It looked for `*/update.sh` in the package, which since 0.26.4 also matched
+  `scripts/update.sh`. It stopped there without changing anything; it now takes the package's own
+  `update.sh` by its exact path. Settings › Update Phosphor (TV and apps) wasn't affected.
+
 ## 0.27.35, Phosphor for Windows 0.2.28, Phosphor for Android 0.9.3
 
 ### Changed

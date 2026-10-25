@@ -303,11 +303,16 @@ char *vt_set(const char *text, const char *key_in, const char *value)
 	return out;
 }
 
-/* ---------- profiles (MiSTer.ini and up to three MiSTer_*.ini, the way Main picks them) ---------- */
+/* ---------- profiles (MiSTer.ini and up to four MiSTer_*.ini, the way Phosphor's Main picks them) ----------
+ * WHY four: the SuperStation One ships MiSTer.ini plus four video profiles (Taki's settings: RGHV, RGsB,
+ * SVID, YPbP). MiSTer's own Main offers only the first three MiSTer_*.ini it finds; Phosphor's Main
+ * (phosphor-main cfg.cpp, CFG_ALT_MAX) offers four. VT_ALT_MAX here must equal CFG_ALT_MAX there.
+ * The values in those files are set by vini.c. See docs/ss1-video.md. */
+#define VT_ALT_MAX 4
 
 typedef struct {
 	char name[64];
-	int alt;            /* 0 MiSTer.ini, 1-3 an alternative, -1 one Main doesn't see (only the first three it finds) */
+	int alt;            /* 0 MiSTer.ini, 1-4 an alternative, -1 one Main doesn't see (only the first four it finds) */
 	char label[8];      /* as Main's menu shows it */
 } prof_t;
 
@@ -320,7 +325,7 @@ static int name_ok(const char *n)
 
 static int ci_cmp(const void *a, const void *b) { return strcasecmp((const char *)a, (const char *)b); }
 
-/* cfg_get_name / cfg_get_label in Main: the first three MiSTer_*.ini in directory order, then sorted */
+/* cfg_get_name / cfg_get_label in Phosphor's Main: the first four MiSTer_*.ini in directory order, then sorted */
 static int profiles(prof_t *p, int max)
 {
 	int n = 0;
@@ -328,14 +333,14 @@ static int profiles(prof_t *p, int max)
 	p[n].alt = 0;
 	snprintf(p[n].label, sizeof(p[n].label), "Main");
 	n++;
-	char seen[3][64], all[16][64];
+	char seen[VT_ALT_MAX][64], all[16][64];
 	int ns = 0, na = 0;
 	DIR *d = opendir(p_fat());
 	struct dirent *e;
 	while (d && (e = readdir(d))) {
 		size_t l = strlen(e->d_name);
 		if (l < 64 && !strncasecmp(e->d_name, "MiSTer_", 7) && l >= 4 && !strcasecmp(e->d_name + l - 4, ".ini")) {
-			if (ns < 3) snprintf(seen[ns++], 64, "%s", e->d_name);
+			if (ns < VT_ALT_MAX) snprintf(seen[ns++], 64, "%s", e->d_name);
 			if (na < 16) snprintf(all[na++], 64, "%s", e->d_name);
 		}
 	}
@@ -389,7 +394,7 @@ int vt_altcfg(int set)
 	volatile unsigned char *b = (volatile unsigned char *)m + ALT_OFF;
 	int r = 0;
 	if (set >= 0) { b[0] = 0x34; b[1] = 0x99; b[2] = 0xBA; b[3] = (unsigned char)set; r = set; }
-	else if (b[0] == 0x34 && b[1] == 0x99 && b[2] == 0xBA) r = b[3] <= 3 ? b[3] : 0;
+	else if (b[0] == 0x34 && b[1] == 0x99 && b[2] == 0xBA) r = b[3] <= VT_ALT_MAX ? b[3] : 0;
 	munmap(m, 0x1000);
 	return r;
 }
@@ -666,7 +671,7 @@ cJSON *vt_cmd(cJSON *req, const char **err)
 		if (game_running()) { *err = "A game is running: close it first (trying restarts the menu)"; return NULL; }
 		if (cJSON_IsNumber(prof)) {
 			int to = prof->valueint;
-			if (to < 0 || to > 3 || !alt_file(to)) { *err = "profile: 0 (MiSTer.ini) or one of the alternatives Main sees (1-3)"; return NULL; }
+			if (to < 0 || to > VT_ALT_MAX || !alt_file(to)) { *err = "profile: 0 (MiSTer.ini) or one of the alternatives Main sees (1-4)"; return NULL; }
 			if (try_profile(to, secs, e2, sizeof(e2))) { snprintf(e, sizeof(e), "%s", e2); *err = e; return NULL; }
 		} else {
 			char *text = slurp(path);

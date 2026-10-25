@@ -150,7 +150,10 @@ if [ "$BOOT" = 2 ] && [ -f "$ROOT/bin/MiSTer_phosphor" ]; then
 		grep -q "^main=phosphor/bin/MiSTer_phosphor" "$INI" || cp "$INI" "$ROOT/backup/MiSTer.ini.$(date +%Y%m%d-%H%M%S)"
 	else
 		# no MiSTer.ini yet (a new card): start from MiSTer's example, so every other setting is MiSTer's
-		if [ -f "$FAT/MiSTer_example.ini" ]; then cp "$FAT/MiSTer_example.ini" "$INI"; else printf '[MiSTer]\n' > "$INI"; fi
+		# (renamed MiSTer_example.ini.txt by ss1_video_ini.sh below, so either name; the SS1's video
+		# lines are set to Taki's right after)
+		ex="$FAT/MiSTer_example.ini"; [ -f "$ex" ] || ex="$FAT/MiSTer_example.ini.txt"
+		if [ -f "$ex" ]; then cp "$ex" "$INI"; else printf '[MiSTer]\n' > "$INI"; fi
 		: > "$ROOT/backup/MiSTer.ini.created"
 	fi
 	# the main= that was there (in [MiSTer]), for uninstall.sh
@@ -164,6 +167,26 @@ if [ "$BOOT" = 2 ] && [ -f "$ROOT/bin/MiSTer_phosphor" ]; then
 		END { if (!done) { print "[MiSTer]"; print "main=phosphor/bin/MiSTer_phosphor" } }' "$INI" | tr -d '\r' | sed 's/$/\r/' > "$tmp"
 	cat "$tmp" > "$INI" && rm -f "$tmp"
 	echo "MiSTer.ini: main=phosphor/bin/MiSTer_phosphor (before: $(head -1 "$ROOT/backup/main.prev" 2>/dev/null | grep . || echo "MiSTer's own"))"
+fi
+
+# The SS1's video ini files set to Taki's settings, once per card (fresh install, the first update
+# with this, and the SD image, which is made by running this installer). WHY: the SS1 has its own
+# analog video hardware (the Sony CXA encoder for S-Video/composite needs vga_mode=subcarrier) and
+# ships MiSTer.ini plus four profiles (RGHV, RGsB, SVID, YPbP); MiSTer_example.ini took one of
+# Main's profile slots. Only the video lines are edited, everything else in each file stays; a copy
+# of each file goes to phosphor/backup/video-ini-<date>. After the marker the user's own changes
+# stay. The values and why: ss1_video_ini.sh and docs/ss1-video.md (SS1 Tool does the same on
+# Console Mode cards: keep them the same).
+VINI_DONE="$ROOT/backup/video-ini-taki.done"
+if [ -f "$FAT/MiSTer.ini" ] && [ ! -f "$VINI_DONE" ] && [ -f "$HERE/ss1_video_ini.sh" ]; then
+	mkdir -p "$ROOT/backup" "$ROOT/logs"
+	vbk="$ROOT/backup/video-ini-$(date +%Y%m%d-%H%M%S)"
+	if vout="$(sh "$HERE/ss1_video_ini.sh" "$FAT" "$vbk" 2>&1)"; then
+		{ date; echo "$vout"; echo "copies: $vbk"; } > "$VINI_DONE"
+		[ -n "$vout" ] && { echo "Video ini files set to the SuperStation's (Taki's) settings; copies in $vbk:"; echo "$vout" | sed 's/^/  /'; }
+	else
+		echo "Video ini files: not changed ($vout)"
+	fi
 fi
 
 echo "Phosphor $(cat "$ROOT/VERSION") installed in $ROOT"

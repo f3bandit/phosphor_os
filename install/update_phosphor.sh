@@ -15,13 +15,16 @@ if [ -z "$pkg" ]; then
 fi
 mkdir -p "$FAT/phosphor/updates"
 case "$pkg" in "$FAT/phosphor/updates/"*) ;; *) cp -f "$pkg" "$FAT/phosphor/updates/" && pkg="$FAT/phosphor/updates/$(basename "$pkg")" ;; esac
-v="$(tar -xzOf "$pkg" --wildcards '*/VERSION' 2>/dev/null | head -1 | cut -d' ' -f1)"
+# files at the package's top (phosphor-<version>/...) by exact name: the package also has
+# scripts/update.sh (MiSTer's own updater, started from Phosphor), which a '*/update.sh' wildcard matched
+top="$(tar -tzf "$pkg" 2>/dev/null | head -1 | cut -d/ -f1)"
+v="$(tar -xzOf "$pkg" "$top/VERSION" 2>/dev/null | head -1 | cut -d' ' -f1)"
 [ -n "$v" ] || { echo "$(basename "$pkg") is damaged or isn't a Phosphor package."; exit 1; }
 echo "Installed: Phosphor $(cut -d' ' -f1 "$FAT/phosphor/VERSION" 2>/dev/null)"
 echo "Package:   Phosphor $v ($(basename "$pkg"))"
 # the updater from the package itself
 u=/tmp/phosphor-update.sh
-tar -xzOf "$pkg" --wildcards '*/update.sh' > "$u" 2>/dev/null && [ -s "$u" ] || { echo "This package has no updater: it's older than 0.27.6."; exit 1; }
+tar -xzOf "$pkg" "$top/update.sh" > "$u" 2>/dev/null && [ -s "$u" ] || { echo "This package has no updater: it's older than 0.27.6."; exit 1; }
 chmod 755 "$u"
 PHOS_UPDATE_DELAY=8 "$u" install "$pkg" > /dev/null
 echo

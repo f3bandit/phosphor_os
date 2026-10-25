@@ -11,8 +11,8 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.9.3"
+        versionCode = 14
+        versionName = "0.9.4"
         // Phosphor's own ScreenScraper developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD
         // in the environment), never in the repo; empty without it
         fun lit(v: String?) = "\"" + (v ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
