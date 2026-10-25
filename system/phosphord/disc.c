@@ -217,6 +217,23 @@ static const char *mgl_core(const char *mgl)
 	return NULL;
 }
 
+/* Settings › Discs (TV and apps): off, Main doesn't watch or read the drive at all */
+int disc_enabled(sqlite3 *db)
+{
+	char v[8];
+	return strcmp(db_meta_get(db, "discs", v, sizeof(v)), "0") != 0;
+}
+
+int disc_set_enabled(sqlite3 *db, int on)
+{
+	db_meta_set(db, "discs", on ? "1" : "0");
+	char *r = main_req(on ? "disc on" : "disc off", 1500);
+	int ok = r && strstr(r, "\"ok\":true");
+	free(r);
+	plog("disc: discs %s", on ? "on" : "off");
+	return ok ? 0 : -1;
+}
+
 cJSON *disc_json(sqlite3 *db)
 {
 	char *r = main_req("disc", 1500);
@@ -233,6 +250,7 @@ cJSON *disc_json(sqlite3 *db)
 	mgl = mgl ? mgl : ""; msys = msys ? msys : "";
 
 	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "enabled", disc_enabled(db));
 	cJSON_AddBoolToObject(o, "drive", cJSON_IsTrue(cJSON_GetObjectItem(m, "drive")));
 	cJSON_AddStringToObject(o, "state", state);
 	cJSON_AddStringToObject(o, "type", type);
