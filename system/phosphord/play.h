@@ -8,6 +8,9 @@
 
 int mister_cmd(const char *cmd, char *err, size_t errn);
 int play_launch(sqlite3 *db, long long game_id, char *err, size_t errn);
+/* a game started some other way (a disc in the dock's drive, disc.c): count it and its play time on
+   this library game (game_id > 0), without making it the "last game" (that stays the last one from storage) */
+void play_track(sqlite3 *db, long long game_id);
 void play_tick(sqlite3 *db);     /* call every couple of seconds: adds play time when back in the menu */
 
 #endif

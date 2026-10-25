@@ -88,6 +88,7 @@
  *                                           error, addresses, pairing{code, seconds}|null, paired,
  *                                           devices:[{id, name, created, last_seen}]} */
 #include "api.h"
+#include "disc.h"
 #include "art.h"
 #include "cJSON.h"
 #include "db.h"
@@ -417,6 +418,17 @@ static char *cmd_last(sqlite3 *db)
 	char buf[32];
 	db_meta_get(db, "last_game", buf, sizeof(buf));
 	cJSON *o = ok();
+	/* Play last: a disc played after the last game from storage, if it's still in the drive (disc.c) */
+	long long played = 0;
+	if (buf[0]) {
+		sqlite3_stmt *st;
+		if (sqlite3_prepare_v2(db, "SELECT IFNULL(last_played,0) FROM games WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
+			sqlite3_bind_int64(st, 1, atoll(buf));
+			if (sqlite3_step(st) == SQLITE_ROW) played = sqlite3_column_int64(st, 0);
+			sqlite3_finalize(st);
+		}
+	}
+	disc_last(db, o, played);
 	cJSON *g = buf[0] ? game_json(db, atoll(buf)) : NULL;
 	if (g) cJSON_AddItemToObject(o, "game", g);
 	else cJSON_AddNullToObject(o, "game");
@@ -1733,6 +1745,18 @@ char *api_handle(sqlite3 *db, const char *request)
 			sqlite3_finalize(st);
 		}
 		out = n ? reply(ok()) : fail(on ? "no such game, or it's linked to another" : "it isn't marked as not a game");
+	}
+	else if (!strcmp(c->valuestring, "disc")) {
+		/* the dock's CD/DVD drive (disc.c): what's in it, named, with box art and whether it plays */
+		cJSON *d = disc_json(db);
+		if (!d) out = fail("this Main doesn't read discs");
+		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "disc", d); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "disc_play")) {
+		char err[300];
+		out = disc_play(db, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "disc_eject")) {
+		char err[300];
+		out = disc_eject(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	}
 	else if (!strcmp(c->valuestring, "launch")) {
 		char err[300];
