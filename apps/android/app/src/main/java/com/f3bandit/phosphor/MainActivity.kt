@@ -44,7 +44,7 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 
-const val BuildConfigVersion = "0.9.0"
+const val BuildConfigVersion = "0.9.1"
 
 class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
         Notes.channels(this)
         model = AppModel(KeystorePairingStore(applicationContext))
         model.onChange = { runOnUiThread { event("state", stateJson()) } }
+        SysBackup.onChange = { event("sysbk", SysBackup.state(this).toString()) }
         pendingGo = intent?.getStringExtra("go")
 
         // edge to edge: the page sits inside the system bars and the keyboard; the bars show the app bar's colour
@@ -290,6 +291,21 @@ class MainActivity : ComponentActivity() {
             }
             "deleteArt" -> { ArtStore.deleteAll(); "{}" }
             "deleteLists" -> { File(cacheDir, "boxart-lists").deleteRecursively(); "{}" }
+            "sysbk" -> {
+                val api = model.api ?: throw PhosphorError("Not paired")
+                SysBackup.list(ctx, api).put("state", SysBackup.state(ctx)).toString()
+            }
+            "sysbkSave" -> {
+                val api = model.api ?: throw PhosphorError("Not paired")
+                lifecycleScope.launch { SysBackup.save(applicationContext, api) }
+                SysBackup.state(ctx).toString()
+            }
+            "sysbkRestore" -> {
+                val api = model.api ?: throw PhosphorError("Not paired")
+                SysBackup.restore(ctx, api, a.optString("id"), a.optString("hash"))
+                lifecycleScope.launch { SysBackup.save(applicationContext, api) }   // the file as it is now is a version too
+                SysBackup.state(ctx).toString()
+            }
             "notes" -> { Notes.unseen(ctx); JSONObject()
                 .put("list", JSONArray(Notes.list.map { JSONObject().put("id", it.id).put("at", it.at).put("level", it.level).put("title", it.title).put("body", it.body).put("seen", it.seen).put("go", it.go) }))
                 .put("notify", Prefs.notify).put("allowed", Notes.canPost(ctx)).toString() }

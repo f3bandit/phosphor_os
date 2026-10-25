@@ -3,6 +3,19 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.30
+
+### New
+- **MiSTer & Linux backups in both apps** (like SS1 Tool's): every version of the settings files
+  (MiSTer.ini and its profiles, downloader.ini, u-boot.txt, user-startup.sh, Phosphor's settings, the
+  network address, name and SSH settings) and the system files (MiSTer's and Phosphor's Main, the menu
+  core, the Linux kernel, and on the PC Linux itself), kept on the PC (Settings > Power & updates) and on
+  the phone (More > MiSTer & Linux backups). Checked every half hour while the app runs; only files that
+  changed are copied. A settings file that changed when Linux did "looks reset" and gets a notification.
+  Any version can be put back: phosphord checks it arrived whole and keeps the file as it was first
+  (phosphor/backups/sysbk). WiFi, SSH keys, pairings and logins are never copied (phosphord's `sysbk`).
+- Phosphor for Windows 0.2.19, Phosphor for Android 0.9.1.
+
 ## 0.27.27
 
 ### New

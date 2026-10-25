@@ -45,6 +45,7 @@
  *                                           {status{...}, scanning, networks:[{ssid, signal, bands,
  *                                           secure, saved}], saved:[{ssid, open}]}; passwords are
  *                                           never sent back
+ *   sysbk [get id offset | put id offset size hash data]   MiSTer & Linux backups for the apps (sysbk.c)
  *   look                                    the TV's accent (amber|red|green|blue|purple) and texture number
  *   vset [try {key:value}|keep|revert|undo] [secs]  MiSTer.ini video settings, tried with Keep (vtry.h)
  *   diag       [run] [bundle]               whole-system checks (diag module), in the background:
@@ -93,6 +94,7 @@
 #include "diag.h"
 #include "wifi.h"
 #include "vtry.h"
+#include "sysbk.h"
 #include "remote.h"
 #include "sshacc.h"
 #include "mccmd.h"
@@ -1365,6 +1367,12 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "diag")) out = cmd_diag(req);
 	else if (!strcmp(c->valuestring, "wifi")) out = cmd_wifi(req);
 	else if (!strcmp(c->valuestring, "look")) out = cmd_look();
+	else if (!strcmp(c->valuestring, "sysbk")) {
+		const char *e = NULL;
+		cJSON *o = sysbk_cmd(req, &e);
+		if (!o) out = fail(e ? e : "failed");
+		else { cJSON_AddBoolToObject(o, "ok", 1); out = reply(o); }
+	}
 	else if (!strcmp(c->valuestring, "vset")) {
 		const char *e = NULL;
 		cJSON *o = vt_cmd(req, &e);

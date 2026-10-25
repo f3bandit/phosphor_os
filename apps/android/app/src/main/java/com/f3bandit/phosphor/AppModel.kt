@@ -55,6 +55,7 @@ class AppModel(private val store: PairingStore) {
                             if (before != (Prefs.accent to Prefs.texture)) tell = true
                         }
                         if (n % 2 == 0 && Prefs.notify) runCatching { Notes.check(app, a) }
+                        if (SysBackup.due()) launch { SysBackup.save(app, a) }      // MiSTer & Linux backups: what changed
                     }
                     if (tell) changed()
                 } else if (reachable != null) { reachable = null; changed() }

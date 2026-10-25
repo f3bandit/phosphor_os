@@ -170,6 +170,7 @@ func watchSS1() {
 			addNote(fmt.Sprintf("back-%d", time.Now().Unix()), "info", name+" is back", "Connected again.", "")
 		}
 		misses, lostTold = 0, false
+		sbAuto() // MiSTer & Linux backups: anything that changed, now and then
 
 		// the power check (health-watch): heavy work cut short with no trace, several times
 		if p := ask(`{"cmd":"power"}`); p != nil && p["installed"] == true && p["warn"] == true {
