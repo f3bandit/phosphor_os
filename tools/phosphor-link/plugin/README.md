@@ -1,4 +1,4 @@
-# Phosphor Link 0.4.1
+# Phosphor Link 0.4.2
 
 Lets Claude run commands, copy files, watch the console and press buttons on a SuperStation One.
 

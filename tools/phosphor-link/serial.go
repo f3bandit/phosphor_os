@@ -106,7 +106,14 @@ func probe(name string, baud int) bool {
 	}
 	_, _ = p.Write([]byte("\r"))
 	read(2 * time.Second)
-	return promptRe.MatchString(strings.TrimRight(cleanText(string(got)), " \n")+" ") || promptRe.MatchString(cleanText(string(got)))
+	if promptRe.MatchString(strings.TrimRight(cleanText(string(got)), " \n")+" ") || promptRe.MatchString(cleanText(string(got))) {
+		return true
+	}
+	// a shell an earlier Phosphor Link left logged in prints no prompt (PS1='', no echo): ask it
+	got = nil
+	_, _ = p.Write([]byte("echo PLPROBE_ok\r"))
+	read(2 * time.Second)
+	return strings.Contains(string(got), "PLPROBE_ok") || promptRe.MatchString(cleanText(string(got)))
 }
 
 func findPort(cfg Config) (string, error) {
@@ -294,6 +301,10 @@ func (s *SerialLink) login() error {
 		_ = s.write("\r")
 		m, _, err := s.waitFor(from, loginRe, 4*time.Second)
 		if err != nil {
+			// no prompt: maybe a shell an earlier Phosphor Link left logged in (it prints none)
+			if s.ping(3 * time.Second) {
+				return s.setup()
+			}
 			continue
 		}
 		switch strings.TrimSpace(m[1]) {
@@ -512,6 +523,11 @@ func (s *SerialLink) Run(cmd string, timeout time.Duration) (string, int, error)
 	script := "/tmp/pl." + id + ".sh"
 	out := "/tmp/pl." + id + ".out"
 	if err := s.push([]byte(cmd+"\n"), script, "644"); err != nil {
+		// no answer while sending the script: the console may have died silently (the debug port
+		// stopped passing data, or the MiSTer rebooted under us). Check it, so a dead one is replaced.
+		if strings.Contains(err.Error(), "timed out") && !s.revive() {
+			return "", -1, fmt.Errorf("the console stopped answering (link reset)")
+		}
 		return "", -1, err
 	}
 	m, _, err := s.line("bash "+script+" > "+out+" 2>&1 < /dev/null", "PLRC_"+id+" $?", "PLRC_"+id+` (\d+)`, timeout)
@@ -580,6 +596,22 @@ func (s *SerialLink) revive() bool {
 	s.dead = true
 	s.mu.Unlock()
 	return false
+}
+
+// Check (the keeper's health check): when nothing else is using the console, does the shell still
+// answer? A console that doesn't is revived, or marked dead so it's opened again. Busy counts as fine.
+func (s *SerialLink) Check() bool {
+	if !s.opMu.TryLock() {
+		return true
+	}
+	defer s.opMu.Unlock()
+	if !s.Alive() {
+		return false
+	}
+	if s.ping(3 * time.Second) {
+		return true
+	}
+	return s.revive()
 }
 
 // Alive (for the session's watchdog): false once the port failed or revive gave up. A link

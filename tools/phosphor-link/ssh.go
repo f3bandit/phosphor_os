@@ -50,10 +50,20 @@ func OpenSSH(cfg Config) (*SSHLink, error) {
 		HostKeyCallback: noteHostKey,
 		Timeout:         5 * time.Second,
 	}
-	c, err := ssh.Dial("tcp", addr, conf)
+	// the time limit covers the handshake too: a MiSTer half-way through booting or shutting down can
+	// take the connection and then never answer, which would hang every call behind this one
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("ssh %s: %w", addr, err)
 	}
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+	cc, chans, reqs, err := ssh.NewClientConn(conn, addr, conf)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("ssh %s: %w", addr, err)
+	}
+	_ = conn.SetDeadline(time.Time{})
+	c := ssh.NewClient(cc, chans, reqs)
 	l := &SSHLink{host: addr, c: c, stop: make(chan struct{})}
 	go l.keepalive()
 	return l, nil

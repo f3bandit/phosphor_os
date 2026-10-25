@@ -113,6 +113,7 @@ func runMCP(cfg Config) error {
 	log.SetPrefix("phosphor-link: ")
 	srv := &mcpServer{sess: &session{cfg: cfg}, out: json.NewEncoder(os.Stdout)}
 	defer srv.sess.close()
+	srv.sess.keep()
 	rd := bufio.NewReaderSize(os.Stdin, 1<<20)
 	var wg sync.WaitGroup
 	for {
@@ -399,7 +400,11 @@ out=$(tail -n +$((m+1)) %[1]s 2>/dev/null); [ -n "$out" ] && echo "$out" || echo
 	case "reboot":
 		rb, err := m.sess.console()
 		if err != nil {
-			return err.Error(), true, false
+			// no debug port: reboot over SSH instead (no boot log), and wait until it answers again
+			if _, ok := l.(*SSHLink); !ok {
+				return err.Error(), true, false
+			}
+			return m.sshReboot(l, secs(argN(a, "timeout_s", 180)), err)
 		}
 		out, err := rb.Reboot(secs(argN(a, "timeout_s", 180)))
 		// an SSH link didn't survive the reboot either: reconnect both next time
@@ -450,4 +455,23 @@ func formatPorts(ps []PortInfo) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// sshReboot: the reboot tool when the debug port isn't answering. Reboots over SSH and waits for SSH to
+// answer again, so the next call doesn't land on a MiSTer that's half-way through booting.
+func (m *mcpServer) sshReboot(l Link, timeout time.Duration, why error) (string, bool, bool) {
+	_, _, _ = l.Run("sync; reboot", 5*time.Second) // the connection drops as it goes down
+	m.sess.drop()
+	time.Sleep(20 * time.Second)
+	end := time.Now().Add(timeout)
+	for time.Now().Before(end) {
+		if l2, err := m.sess.get(); err == nil {
+			if out, _, err := l2.Run("cat /proc/uptime", 10*time.Second); err == nil {
+				return "rebooted over SSH (no boot log: " + why.Error() + ")\nup again, uptime " + strings.Fields(out + " ?")[0] + " s", false, false
+			}
+			m.sess.drop()
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Sprintf("rebooted over SSH, but it didn't answer again within %s", timeout), true, false
 }
