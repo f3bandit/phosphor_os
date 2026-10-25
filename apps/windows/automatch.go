@@ -85,13 +85,61 @@ func amSave() {
 
 var (
 	amTagRe   = regexp.MustCompile(`\s*[\(\[][^\)\]]*[\)\]]`)
-	amTransRe = regexp.MustCompile(`(?i)\[T[-+]?[A-Za-z]{2,3}\b[^\]]*\]|\((?:[^)]*\b)?(?:translat(?:ed|ion)|english patch(?:ed)?)\b[^)]*\)`)
+	amTransRe = regexp.MustCompile(`(?i)\[T[-+]?[A-Za-z]{2,3}\b[^\]]*\]|\((?:[^)]*\b)?(?:translat(?:ed|ion)|english)\b[^)]*\)|\beng(?:lish)? ?(?:dub(?:bed)?|patch(?:ed)?|trans(?:lation)?)\b`)
 	amHackRe  = regexp.MustCompile(`(?i)\[h\d*[^\]]*\]|\((?:[^)]*\b)?(?:rom ?)?hack(?:ed)?\b[^)]*\)|\b(?:rom ?hack|kaizo)\b`)
-	// words fan versions add to a game's name (SS1 Tool's list)
-	amFanRe  = regexp.MustCompile(`(?i)\b(fast ?rom|restoration|restored|complete|deluxe|perfect edition|special edition|enhanced( colou?rs)?|enhancement|improvement|undub|purist|redux|remastered|msu-?1|sram|redesign(ed)?|v\d+(\.\d+)*[a-z]?)\b`)
-	amWordRe = regexp.MustCompile(`(?i)\b(rom ?hack|hack(ed)?|kaizo|translat(ed|ion))\b`)
+	// words fan versions add to a game's name (SS1 Tool's list, and more seen in real libraries)
+	amFanRe = regexp.MustCompile(`(?i)\b(fast ?rom|restoration|restored|complete|deluxe|perfect edition|special edition|special version|` +
+		`enhanced( colou?rs)?|enhancement|improvement|undub|purist|redux|remastered|msu-?1|sram|redesign(ed)?|rebalanced|` +
+		`major fixes( for)?|black label|sa-?1|arcade colou?rs|6-button( support)?|master patched|patched|un-?worked designs|` +
+		`grind-be-gone|v\d+(\.\d+)*[a-z]?)\b`)
+	amWordRe = regexp.MustCompile(`(?i)\b(rom ?hack|hack(ed)?|kaizo|translat(ed|ion)|eng(lish)? ?(dub(bed)?|patch(ed)?|trans(lation)?))\b`)
 	amStop   = map[string]bool{"the": true, "of": true, "a": true, "an": true, "and": true}
+	// not games at all: boot files, test ROMs, cheat discs, tools
+	amNotGameRe = regexp.MustCompile(`(?i)^(mister[- ](boot|demo)|boot ?\d*|empty|bootdisc)$|\b(btn ?test|pad ?test|controller (tester|test)|test ?rom|service disc|game ?shark|action replay|tonyhax|unirom|rom flasher|boot ?disc|trainer)\b`)
+	amVerRe     = regexp.MustCompile(`(?i)[\s._-]*v?\d+(\.\d+)+[a-z]?$`)
+	amDotRe     = regexp.MustCompile(`([A-Za-z0-9])\.([A-Za-z])`)
+	amCamelRe   = regexp.MustCompile(`([a-z])([A-Z])`)
+	amRoman     = map[string]string{"ii": "2", "iii": "3", "iv": "4", "v": "5", "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10",
+		"xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15", "xvi": "16"}
 )
+
+// amClean: a file-style name made readable: "Zeldas.Adventure.DX.v2.0.0" -> "Zeldas Adventure DX",
+// "SuperMarioBrosMini" -> "Super Mario Bros Mini", "Valis_IV_ ENG_DUB" -> "Valis IV ENG DUB"
+func amClean(t string) string {
+	t = strings.ReplaceAll(t, "_", " ")
+	t = amVerRe.ReplaceAllString(t, "")
+	t = amDotRe.ReplaceAllString(t, "$1 $2")
+	if !strings.Contains(strings.TrimSpace(t), " ") { // one word: joined by capitals or hyphens
+		t = amCamelRe.ReplaceAllString(t, "$1 $2")
+		if !strings.Contains(t, " ") {
+			t = strings.ReplaceAll(t, "-", " ")
+		}
+	}
+	return strings.Join(strings.Fields(t), " ")
+}
+
+// amGlued: a system's short name stuck on the end of a word ("icarusnes" -> "icarus"); each way it
+// can be read ("...snes" or "...s" + "nes"), none when there's nothing stuck on
+func amGlued(t string) []string {
+	ws := strings.Fields(t)
+	if len(ws) == 0 {
+		return nil
+	}
+	last := strings.ToLower(ws[len(ws)-1])
+	var out []string
+	for _, suf := range []string{"snes", "nes", "gbc", "gba", "sfc", "smd", "pce"} {
+		if strings.HasSuffix(last, suf) && len(last) >= len(suf)+4 {
+			w := append(append([]string{}, ws[:len(ws)-1]...), ws[len(ws)-1][:len(last)-len(suf)])
+			out = append(out, strings.Join(w, " "))
+		}
+	}
+	return out
+}
+
+// amNotGame: a boot file, test ROM or tool, and the words that said so
+func amNotGame(t string) string {
+	return amNotGameRe.FindString(strings.TrimSpace(amTagRe.ReplaceAllString(t, " ")))
+}
 
 // amKind: what the name says the game is, and the words that said it
 func amKind(title string) (kind, tag string) {
@@ -107,16 +155,23 @@ func amKind(title string) (kind, tag string) {
 	return "", ""
 }
 
-// amWords: the title's words for comparing, no tags, no "the", "of" ...
+// amWords: the title's words for comparing, no tags, no "the", "of" ...; Roman numbers as digits
 func amWords(t string) string {
 	var out []string
 	for _, w := range strings.Fields(nameKey(t)) {
-		if !amStop[w] {
-			out = append(out, w)
+		if amStop[w] {
+			continue
 		}
+		if d, ok := amRoman[w]; ok {
+			w = d
+		}
+		out = append(out, w)
 	}
 	return strings.Join(out, " ")
 }
+
+// amKey: amWords without the spaces, so "Sa-Ga" and "SaGa", "Pac Man" and "Pacman" are the same
+func amKey(t string) string { return strings.ReplaceAll(amWords(t), " ", "") }
 
 // amStrip: the base game's name: tags and the fan version's words out ("" when nothing is left)
 func amStrip(t string) string {
@@ -187,7 +242,7 @@ func amLibBase(g *sgame, lib []amLibGame) *amLibGame {
 		var best *amLibGame
 		bs := -1 << 30
 		for i := range cands {
-			if amWords(cands[i].Title) != key {
+			if amKey(cands[i].Title) != key {
 				continue
 			}
 			s := amRegionScore(cands[i].Title, want)
@@ -200,12 +255,12 @@ func amLibBase(g *sgame, lib []amLibGame) *amLibGame {
 		}
 		return best
 	}
-	base := amStrip(g.Title)
-	if b := pick(amWords(base)); b != nil {
+	base := amStrip(amClean(g.Title))
+	if b := pick(amKey(base)); b != nil {
 		return b
 	}
 	if m := amMain(base); m != base {
-		return pick(amWords(m))
+		return pick(amKey(m))
 	}
 	return nil
 }
@@ -216,13 +271,13 @@ func amLibBase(g *sgame, lib []amLibGame) *amLibGame {
 // list has at most two games under it (more means a series: "Castlevania - ..." is several games).
 // exact: the same words; otherwise the same main title only (another subtitle, or none)
 func amLoose(all []*LREntry, title string) (*LREntry, bool) {
-	base := amStrip(title)
-	want := amWords(base)
+	base := amStrip(amClean(title))
+	want := amKey(base)
 	if want == "" {
 		return nil, false
 	}
 	main := amMain(base)
-	mainW := amWords(main)
+	mainK := amKey(main)
 	wreg := strings.ToLower(regionOf(title))
 	type cand struct {
 		e     *LREntry
@@ -231,7 +286,7 @@ func amLoose(all []*LREntry, title string) (*LREntry, bool) {
 	var exact []cand
 	groups := map[string][]cand{}
 	tw := map[string]bool{}
-	for _, w := range strings.Fields(want) {
+	for _, w := range strings.Fields(amWords(base)) {
 		tw[w] = true
 	}
 	for _, e := range all {
@@ -239,21 +294,21 @@ func amLoose(all []*LREntry, title string) (*LREntry, bool) {
 			continue
 		}
 		nb := amStrip(e.Name)
-		nw := amWords(nb)
-		if nw == want {
+		nk := amKey(nb)
+		if nk == want {
 			exact = append(exact, cand{e, amRegionScore(e.Name, wreg)})
 			continue
 		}
-		if len(mainW) < 4 || amWords(amMain(nb)) != mainW {
+		if len(mainK) < 4 || amKey(amMain(nb)) != mainK {
 			continue
 		}
 		shared := 0
-		for _, w := range strings.Fields(nw) {
+		for _, w := range strings.Fields(amWords(nb)) {
 			if tw[w] {
 				shared++
 			}
 		}
-		groups[nw] = append(groups[nw], cand{e, shared*100 + amRegionScore(e.Name, wreg)})
+		groups[nk] = append(groups[nk], cand{e, shared*100 + amRegionScore(e.Name, wreg)})
 	}
 	best := func(cs []cand) *LREntry {
 		var b *LREntry
@@ -325,102 +380,147 @@ func (s *scrapeRun) matchPhase() {
 		s.mu.Lock()
 		s.st.Game, s.st.System = g.Title, g.System
 		s.mu.Unlock()
-		kind, tag := amKind(g.Title)
-		e := &amEntry{ID: g.ID, Title: g.Title, Sys: g.Sys, System: g.System, Kind: kind, Tag: tag, At: time.Now().Unix()}
-		// 1. the base game is in the library: link it
-		if kind != "" {
-			lib, ok := libs[g.Sys]
-			if !ok {
-				var j struct {
-					Games []amLibGame `json:"games"`
-				}
-				if err := ss1Call(map[string]any{"cmd": "games", "system": g.Sys, "limit": 100000}, &j); err != nil {
-					s.status("The SS1 didn't answer: " + err.Error())
-					return
-				}
-				lib = j.Games
-				libs[g.Sys] = lib
-			}
-			if b := amLibBase(g, lib); b != nil {
-				if err := ss1Call(map[string]any{"cmd": "link", "id": g.ID, "base": b.ID}, nil); err == nil {
-					e.How, e.BaseID, e.BaseTitle = "library", b.ID, b.Title
-					s.amAdd(e)
-					continue
-				}
-			}
-		}
-		// 2. the box art sources, asked for the base game
-		var names []string
-		if kind != "" {
-			base := amStrip(g.Title)
-			reg := ""
-			if r := regionOf(g.Title); r != "" && !strings.ContainsAny(r, "[]") {
-				reg = " (" + r + ")"
-			}
-			if base != "" {
-				names = append(names, base+reg)
-				if m := amMain(base); m != base && len(amWords(m)) >= 4 {
-					names = append(names, m+reg)
-				}
-			}
-		} else if m, ok := lrSystems[g.Sys]; ok {
-			var all []*LREntry
-			for _, lr := range m.lr {
-				l, rc := libretro.get(s.ctx, lr, m.disc, s.status)
-				if rc < 0 {
-					return
-				}
-				for k := range l.Entries {
-					all = append(all, &l.Entries[k])
-				}
-			}
-			if hit, exact := amLoose(all, g.Title); hit != nil {
-				names = append(names, hit.Name)
-				e.Kind, e.Tag = "name", ""
-				if exact { // the same words, written a little differently ("Legend of Zelda, The")
-					e.Kind = "spelling"
-				} else if b := amStrip(g.Title); amMain(b) != b {
-					e.Kind = "related" // its own subtitle, and the list's game another (or none): built on it, most likely
-				}
-			}
-		}
-		for _, n := range names {
-			g2 := *g
-			g2.Title, g2.CRC, g2.Serial, g2.Official, g2.LRSys = n, "", "", "", ""
-			rc, r := s.one(&g2)
-			if rc <= 0 {
-				if rc < 0 {
-					s.mu.Lock()
-					s.st.Later++
-					s.mu.Unlock()
-				}
-				continue
-			}
-			if err := s.report(&g2, rc, r); err != nil {
-				s.status("The SS1 didn't answer: " + err.Error())
-				return
-			}
-			has := map[string]bool{}
-			for _, h := range g.Has {
-				has[h] = true
-			}
-			for i := 0; i < fCount; i++ {
-				if r.f[i] != nil && *r.f[i] != "" && !has[fieldCols[i]] {
-					e.Fields = append(e.Fields, fieldCols[i])
-				}
-			}
-			e.How, e.Art, e.FoundBy = "lookup", !g.HasArt, r.foundBy
-			e.BaseTitle = g2.Official
-			if e.BaseTitle == "" {
-				e.BaseTitle = n
-			}
-			if e.Kind == "" {
-				e.Kind = "name"
-			}
-			s.amAdd(e)
-			break
+		if s.matchOne(g, libs) {
+			return
 		}
 	}
+}
+
+// matchOne: one game; true when the run has to stop (the SS1 or the network stopped answering)
+func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
+	clean := amClean(g.Title)
+	e := &amEntry{ID: g.ID, Title: g.Title, Sys: g.Sys, System: g.System, At: time.Now().Unix()}
+	// 0. not a game at all: out of "not found"
+	if w := amNotGame(clean); w != "" {
+		if err := ss1Call(map[string]any{"cmd": "not_game", "id": g.ID, "on": true}, nil); err == nil {
+			e.Kind, e.Tag, e.How = "notgame", w, "skip"
+			s.amAdd(e)
+		} else if strings.Contains(err.Error(), "unknown cmd") {
+			s.note("Update Phosphor on the SS1 (0.27.33 or later) to set test ROMs and tools aside")
+		}
+		return false
+	}
+	kind, tag := amKind(clean)
+	e.Kind, e.Tag = kind, tag
+	// 1. the base game is in the library: link it
+	if kind != "" {
+		lib, ok := libs[g.Sys]
+		if !ok {
+			var j struct {
+				Games []amLibGame `json:"games"`
+			}
+			if err := ss1Call(map[string]any{"cmd": "games", "system": g.Sys, "limit": 100000}, &j); err != nil {
+				s.status("The SS1 didn't answer: " + err.Error())
+				return true
+			}
+			lib = j.Games
+			libs[g.Sys] = lib
+		}
+		if b := amLibBase(g, lib); b != nil {
+			if err := ss1Call(map[string]any{"cmd": "link", "id": g.ID, "base": b.ID}, nil); err == nil {
+				e.How, e.BaseID, e.BaseTitle = "library", b.ID, b.Title
+				s.amAdd(e)
+				return false
+			}
+		}
+	}
+	// 2. the box art sources, asked by the base game's name, or by the name made readable
+	reg := ""
+	if r := regionOf(g.Title); r != "" && !strings.ContainsAny(r, "[]") {
+		reg = " (" + r + ")"
+	}
+	type try struct{ name, kind string }
+	var tries []try
+	seen := map[string]bool{strings.ToLower(g.Title): true}
+	add := func(n, k string) {
+		if n = strings.TrimSpace(n); n != "" && !seen[strings.ToLower(n)] {
+			seen[strings.ToLower(n)] = true
+			tries = append(tries, try{n, k})
+		}
+	}
+	base := amStrip(clean)
+	if kind != "" {
+		add(base+reg, kind)
+		if m := amMain(base); m != base && len(amWords(m)) >= 4 {
+			add(m+reg, kind)
+		}
+	} else {
+		add(clean, "spelling") // "SuperMarioBrosMini" -> "Super Mario Bros Mini", "Glory Hunters 1.3" -> "Glory Hunters"
+	}
+	glued := amGlued(base)
+	for _, gl := range glued {
+		add(gl+reg, map[bool]string{true: kind, false: "spelling"}[kind != ""])
+	}
+	// 3. the lists: the same words written differently, or the same main title
+	if m, ok := lrSystems[g.Sys]; ok {
+		var all []*LREntry
+		for _, lr := range m.lr {
+			l, rc := libretro.get(s.ctx, lr, m.disc, s.status)
+			if rc < 0 {
+				return true
+			}
+			for k := range l.Entries {
+				all = append(all, &l.Entries[k])
+			}
+		}
+		for _, n := range append([]string{clean}, glued...) {
+			if n == "" {
+				continue
+			}
+			if hit, exact := amLoose(all, n); hit != nil {
+				k := kind
+				if k == "" {
+					switch {
+					case exact:
+						k = "spelling" // the same words, written a little differently ("Legend of Zelda, The", "Sa-Ga")
+					case amMain(base) != base:
+						k = "related" // its own subtitle, and the list's game another (or none): built on it, most likely
+					default:
+						k = "name" // a longer or shorter name ("Rockman 7" -> "Rockman 7 - Shukumei no Taiketsu!")
+					}
+				}
+				add(hit.Name, k)
+				break
+			}
+		}
+	}
+	for _, t := range tries {
+		g2 := *g
+		g2.Title, g2.CRC, g2.Serial, g2.Official, g2.LRSys = t.name, "", "", "", ""
+		rc, r := s.one(&g2)
+		if rc <= 0 {
+			if rc < 0 {
+				s.mu.Lock()
+				s.st.Later++
+				s.mu.Unlock()
+				if s.ctx.Err() != nil {
+					return true
+				}
+			}
+			continue
+		}
+		if err := s.report(&g2, rc, r); err != nil {
+			s.status("The SS1 didn't answer: " + err.Error())
+			return true
+		}
+		has := map[string]bool{}
+		for _, h := range g.Has {
+			has[h] = true
+		}
+		for i := 0; i < fCount; i++ {
+			if r.f[i] != nil && *r.f[i] != "" && !has[fieldCols[i]] {
+				e.Fields = append(e.Fields, fieldCols[i])
+			}
+		}
+		e.How, e.Art, e.FoundBy, e.Kind = "lookup", !g.HasArt, r.foundBy, t.kind
+		e.BaseTitle = g2.Official
+		if e.BaseTitle == "" {
+			e.BaseTitle = t.name
+		}
+		s.amAdd(e)
+		return false
+	}
+	return false
 }
 
 func (s *scrapeRun) amAdd(e *amEntry) {
@@ -479,6 +579,8 @@ func apiAutomatch(w http.ResponseWriter, r *http.Request) {
 			var err error
 			if e.How == "library" {
 				err = ss1Call(map[string]any{"cmd": "unlink", "id": e.ID}, nil)
+			} else if e.How == "skip" {
+				err = ss1Call(map[string]any{"cmd": "not_game", "id": e.ID, "on": false}, nil)
 			} else {
 				err = ss1Call(map[string]any{"cmd": "scrape_undo", "id": e.ID, "fields": e.Fields, "art": e.Art}, nil)
 			}
