@@ -38,7 +38,7 @@ uint8_t *sprite_alpha(const tex_sprites_t *t, float scale_f, int *pwp, int *php)
 	int fr = cq != 65536 || sq != 0;
 	double cs = cq / 65536.0, sn0 = sq / 65536.0;
 	for (int i = 0; i + 3 < t->npl * 4; i += 4) {
-		int x0 = t->pl[i], y0 = t->pl[i + 1], o = t->pl[i + 3];
+		int x0 = (int16_t)t->pl[i], y0 = (int16_t)t->pl[i + 1], o = t->pl[i + 3];   /* signed: a grid starts off the screen */
 		const tex_sprite_t *s = &t->spr[t->pl[i + 2]];
 		int ow = (o & 1) ? s->h : s->w, oh = (o & 1) ? s->w : s->h;
 		for (int wy = -k; wy <= k; wy++)

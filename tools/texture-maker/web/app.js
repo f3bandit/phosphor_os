@@ -10,11 +10,11 @@ const $ = id => document.getElementById(id);
 const S = {
 	sprites: [],            /* { name, src (data: URL), on, img } */
 	bg: "auto", shadeBy: "spread", levels: 4, floor: 35, invShade: 0,
-	canvas: "screen", tileAuto: 1, tileW: 640, tileH: 360, px: 3, density: 40, gap: 24, angleMode: "random", angleDeg: 0, mirror: 1, snap: 1, seed: 1847,
+	canvas: "screen", tileAuto: 1, tileW: 640, tileH: 360, px: 3, density: 40, gap: 24, angleMode: "random", angleDeg: 0, mirror: 1, colGap: 16, rowGap: 16, gridMirror: 1, snap: 1, seed: 1847,
 	inv: 0, str: 13, name: "My texture",
 	view: "real", accent: 0,
 };
-const KEYS = ["bg", "shadeBy", "levels", "floor", "invShade", "canvas", "tileAuto", "tileW", "tileH", "px", "density", "gap", "angleMode", "angleDeg", "mirror", "snap", "seed", "inv", "str", "name"];
+const KEYS = ["bg", "shadeBy", "levels", "floor", "invShade", "canvas", "tileAuto", "tileW", "tileH", "px", "density", "gap", "angleMode", "angleDeg", "mirror", "snap", "seed", "inv", "str", "name", "colGap", "rowGap", "gridMirror"];
 
 /* ---------------------------------------------------------------- server */
 async function api(url, body) {
@@ -164,74 +164,42 @@ function autoTile() {
 	w = Math.max(w, Math.ceil(big / 8) * 8, 64); hh = Math.max(hh, Math.ceil(big / 8) * 8, 64);
 	return [Math.min(w, 1280), Math.min(hh, 720)];
 }
-function size() { return S.canvas === "tile" ? (S.tileAuto ? autoTile() : [S.tileW, S.tileH]) : [1280, 720]; }
+function size() { return [1280, 720]; }   /* a grid covers the whole screen (tilted, it wouldn't repeat as a tile) */
 let tex = null;                                      /* the texture as Phosphor gets it */
 let missing = [];                                    /* sprites that found no room at all */
+/* the grid: every cell the size of the biggest sprite plus the spacing; sprites in the order they
+   were added along each row (then again from the first), every other one in a row mirrored; the
+   whole grid turned by the tilt about the middle of the screen, far enough out to cover it */
 function layout() {
-	const [W, H] = size(), px = S.px, gap = S.gap, tile = S.canvas === "tile";
-	const pl = [];
+	const W = 1280, H = 720, px = S.px, pl = [];
 	missing = [];
+	let cq, sq;
 	if (conv.length) {
-		const R = rng(S.seed);
-		const ap = angleParts();
-		const avg = conv.reduce((a, c) => { const f = footprint(c, 0, ap.fine); return a + (f.rw + gap) * (f.rh + gap); }, 0) / conv.length;
-		const target = Math.max(1, Math.round(W * H / avg * 0.55 * S.density / 100));
-		const boxes = [];
-		let bag = [];
-		const pick = () => { if (!bag.length) { bag = conv.map((_, i) => i); for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; } } return bag.pop(); };
-		const hits = (x, y, w, h) => {
-			for (const b of boxes) {
-				for (let oy = tile ? -1 : 0; oy <= (tile ? 1 : 0); oy++) for (let ox = tile ? -1 : 0; ox <= (tile ? 1 : 0); ox++) {
-					const bx = b[0] + ox * W, by = b[1] + oy * H;
-					if (x < bx + b[2] + gap && bx < x + w + gap && y < by + b[3] + gap && by < y + h + gap) return true;
-				}
+		let deg = ((+S.angleDeg % 360) + 360) % 360;
+		if (!Number.isFinite(deg)) deg = 0;
+		const turns = Math.floor(deg / 90) & 3, fine = deg - Math.floor(deg / 90) * 90;
+		const r = deg * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+		const cw = Math.max(...conv.map(c => c.w)) * px + S.colGap, ch = Math.max(...conv.map(c => c.h)) * px + S.rowGap;
+		const reach = Math.hypot(W, H) / 2 + Math.max(cw, ch);
+		const ni = Math.ceil(reach / cw), nj = Math.ceil(reach / ch);
+		for (let j = -nj; j <= nj; j++)
+			for (let i = -ni; i <= ni; i++) {
+				const col = i + ni;                                   /* 0 at the row's left end */
+				const si = col % conv.length, c = conv[si];
+				const mirrored = S.gridMirror && col % 2 === 1;
+				/* the data mirrors first, then turns; turning the whole grid turns each sprite the same way */
+				const o = turns | (mirrored ? 4 : 0);
+				const bw = ((o & 1) ? c.h : c.w) * px, bh = ((o & 1) ? c.w : c.h) * px;
+				const gx = i * cw, gy = j * ch;                       /* the cell's middle in the grid, before the tilt */
+				const sx = W / 2 + gx * cs - gy * sn, sy = H / 2 + gx * sn + gy * cs;
+				const half = Math.hypot(bw, bh) / 2;
+				if (sx + half < 0 || sy + half < 0 || sx - half > W || sy - half > H) continue;   /* off screen */
+				pl.push(Math.round(sx - bw / 2), Math.round(sy - bh / 2), si, o);
 			}
-			return false;
-		};
-		const step = S.snap ? px : 1;
-		/* one try at putting sprite si somewhere free */
-		const place = si => {
-			const c = conv[si];
-			/* turns of 90 degrees clockwise: random, or the angle set for all of them */
-			const turns = ap.turns < 0 ? Math.floor(R() * 4) : ap.turns;
-			/* flipped left to right as it shows on screen: at random, every other sprite placed, or never */
-			const flip = (S.mirror === 3 && boxes.length % 2 === 1) || (S.mirror === 1 && R() < 0.5);
-			/* the data mirrors before turning; a mirror after turning t times is the same as mirroring
-			   first and turning the other way (4 - t), and the free angle goes the other way too (bit 3) */
-			const o = flip ? ((4 - turns) & 3) | 4 | (ap.fine ? 8 : 0) : turns;
-			const f = footprint(c, o, ap.fine);
-			if (!tile && (f.rw > W || f.rh > H)) return false;
-			if (tile && (f.rw + gap > W || f.rh + gap > H)) return false;   /* it would run into itself where the tile repeats */
-			/* the room it takes (bx, by, rw x rh), and its turned box's top left inside it (x, y) */
-			let bx = tile ? R() * W : R() * (W - f.rw + 1), by = tile ? R() * H : R() * (H - f.rh + 1);
-			let x = Math.floor((bx + (f.rw - f.bw) / 2) / step) * step, y = Math.floor((by + (f.rh - f.bh) / 2) / step) * step;
-			if (tile) { x = ((x % W) + W) % W; y = ((y % H) + H) % H; }
-			else if (x < 0 || y < 0) return false;
-			bx = x - (f.rw - f.bw) / 2; by = y - (f.rh - f.bh) / 2;
-			if (!tile && (bx < -0.5 || by < -0.5 || bx + f.rw > W + 0.5 || by + f.rh > H + 0.5)) return false;
-			if (hits(bx, by, f.rw, f.rh)) return false;
-			boxes.push([bx, by, f.rw, f.rh]);
-			pl.push(x, y, si, o);
-			return true;
-		};
-		/* every sprite once first (biggest first, so the big ones still find room), then more of them
-		   in turn until the density is reached */
-		const first = conv.map((_, i) => i).sort((a, b) => conv[b].w * conv[b].h - conv[a].w * conv[a].h);
-		for (const si of first) {
-			let ok = false;
-			for (let t = 0; t < 4000 && !ok; t++) ok = place(si);
-			if (!ok) missing.push(S.sprites[conv[si].idx].name);
-		}
-		const goal = Math.max(target, boxes.length);
-		let si = pick();
-		for (let tries = 0; tries < goal * 80 && boxes.length < goal; tries++) {
-			if (missing.includes(S.sprites[conv[si].idx].name)) { si = pick(); continue; }
-			if (place(si)) si = pick();
-		}
+		if (fine) { const f = fine * Math.PI / 180; cq = Math.round(Math.cos(f) * 65536); sq = Math.round(Math.sin(f) * 65536); }
 	}
-	const ap = angleParts(), r = ap.fine * Math.PI / 180;
 	tex = { w: W, h: H, px, inv: S.inv, str: S.str / 100, spr: conv.map(c => [c.w, c.h, c.bytes]), pl };
-	if (ap.fine) { tex.cq = Math.round(Math.cos(r) * 65536); tex.sq = Math.round(Math.sin(r) * 65536); }
+	if (cq !== undefined) { tex.cq = cq; tex.sq = sq; }
 }
 
 /* ---------------------------------------------------------------- drawing */
@@ -288,10 +256,9 @@ function drawPreview() {
 	const n = tex.pl.length / 4, [W, H] = size();
 	const used = new Set();
 	for (let i = 2; i < tex.pl.length; i += 4) used.add(tex.pl[i]);
-	const miss = missing.length ? ` · didn't fit: ${missing.join(", ")} (bigger tile, smaller scale or gap)` : "";
-	$("lbl").style.color = missing.length ? "#ff6b5e" : "";
+	const miss = "";
 	$("lbl").textContent = conv.length
-		? `${S.canvas === "tile" ? `${W} × ${H} tile, repeated` : "1280 × 720, whole screen"} · ${n} placed, ${used.size} of ${conv.length} sprite${conv.length === 1 ? "" : "s"} used · ${ACCENTS[S.accent][0]}${S.view === "bright" ? " · bright view" : ""}${miss}`
+		? `1280 × 720 grid${+S.angleDeg ? `, tilted ${+S.angleDeg}°` : ""} · ${n} placed, ${used.size} of ${conv.length} sprite${conv.length === 1 ? "" : "s"} used · ${ACCENTS[S.accent][0]}${S.view === "bright" ? " · bright view" : ""}${miss}`
 		: "Add sprites to start";
 	const sws = $("sws");
 	if (!sws.children.length) ACCENTS.forEach(([nm, col], i) => {
@@ -311,15 +278,9 @@ function syncControls() {
 	document.querySelectorAll("input[data-k]").forEach(inp => { if (document.activeElement !== inp) inp.value = S[inp.dataset.k]; });
 	$("v_levels").textContent = S.levels;
 	$("v_floor").textContent = S.floor + "%";
-	$("v_density").textContent = S.density + "%";
-	$("v_gap").textContent = S.gap + " px";
+	$("v_colGap").textContent = S.colGap + " px";
+	$("v_rowGap").textContent = S.rowGap + " px";
 	$("v_str").textContent = (S.str / 100).toFixed(2);
-	$("seedv").textContent = S.seed;
-	$("tileRow").style.display = $("tileSet").style.display = S.canvas === "tile" ? "" : "none";
-	$("tileInputs").style.display = S.tileAuto ? "none" : "";
-	const [aw, ah] = size();
-	$("tileHint").textContent = S.tileAuto ? `${aw} × ${ah}, from your sprites` : "";
-	$("angleIn").style.display = $("angleDegSign").style.display = S.angleMode === "set" ? "" : "none";
 	$("idv").textContent = texId();
 	$("dots").innerHTML = ACCENTS.map(([n, c], i) => `<span class="dot${i === S.accent ? " on" : ""}" title="${n}" data-i="${i}" style="background:${c}"></span>`).join(" ");
 	$("dots").querySelectorAll(".dot").forEach(d => d.onclick = () => { S.accent = +d.dataset.i; refresh(); });
@@ -339,7 +300,7 @@ function refresh(reconvert) {
 let lastT = 0;
 
 /* ---------------------------------------------------------------- controls */
-const NUM = new Set(["levels", "floor", "invShade", "tileAuto", "angleDeg", "tileW", "tileH", "px", "density", "gap", "mirror", "snap", "inv", "str", "seed"]);
+const NUM = new Set(["colGap", "rowGap", "gridMirror", "levels", "floor", "invShade", "tileAuto", "angleDeg", "tileW", "tileH", "px", "density", "gap", "mirror", "snap", "inv", "str", "seed"]);
 const CONVERT = new Set(["bg", "shadeBy", "levels", "floor", "invShade"]);
 document.querySelectorAll(".seg[data-k]").forEach(seg => seg.addEventListener("click", e => {
 	const b = e.target.closest("b");
@@ -361,7 +322,6 @@ document.querySelectorAll("input[data-k]").forEach(inp => inp.addEventListener("
 	if (k === "name") { syncControls(); return; }
 	refresh(CONVERT.has(k));
 }));
-$("reroll").onclick = () => { S.seed = Math.floor(Math.random() * 99999) + 1; refresh(); };
 async function addFiles(files) {
 	let bad = [];
 	for (const f of files) {
@@ -440,7 +400,7 @@ function wrapNums(nums, per) {
 }
 function files() {
 	const id = texId(), ID = id.toUpperCase(), name = S.name.trim() || "Texture";
-	const n = tex.pl.length / 4, kind = S.canvas === "tile" ? "a tile that repeats" : "the whole screen";
+	const n = tex.pl.length / 4, kind = "the whole screen, a grid";
 	const head = `"${name}" background texture: made by Phosphor Texture Maker (tools/texture-maker), don't edit.\n * ${tex.w}x${tex.h} base pixels (${kind}), ${tex.spr.length} sprite${tex.spr.length === 1 ? "" : "s"}, ${n} placed, a sprite pixel is ${tex.px} base pixel${tex.px === 1 ? "" : "s"}.`;
 	let off = 0;
 	const sprC = [], allBytes = [];
@@ -449,7 +409,7 @@ function files() {
 		`static const uint8_t TX_${ID}_PIX[] = {\n${wrapNums(allBytes, 24)}\n};\n` +
 		`static const tex_sprite_t TX_${ID}_SPR[] = { ${sprC.join(", ")} };\n` +
 		`/* x, y, sprite, orientation (turns of 90 degrees clockwise; 4 = mirrored first) */\n` +
-		`static const uint16_t TX_${ID}_PL[] = {\n${wrapNums(tex.pl, 24)}\n};\n` +
+		`static const uint16_t TX_${ID}_PL[] = {\n${wrapNums(tex.pl.map(v => v & 0xFFFF), 24)}\n};\n` +
 		`static const tex_sprites_t TX_${ID} = { ${tex.w}, ${tex.h}, ${tex.px}, ${tex.inv}, ${tex.str.toFixed(3)}, ${tex.spr.length}, TX_${ID}_SPR, TX_${ID}_PIX, ${n}, TX_${ID}_PL, ${tex.cq || 0}, ${tex.sq || 0} };\n`;
 	const js = `/* ${head} */\n"use strict";\nconst TEX_${ID} = { w: ${tex.w}, h: ${tex.h}, px: ${tex.px}, inv: ${tex.inv}, str: ${tex.str.toFixed(3)},\n` +
 		`\tspr: [${tex.spr.map(([w, h, b]) => `[${w}, ${h}, "${b64(b)}"]`).join(", ")}],\n\tpl: [${tex.pl.join(",")}]${tex.cq !== undefined ? `,\n\tcq: ${tex.cq}, sq: ${tex.sq}` : ""} };\n`;
@@ -499,7 +459,6 @@ function previewSheet() {
 function ready() {
 	if (!conv.length) { toast("Add a sprite first.", true); return false; }
 	if (!tex.pl.length) { toast("No sprite fits: try a smaller pixel scale, a smaller gap or a bigger tile.", true); return false; }
-	if (missing.length && !confirm(`These sprites didn't fit and aren't in the texture: ${missing.join(", ")}.\n\nA bigger tile, a smaller pixel scale or a smaller gap makes room. Go on without them?`)) return false;
 	if (!S.name.trim()) { toast("Give the texture a name.", true); return false; }
 	return true;
 }

@@ -75,17 +75,13 @@ dialog input[type=text]{width:100%}
 	<div class="row"><span>Brightest is</span><div class="seg" data-k="invShade"><b data-v="0">Strongest</b><b data-v="1">Faintest</b></div></div>
 	<div class="note">"Each colour" gives every colour in a sprite its own shade (darkest to brightest), so an outline and a fill of the same brightness still differ. "Brightness" follows how light each colour looks.</div>
 
-	<h2>Layout</h2>
-	<div class="row"><span>Canvas</span><div class="seg" data-k="canvas"><b data-v="screen">Whole screen</b><b data-v="tile">Tile</b></div></div>
-	<div class="row" id="tileRow"><span>Tile size</span><div class="seg" data-k="tileAuto"><b data-v="1">Auto</b><b data-v="0">Set</b></div></div>
-	<div class="row" id="tileSet"><span class="hint" id="tileHint"></span><span id="tileInputs"><input type="number" min="32" max="1280" step="8" data-k="tileW"> × <input type="number" min="32" max="720" step="8" data-k="tileH"></span></div>
+	<h2>Grid</h2>
 	<div class="row"><span>Pixel scale</span><div class="seg" data-k="px"><b data-v="1">1×</b><b data-v="2">2×</b><b data-v="3">3×</b><b data-v="4">4×</b><b data-v="5">5×</b></div></div>
-	<div class="row"><span>Density</span><input type="range" min="1" max="100" data-k="density"><span class="val" id="v_density"></span></div>
-	<div class="row"><span>Min. gap</span><input type="range" min="0" max="80" data-k="gap"><span class="val" id="v_gap"></span></div>
-	<div class="row"><span>Angle</span><span style="display:flex;gap:6px;align-items:center"><span class="seg" data-k="angleMode"><b data-v="random">Random 90°</b><b data-v="set">Set</b></span><input type="number" min="0" max="359.5" step="0.5" data-k="angleDeg" id="angleIn"><span id="angleDegSign">°</span></span></div>
-	<div class="row"><span>Flip left/right</span><div class="seg" data-k="mirror"><b data-v="1">Random</b><b data-v="3">Every other</b><b data-v="0">Off</b></div></div>
-	<div class="row"><span>Grid snap</span><div class="seg" data-k="snap"><b data-v="1">Sprite pixels</b><b data-v="0">Off</b></div></div>
-	<div class="row"><span>Seed <span id="seedv"></span></span><span class="link" id="reroll">⟳ Re-roll</span></div>
+	<div class="row"><span>Column spacing</span><input type="range" min="0" max="160" data-k="colGap"><span class="val" id="v_colGap"></span></div>
+	<div class="row"><span>Row spacing</span><input type="range" min="0" max="160" data-k="rowGap"><span class="val" id="v_rowGap"></span></div>
+	<div class="row"><span>Tilt</span><span><input type="number" min="0" max="359.5" step="0.5" data-k="angleDeg"> °</span></div>
+	<div class="row"><span>Mirror every other</span><div class="seg" data-k="gridMirror"><b data-v="1">On</b><b data-v="0">Off</b></div></div>
+	<div class="note">Each row has your sprites in the order they were added, one per column, starting again after the last. Every other sprite in a row is mirrored when Mirror is on. Tilt turns the whole grid, sprites and all, about the middle of the screen.</div>
 
 	<h2>Look</h2>
 	<div class="row"><span>Mode</span><div class="seg" data-k="inv"><b data-v="0">Sprites</b><b data-v="1">Inverted</b></div></div>

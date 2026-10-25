@@ -33,7 +33,7 @@ const SpriteTex = (() => {
 		const cq = t.cq === undefined ? 65536 : t.cq, sq = t.sq === undefined ? 0 : t.sq;
 		const free = cq !== 65536 || sq !== 0, cs = cq / 65536, sn0 = sq / 65536;
 		for (let i = 0; i + 3 < t.pl.length; i += 4) {
-			const x0 = t.pl[i], y0 = t.pl[i + 1], o = t.pl[i + 3];
+			const x0 = (t.pl[i] << 16) >> 16, y0 = (t.pl[i + 1] << 16) >> 16, o = t.pl[i + 3];   /* x, y are signed 16-bit (a grid starts off the screen) */
 			const [sw, sh, px] = spr[t.pl[i + 2]];
 			const ow = (o & 1) ? sh : sw, oh = (o & 1) ? sw : sh;
 			for (let wy = tile ? -1 : 0; wy <= (tile ? 1 : 0); wy++)
