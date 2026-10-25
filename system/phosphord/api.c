@@ -48,6 +48,7 @@
  *   video      [system] [set{what:value}] [preset] [undo]
  *                                           screen filters per system: no system = every system with
  *                                           a core and its settings; changes show next time it starts
+ *   look                                    the TV's accent (amber|red|green|blue|purple) and texture number
  *   vset [try {key:value}|keep|revert|undo] [secs]  MiSTer.ini video settings, tried with Keep (vtry.h)
  *   video_files kind                        filters | masks | gamma | presets: [relative paths]
  *   diag       [run] [bundle]               whole-system checks (diag module), in the background:
@@ -678,6 +679,26 @@ static char *cmd_video_files(cJSON *req)
 	for (int i = 0; i < n; i++) cJSON_AddItemToArray(arr, cJSON_CreateString(v[i]));
 	free(v);
 	cJSON_Delete(tmp);
+	return reply(o);
+}
+
+/* the TV's own look (the shell's frontend.ini): accent and texture, so the apps can match it */
+static char *cmd_look(void)
+{
+	static const char *NAMES[] = { "amber", "red", "green", "blue", "purple" };
+	char path[600], line[200];
+	snprintf(path, sizeof(path), "%s/phosphor/config/frontend.ini", p_fat());
+	int accent = 0, texture = 0;
+	FILE *f = fopen(path, "r");
+	while (f && fgets(line, sizeof(line), f)) {
+		if (!strncmp(line, "accent=", 7)) accent = atoi(line + 7);
+		else if (!strncmp(line, "texture=", 8)) texture = atoi(line + 8);
+	}
+	if (f) fclose(f);
+	if (accent < 0 || accent > 4) accent = 0;
+	cJSON *o = ok();
+	cJSON_AddStringToObject(o, "accent", NAMES[accent]);
+	cJSON_AddNumberToObject(o, "texture", texture);
 	return reply(o);
 }
 
@@ -1422,6 +1443,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "wifi")) out = cmd_wifi(req);
 	else if (!strcmp(c->valuestring, "video")) out = cmd_video(req);
 	else if (!strcmp(c->valuestring, "video_files")) out = cmd_video_files(req);
+	else if (!strcmp(c->valuestring, "look")) out = cmd_look();
 	else if (!strcmp(c->valuestring, "vset")) {
 		const char *e = NULL;
 		cJSON *o = vt_cmd(req, &e);

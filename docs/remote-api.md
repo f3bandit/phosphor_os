@@ -62,6 +62,7 @@ Paired devices may use:
 | `scrape`, `rescrape` `{"id":20}`, `scrape_sources` | box art and details lookup |
 | `launch` `{"id":20}`, `favorite` `{"id":20,"on":true}`, `last`, `rescan` | remote control |
 | `video`, `video_files` | screen filters per system |
+| `look` | the TV's accent colour (amber, red, green, blue, purple) and texture number, for the apps to match |
 | `vset` | MiSTer's video settings and profiles, tried with Keep (35 s, then put back by the MiSTer itself): see `system/phosphord/vtry.h` |
 | `backup` | snapshots on the MiSTer's drives: list, back up now, preview and restore (all or only saves) |
 | `bluetooth` | the paired controllers, read only: pairing, disconnecting and forgetting only from the MiSTer itself |

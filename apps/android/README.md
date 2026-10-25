@@ -1,24 +1,24 @@
 # Phosphor for Android
 
-The phone and tablet app for Phosphor (0.8.0): browse the MiSTer's library, fix box art and details, set
-"Based on" links and start games on the TV; look up box art on the phone; saves (memory cards, backups,
-cloud), screen filters, power and updates, storage, Bluetooth (read only), diagnostics and notifications.
-Over the home network only. Android 8 and later. A separate app from SS1 Tool for Android, with the same
-navigation.
+The phone app for Phosphor (0.9.0): browse the MiSTer's library, fix box art and details, set "Based on"
+links and start games on the TV; look up box art on the phone; saves (memory cards, backups, cloud), MiSTer's
+video settings (tried safely), power and updates, storage, Bluetooth (read only), diagnostics and
+notifications. Over the home network only. Android 8 and later. A separate app from SS1 Tool for Android,
+laid out the same way, in the TV's own look.
 
 | | | | |
 |---|---|---|---|
-| ![Home](docs/2-home.png) | ![Library](docs/2b-library.png) | ![More](docs/23-more.png) | ![Box art on the phone](docs/24-boxart-phone.png) |
+| ![Home](docs/home.png) | ![Library](docs/library.png) | ![Video](docs/video.png) | ![More](docs/more.png) |
 
 ## Using it
 
 1. On the MiSTer: **Settings > Remote access**, turn it on, choose **Pair a device**.
 2. In the app: pick the MiSTer it found on the WiFi (or type the address from the TV), enter the 6-digit code.
 
-Getting around works like SS1 Tool for Android: the app bar shows the section and the connection; on a phone
-the bottom bar has **Home, Library, Saves, Video** and **More** (a sheet with the rest); on a tablet a rail
-on the left has every section. Sections with tabs show them as chips under the app bar. Back closes the
-sheet, then goes back through what you opened.
+Getting around works like SS1 Tool for Android: the app bar shows the section and the connection; the bottom
+bar has **Home, Library, Saves, Video** and **More** (a sheet with the rest). Sections with tabs show them as
+chips under the app bar that scroll sideways. Back closes the sheet, then goes back through what you opened.
+The app follows the phone's text size within limits, and nothing ever runs off the side of the screen.
 
 - **Home**: Continue (the last game: Play on TV), Needs attention (no box art, no details, not found),
   Favorites, Recently played.
@@ -27,12 +27,18 @@ sheet, then goes back through what you opened.
 - **Saves**: Memory cards (back up the card in port 1 or 2, put one back; the card is backed up first; the
   DualShock analog switch), Backups (the MiSTer's snapshots: back up now, restore saves or everything), Cloud.
   The controller tester and WiFi setup are on the MiSTer itself.
-- **Video**: screen filters per system (backed up on the MiSTer before each change; Undo).
+- **Video**: MiSTer's own video settings (HDMI resolution, refresh and lag, scaling, HDR, HDMI-CEC, the analog
+  outputs...), explained, from the SuperStation wiki and MiSTer's documentation (the same list as SS1 Tool).
+  Pick a value with ◀ ▶ and **Try** it: the MiSTer keeps the old file, restarts the menu with the change, and
+  puts the old one back by itself unless you press **Keep** within 35 seconds, even with no picture or the
+  phone gone. The profiles (MiSTer.ini and the MiSTer_*.ini ones, like the SuperStation's RGHV, RGsB, SVID and
+  YPbP) are chips: one not in use can be tried the same way. Analog settings say which DIP switches on the
+  side of the SS1 they need. **Try the earlier settings** goes back to before the last change.
 - **Box art**: **Look up on this phone** (much faster than the MiSTer: the phone fetches libretro's lists,
   ArcadeDB, LaunchBox and the keyed services you set up, matches with the MiSTer's own rules, makes the box
   art and sends it with the details; it keeps going in the background with a notification and a Stop
   button), or **Look up on the MiSTer**. **Sources**: order, on/off and logins (saved on the MiSTer).
-- **Look**: the app's accent colour and background texture (the MiSTer's five colours and textures).
+- **Look**: the app takes the TV's accent colour and background texture (Settings > Look on the MiSTer).
 - **Power & updates**: the power check, Restart, Shut down safely, Reload the TV screen; installing a
   Phosphor package that's on the MiSTer, or rolling back; restore points (put back settings an update reset).
 - **Storage**: the SD card, NVMe and USB drives (free space, Gen 4 warning, checks, repair, mount again), and
@@ -46,9 +52,7 @@ sheet, then goes back through what you opened.
 
 | | | | |
 |---|---|---|---|
-| ![Box art sources](docs/25-boxart-sources.png) | ![Power & updates](docs/26-power.png) | ![This phone](docs/31-storage-phone.png) | ![Look](docs/32-look.png) |
-
-On a tablet: ![Tablet](docs/37-tablet.png)
+| ![Trying a video setting](docs/video-trying.png) | ![A game](docs/game.png) | ![Box art sources](docs/boxart-sources.png) | ![This phone](docs/storage-phone.png) |
 
 Changes show on the TV straight away. Forgetting the MiSTer (Connection) or removing the phone on the MiSTer
 (Settings > Remote access, X) means pairing again.
@@ -66,10 +70,15 @@ holds them in memory only while it looks up box art.
 ```
 cd apps/android
 ./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest        # screenshots of every screen in app/build/screenshots/
+./gradlew testDebugUnitTest
+node webtest/screens.js            # screenshots of every screen in webtest/shots/ (Playwright; W=360 Z=1.35: large text)
 ```
 
-Needs JDK 17+ and the Android SDK (platform 36). Kotlin, Jetpack Compose, no other libraries.
+Needs JDK 17+ and the Android SDK (platform 36). The screens are a web page (`app/src/main/assets/web`) in a
+WebView; Kotlin does what only the phone can (the MiSTer's key, pairing, box art lookups, notifications,
+storage) and passes the page's requests to the MiSTer (`MainActivity.kt`). The fonts and the TV's textures
+come from Phosphor for Windows (`apps/windows/web`), copied in by the build, so both draw them the same way.
+Libraries: AndroidX (activity, lifecycle, webkit, Compose runtime for shared state), coroutines.
 `ApiTest` runs against a real phosphord when `PHOSPHOR_TEST_ADDR`, `PHOSPHOR_TEST_CODE` (an open pairing
 code) and `PHOSPHOR_TEST_PNG` are set; `PhoneScrapeTest` (the same two) tries every command 0.8 added and a
 whole box art run on the "phone"; `LaunchBoxTest` (`PHOSPHOR_TEST_LAUNCHBOX=1`) downloads and reads LaunchBox. GitHub Actions ("Android app") builds the APKs; the release APK is

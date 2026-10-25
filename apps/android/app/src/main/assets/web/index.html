@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phosphor</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="bar">
+	<button id="back" aria-label="Back" hidden><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+	<div id="title" class="word">PHOSPHOR</div>
+	<button id="conn" hidden><i></i><span>Connecting</span></button>
+</header>
+<nav id="chips" aria-label="Tabs"></nav>
+<main id="page"></main>
+<nav id="nav" aria-label="Sections" hidden></nav>
+<div id="sheetbg" hidden></div>
+<div id="sheet" role="dialog" aria-label="More" hidden><div class="grab"></div><div class="card flat" id="sheetlist"></div></div>
+<div id="toast" role="status" hidden></div>
+<!-- the console's textures (built from Phosphor for Windows' files: see app/build.gradle.kts) -->
+<script src="look.js"></script>
+<script src="video-options.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

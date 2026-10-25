@@ -1,5 +1,5 @@
-// Phosphor for Android: the app's own settings (kept on the phone only): look, box art downloads,
-// notifications. Nothing here is a secret; the MiSTer's key is in Store.kt.
+// Phosphor for Android: the app's own settings (kept on the phone only): the TV's look as last seen,
+// box art downloads, notifications. Nothing here is a secret; the MiSTer's key is in Store.kt.
 // Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor
 
@@ -9,13 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.f3bandit.phosphor.ui.ACCENTS
-import com.f3bandit.phosphor.ui.P
 
 object Prefs {
     private var sp: SharedPreferences? = null
 
-    /** Settings > Look: one of ACCENTS' names, and a texture number (the console's numbers) */
+    /** the TV's accent (amber, red, green, blue, purple) and texture number, as last seen: the app follows the TV */
     var accent by mutableStateOf("amber")
         private set
     var texture by mutableIntStateOf(0)
@@ -35,17 +33,15 @@ object Prefs {
         texture = p.getInt("texture", 0)
         autoDelete = p.getBoolean("auto_delete", true)
         notify = p.getBoolean("notify", true)
-        P.accent = ACCENTS.getValue(accent)
     }
 
-    fun chooseAccent(name: String) {
-        if (name !in ACCENTS) return
-        accent = name
-        P.accent = ACCENTS.getValue(name)
-        sp?.edit()?.putString("accent", name)?.apply()
-    }
+    val ACCENTS = setOf("amber", "red", "green", "blue", "purple")
 
-    fun chooseTexture(n: Int) { texture = n; sp?.edit()?.putInt("texture", n)?.apply() }
+    /** the TV's look, kept so the app opens in it next time */
+    fun seeLook(name: String, n: Int) {
+        if (name in ACCENTS && name != accent) { accent = name; sp?.edit()?.putString("accent", name)?.apply() }
+        if (n != texture) { texture = n; sp?.edit()?.putInt("texture", n)?.apply() }
+    }
     fun chooseAutoDelete(on: Boolean) { autoDelete = on; sp?.edit()?.putBoolean("auto_delete", on)?.apply() }
     fun chooseNotify(on: Boolean) { notify = on; sp?.edit()?.putBoolean("notify", on)?.apply() }
 

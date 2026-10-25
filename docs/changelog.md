@@ -3,9 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.25
+## 0.27.26
 
 ### New
+- **The apps take the TV's look**: phosphord's `look` gives the accent colour and background texture picked
+  on the TV (Settings > Look), and Phosphor for Android (and next Phosphor for Windows) use them.
+- **Phosphor for Android 0.9.0**: rebuilt in SS1 Tool for Android's layout (app bar, chips, two-column buttons
+  and tiles, a bottom bar with More) in the TV's look; the screen filters are gone and Video is MiSTer's
+  own video settings, tried safely (below).
 - **Trying video settings safely** (phosphord; the menu, the Windows app and the Android app get
   their screens for it next): `vset` changes MiSTer's own video settings (resolution, vsync, scaling,
   HDMI, analog output...) in the ini in use, or switches profile (MiSTer.ini and the MiSTer_*.ini

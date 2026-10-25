@@ -59,17 +59,8 @@ class ApiTest {
         val bk = api.backup()
         println("backups: installed=${bk.installed} count=${bk.snapshots.size} dest=${bk.dest}")
 
-        val vs = api.videoSystems()
-        println("video: ${vs.map { it.name }}")
-        if (vs.isNotEmpty()) {
-            val files = api.videoFiles("filters")
-            if (files.isNotEmpty()) {
-                val changed = api.video(vs[0].system, "scanlines", files[0])
-                assertEquals(files[0], changed.scanlines)
-                val back = api.video(vs[0].system, undo = true)
-                assertEquals(vs[0].scanlines, back.scanlines)
-            }
-        }
+        val vt = api.cmd(org.json.JSONObject().put("cmd", "vset"))
+        println("video settings: file=${vt.optString("file")} pending=${vt.opt("pending")}")
         val dg = api.diag()
         println("diag: installed=${dg.installed} items=${dg.items.size}")
 
