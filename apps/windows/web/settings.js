@@ -13,6 +13,7 @@ const SET_SECTIONS = [
 	{ id: "saves", name: "Saves & memory cards", tabs: [["Memory cards", "tMc"], ["Backups", "tSnaps"], ["Cloud saves", "tCloud"]] },
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
 	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"]] },
+	{ id: "discs", name: "Discs", tabs: [["Discs", "tDiscs"]] },
 	{ id: "network", name: "Network", tabs: [["Network", "tNet"]] },
 	{ id: "video", name: "Video", tabs: [["Video settings", "tVideo"]] },
 	{ id: "remote", name: "Remote control", tabs: [["Remote control", "tRemote"]] },
@@ -451,6 +452,30 @@ class AppSettings {
 			return s.busy;
 		};
 		if (await draw()) this.every(1500, draw);
+	}
+
+	/* ---------- Discs: the dock's CD/DVD drive (as Settings › Discs on the TV) ---------- */
+	async tDiscs(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="dc"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Discs</h2><p class="note">Play games from the dock's CD/DVD drive: PlayStation, Saturn, Mega-CD, PC Engine CD, Neo Geo CD, CD-i and 3DO, and MSU-1 / MD+ discs. Off: Phosphor doesn't use the drive.</p>
+			<p class="note">A disc that's in shows at the top of Library › Disc, here and on the TV.</p><p class="note" style="color:var(--faint)">Disc support by Anime0t4ku and bonna79.</p></div></div>`));
+		const draw = async () => {
+			let d;
+			try { d = (await ss1({ cmd: "disc" })).disc; } catch (e) { if (!alive()) return false; $("#dc").innerHTML = `<div class="empty">${esc(/unknown|no such|only works/i.test(e.message) ? "This SS1's Phosphor doesn't have disc support yet: update Phosphor." : e.message)}</div>`; return false; }
+			if (!alive()) return false;
+			const dc = $("#dc"), had = cur && dc.contains(cur) ? cur.id : "";
+			if (!d) { dc.innerHTML = `<div class="empty">This SS1's Main doesn't have disc support (Phosphor's Main is needed).</div>`; return false; }
+			const drive = !d.enabled ? "not used" : (d.state === "none" || !d.state) ? "no drive found" : d.state === "empty" ? "empty" : discLine(d);
+			const canEject = d.enabled && d.state !== "none" && d.state;
+			dc.innerHTML = `<dl class="kv"><dt>Discs</dt><dd>${d.enabled ? "On" : "Off"}</dd><dt>Drive</dt><dd>${esc(drive)}</dd>${discIn(d) && d.system ? `<dt>System</dt><dd>${esc(d.system)}${d.serial ? " · " + esc(d.serial) : ""}</dd>` : ""}${discIn(d) && !d.playable && d.reason ? `<dt>Note</dt><dd class="warn">${esc(d.reason)}</dd>` : ""}</dl>
+				<div class="acts"><button class="btn primary" id="dc_t" data-nav>${d.enabled ? "Turn off" : "Turn on"}</button><button class="btn" id="dc_e" data-nav${canEject ? "" : " disabled"}>Eject the disc</button></div>`;
+			$("#dc_t").onclick = async () => { try { await ss1({ cmd: "disc_enable", on: !d.enabled }); toast(d.enabled ? "Discs off: the drive isn't used" : "Discs on"); draw(); } catch (e) { toast(e.message); } };
+			$("#dc_e").onclick = async () => { await discEject(); draw(); };
+			if (had && $("#" + had)) focus($("#" + had));
+			return true;
+		};
+		if (await draw()) this.every(2000, async () => { await draw(); return true; });
 	}
 
 	/* ---------- Storage: SD card, NVMe / USB (sd_integrity checks), backups ---------- */
