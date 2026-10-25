@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -12,8 +11,8 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.8.0"
+        versionCode = 10
+        versionName = "0.9.0"
     }
 
     buildTypes {
@@ -27,7 +26,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/webshared"))
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
@@ -42,22 +41,37 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
-    val bom = platform("androidx.compose:compose-bom:2025.12.00")
-    implementation(bom)
     implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.activity:activity-compose:1.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
-    implementation("androidx.navigation:navigation-compose:2.9.6")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.activity:activity-ktx:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    implementation("androidx.webkit:webkit:1.14.0")
+    // only the state holders (mutableStateOf, snapshotFlow) the background work shares with the page: no Compose UI
+    implementation("androidx.compose.runtime:runtime:1.9.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
-    testImplementation(bom)
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16")
-    testImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
-    debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+/* the page's shared parts come from Phosphor for Windows (apps/windows/web), so both apps draw the
+   console's textures the same way: the fonts, and look.js = the scripts Windows' index.html loads before
+   texture.js, then texture.js (circuit.js and the tex_*.js sprite textures Texture Maker adds there) */
+val webShared by tasks.registering {
+    val win = rootProject.file("../windows/web")
+    val out = layout.buildDirectory.dir("generated/webshared/web")
+    inputs.dir(win)
+    outputs.dir(out)
+    doLast {
+        val dir = out.get().asFile
+        dir.deleteRecursively()
+        File(dir, "fonts").mkdirs()
+        File(win, "fonts").listFiles()!!.filter { it.name.endsWith(".woff2") }.forEach { it.copyTo(File(dir, "fonts/" + it.name), true) }
+        val html = File(win, "index.html").readText()
+        val names = Regex("""<script src="([^"]+)"></script>""").findAll(html).map { it.groupValues[1] }.toList()
+        val upTo = names.indexOf("texture.js")
+        require(upTo >= 0) { "texture.js isn't in apps/windows/web/index.html" }
+        val js = names.take(upTo + 1).joinToString("\n") { n -> "/* ---- $n */\n" + File(win, n).readText() }
+        File(dir, "look.js").writeText("/* made by the build from apps/windows/web: don't edit */\n$js")
+    }
+}
+tasks.named("preBuild") { dependsOn(webShared) }
