@@ -9,6 +9,8 @@
 #include "theme.h"
 #include "circuit_data.h"
 #include "texsprite.h"
+#include "tex_mario.h"
+#include "tex_zelda.h"
 /* sprite textures: includes (tools/texture-maker) */
 #include <math.h>
 #include <stdlib.h>
