@@ -20,9 +20,13 @@ open(os.path.join(bindir, "dmesg"), "w").write("#!/bin/sh\nexit 0\n")
 for f in ("reboot", "dmesg"):
     os.chmod(os.path.join(bindir, f), 0o755)
 
+deaf = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "deaf.flag")  # a wedged USB bridge: nothing in or out
+
 def w(b):
     if isinstance(b, str):
         b = b.encode()
+    if os.path.exists(deaf):
+        return
     with wlock:
         os.write(master, b)
 
@@ -91,7 +95,8 @@ def shell():
         r, _, _ = select.select([master, im], [], [], 0.1)
         if master in r:
             d = os.read(master, 4096)
-            os.write(im, d)
+            if not os.path.exists(deaf):
+                os.write(im, d)
         if im in r:
             try:
                 d = os.read(im, 4096)

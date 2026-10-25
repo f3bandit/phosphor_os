@@ -1,6 +1,6 @@
 {
   "name": "phosphor-link",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Reach the SuperStation One's MiSTer from Claude: SSH when it's on the network, the dock's debug port otherwise, with a watchdog that heals the link.",
   "author": { "name": "f3bandit" },
   "license": "PolyForm-Noncommercial-1.0.0"

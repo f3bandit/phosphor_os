@@ -23,6 +23,14 @@ Phosphor Link is careful with it:
 - **It leaves the console as it found it.** Kernel messages are muted while connected and put
   back afterwards, and it logs out when done.
 
+**It keeps the debug port awake and checks it.** Left closed for a while, the dock's USB serial
+bridge can stop answering until the cable is unplugged. So Phosphor Link opens the debug port soon
+after it starts and holds it for as long as it runs, even when it works over SSH, and every 90
+seconds checks that the console still answers. One that doesn't is opened again; a command that gets
+no answer checks the console straight away, instead of failing every call after it. While SSH is
+down (a reboot) it works over the debug port, and goes back to SSH once that answers again. A
+terminal program can't use the debug port while Phosphor Link (or the Claude app) is running.
+
 ## Install
 
 1. Copy `phosphor-link.exe` to a folder of its own, e.g. `C:\phosphor-link\`.
