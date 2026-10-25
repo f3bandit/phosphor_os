@@ -1754,6 +1754,9 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "disc_play")) {
 		char err[300];
 		out = disc_play(db, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "disc_enable")) {
+		disc_set_enabled(db, cJSON_IsTrue(cJSON_GetObjectItem(req, "on")));
+		out = reply(ok());
 	} else if (!strcmp(c->valuestring, "disc_eject")) {
 		char err[300];
 		out = disc_eject(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
