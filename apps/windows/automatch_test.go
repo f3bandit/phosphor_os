@@ -78,13 +78,24 @@ func TestAmLoose(t *testing.T) {
 		{Name: "Castlevania - Bloodlines (USA)"},
 		{Name: "Castlevania (USA)"},
 		{Name: "Legend of Zelda, The - A Link to the Past (USA)"},
+		{Name: "Dragon Ball Z - Super Saiya Densetsu (Japan)"},
+		{Name: "Dragon Ball Z - Super Butouden (Japan)"},
+		{Name: "Dragon Ball Z - Super Butouden 2 (Japan)"},
+		{Name: "Tengai Makyou - Deden no Den (Japan)"},
+		{Name: "Tengai Makyou - Fuuun Kabuki Den (Japan)"},
+		{Name: "Star Ocean - The Second Story (USA) (Disc 1)"},
+		{Name: "Star Ocean - The Second Story (USA) (Disc 2)"},
 	}
 	for _, c := range []struct{ in, want string }{
 		{"Rockman 7 (Japan)", "Rockman 7 - Shukumei no Taiketsu! (Japan)"},
 		{"Legend of Zelda - A Link to the Past (USA)", "Legend of Zelda, The - A Link to the Past (USA)"},
 		{"Castlevania - Something (USA)", ""}, // a series: no guess
+		{"Dragon-Ball Z - Super Saiyan Densetsu", "Dragon Ball Z - Super Saiya Densetsu (Japan)"},
+		{"Tengai Makyou - Ziria (English v1.2)", ""},
+		{"Dragon-Ball-Z - Super Gokuden 2", ""}, // shares only "super" and "2" with Super Butouden 2
+		{"Star Ocean - The Second Story - Disc 2 (U) [UNDUB]", "Star Ocean - The Second Story (USA) (Disc 2)"},
 	} {
-		e, _ := amLoose(all, c.in) // Rockman 7: the same main title (exact false); Zelda: the same words
+		e, _ := amLoose(all, c.in) // Rockman 7: the same main title; Zelda: the same words
 		got := ""
 		if e != nil {
 			got = e.Name
