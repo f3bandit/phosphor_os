@@ -20,6 +20,8 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
 ### Changed
 - Library › Match: LB/RB switch between Not found and Matched automatically (they jumped between systems).
+- Settings › Box art: a **Review N matches** button under the lookup buttons, straight to the matches
+  (Phosphor for Windows 0.2.21).
 
 ## 0.27.31
 
