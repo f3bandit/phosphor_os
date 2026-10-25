@@ -246,14 +246,17 @@ func apiCall(w http.ResponseWriter, r *http.Request) {
 
 // apiArt: a game's box art, from the SS1 (GET) or to it (PUT)
 func apiArt(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/api/art/"))
-	if err != nil || id < 0 {
+	which := strings.TrimPrefix(r.URL.Path, "/api/art/")
+	id, err := strconv.Atoi(which)
+	if which == "disc" && r.Method == "GET" { // the disc in the dock's drive
+		id, err = 0, nil
+	} else if err != nil || id <= 0 {
 		http.NotFound(w, r)
 		return
 	}
 	switch r.Method {
 	case "GET":
-		resp, err := authed("GET", "/art/"+strconv.Itoa(id), nil, 20*time.Second)
+		resp, err := authed("GET", "/art/"+which, nil, 20*time.Second)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
@@ -263,7 +266,11 @@ func apiArt(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "image/jpeg")
+		ct := resp.Header.Get("Content-Type")
+		if ct != "image/png" {
+			ct = "image/jpeg"
+		}
+		w.Header().Set("Content-Type", ct)
 		w.Header().Set("Cache-Control", "private, max-age=300")
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, 16<<20))
 	case "PUT":

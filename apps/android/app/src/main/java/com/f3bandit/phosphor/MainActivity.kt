@@ -166,6 +166,12 @@ class MainActivity : ComponentActivity() {
     // ---------------------------------------------------------------- box art for the page
 
     private fun artResponse(path: String): WebResourceResponse {
+        if (path.substringBefore('?').substringBefore('/') == "disc") {     // the disc in the drive: changes with the disc, not kept
+            val api = model.api ?: return notFound()
+            val b = runCatching { runBlocking { api.discArt() } }.getOrNull() ?: return notFound()
+            val png = b.size > 4 && b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte()
+            return WebResourceResponse(if (png) "image/png" else "image/jpeg", null, ByteArrayInputStream(b))
+        }
         val id = path.substringBefore('?').substringBefore('/').toLongOrNull()
         val api = model.api
         if (id == null || api == null) return notFound()
@@ -196,7 +202,7 @@ class MainActivity : ComponentActivity() {
                 if (api == null) { reply(id, false, "Not paired with a MiSTer"); return@launch }
                 try {
                     val req = JSONObject(json)
-                    val slow = req.optString("cmd") in setOf("launch", "system", "storage", "update")
+                    val slow = req.optString("cmd") in setOf("launch", "disc_play", "system", "storage", "update")
                     val r = api.cmd(req, if (req.optString("cmd") == "scrape_todo") 60_000 else if (slow) 30_000 else 20_000)
                     model.answered()
                     if (req.optString("cmd") == "look") Prefs.seeLook(r.optString("accent"), r.optInt("texture"))

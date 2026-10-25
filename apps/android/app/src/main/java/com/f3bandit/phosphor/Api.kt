@@ -430,6 +430,11 @@ class PhosphorApi(val address: String, private val token: String?) {
         try { request("GET", "/art/$id") } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
     }
 
+    /** the box art of the disc in the dock's drive (JPEG or PNG), or null */
+    suspend fun discArt(): ByteArray? = withContext(Dispatchers.IO) {
+        try { request("GET", "/art/disc") } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
+    }
+
     suspend fun setArt(id: Long, image: ByteArray, type: String = "image/jpeg"): Game = parseGame(setArtJson(id, image, type).getJSONObject("game"))
 
     /** the reply as the MiSTer sent it ({ok, game}) */

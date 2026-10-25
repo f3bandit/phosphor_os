@@ -9,6 +9,7 @@
  *   POST /pair    {"code","name"}    {token, id}: the code shown on the TV; 5 tries, 2 minutes
  *   POST /api     {"cmd":...}        the same JSON commands as the local socket, a safe subset
  *   GET  /art/<game id>              the game's box art (JPEG)
+ *   GET  /art/disc                   the box art of the disc in the dock's drive (JPEG or PNG)
  *   PUT  /art/<game id>   <image>    new box art (PNG/JPEG/..., up to 16 MB), scaled and stored
  *   POST /api {"cmd":"remote_ssh"[,"offer":[{"key","name"}]]}   SSH mode and keys (look only); keys
  *                                    offered wait for a yes on the TV
@@ -56,7 +57,8 @@ static const char *ALLOWED[] = {
 	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "not_game", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
-	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "remote_ssh", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts", NULL,
+	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "remote_ssh", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
+	"disc", "disc_play", "disc_eject", "disc_enable", NULL,
 };
 
 typedef struct {
@@ -573,6 +575,7 @@ static void do_api(req_t *r, const char *body, const char *who)
 
 static long art_id(const char *path)
 {
+	if (!strcmp(path + 5, "disc")) return 0;          /* the disc in the drive */
 	char *end;
 	long id = strtol(path + 5, &end, 10);
 	return (*end || id <= 0) ? -1 : id;
@@ -581,15 +584,19 @@ static long art_id(const char *path)
 static void do_art_get(req_t *r, long id)
 {
 	char q[96];
-	snprintf(q, sizeof(q), "{\"cmd\":\"game\",\"id\":%ld}", id);
+	if (id) snprintf(q, sizeof(q), "{\"cmd\":\"game\",\"id\":%ld}", id);
+	else snprintf(q, sizeof(q), "{\"cmd\":\"disc\"}");
 	char *out = forward(q);
 	cJSON *j = out ? cJSON_Parse(out) : NULL;
 	free(out);
-	cJSON *g = j ? cJSON_GetObjectItem(j, "game") : NULL;
+	cJSON *g = j ? cJSON_GetObjectItem(j, id ? "game" : "disc") : NULL;
 	const char *art = g ? cJSON_GetStringValue(cJSON_GetObjectItem(g, "art")) : NULL;
-	char real[PATH_MAX], root[PATH_MAX], want[PATH_MAX];
+	char real[PATH_MAX], root[PATH_MAX], want[PATH_MAX], root2[PATH_MAX], want2[PATH_MAX];
 	snprintf(want, sizeof(want), "%s/art", p_data());
-	if (!art || !realpath(art, real) || !realpath(want, root) || strncmp(real, root, strlen(root)) || real[strlen(root)] != '/') {
+	snprintf(want2, sizeof(want2), "%s/disc_art", p_data());   /* a disc's art that isn't in the library */
+	int in_art = art && realpath(art, real) && realpath(want, root) && !strncmp(real, root, strlen(root)) && real[strlen(root)] == '/';
+	int in_disc = !id && art && !in_art && realpath(art, real) && realpath(want2, root2) && !strncmp(real, root2, strlen(root2)) && real[strlen(root2)] == '/';
+	if (!in_art && !in_disc) {
 		cJSON_Delete(j);
 		respond_error(r->fd, 404, "no box art");
 		return;
@@ -608,7 +615,7 @@ static void do_art_get(req_t *r, long id)
 	}
 	close(fd);
 	if (!buf || n != sb.st_size) { free(buf); respond_error(r->fd, 500, "couldn't read the art"); return; }
-	respond(r->fd, 200, "image/jpeg", buf, (size_t)n);
+	respond(r->fd, 200, n > 4 && !memcmp(buf, "\x89PNG", 4) ? "image/png" : "image/jpeg", buf, (size_t)n);
 	free(buf);
 }
 
@@ -708,6 +715,7 @@ static void handle(int fd)
 		long id = art_id(r->path);
 		if (id < 0) { respond_error(fd, 404, "no such game"); goto done; }
 		if (!strcmp(r->method, "GET")) do_art_get(r, id);
+		else if (!id) respond_error(fd, 405, "GET");      /* the disc's art isn't set from here */
 		else if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
 		else do_art_put(r, id);
 		goto done;

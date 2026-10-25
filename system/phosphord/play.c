@@ -129,6 +129,22 @@ int play_launch(sqlite3 *db, long long id, char *err, size_t errn)
 	return 0;
 }
 
+void play_track(sqlite3 *db, long long id)
+{
+	if (id > 0) {
+		sqlite3_stmt *st;
+		if (sqlite3_prepare_v2(db, "UPDATE games SET play_count=play_count+1, last_played=? WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
+			sqlite3_bind_int64(st, 1, (sqlite3_int64)time(NULL));
+			sqlite3_bind_int64(st, 2, id);
+			sqlite3_step(st);
+			sqlite3_finalize(st);
+		}
+	}
+	playing_id = id > 0 ? id : 0;
+	playing_since = time(NULL);
+	left_menu = 0;
+}
+
 void play_tick(sqlite3 *db)
 {
 	if (!playing_id) return;

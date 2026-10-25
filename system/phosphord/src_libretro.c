@@ -458,3 +458,55 @@ static int lr_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 static int lr_ready(void) { return 1; }
 
 const source_t SRC_LIBRETRO = { "libretro", "libretro", NULL, lr_ready, lr_lookup };
+
+/* ---------- a disc in the dock's drive (disc.c) ----------
+ * The official name for a product code (the disc's serial) in libretro's lists for that system, and
+ * the libretro box art addresses for it, most likely first (the same three tries as add_thumbs).
+ * 1 found, 0 not in the lists, -1 network trouble (a list couldn't be fetched). */
+int libretro_disc_name(sqlite3 *db, const char *sys, const char *serial, char *name, size_t n,
+                       char urls[][1300], int max_urls, int *nurls)
+{
+	*nurls = 0;
+	name[0] = 0;
+	const lrmap_t *m = map_for(sys);
+	if (!m || !m->disc || !serial || !*serial) return 0;
+	for (int i = 0; i < 3 && m->lr[i]; i++)
+		if (ref_load(db, m->lr[i], m->disc) < 0) return -1;
+	char ser[64];
+	serial_norm(serial, ser, sizeof(ser));
+	if (!ser[0]) return 0;
+	char lrsys[200] = "";
+	for (int i = 0; i < 3 && m->lr[i] && !name[0]; i++) {
+		sqlite3_stmt *st;
+		if (sqlite3_prepare_v2(db, "SELECT name FROM ref WHERE lrsys=? AND serial=? ORDER BY id LIMIT 1", -1, &st, NULL) != SQLITE_OK) continue;
+		sqlite3_bind_text(st, 1, m->lr[i], -1, SQLITE_STATIC);
+		sqlite3_bind_text(st, 2, ser, -1, SQLITE_STATIC);
+		if (sqlite3_step(st) == SQLITE_ROW) {
+			snprintf(name, n, "%s", sqlite3_column_text(st, 0));
+			snprintf(lrsys, sizeof(lrsys), "%s", m->lr[i]);
+		}
+		sqlite3_finalize(st);
+	}
+	if (!name[0]) return 0;
+	char e1[400], tn[400], e2[700], v[400];
+	net_escape(lrsys, e1, sizeof(e1));
+	for (int k = 0; k < 3 && *nurls < max_urls; k++) {
+		snprintf(v, sizeof(v), "%s", name);
+		if (k == 1) {
+			char *p = strchr(v, '('), *c = p ? strchr(p, ',') : NULL, *e = p ? strchr(p, ')') : NULL;
+			if (!c || !e || c > e) continue;
+			memmove(c, e, strlen(e) + 1);
+		} else if (k == 2) {
+			char *d = strstr(v, " (Disc ");
+			if (!d) continue;
+			char *e = strchr(d + 1, ')');
+			if (!e) continue;
+			memmove(d, e + 1, strlen(e + 1) + 1);
+		}
+		thumb_name(v, tn, sizeof(tn));
+		net_escape(tn, e2, sizeof(e2));
+		snprintf(urls[*nurls], 1300, "%s/%s/Named_Boxarts/%s.png", LR_THUMBS, e1, e2);
+		(*nurls)++;
+	}
+	return 1;
+}

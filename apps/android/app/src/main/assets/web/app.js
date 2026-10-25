@@ -143,6 +143,7 @@ const MORE = [
 	["sysbk", "MiSTer & Linux backups", "Every version of the settings and system files, on this phone"],
 	["storage", "Storage", "SD card, NVMe and USB drives, and this phone"],
 	["bluetooth", "Bluetooth", "Controllers paired with the MiSTer"],
+	["discs", "Discs", "The dock's CD/DVD drive"],
 	["diag", "Diagnostics", "The MiSTer's whole-system checks"],
 	["notes", "Notifications", "Warnings and news from the MiSTer"],
 	["connection", "Connection", "The paired MiSTer, find it again, forget it"],
@@ -386,15 +387,31 @@ const gameRow = (g, sys) => row(g.title, {
 	pre: g.art ? `<img class="cover" loading="lazy" src="${artUrl(g.id, artVer)}" alt="">` : `<span class="cover" aria-hidden="true"></span>`,
 });
 
+/* the disc in the dock's drive: at the top of Library › Disc while one is in, as on the TV */
+const discIn = d => !!(d && d.enabled && ["reading", "ready", "unreadable"].includes(d.state));
+const discLine = d => d.state === "reading" ? "reading the disc…" : d.state === "unreadable" ? "a disc that can't be read" : (d.title || "a disc");
+const discKey = d => d ? [d.enabled, d.state, d.serial, d.title, !!d.art, d.playable, d.reason].join("|") : "";
+function discCard(d) {
+	const sub = d.system && d.serial ? `${d.system} · ${d.serial}` : (d.system || "In the dock's drive");
+	return card(`<div class="disc">${d.art ? `<img class="cover" src="art/disc?v=${encodeURIComponent(d.serial + "|" + d.title)}" alt="">` : `<span class="cover" aria-hidden="true"></span>`}
+		<div class="t"><div class="lbl">In the drive</div><b>${esc(discLine(d))}</b><span>${esc(sub)}</span>${!d.playable && d.state === "ready" && d.reason ? `<span class="warnc">${esc(d.reason)}</span>` : ""}</div></div>
+		<div class="btns">${btn("Play on TV", "disc_play", { p: true, off: !d.playable })}${btn("Eject", "disc_eject")}</div>`, "drive");
+}
+const discActs = {
+	disc_play: async () => { await call("disc_play"); toast("Starting the disc on the TV"); },
+	disc_eject: async () => { await call("disc_eject"); toast("Opening the tray"); },
+};
+
 PAGES.library = { top: true, async show(c) {
 	setBar("Library");
-	let cats = [], cat = Number(sessionStorage.getItem("cat") || 0), systems = null, q = "", results = null, total = 0, st = null, err = "", gen = -1, qT;
+	let cats = [], cat = Number(sessionStorage.getItem("cat") || 0), systems = null, q = "", results = null, total = 0, st = null, err = "", gen = -1, qT, disc = null;
+	const isDisc = () => !!(cats[cat - 1] && cats[cat - 1].name === "Disc");
 	const draw = () => {
 		setChips([["0", "All"]].concat(cats.map((x, i) => [String(i + 1), x.name])), String(cat), v => { cat = Number(v); sessionStorage.setItem("cat", v); systems = null; draw(); loadSystems(); });
 		const busy = st && (st.indexing ? "Looking for games…" : st.identifying ? "Identifying games…" : null);
 		let body;
 		if (q.trim()) body = results == null ? spin() : !results.length ? note("Nothing matches.") : note(total > results.length ? `${results.length} of ${total}` : `${total} games`) + flat(results.map(g => gameRow(g, true)).join(""));
-		else body = (systems == null ? spin() : !systems.length ? flat(row("No games here yet", { sub: "Rescan looks for them", dim: true }))
+		else body = (isDisc() && discIn(disc) ? discCard(disc) : "") + (systems == null ? spin() : !systems.length ? flat(row("No games here yet", { sub: "Rescan looks for them", dim: true }))
 			: flat(systems.map(s => row(s.name, { value: String(s.games), go: `games?system=${encodeURIComponent(s.id)}&title=${encodeURIComponent(s.name)}` })).join("")))
 			+ card(`<h3>Rescan the library</h3><p class="small">${esc(busy || "Looks for new games and works out what they are. Runs only when you ask.")}</p>${btn("Rescan", "rescan", { off: !!busy })}`);
 		const keep = document.activeElement && document.activeElement.dataset.in === "q";
@@ -410,6 +427,7 @@ PAGES.library = { top: true, async show(c) {
 		if (c.alive()) draw();
 	};
 	acts = {
+		...discActs,
 		rescan: async () => { await call("rescan"); toast("Looking for games"); st = await call("status"); draw(); },
 		"input:q": v => {
 			q = v; clearTimeout(qT);
@@ -425,13 +443,29 @@ PAGES.library = { top: true, async show(c) {
 			st = await call("status");
 			if (st.generation !== gen) {
 				gen = st.generation;
-				cats = ((await call("categories")).categories || []).filter(x => x.games > 0);
+				cats = ((await call("categories")).categories || []).filter(x => x.games > 0 || (x.name === "Disc" && discIn(disc)));
 				if (cat > cats.length) cat = 0;
 				await loadSystems();
 			}
 			err = "";
 		} catch (e) { err = e.message; draw(); }
-		return st && (st.indexing || st.identifying) ? 3000 : 15000;
+		try {                       /* the drive: a disc in or out, its name and art when they're found */
+			const d = (await call("disc")).disc || null;
+			if (discKey(d) !== discKey(disc)) {
+				const chip = discIn(d) !== discIn(disc);
+				disc = d;
+				if (chip) {             /* Disc comes or goes: the same chip stays picked */
+					const was = cats[cat - 1] ? cats[cat - 1].name : null;
+					cats = ((await call("categories")).categories || []).filter(x => x.games > 0 || (x.name === "Disc" && discIn(disc)));
+					const i = was ? cats.findIndex(x => x.name === was) : -1;
+					cat = i >= 0 ? i + 1 : 0;
+					sessionStorage.setItem("cat", String(cat));
+					if (was && i < 0) { systems = null; loadSystems(); }
+				}
+				if (c.alive()) draw();
+			}
+		} catch (e) { /* an older Phosphor: no drive */ }
+		return st && (st.indexing || st.identifying) ? 3000 : isDisc() ? 2500 : 15000;
 	});
 } };
 
@@ -1166,6 +1200,31 @@ PAGES.bluetooth = { async show(c) {
 			+ lbl("Paired with the MiSTer") + flat((st.devices || []).length ? st.devices.map(d => row(d.name, { value: d.connected ? "Connected" : "Not connected", dim: !d.connected })).join("") : row("Nothing paired yet", { dim: true }))
 			+ note("Pairing, disconnecting and forgetting are done on the TV (Settings › Bluetooth), so nothing pairs with the MiSTer from somewhere else. Pairings stay on the MiSTer's SD card."));
 		return p.busy ? 800 : 3000;
+	});
+} };
+
+PAGES.discs = { async show(c) {
+	setBar("Discs");
+	let d = null, err = "";
+	acts = {
+		...discActs,
+		disc_toggle: async () => { const on = !(d && d.enabled); await call("disc_enable", { on }); toast(on ? "Discs on" : "Discs off: the drive isn't used"); d = (await call("disc")).disc || d; draw(); },
+	};
+	const draw = () => {
+		if (!d) { c.draw(errp(err) || flat(row("This MiSTer has no disc support", { sub: "It needs Phosphor's Main and an up-to-date Phosphor", dim: true }))); return; }
+		const drive = !d.enabled ? "Not used" : (d.state === "none" || !d.state) ? "No drive found" : d.state === "empty" ? "Empty" : discLine(d);
+		const canEject = d.enabled && d.state && d.state !== "none";
+		c.draw(errp(err) + card(`<div class="sw"><div class="t"><b>Discs</b><span>${d.enabled ? "On" : "Off: Phosphor doesn't use the drive"}</span></div>${tog(d.enabled, "disc_toggle")}</div>`)
+			+ (discIn(d) ? "" : flat(row("Drive", { value: drive, dim: true })))
+			+ (discIn(d) ? discCard(d) : "")
+			+ (canEject && !discIn(d) ? `<div class="btns">${btn("Eject the disc", "disc_eject", { wide: true })}</div>` : "")
+			+ note("Play games from the dock's CD/DVD drive: PlayStation, Saturn, Mega-CD, PC Engine CD, Neo Geo CD, CD-i and 3DO, and MSU-1 / MD+ discs. A disc that's in shows at the top of Library › Disc.")
+			+ note("Disc support by Anime0t4ku and bonna79."));
+	};
+	await c.every(async () => {
+		try { const nd = (await call("disc")).disc || null; err = ""; if (discKey(nd) !== discKey(d) || !d) { d = nd; draw(); } }
+		catch (e) { err = /only works|unknown/i.test(e.message) ? "This MiSTer's Phosphor doesn't have disc support yet: update Phosphor." : e.message; d = null; draw(); }
+		return 2500;
 	});
 } };
 

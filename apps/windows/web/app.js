@@ -396,8 +396,16 @@ async function launch(g) {
 }
 
 /* ---------- Systems in a category ---------- */
+/* Disc also has the disc in the dock's drive at the top while one is in, as on the TV:
+   Play starts it on the SS1, Eject opens the tray */
+function discIn(d) { return d && d.enabled && ["reading", "ready", "unreadable"].includes(d.state); }
+function discLine(d) { return d.state === "reading" ? "reading the disc…" : d.state === "unreadable" ? "a disc that can't be read" : (d.title || "a disc"); }
+const discArtURL = d => `/api/art/disc?k=${encodeURIComponent(KEY)}&s=${encodeURIComponent((d.serial || "") + "|" + (d.title || "") + "|" + (d.art ? 1 : 0))}`;
+async function discEject() { try { await ss1({ cmd: "disc_eject" }); toast("Opening the tray"); } catch (e) { toast(e.message); } }
+async function discPlay(d) { try { await ss1({ cmd: "disc_play" }); toast(`Starting ${d.title || "the disc"} on the TV`); } catch (e) { toast(e.message); } }
+
 class Systems {
-	constructor(cat) { this.cat = cat; this.hints = [["A", "Open"], ["Y", "Search"], ["B", "Back"]]; this.sel = 0; }
+	constructor(cat) { this.cat = cat; this.hints = [["A", "Open"], ["Y", "Search"], ["B", "Back"]]; this.sel = 0; this.isDisc = cat.name === "Disc"; }
 	render(root) {
 		root.append(h(`<div class="sub">${spaced("Library")}</div><h1>${esc(this.cat.name)}</h1>
 			<div class="split"><div class="list" id="sys"></div><div class="panel" id="info"></div></div>`));
@@ -406,18 +414,65 @@ class Systems {
 	async load() {
 		const box = $("#sys");
 		try {
-			const j = await ss1({ cmd: "systems", category: this.cat.id });
-			box.innerHTML = "";
-			if (!j.systems.length) box.innerHTML = `<div class="empty">No games here yet.</div>`;
-			j.systems.forEach((s, i) => {
-				const el = h(`<div class="row" data-nav><span class="n">${esc(s.name)}</span><span class="v">${n(s.games)}</span></div>`).firstChild;
-				el.onclick = () => { this.sel = i; push(Games, { system: s.id, title: s.name }); };
-				el._onfocus = () => { this.sel = i; $("#info").innerHTML = `<h2>${esc(s.name)}</h2><dl class="kv"><dt>Games</dt><dd>${n(s.games)}</dd><dt>Core</dt><dd>${esc(s.core || "–")}</dd></dl>`; };
-				box.appendChild(el);
-			});
-			focus(box.children[Math.min(this.sel, box.children.length - 1)]);
+			const [j, dj] = await Promise.all([ss1({ cmd: "systems", category: this.cat.id }), this.isDisc ? ss1({ cmd: "disc" }).catch(() => null) : null]);
+			this.systems = j.systems;
+			this.drawList(dj && dj.disc);
+			if (this.isDisc && dj && dj.disc) this.watch();
 		} catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 	}
+	drawList(d) {
+		const box = $("#sys");
+		if (!box) return;
+		const wasDrive = cur && cur.classList.contains("drive");
+		this.disc = d;
+		box.innerHTML = "";
+		const inDrive = discIn(d);
+		if (inDrive) {
+			const el = h(`<div class="row drive" data-nav><span class="n"><span class="ic">${ICON.Disc || ""}</span><span class="t">In the drive · ${esc(discLine(d))}</span></span><span class="v"></span></div>`).firstChild;
+			el.onclick = () => { if (this.disc.playable) discPlay(this.disc); else toast(this.disc.reason || "This disc can't be played"); };
+			el._onfocus = () => this.drivePanel();
+			box.appendChild(el);
+		}
+		if (!this.systems.length && !inDrive) box.innerHTML = `<div class="empty">No games here yet.</div>`;
+		this.systems.forEach((s, i) => {
+			const el = h(`<div class="row" data-nav><span class="n">${esc(s.name)}</span><span class="v">${n(s.games)}</span></div>`).firstChild;
+			el.onclick = () => { this.sel = i; push(Games, { system: s.id, title: s.name }); };
+			el._onfocus = () => { this.sel = i; $("#info").innerHTML = `<h2>${esc(s.name)}</h2><dl class="kv"><dt>Games</dt><dd>${n(s.games)}</dd><dt>Core</dt><dd>${esc(s.core || "–")}</dd></dl>`; };
+			box.appendChild(el);
+		});
+		const rows = box.querySelectorAll(".row");
+		const first = !this.drawn;               /* opened: on the disc, as on the TV */
+		this.drawn = true;
+		focus((wasDrive || first) && inDrive ? rows[0] : rows[Math.min(this.sel + (inDrive ? 1 : 0), rows.length - 1)], touched);
+	}
+	drivePanel() {
+		const d = this.disc, info = $("#info");
+		if (!d || !info) return;
+		const sub = d.system && d.serial ? `${esc(d.system)} · ${esc(d.serial)}` : esc(d.system || "In the dock's drive");
+		info.innerHTML = `${d.art ? `<div class="boxart" style="background-image:url('${discArtURL(d)}')"></div>` : ""}<h2>${esc(discLine(d))}</h2>
+			<p class="note">${sub}</p>${d.playable ? "" : `<p class="note warn">${esc(d.reason || "This disc can't be played")}</p>`}
+			<div class="acts"><button class="btn primary" id="dk_play" data-nav${d.playable ? "" : " disabled"}>Play on TV</button><button class="btn" id="dk_ej" data-nav>Eject</button></div>`;
+		$("#dk_play").onclick = () => discPlay(d);
+		$("#dk_ej").onclick = discEject;
+	}
+	/* the drive while this screen is open: a disc in or out, its name and art when they're found */
+	watch() {
+		clearTimeout(this.wt);
+		this.wt = setTimeout(async () => {
+			if (topScr() !== this || !$("#sys")) return;
+			try {
+				const d = (await ss1({ cmd: "disc" })).disc;
+				const key = x => x ? [discIn(x), x.state, x.serial, x.title, !!x.art, x.playable].join("|") : "";
+				if (key(d) !== key(this.disc)) {
+					if (cur && cur.classList.contains("drive") || discIn(d) !== discIn(this.disc)) this.drawList(d);
+					else this.disc = d;
+					if (cur && cur.classList.contains("drive")) this.drivePanel();
+				}
+			} catch (e) {}
+			this.watch();
+		}, 2000);
+	}
+	restore() { if (this.isDisc) this.watch(); }
 }
 
 /* ---------- a list of games, with the panel following the highlighted one ---------- */

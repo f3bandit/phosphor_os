@@ -35,7 +35,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -43,7 +43,7 @@ static screen_t cur = SCR_HOME;
 
 /* ---------- status bar ---------- */
 
-static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text;
+static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc;
 
 static void status_bar(void)
 {
@@ -76,6 +76,9 @@ static void status_bar(void)
 	lv_obj_set_hidden(sb_alert, true);
 
 	int is = S(22);
+	sb_disc = icon_create(right, ICON_DISC, is);          /* a disc in the dock's drive */
+	lv_obj_set_style_text_color(sb_disc, PAL.acc, 0);
+	lv_obj_set_hidden(sb_disc, true);
 	sb_share = icon_create(right, ICON_SHARE, is);
 	sb_eth = icon_create(right, ICON_ETHERNET, is);
 	sb_wifi = icon_create(right, ICON_WIFI, is);
@@ -405,18 +408,128 @@ static void load_home_data(void)
 	cJSON_Delete(last_game);
 	last_game = NULL;
 	r = api_call("{\"cmd\":\"last\"}");
-	if (api_ok(r) && cJSON_IsObject(cJSON_GetObjectItem(r, "game")))
+	cJSON *ld = api_ok(r) ? cJSON_GetObjectItem(r, "disc") : NULL;
+	if (cJSON_IsObject(ld)) {
+		/* a disc played after the last game from storage, still in the drive: Play last plays it */
+		last_game = cJSON_CreateObject();
+		cJSON_AddStringToObject(last_game, "title", api_str(ld, "title") ? api_str(ld, "title") : "Disc");
+		char sub[96];
+		snprintf(sub, sizeof(sub), "%s  \xC2\xB7  in the drive", api_str(ld, "system") ? api_str(ld, "system") : "Disc");
+		cJSON_AddStringToObject(last_game, "system_name", sub);
+		if (api_str(ld, "art")) cJSON_AddStringToObject(last_game, "art", api_str(ld, "art"));
+		cJSON_AddNumberToObject(last_game, "category", CAT_DISC);
+		cJSON_AddTrueToObject(last_game, "disc");
+	} else if (api_ok(r) && cJSON_IsObject(cJSON_GetObjectItem(r, "game")))
 		last_game = cJSON_DetachItemFromObject(r, "game");
 	cJSON_Delete(r);
 }
 
+static char ig_title[160];         /* the game just started (the in-game menu's title) */
+static int ig_from_disc;           /* ... and whether it plays from the dock's drive */
+static cJSON *ig_game;             /* ... its details: box art and description beside the in-game menu */
 static void play_id(long long id)
 {
 	cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
 	if (!r) toast_show("The system service isn't responding");
 	else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start the game");
-	else toast_show("Starting...");
+	else {
+		toast_show("Starting...");
+		cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", id);
+		cJSON *gg = api_ok(g) ? cJSON_DetachItemFromObject(g, "game") : NULL;
+		snprintf(ig_title, sizeof(ig_title), "%s", gg && api_str(gg, "title") ? api_str(gg, "title") : "");
+		ig_from_disc = 0;
+		cJSON_Delete(ig_game);
+		ig_game = cJSON_IsObject(gg) ? gg : (cJSON_Delete(gg), NULL);
+		cJSON_Delete(g);
+	}
 	cJSON_Delete(r);
+}
+
+/* ---------- the dock's CD/DVD drive ----------
+ * phosphord names what's in it ("disc": from the library or libretro's lists, with box art);
+ * Phosphor's Main tells us when it changes. Shown only while a disc is in: the disc icon in the status
+ * bar and "In the drive" at the top of Disc. Nothing starts by itself. Music CDs and DVDs aren't played
+ * yet. Disc support: Main_MiSTer_Physical_Disc by Anime0t4ku and bonna79. (docs/discs.md) */
+static struct {
+	int known, enabled, in, playable, tries;
+	long long game_id;                 /* the same game in the library (its details), else 0 */
+	char state[16], title[200], system[64], serial[32], reason[96], art[700];
+} dk = { .enabled = 1 };
+static void systems_disc_update(void);
+static void discs_screen_update(void);
+static void show_discs(void);
+static void discs_key(int k);
+static void ingame_key(int k);
+static void ingame_open(void);
+static void ingame_close(int to_game);
+static void disc_refresh(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"disc\"}");
+	cJSON *d = api_ok(r) ? cJSON_GetObjectItem(r, "disc") : NULL;
+	int en = dk.enabled, tries = dk.tries;
+	char key[64];
+	snprintf(key, sizeof(key), "%s|%s", dk.state, dk.serial);
+	memset(&dk, 0, sizeof(dk));
+	dk.enabled = en;
+	if (d) {
+		dk.known = 1;
+		dk.enabled = !cJSON_IsFalse(cJSON_GetObjectItem(d, "enabled"));
+		const char *v;
+#define DKS(f, k) if ((v = api_str(d, k))) snprintf(dk.f, sizeof(dk.f), "%s", v)
+		DKS(state, "state"); DKS(title, "title"); DKS(system, "system"); DKS(serial, "serial"); DKS(reason, "reason"); DKS(art, "art");
+#undef DKS
+		dk.playable = cJSON_IsTrue(cJSON_GetObjectItem(d, "playable"));
+		dk.game_id = (long long)api_num(d, "game_id", 0);
+		dk.in = dk.enabled && (!strcmp(dk.state, "reading") || !strcmp(dk.state, "ready") || !strcmp(dk.state, "unreadable"));
+	}
+	cJSON_Delete(r);
+	char nk[64];
+	snprintf(nk, sizeof(nk), "%s|%s", dk.state, dk.serial);
+	dk.tries = strcmp(key, nk) ? 0 : tries;          /* box art may still be on its way: ask a few more times */
+	static int pushed = -1;                          /* Main follows Settings › Discs (kept in phosphord) */
+	if (dk.known && dk.enabled != pushed) { mainlink_disc_enable(dk.enabled); pushed = dk.enabled; }
+	if (sb_disc) lv_obj_set_hidden(sb_disc, !dk.in);
+	systems_disc_update();
+	discs_screen_update();
+}
+static void disc_play_now(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"disc_play\"}");
+	if (!r) toast_show("The system service isn't responding");
+	else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start the disc");
+	else {
+		toast_show("Starting...");
+		snprintf(ig_title, sizeof(ig_title), "%.159s", dk.title);
+		ig_from_disc = 1;
+		/* the in-game menu's details: the library game with the same disc code, else what the drive says */
+		cJSON_Delete(ig_game);
+		ig_game = NULL;
+		if (dk.game_id > 0) {
+			cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", dk.game_id);
+			cJSON *gg = api_ok(g) ? cJSON_DetachItemFromObject(g, "game") : NULL;
+			if (cJSON_IsObject(gg)) ig_game = gg; else cJSON_Delete(gg);
+			cJSON_Delete(g);
+		}
+		if (!ig_game) {
+			ig_game = cJSON_CreateObject();
+			cJSON_AddStringToObject(ig_game, "title", dk.title);
+			if (dk.art[0]) cJSON_AddStringToObject(ig_game, "art", dk.art);
+		}
+	}
+	cJSON_Delete(r);
+}
+static void disc_eject_now(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"disc_eject\"}");
+	if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "The tray didn't open");
+	cJSON_Delete(r);
+}
+/* the drive row's words (the Disc list, Settings › Discs) */
+static const char *disc_line(void)
+{
+	if (!strcmp(dk.state, "reading")) return "reading the disc\xE2\x80\xA6";
+	if (!strcmp(dk.state, "unreadable")) return "a disc that can't be read";
+	return dk.title[0] ? dk.title : "a disc";
 }
 
 static void home_counts(void)
@@ -521,12 +634,13 @@ static void show_home(void)
 
 /* ---------- Systems in a category ---------- */
 
-typedef struct { char id[24], name[48]; int games, core; } sys_item_t;
+typedef struct { char id[24], name[48]; int games, core, drive; } sys_item_t;   /* drive: "In the drive" */
 static sys_item_t sys_items[64];
 static int nsys;
 static category_t sys_cat;
 static vlist_t sys_list;
-static lv_obj_t *sys_detail_name, *sys_detail_count, *sys_detail_core;
+static lv_obj_t *sys_detail_name, *sys_detail_count, *sys_detail_core, *sys_detail_ic, *sys_detail_art;
+static char sys_art_src[720];
 
 static void load_systems(category_t c)
 {
@@ -541,13 +655,30 @@ static void load_systems(category_t c)
 			snprintf(s->name, sizeof(s->name), "%s", api_str(it, "name") ? api_str(it, "name") : "");
 			s->games = (int)api_num(it, "games", 0);
 			s->core = cJSON_IsTrue(cJSON_GetObjectItem(it, "core"));
+			s->drive = 0;
 		}
 	}
 	cJSON_Delete(r);
+	/* a disc in the dock's drive: first, only while it's in */
+	if (c == CAT_DISC && dk.in) {
+		if (nsys >= 64) nsys = 63;
+		memmove(&sys_items[1], &sys_items[0], sizeof(sys_items[0]) * (size_t)nsys);
+		sys_item_t *d = &sys_items[0];
+		memset(d, 0, sizeof(*d));
+		d->drive = 1;
+		d->core = dk.playable;
+		nsys++;
+	}
 }
 
 static void sys_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
+	if (sys_items[i].drive) {
+		snprintf(t, n, "In the drive  \xC2\xB7  %s", disc_line());
+		snprintf(val, vn, "%s", dk.playable ? dk.system : !strcmp(dk.state, "reading") ? "wait a moment" : dk.reason);
+		*dim = !dk.playable && strcmp(dk.state, "reading");
+		return;
+	}
 	snprintf(t, n, "%s", sys_items[i].name);
 	snprintf(val, vn, "%d", sys_items[i].games);
 	*dim = !sys_items[i].core;
@@ -559,9 +690,30 @@ static void sys_detail(void)
 		lv_label_set_text(sys_detail_name, "No games yet");
 		lv_label_set_text(sys_detail_count, "Put games in games/<system> on the SD card, a USB drive or your network share");
 		lv_label_set_text(sys_detail_core, "");
+		static const char *const hints_none[] = { "B", "Back", NULL };
+		footer_set(hints_none);
 		return;
 	}
 	sys_item_t *s = &sys_items[sys_list.sel];
+	if (sys_detail_ic) lv_obj_set_hidden(sys_detail_ic, s->drive && dk.art[0]);
+	if (sys_detail_art) lv_obj_set_hidden(sys_detail_art, !(s->drive && dk.art[0]));
+	static const char *const hints_sys[] = { "A", "Open", "B", "Back", NULL };
+	static const char *const hints_drive[] = { "A", "Play", "Y", "Eject", "B", "Back", NULL };
+	static const char *const hints_drive_off[] = { "Y", "Eject", "B", "Back", NULL };
+	footer_set(!s->drive ? hints_sys : dk.playable ? hints_drive : hints_drive_off);
+	if (s->drive) {
+		lv_label_set_text(sys_detail_name, disc_line());
+		char t[160];
+		if (dk.system[0] && dk.serial[0]) snprintf(t, sizeof(t), "%s  \xC2\xB7  %s", dk.system, dk.serial);
+		else snprintf(t, sizeof(t), "%s", dk.system[0] ? dk.system : "In the dock's drive");
+		lv_label_set_text(sys_detail_count, t);
+		lv_label_set_text(sys_detail_core, dk.playable ? "In the dock's drive" : dk.reason);
+		if (dk.art[0] && sys_detail_art) {
+			snprintf(sys_art_src, sizeof(sys_art_src), "A:%s", dk.art);
+			lv_image_set_src(sys_detail_art, sys_art_src);
+		}
+		return;
+	}
 	lv_label_set_text(sys_detail_name, s->name);
 	char t[64];
 	snprintf(t, sizeof(t), "%d game%s", s->games, s->games == 1 ? "" : "s");
@@ -598,6 +750,12 @@ static void show_systems(category_t c)
 	lv_obj_t *ic = icon_create(panel, CAT_ICON[c], S(64));
 	lv_obj_set_style_text_color(ic, PAL.acc, 0);
 	lv_obj_set_pos(ic, S(28), S(28));
+	sys_detail_ic = ic;
+	sys_detail_art = lv_image_create(panel);           /* the disc's box art, in the icon's place */
+	lv_obj_set_size(sys_detail_art, S(72), S(72));
+	lv_image_set_inner_align(sys_detail_art, LV_IMAGE_ALIGN_CONTAIN);
+	lv_obj_set_pos(sys_detail_art, S(28), S(24));
+	lv_obj_set_hidden(sys_detail_art, true);
 	sys_detail_name = mk_label(panel, FONT_TITLE, PAL.text, "");
 	lv_obj_set_pos(sys_detail_name, S(28), S(116));
 	sys_detail_count = mk_label(panel, FONT_BODY, PAL.dim, "");
@@ -609,8 +767,24 @@ static void show_systems(category_t c)
 
 	vlist_refresh(&sys_list);
 	sys_detail();
-	static const char *const hints[] = { "A", "Open", "B", "Back", NULL };
-	footer_set(hints);
+}
+
+/* the drive changed while Disc is open: the list again, on the same row */
+static void systems_disc_update(void)
+{
+	if (cur != SCR_SYSTEMS || sys_cat != CAT_DISC) return;
+	char keep[24];
+	int was_drive = nsys && sys_items[sys_list.sel].drive;
+	snprintf(keep, sizeof(keep), "%s", nsys ? sys_items[sys_list.sel].id : "");
+	load_systems(sys_cat);
+	sys_list.count = nsys;
+	sys_list.sel = 0;
+	for (int i = 0; i < nsys; i++)
+		if (was_drive ? sys_items[i].drive : (!sys_items[i].drive && !strcmp(sys_items[i].id, keep))) sys_list.sel = i;
+	if (sys_list.sel >= nsys) sys_list.sel = nsys ? nsys - 1 : 0;
+	if (sys_list.top > sys_list.sel) sys_list.top = sys_list.sel;
+	vlist_refresh(&sys_list);
+	sys_detail();
 }
 
 /* ---------- Games of a system ---------- */
@@ -1059,7 +1233,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1155,6 +1329,11 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Front ports & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_STORAGE: snprintf(t, n, "Storage"); snprintf(val, vn, ">"); break;
+	case SET_DISCS:
+		snprintf(t, n, "Discs");
+		if (!dk.known) { *dim = 1; snprintf(val, vn, "Needs Phosphor's Main with disc support"); }
+		else snprintf(val, vn, "%s  >", dk.enabled ? "On" : "Off");
+		break;
 	case SET_VIDEO: snprintf(t, n, "Video"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
@@ -2196,6 +2375,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                 "Every restore takes a snapshot first, so it can be undone." },
 	[SET_STORAGE] = { "The SD card and the NVMe / USB drives: space, checks, a speed test, repairs, and putting back a drive that dropped off.",
 	                  "Only a repair changes a drive, and only after you say so twice." },
+	[SET_DISCS] = { "Play games from the dock's CD/DVD drive: PlayStation, Saturn, Mega-CD, PC Engine CD, Neo Geo CD, CD-i and 3DO, and MSU-1 / MD+ discs. A disc shows at the top of Disc while it's in.",
+	                "Disc support by Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)." },
 	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
 	                "The ports are only read while this screen is open." },
 	[SET_VIDEO] = { "MiSTer's own video settings: HDMI resolution, refresh and lag, scaling, HDR, the TV remote over HDMI, and the analog outputs, each explained. Try a change: it goes back by itself in 35 seconds unless you keep it.",
@@ -7369,10 +7550,23 @@ void ui_key(pkey_t k)
 		else if (k == K_A) show_systems((category_t)home.sel);
 		else if (k == K_Y) search_open();
 		else if (k == K_MENU) show_settings();
+		else if (k == K_X && last_game && cJSON_IsTrue(cJSON_GetObjectItem(last_game, "disc"))) disc_play_now();
 		else if (k == K_X && last_game) play_id((long long)api_num(last_game, "id", -1));
+		break;
+	case SCR_DISCS:
+		discs_key(k);
+		break;
+	case SCR_INGAME:
+		ingame_key(k);
 		break;
 	case SCR_SYSTEMS:
 		if (vlist_key(&sys_list, k)) sys_detail();
+		else if (nsys && sys_items[sys_list.sel].drive) {
+			if (k == K_A && dk.playable) disc_play_now();
+			else if (k == K_A && dk.reason[0]) toast_show(dk.reason);
+			else if (k == K_Y) disc_eject_now();
+			else if (k == K_B) show_home();
+		}
 		else if (k == K_A && nsys) show_games(sys_items[sys_list.sel].id, sys_items[sys_list.sel].name, sys_cat);
 		else if (k == K_B) show_home();
 		break;
@@ -7475,6 +7669,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
 			else if (set_list.sel == SET_STORAGE) show_storage();
+			else if (set_list.sel == SET_DISCS) show_discs();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else if (set_list.sel == SET_ABOUT) show_about();
 			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
@@ -7502,6 +7697,223 @@ void ui_key(pkey_t k)
 	}
 }
 
+/* ---------- Settings › Discs ---------- */
+static vlist_t disc_list;
+enum { DS_ON, DS_DRIVE, DS_EJECT, DS_COUNT };
+static lv_obj_t *ds_note;
+static void ds_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	if (i == DS_ON) { snprintf(t, n, "Discs"); snprintf(val, vn, "<  %s  >", dk.enabled ? "On" : "Off"); }
+	else if (i == DS_DRIVE) {
+		snprintf(t, n, "Drive");
+		if (!dk.enabled) snprintf(val, vn, "not used");
+		else if (!strcmp(dk.state, "none") || !dk.state[0]) snprintf(val, vn, "no drive found");
+		else if (!strcmp(dk.state, "empty")) snprintf(val, vn, "empty");
+		else snprintf(val, vn, "%s", disc_line());
+		*dim = 1;
+	} else { snprintf(t, n, "Eject the disc"); snprintf(val, vn, ">"); *dim = !dk.enabled || !strcmp(dk.state, "none"); }
+}
+static void discs_screen_update(void)
+{
+	if (cur != SCR_DISCS) return;
+	vlist_refresh(&disc_list);
+}
+static void show_discs(void)
+{
+	cur = SCR_DISCS;
+	disc_refresh();
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Discs");
+	vlist_create(&disc_list, body, S(56), S(176), S(700), S(440));
+	disc_list.count = DS_COUNT;
+	disc_list.fill = ds_fill;
+	disc_list.sel = 0;
+	disc_list.top = 0;
+	vlist_refresh(&disc_list);
+	lv_obj_t *panel = mk_box(body, S(444), S(300), PAL.panel, S(16));
+	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(panel, PAL.line, 0);
+	lv_obj_set_pos(panel, S(780), S(176));
+	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "Discs");
+	lv_obj_set_pos(h, S(24), S(22));
+	ds_note = mk_label(panel, FONT_BODY, PAL.dim, "Play games from the dock's CD/DVD drive: PlayStation, Saturn, Mega-CD, PC Engine CD, "
+	                   "Neo Geo CD, CD-i and 3DO, and MSU-1 / MD+ discs. Off: Phosphor doesn't use the drive.");
+	lv_label_set_long_mode(ds_note, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(ds_note, S(396));
+	lv_obj_set_pos(ds_note, S(24), S(64));
+	lv_obj_t *cr = mk_label(panel, FONT_SMALL, PAL.faint, "Disc support by Anime0t4ku and bonna79.");
+	lv_obj_set_pos(cr, S(24), S(250));
+	static const char *const hints[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
+	footer_set(hints);
+}
+static void discs_key(int k)
+{
+	if (vlist_key(&disc_list, k)) return;
+	if (disc_list.sel == DS_ON && (k == K_LEFT || k == K_RIGHT || k == K_A)) {
+		int on = !dk.enabled;
+		cJSON_Delete(api_call("{\"cmd\":\"disc_enable\",\"on\":%s}", on ? "true" : "false"));
+		mainlink_disc_enable(on);
+		dk.enabled = on;
+		disc_refresh();
+		toast_show(on ? "Discs on" : "Discs off: the drive isn't used");
+	} else if (disc_list.sel == DS_EJECT && k == K_A && dk.enabled) disc_eject_now();
+	else if (k == K_B || k == K_MENU) back_to_settings(SET_DISCS);
+}
+
+/* ---------- the in-game menu ----------
+ * A short press of the menu button in a game (a long one opens MiSTer's menu, as before): Phosphor's
+ * screen over the running game (Main's "ingame"; the game keeps running behind it) and the controller
+ * here, until Back. Needs Phosphor's Main with API 5. */
+static vlist_t ig_list;
+enum { IG_BACK, IG_DISC, IG_OSD, IG_QUIT };
+static int ig_rows[4], ig_n;
+static void ig_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	static const char *const NAME[] = { "Back to the game", "Change disc", "MiSTer menu", "Quit to Phosphor" };
+	*dim = 0;
+	snprintf(t, n, "%s", NAME[ig_rows[i]]);
+	snprintf(val, vn, "%s", ig_rows[i] == IG_BACK ? "" : ">");
+}
+static void ingame_open(void)
+{
+	if (cur == SCR_INGAME || !mainlink_has_ingame()) return;
+	cur = SCR_INGAME;
+	ig_n = 0;
+	ig_rows[ig_n++] = IG_BACK;
+	if (ig_from_disc && dk.enabled) ig_rows[ig_n++] = IG_DISC;
+	ig_rows[ig_n++] = IG_OSD;
+	ig_rows[ig_n++] = IG_QUIT;
+	lv_obj_clean(body);
+	lv_obj_t *dimbg = mk_box(body, W, H, lv_color_hex(0x000000), 0);
+	lv_obj_set_pos(dimbg, 0, 0);
+	lv_obj_t *sheet = mk_box(body, S(460), H, PAL.panel, 0);
+	lv_obj_set_pos(sheet, W - S(460), 0);
+	lv_obj_set_style_border_side(sheet, LV_BORDER_SIDE_LEFT, 0);
+	lv_obj_set_style_border_width(sheet, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(sheet, PAL.line, 0);
+	/* the game on the left: its box art and what it's about (as on its page in the library). Started
+	   some other way (the phone, Phosphor for Windows) or the shell restarted: the last game launched */
+	if (!ig_game) {
+		cJSON *r = api_call("{\"cmd\":\"last\"}");
+		cJSON *gg = api_ok(r) ? cJSON_DetachItemFromObject(r, "game") : NULL;
+		if (cJSON_IsObject(gg)) { ig_game = gg; if (!ig_title[0] && api_str(gg, "title")) snprintf(ig_title, sizeof(ig_title), "%s", api_str(gg, "title")); }
+		else cJSON_Delete(gg);
+		cJSON_Delete(r);
+	}
+	if (ig_game) {
+		int lx = S(56), ly = S(110), aw = S(240), ah = S(300);
+		lv_obj_t *art = mk_box(body, aw, ah, lv_color_hex(0x2a2119), S(10));
+		lv_obj_set_style_clip_corner(art, true, 0);
+		lv_obj_set_pos(art, lx, ly);
+		const char *a = api_str(ig_game, "art");
+		if (a) {
+			static char src[1100];
+			snprintf(src, sizeof(src), "A:%s", a);
+			lv_obj_t *img = lv_image_create(art);
+			lv_obj_set_size(img, aw, ah);
+			lv_image_set_inner_align(img, LV_IMAGE_ALIGN_CONTAIN);
+			lv_image_set_src(img, src);
+			lv_obj_center(img);
+		} else {
+			lv_obj_t *aic = icon_create(art, ig_from_disc ? ICON_DISC : ICON_CARTRIDGE, S(64));
+			lv_obj_set_style_text_color(aic, PAL.acc, 0);
+			lv_obj_center(aic);
+		}
+		/* the text in a column, each part below the last: a title on two lines moves the rest down */
+		int tx = lx + aw + S(32), tw = W - S(460) - S(40) - tx;
+		lv_obj_t *col = mk_box(body, tw, H - ly - S(110), PAL.bg, 0);
+		lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
+		lv_obj_set_pos(col, tx, ly);
+		lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_style_pad_row(col, S(12), 0);
+		lv_obj_t *t = mk_label(col, FONT_HEADING, PAL.text, api_str(ig_game, "title") ? api_str(ig_game, "title") : "");
+		lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_width(t, tw);
+		lv_obj_update_layout(t);
+		int lh = lv_font_get_line_height(FONT_HEADING);
+		if (lv_obj_get_height(t) > 2 * lh + S(4)) {      /* at most two lines */
+			lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
+			lv_obj_set_height(t, 2 * lh);
+		}
+		char meta[200] = "";
+		const char *keys[] = { "year", "developer", "players", "genre" };
+		for (int i = 0; i < 4; i++) {
+			const char *v = api_str(ig_game, keys[i]);
+			if (!v || !*v) continue;
+			size_t l = strlen(meta);
+			snprintf(meta + l, sizeof(meta) - l, "%s%s%s", l ? "  \xC2\xB7  " : "", v, !strcmp(keys[i], "players") ? (strchr(v, 'p') ? "" : " players") : "");
+		}
+		if (meta[0]) {
+			lv_obj_t *m = mk_label(col, FONT_SMALL, PAL.acc, meta);
+			lv_label_set_long_mode(m, LV_LABEL_LONG_MODE_WRAP);
+			lv_obj_set_width(m, tw);
+		}
+		const char *desc = api_str(ig_game, "description");
+		if (desc && *desc) {
+			lv_obj_t *d = mk_label(col, FONT_BODY, PAL.dim, desc);
+			lv_obj_set_width(d, tw);
+			lv_obj_set_flex_grow(d, 1);                   /* the rest of the column; "..." where it ends */
+			lv_label_set_long_mode(d, LV_LABEL_LONG_MODE_DOTS);
+			lv_obj_set_style_margin_top(d, S(8), 0);
+		}
+	}
+	char eb[200];
+	snprintf(eb, sizeof(eb), "%s%s", ig_title[0] ? ig_title : "In game", ig_from_disc ? "  \xC2\xB7  from the disc" : "");
+	lv_obj_t *e = mk_label(sheet, FONT_LABEL, PAL.dim, eb);
+	lv_obj_set_style_text_letter_space(e, S(2), 0);
+	lv_label_set_long_mode(e, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(e, S(400));
+	lv_obj_set_pos(e, S(30), S(96));
+	vlist_create(&ig_list, sheet, S(20), S(140), S(420), S(300));
+	ig_list.count = ig_n;
+	ig_list.fill = ig_fill;
+	ig_list.sel = 0;
+	ig_list.top = 0;
+	vlist_refresh(&ig_list);
+	static const char *const hints[] = { "A", "Select", "B", "Back to the game", NULL };
+	footer_set(hints);
+	ui_activity();
+	/* Main shows Linux's screen over the game first (it switches consoles, which can wipe what's
+	   there), then the menu is drawn once, in full: drawn before, it's lost; drawn twice, it jitters */
+	if (mainlink_ingame(1)) { show_home(); return; }
+	usleep(150000);
+	console_quiet();
+	lv_obj_invalidate(lv_screen_active());
+	lv_refr_now(NULL);
+}
+static void ingame_close(int to_game)
+{
+	if (cur != SCR_INGAME) return;
+	if (to_game) mainlink_ingame(0);
+	show_home();                        /* behind the game, ready for when it ends */
+}
+static void ingame_key(int k)
+{
+	if (vlist_key(&ig_list, k)) return;
+	if (k == K_B || k == K_MENU) { ingame_close(1); return; }
+	if (k != K_A) return;
+	switch (ig_rows[ig_list.sel]) {
+	case IG_BACK: ingame_close(1); break;
+	case IG_DISC:
+		disc_eject_now();
+		ingame_close(1);
+		toast_show("Put the next disc in and close the tray");
+		break;
+	case IG_OSD: mainlink_ingame_osd(); show_home(); break;
+	case IG_QUIT: mainlink_quit_game(); show_home(); break;
+	}
+}
+
+/* a game is running and the shell sleeps (main.c): the menu button (the in-game menu), and Main
+   taking the in-game screen back. Also from ui_tick while the menu is open. */
+void ui_game_events(void)
+{
+	if (mainlink_menu_button()) { if (cur == SCR_INGAME) ingame_close(1); else ingame_open(); }
+	if (mainlink_ingame_ended() && cur == SCR_INGAME) ingame_close(0);
+}
+int ui_ingame_open(void) { return cur == SCR_INGAME; }
+
 static uint32_t last_status, last_poll;
 
 int ui_max_sleep(void)
@@ -7527,6 +7939,10 @@ void ui_tick(void)
 		if (now - lr >= 2000) { lr = now; ct_refresh(api_call("{\"cmd\":\"controllers\"}")); }   /* plugged in, switched on */
 	}
 	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
+	/* the dock's drive changed; the menu button in a game; Main took the in-game screen back */
+	if (mainlink_disc_changed()) disc_refresh();
+	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_refresh(); } }
+	ui_game_events();
 	sk_check(now);
 	vk_check(0);
 	vk_tick();
