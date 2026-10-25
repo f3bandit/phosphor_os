@@ -451,7 +451,7 @@ static int fetch_art(sqlite3 *db, sgame_t *g, sres_t *r, int from)
 	int trouble = 0;
 	snprintf(tmp, sizeof(tmp), "%s/scrape-art.img", p_tmp());
 	for (int i = from; i < r->nart; i++) {
-		int rc = net_get_file(r->art[i], tmp);
+		int rc = !strncmp(r->art[i], "pack:", 5) ? fanart_pack_get(r->art[i] + 5, tmp) : net_get_file(r->art[i], tmp);
 		if (rc < 0) { trouble = 1; continue; }
 		if (rc) continue;
 		int ok = art_store_box(g->sys, g->key, tmp, rel, sizeof(rel)) == 0;
@@ -473,6 +473,8 @@ static int scrape_one(sqlite3 *db, sgame_t *g)
 	/* already filled fields count as answered */
 	static const char *COL[F_COUNT] = { "description", "developer", "publisher", "genre", "year", "players", "region" };
 	for (int i = 0; i < F_COUNT; i++) if (has_col(db, g->id, COL[i])) r.f[i] = strdup("");
+	/* fan-made box art first: only games no database has are in that list, by their exact name */
+	if (SRC_FANART.lookup(db, g, &r) == 1) { found = 1; snprintf(r.found_by, sizeof(r.found_by), "%s", SRC_FANART.name); }
 	for (int i = 0; i < n; i++) {
 		if (!source_on(src[i]) || !src[i]->ready()) continue;
 		if (sres_complete(&r, art)) {

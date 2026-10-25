@@ -49,6 +49,9 @@ typedef struct {
 } source_t;
 
 extern const source_t SRC_LIBRETRO, SRC_ARCADEDB, SRC_LAUNCHBOX, SRC_TGDB, SRC_SCREENSCRAPER, SRC_IGDB;
+/* fan-made box art (src_fanart.c): asked first, always; not in the user's order */
+extern const source_t SRC_FANART;
+int fanart_pack_get(const char *name, const char *dest);   /* "pack:<name>" art: 0 done, 1 not there, -1 network trouble */
 
 /* settings from config/scraper.ini ("" when not set) */
 const char *scfg(const char *section, const char *key);

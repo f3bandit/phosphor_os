@@ -206,7 +206,8 @@ class PhosphorApi(val address: String, private val token: String?) {
     suspend fun favorite(id: Long, on: Boolean) { cmd(obj("cmd" to "favorite", "id" to id, "on" to on)) }
     suspend fun launch(id: Long) { cmd(obj("cmd" to "launch", "id" to id), 30_000) }
     suspend fun rescrape(id: Long) { cmd(obj("cmd" to "rescrape", "id" to id)) }
-    suspend fun link(id: Long, base: Long) { cmd(obj("cmd" to "link", "id" to id, "base" to base)) }
+    /** port: a game ported from another system, based on the original there */
+    suspend fun link(id: Long, base: Long, port: Boolean = false) { cmd(obj("cmd" to "link", "id" to id, "base" to base).also { if (port) it.put("port", true) }) }
     suspend fun unlink(id: Long) { cmd(obj("cmd" to "unlink", "id" to id)) }
 
     suspend fun candidates(id: Long, q: String?): List<Candidate> {
@@ -406,6 +407,18 @@ class PhosphorApi(val address: String, private val token: String?) {
     }
 
     suspend fun scrapePcDone(status: String) { cmd(obj("cmd" to "scrape_pc_done", "status" to status)) }
+
+    /** the games nothing was found for (automatic matching); null when the MiSTer's Phosphor is too old for it */
+    suspend fun scrapeTodoMiss(offset: Int, limit: Int = 1000): JSONObject? =
+        cmd(obj("cmd" to "scrape_todo", "miss" to true, "offset" to offset, "limit" to limit), 60_000).takeIf { it.optBoolean("miss") }
+
+    /** undo what an automatic match filled in: only those fields, and the box art if it came from it */
+    suspend fun scrapeUndo(id: Long, fields: List<String>, art: Boolean) {
+        cmd(obj("cmd" to "scrape_undo", "id" to id, "fields" to JSONArray(fields), "art" to art))
+    }
+
+    /** a boot file, test ROM or tool: out of "not found" (on), or back (off) */
+    suspend fun notGame(id: Long, on: Boolean) { cmd(obj("cmd" to "not_game", "id" to id, "on" to on)) }
 
     /** answers at all (any reply, even a refusal, means it's there) */
     suspend fun ping(): Boolean = withContext(Dispatchers.IO) {

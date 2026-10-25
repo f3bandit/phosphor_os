@@ -448,7 +448,8 @@ static char *cmd_link(sqlite3 *db, cJSON *req)
 	char s1[32], s2[32];
 	if (!game_system(db, id, s1, sizeof(s1), NULL)) return fail("no such game");
 	if (!game_system(db, base, s2, sizeof(s2), &bb)) return fail("no such base game");
-	if (strcmp(s1, s2)) return fail("the base game has to be for the same system");
+	/* "port": a game ported from another system (an NES game on the SNES) is based on the original */
+	if (strcmp(s1, s2) && !cJSON_IsTrue(cJSON_GetObjectItem(req, "port"))) return fail("the base game has to be for the same system");
 	if (bb >= 0) base = bb;                          /* based on a hack: use what that hack is based on */
 	if (base == id) return fail("a game can't be based on itself");
 	sqlite3_stmt *st;

@@ -58,7 +58,7 @@ Paired devices may use:
 | `games` `{"system":"PSX","filter":"missing_art","q":"final","offset":0,"limit":100}` | a system's games, or with `filter` (`missing_art`, `missing_details`, `not_found`, `linked`, `not_game`, `unidentified`) / `q` (title search) across all systems; each with `system`, `art`, `details`, `scrape` |
 | `game` `{"id":20}` | details, files, `based_on`, `scrape` state (`found`, `not_found`, `linked`, ...) |
 | `edit` `{"id":20,"set":{"title":"...","description":"...","year":"1996","developer":"...","publisher":"...","genre":"...","players":"1-2","region":"USA"}}` | change details; `""` or `null` clears a field; the title can't be empty. Replies with the game. The scraper never overwrites a field that has a value. |
-| `link` `{"id":21,"base":20}`, `unlink`, `candidates` `{"id":21,"q":"tactics"}` | "Based on": a hack uses its base game's art and details |
+| `link` `{"id":21,"base":20}` (`"port":true`: the base may be on another system), `unlink`, `candidates` `{"id":21,"q":"tactics"}` | "Based on": a hack uses its base game's art and details |
 | `scrape`, `rescrape` `{"id":20}`, `scrape_sources` | box art and details lookup |
 | `scrape_todo` `{"start":true,"limit":400}` / `{"miss":true,"limit":1000,"offset":0}`, `scrape_result`, `scrape_pc_done` | box art looked up on the PC or phone: the games waiting (or, with `miss`, the ones nothing was found for, for matching to their base games; the reply then has `"miss":true`), the sources' order and logins; the result for one game; done |
 | `not_game` `{"id":20,"on":true}` | a boot file, test ROM or tool: out of "not found", no box art looked up (`games` filter `not_game` lists them); `"on":false` puts it back |

@@ -24,7 +24,7 @@ private val lrSystems = mapOf(
     "MegaCD" to LrMap(listOf("Sega - Mega-CD - Sega CD"), true),
     "TGFX16CD" to LrMap(listOf("NEC - PC Engine CD - TurboGrafx-CD"), true),
     "NES" to LrMap(listOf("Nintendo - Nintendo Entertainment System", "Nintendo - Family Computer Disk System"), false),
-    "SNES" to LrMap(listOf("Nintendo - Super Nintendo Entertainment System"), false),
+    "SNES" to LrMap(listOf("Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview"), false),
     "Genesis" to LrMap(listOf("Sega - Mega Drive - Genesis"), false),
     "N64" to LrMap(listOf("Nintendo - Nintendo 64"), false),
     "SMS" to LrMap(listOf("Sega - Master System - Mark III", "Sega - SG-1000"), false),
@@ -267,6 +267,14 @@ class Libretro(private val dir: File) {
             out.add("$LR_THUMBS/${netEscape(lrsys)}/Named_Boxarts/${netEscape(thumbName(v))}.png")
         }
         return out
+    }
+
+    /** every entry of a system's lists (for matching names loosely); empty when it has none, null on network trouble */
+    suspend fun all(sys: String, status: (String) -> Unit): List<LrEntry>? {
+        val m = lrSystems[sys] ?: return emptyList()
+        val all = ArrayList<LrEntry>()
+        for (lr in m.lr) all.addAll((get(lr, m.disc, status) ?: return null).entries)
+        return all
     }
 
     suspend fun lookup(s: ScrapeRun, g: SGame, r: SRes): Int {

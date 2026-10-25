@@ -35,6 +35,10 @@ window.PhosNative = {
 		const r = { state: { paired: true, address: "200.200.200.23:8767", reachable: true, version: "0.27.25", appVersion: "0.9.0", notesUnseen: 1, look: { accent: "amber", texture: 0 } },
 			discover: { found: [{ address: "200.200.200.23:8767", version: "0.27.25" }] },
 			phoneScrape: { running: false, started: 0 },
+			automatch: { undone: 0, matches: [
+				{ id: 11, title: "Super Mario Bros. (SNES Port)", sys: "SNES", system: "SNES", kind: "port", tag: "(SNES Port)", how: "library", base_id: 3, base_title: "Super Mario Bros. (World)", found_by: [], fields: [], art: false, at: 1792904000, kept: false },
+				{ id: 12, title: "Bahamut Lagoon (Japan) [T-En by DeJap]", sys: "SNES", system: "SNES", kind: "translation", tag: "[T-En by DeJap]", how: "lookup", base_id: 0, base_title: "Bahamut Lagoon (Japan)", found_by: ["libretro", "LaunchBox"], fields: ["description", "year"], art: true, at: 1792904000, kept: false },
+				{ id: 13, title: "mister-boot", sys: "NES", system: "NES", kind: "notgame", tag: "mister-boot", how: "skip", base_id: 0, base_title: "", found_by: [], fields: [], art: false, at: 1792904000, kept: true }] },
 			sysbk: { linux: "260912", state: { busy: false, last: 1792904000, error: "" }, items: [
 				{ id: "MiSTer.ini", name: "MiSTer.ini (video, input and more)", kind: "settings", exists: true, size: 21055, hash: "a".repeat(64), status: "changed", before: null, versions: [{ hash: "a".repeat(64), size: 21055, linux: "260912", seen: 1792904000 }, { hash: "b".repeat(64), size: 20442, linux: "260912", seen: 1792800000 }] },
 				{ id: "etc+dhcpcd.conf", name: "Fixed network address (dhcpcd.conf)", kind: "settings", exists: true, size: 1428, hash: "c".repeat(64), status: "reset", before: { hash: "d".repeat(64), size: 1500, linux: "260801", seen: 1792000000 }, versions: [{ hash: "c".repeat(64), size: 1428, linux: "260912", seen: 1792904000 }, { hash: "d".repeat(64), size: 1500, linux: "260801", seen: 1792000000 }] },

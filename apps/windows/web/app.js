@@ -585,7 +585,7 @@ class Game {
 /* ---------- Match to base games: what box art couldn't find ---------- */
 /* an automatic match the user replaced by hand */
 const amForget = id => api("/api/automatch", { do: "forget", id }).catch(() => {});
-const AM_KIND = { translation: "Translation", hack: "Hack", fan: "Fan version", spelling: "Same game", name: "Other name", related: "Built on", notgame: "Not a game" };
+const AM_KIND = { translation: "Translation", hack: "Hack", fan: "Fan version", spelling: "Same game", name: "Other name", related: "Built on", port: "Port", notgame: "Not a game" };
 
 class Match {
 	constructor(tab = 0) { this.t = tab; this.items = []; this.sel = 0; this.g = null; this.hints = [["A", "Link"], ["Y", "Search"], ["X", "Look up again"], ["B", "Back"]]; }
@@ -823,7 +823,7 @@ class AutoMatch {
 		}
 		const lib = m.how === "library";
 		const when = new Date(m.at * 1000).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-		const why = { translation: "a translation", hack: "a hack", fan: "a fan version", spelling: "the same game, its name written a little differently", name: "the same game under a longer or shorter name", related: "most likely a game built on it (another subtitle)" }[m.kind] || "a version of another game";
+		const why = { translation: "a translation", hack: "a hack", fan: "a fan version", spelling: "the same game, its name written a little differently", name: "the same game under a longer or shorter name", related: "most likely a game built on it (another subtitle)", port: "a port of it from another system" }[m.kind] || "a version of another game";
 		const tagTxt = m.tag ? `<b>${esc(m.tag)}</b> in the name: ${why}` : `The lists know it as ${esc(m.base_title)}: ${why}`;
 		const added = [m.art ? "box art" : "", m.fields && m.fields.length ? "details" : ""].filter(Boolean).join(" and ");
 		const did = lib ? `Linked, ${when}` : added ? `${added[0].toUpperCase() + added.slice(1)} added, ${when}` : `Looked up, ${when}`;

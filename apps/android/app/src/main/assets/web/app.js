@@ -435,7 +435,7 @@ PAGES.library = { top: true, async show(c) {
 	});
 } };
 
-const FILTERS = [["", "All"], ["missing_art", "No box art"], ["missing_details", "No details"], ["not_found", "Not found"], ["linked", "Based on"]];
+const FILTERS = [["", "All"], ["missing_art", "No box art"], ["missing_details", "No details"], ["not_found", "Not found"], ["linked", "Based on"], ["not_game", "Not games"]];
 PAGES.games = { async show(c, p) {
 	const system = p.q.system || null;
 	setBar(p.q.title || "Games");
@@ -463,7 +463,7 @@ PAGES.games = { async show(c, p) {
 	load();
 } };
 
-const SCRAPE_TEXT = { found: "Found", not_found: "Not found by the sources", linked: "Uses the base game's", ready: "Waiting for the lookup", unidentified: "Not identified yet" };
+const SCRAPE_TEXT = { found: "Found", not_found: "Not found by the sources", not_a_game: "Set aside: not a game (no box art is looked up)", linked: "Uses the base game's", ready: "Waiting for the lookup", unidentified: "Not identified yet" };
 function fsize(n) { return n >= 1 << 30 ? (n / 1073741824).toFixed(1) + " GB" : n >= 1 << 20 ? (n / 1048576).toFixed(1) + " MB" : Math.floor(n / 1024) + " KB"; }
 PAGES.game = { async show(c, p) {
 	const id = Number(p.arg);
@@ -484,7 +484,7 @@ PAGES.game = { async show(c, p) {
 			${lbl("Based on")}
 			${flat(row(b && b.title ? b.title : "Not based on another game", { sub: b && b.title ? "Uses its box art and details unless this game has its own" : "For hacks, mods and translations", dim: !(b && b.title), go: "based/" + id }))}
 			${lbl("Box art and details lookup")}
-			${card(`<p class="small" style="color:var(--text)">${esc(SCRAPE_TEXT[g.scrape] || String(g.scrape || "").replace(/_/g, " "))}</p>${btn("Look up again", "rescrape")}`)}
+			${card(`<p class="small" style="color:var(--text)">${esc(SCRAPE_TEXT[g.scrape] || String(g.scrape || "").replace(/_/g, " "))}</p><div class="btns">${btn("Look up again", "rescrape")}${g.scrape === "not_found" ? btn("Not a game", "nogame") : g.scrape === "not_a_game" ? btn("It's a game", "isgame") : ""}</div>`)}
 			${lbl("Files")}
 			${flat((g.files || []).map(f => row(String(f.path || "").split("/").pop(), { sub: [f.where, fsize(f.size || 0), f.serial, f.crc32 && "CRC " + f.crc32, f.online === false && "offline"].filter(Boolean).join("  ·  "), dim: f.online === false })).join(""))}
 			${g.play_count > 0 ? note(`Played ${g.play_count} times, ${Math.floor(g.play_seconds / 3600)} h ${Math.floor(g.play_seconds / 60) % 60} min`) : ""}`);
@@ -494,6 +494,8 @@ PAGES.game = { async show(c, p) {
 		launch: () => act("Starting it on the TV…", async () => { await call("launch", { id }); toast("Starting on the TV"); }),
 		fav: () => act("", async () => { await call("favorite", { id, on: !g.favorite }); g = (await call("game", { id })).game; }),
 		rescrape: () => act("Asking the MiSTer to look it up again…", async () => { await call("rescrape", { id }); toast("Queued: it fills only empty fields"); }),
+		nogame: () => act("", async () => { await app("notGame", { id, on: true }); g = (await call("game", { id })).game; toast("Set aside: out of Not found"); }),
+		isgame: () => act("", async () => { await app("notGame", { id, on: false }); g = (await call("game", { id })).game; toast("Back in Not found"); }),
 		art: () => act("Sending the picture…", async () => {
 			const r = await app("pickArt", { id });
 			if (r && r.game) { g = r.game; artVer++; toast("Box art changed"); }
@@ -840,31 +842,65 @@ const SOURCE_FIELDS = {
 	thegamesdb: [["apikey", "API key (free, from thegamesdb.net)", true]],
 	igdb: [["client_id", "Client ID (Twitch developer app)", false], ["client_secret", "Client secret", true]],
 };
+/* games the phone matched to their base games (Match all automatically): Keep or Undo each */
+const AM_KIND = { translation: "Translation", hack: "Hack", fan: "Fan version", spelling: "Same game", name: "Other name", related: "Built on", port: "Port", notgame: "Not a game" };
+const AM_WHY = { translation: "a translation", hack: "a hack", fan: "a fan version", spelling: "the same game, its name written a little differently", name: "the same game under a longer or shorter name", related: "most likely a game built on it (another subtitle)", port: "a port of it from another system" };
+PAGES.automatch = { async show(c) {
+	setBar("Matched automatically");
+	let list = null, err = "", open = 0;
+	const when = t => new Date(t * 1000).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+	const why = m => m.how === "skip" ? `"${m.tag}" in the name: a boot file, test ROM or tool. Set aside, no box art is looked up; it still plays.`
+		: (m.tag ? `"${m.tag}" in the name: ` : `The lists know it as ${m.base_title}: `) + (AM_WHY[m.kind] || "a version of another game") + ". "
+		+ (m.how === "library" ? "Linked to the base game in your library: it uses its box art and details."
+			: `Looked up by the base game's name${m.found_by && m.found_by.length ? " on " + m.found_by.join(", ") : ""}: ` + ([m.art ? "box art" : "", m.fields && m.fields.length ? "details" : ""].filter(Boolean).join(" and ") || "nothing new") + " added.");
+	const draw = () => {
+		if (!list) { c.draw(err ? errp(err) : spin()); return; }
+		const pending = list.filter(m => !m.kept).length;
+		c.draw(errp(err) + (!list.length ? note("Nothing matched yet. Match all automatically (Box art) matches the games nothing was found for to their base games.")
+			: note(`${list.length} matched${pending ? `, ${pending} to review` : ""}. Undo takes out only what the match added, and it won't be matched again.`)
+			+ (pending ? btn("Keep all", "keepall", { p: true }) : "")
+			+ flat(list.map(m => `<div data-act="open" data-arg="${m.id}">${row(m.title, { sub: (m.how === "skip" ? "Not a game" : "Based on " + m.base_title) + "  ·  " + (m.system || m.sys), value: m.kept ? "Kept" : AM_KIND[m.kind] || "Match", accent: !m.kept })}</div>`
+				+ (open === m.id ? card(`<p class="small" style="color:var(--text)">${esc(why(m))}</p><p class="small">${esc(when(m.at))}</p><div class="btns">${m.kept ? "" : btn("Keep", "keep", { p: true, arg: m.id })}${btn(m.how === "skip" ? "It's a game" : "Undo", "undo", { arg: m.id })}${m.how === "skip" ? "" : `<button type="button" class="b" data-go="based/${m.id}">Pick another</button>`}</div>`) : "")).join(""))));
+	};
+	const run = async (d, id) => { try { list = (await app("automatch", { do: d, id })).matches || []; err = ""; } catch (e) { err = e.message; } if (c.alive()) draw(); };
+	acts = {
+		open: id => { open = open === Number(id) ? 0 : Number(id); draw(); },
+		keep: id => run("keep", Number(id)),
+		keepall: () => run("keep_all"),
+		undo: async id => { await run("undo", Number(id)); toast("Undone"); },
+	};
+	await run("");
+} };
+
 PAGES.boxart = { async show(c, p) {
 	setBar("Box art");
 	const tab = p.arg === "sources" ? "sources" : "lookup";
 	setChips([["lookup", "Look up"], ["sources", "Sources"]], tab, x => go("boxart/" + x, true));
 	if (tab === "lookup") {
-		let phone = {}, ss1 = null, err = "";
+		let phone = {}, ss1 = null, err = "", pending = 0;
+		const am = () => app("automatch", {}).then(r => { pending = (r.matches || []).filter(m => !m.kept).length; }).catch(() => {});
 		const draw = () => {
 			const pct = phone.total ? Math.floor(phone.done * 100 / phone.total) : 0;
-			const counts = x => `${x.found} found, ${x.notFound != null ? x.notFound : x.not_found} not found` + (x.later ? `, ${x.later} for later` : "");
+			const counts = x => `${x.found} found, ${x.notFound != null ? x.notFound : x.not_found} not found` + (x.later ? `, ${x.later} for later` : "") + (x.matched ? `, ${x.matched} matched to base games` : "");
 			c.draw(errp(err) + lbl("On this phone") + flat(phone.running ? row(phone.status || "Looking up box art", { value: phone.total ? pct + "%" : null, sub: `${phone.done} of ${phone.total}  ·  ` + counts(phone) }) + (phone.game ? row(phone.game, { sub: phone.system, dim: true }) : "")
 				: phone.started > 0 ? row(phone.status || "Done", { sub: counts(phone) })
 				: row("Much faster than the MiSTer", { sub: "The phone fetches the lists and pictures, makes the box art and sends it to the MiSTer. It keeps going with the app in the background.", dim: true }))
 				+ (phone.notes || []).map(n => `<p class="vw">${esc(n)}</p>`).join("")
-				+ btn(phone.running ? "Stop" : "Look up on this phone", "phone", { p: !phone.running })
+				+ `<div class="btns">${btn(phone.running ? "Stop" : "Look up on this phone", "phone", { p: !phone.running })}${phone.running ? "" : btn("Match all automatically", "match")}</div>`
+				+ flat(row("Matched automatically", { sub: "Translations, hacks, ports and other versions matched to their base games, and games set aside as not games", value: pending ? pending + " to review" : null, accent: true, go: "automatch" }))
 				+ note("Each picture is kept on the phone until the MiSTer has it, then deleted (Storage > This phone). The first run downloads the game lists (libretro, and LaunchBox's 110 MB once): use WiFi.")
 				+ lbl("On the MiSTer") + flat(!ss1 ? row("Asking the MiSTer…", { dim: true }) : ss1.running ? row(ss1.status || "Getting box art", { value: ss1.total ? Math.floor(ss1.done * 100 / ss1.total) + "%" : null, sub: `${ss1.done} of ${ss1.total}  ·  ` + counts(ss1) + (ss1.game ? `\n${ss1.system} › ${ss1.game}` : "") })
 				: row("Not running", { sub: ss1.status || "Slower, but the phone can be put away", dim: true }))
 				+ (ss1 && !ss1.running ? btn("Look up on the MiSTer", "ss1", { off: phone.running }) : ""));
 		};
-		on("phone", s => { phone = s; if (c.alive() && R.name === "boxart") draw(); });
+		on("phone", s => { const was = phone.running; phone = s; if (was && !s.running) am().then(() => { if (c.alive() && R.name === "boxart") draw(); }); if (c.alive() && R.name === "boxart") draw(); });
 		acts = {
 			phone: async () => { phone = await app("phoneScrape", { start: !phone.running }); draw(); },
+			match: async () => { phone = await app("phoneScrape", { start: true, only: true }); toast("Matching the not-found games to their base games"); draw(); },
 			ss1: async () => { await call("scrape", { on: true }); toast("Looking up box art on the MiSTer (slower)"); ss1 = await call("scrape_progress"); draw(); },
 		};
 		phone = await app("phoneScrape", {}).catch(() => ({}));
+		await am();
 		await c.every(async () => { try { ss1 = await call("scrape_progress"); err = ""; } catch (e) { err = e.message; } draw(); return ss1 && ss1.running ? 2000 : 6000; });
 		return;
 	}
