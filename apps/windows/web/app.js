@@ -78,9 +78,11 @@ function showConn() {
 async function refreshState() {
 	try {
 		const st = await api("/api/state");
+		const look = S.accent + "/" + S.texture;
 		Object.assign(S, { paired: st.paired, connected: !!st.connected, name: st.name, address: st.address, accent: st.accent, texture: st.texture, appVersion: st.app_version });
 		S.status = st.status || null;
 		if (st.forgotten) S.paired = false;
+		if (S.accent + "/" + S.texture !== look) applyTheme();        /* the TV's look changed */
 	} catch (e) { S.connected = false; }
 	showConn();
 }

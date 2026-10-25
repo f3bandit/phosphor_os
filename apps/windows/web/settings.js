@@ -5,7 +5,7 @@
 "use strict";
 
 const SET_SECTIONS = [
-	{ id: "look", name: "Look", tabs: [["Accent & texture", "tLook"]] },
+	{ id: "look", name: "Look", tabs: [["The TV's look", "tLook"]] },
 	{ id: "boxart", name: "Box art", tabs: [["Sources & logins", "tArt"]] },
 	{ grp: "SuperStation" },
 	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Update Phosphor", "tPhosUpd"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
@@ -162,24 +162,14 @@ class AppSettings {
 		this.poll = me;
 	}
 
-	/* ---------- Look ---------- */
-	async setTheme(p) { Object.assign(S, p); applyTheme(); await api("/api/theme", p); }
+	/* ---------- Look: the TV's, shown here (the app follows it) ---------- */
 	tLook(b) {
-		const alive = this.alive;
-		b.append(h(`<div class="list grow"><div class="sub" style="margin-top:.2rem">${spaced("Accent colour")}</div><div class="swatches" id="sw"></div>
-			<div class="sub" style="margin-top:1.4rem">${spaced("Background texture")}</div><div class="tex" id="tx"></div></div>`));
-		for (const [name, col] of Object.entries(ACCENTS)) {
-			const el = h(`<button class="sw${S.accent === name ? " on" : ""}" data-nav title="${name}" style="background:${col}"></button>`).firstChild;
-			el.onclick = async () => { await this.setTheme({ accent: name }); this.drawTool(true); };
-			$("#sw").appendChild(el);
-		}
 		const [r, g, bl] = rgb(ACCENTS[S.accent] || ACCENTS.amber);
-		for (const t of Texture.order) {
-			const url = Texture.tile(t, [r, g, bl], 1);
-			const el = h(`<div class="tx${S.texture === t ? " on" : ""}" data-nav style="${url ? `background-image:url(${url})` : ""}">${esc(Texture.name(t))}</div>`).firstChild;
-			el.onclick = async () => { await this.setTheme({ texture: t }); this.drawTool(); focus([...$("#tx").children].find(e => e.classList.contains("on"))); };
-			$("#tx").appendChild(el);
-		}
+		const url = Texture.tile(S.texture, [r, g, bl], 1);
+		b.append(h(`<div class="list grow"><div class="sub" style="margin-top:.2rem">${spaced("Accent colour")}</div>
+			<div class="swatches"><span class="sw on" style="background:${ACCENTS[S.accent] || ACCENTS.amber}"></span><span style="align-self:center;margin-left:.8rem">${esc(S.accent[0].toUpperCase() + S.accent.slice(1))}</span></div>
+			<div class="sub" style="margin-top:1.4rem">${spaced("Background texture")}</div><div class="tex"><div class="tx on" style="${url ? `background-image:url(${url})` : ""}">${esc(Texture.name(S.texture))}</div></div>
+			<div class="note" style="margin-top:1.2rem">Phosphor for Windows uses the TV's own look. Change it on the SS1 (Settings &gt; Look) and the app follows.</div></div>`));
 	}
 
 	/* ---------- Box art: the SS1's sources (order, on/off) and their logins ---------- */
