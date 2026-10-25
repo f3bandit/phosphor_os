@@ -206,3 +206,4 @@ textarea.f { min-height: 140px; resize: vertical; }
 	#conn { padding: 0 11px; }
 	#conn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
+.row .t .tags .tag { display: inline-block; }

@@ -2,6 +2,7 @@
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 #include "sha256.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const uint32_t K[64] = {
@@ -60,4 +61,47 @@ void sha256_hex(const void *data, size_t len, char out[65])
 	uint8_t d[32];
 	sha256(data, len, d);
 	for (int i = 0; i < 32; i++) sprintf(out + i * 2, "%02x", d[i]);
+}
+
+/* a whole file, read a piece at a time: 0, or -1 when it can't be read */
+int sha256_file(const char *path, char out[65])
+{
+	FILE *f = fopen(path, "rb");
+	if (!f) return -1;
+	uint32_t h[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+	uint8_t *buf = malloc(1 << 16);
+	if (!buf) { fclose(f); return -1; }
+	uint8_t carry[64];
+	size_t have = 0;
+	uint64_t len = 0;
+	size_t r;
+	while ((r = fread(buf, 1, 1 << 16, f)) > 0) {
+		len += r;
+		const uint8_t *p = buf;
+		if (have) {
+			size_t k = 64 - have < r ? 64 - have : r;
+			memcpy(carry + have, p, k);
+			have += k; p += k; r -= k;
+			if (have < 64) continue;
+			block(h, carry);
+			have = 0;
+		}
+		for (; r >= 64; r -= 64, p += 64) block(h, p);
+		memcpy(carry, p, r);
+		have = r;
+	}
+	int bad = ferror(f);
+	fclose(f);
+	free(buf);
+	if (bad) return -1;
+	uint8_t last[128] = { 0 };
+	memcpy(last, carry, have);
+	last[have] = 0x80;
+	size_t total = have + 9 <= 64 ? 64 : 128;
+	uint64_t bits = len * 8;
+	for (int i = 0; i < 8; i++) last[total - 1 - i] = (uint8_t)(bits >> (i * 8));
+	block(h, last);
+	if (total == 128) block(h, last + 64);
+	for (int i = 0; i < 8; i++) sprintf(out + i * 8, "%08x", h[i]);
+	return 0;
 }

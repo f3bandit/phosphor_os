@@ -35,6 +35,11 @@ window.PhosNative = {
 		const r = { state: { paired: true, address: "200.200.200.23:8767", reachable: true, version: "0.27.25", appVersion: "0.9.0", notesUnseen: 1, look: { accent: "amber", texture: 0 } },
 			discover: { found: [{ address: "200.200.200.23:8767", version: "0.27.25" }] },
 			phoneScrape: { running: false, started: 0 },
+			sysbk: { linux: "260912", state: { busy: false, last: 1792904000, error: "" }, items: [
+				{ id: "MiSTer.ini", name: "MiSTer.ini (video, input and more)", kind: "settings", exists: true, size: 21055, hash: "a".repeat(64), status: "changed", before: null, versions: [{ hash: "a".repeat(64), size: 21055, linux: "260912", seen: 1792904000 }, { hash: "b".repeat(64), size: 20442, linux: "260912", seen: 1792800000 }] },
+				{ id: "etc+dhcpcd.conf", name: "Fixed network address (dhcpcd.conf)", kind: "settings", exists: true, size: 1428, hash: "c".repeat(64), status: "reset", before: { hash: "d".repeat(64), size: 1500, linux: "260801", seen: 1792000000 }, versions: [{ hash: "c".repeat(64), size: 1428, linux: "260912", seen: 1792904000 }, { hash: "d".repeat(64), size: 1500, linux: "260801", seen: 1792000000 }] },
+				{ id: "MiSTer", name: "MiSTer's Main", kind: "system", exists: true, size: 1313992, hash: "e".repeat(64), status: "kept", before: null, versions: [{ hash: "e".repeat(64), size: 1313992, linux: "260912", seen: 1792904000 }] },
+				{ id: "linux+linux.img", name: "Linux", kind: "system", exists: true, size: 393216000, hash: "f".repeat(64), status: "on the PC only", before: null, versions: [] }] },
 			phoneStorage: { art: [{ id: 5, title: "Analog Controller Service Disc (USA)", system: "PSX", at: 0, sent: false, bytes: 52000 }], artBytes: 52000, listsBytes: 120000000, autoDelete: true },
 			notes: { list: [{ id: "a", at: Date.now(), level: "warn", title: "SD card nearly full", body: "3 GB free", seen: false, go: "storage/0" }], notify: true, allowed: false },
 		}[action] || {};
@@ -52,7 +57,7 @@ window.PhosNative = {
 	const errs = [];
 	page.on("pageerror", e => errs.push(String(e)));
 	page.on("console", m => { if (m.type() === "error") errs.push(m.text()); });
-	const routes = (process.env.ROUTES || "home,library,games?system=PSX&title=PlayStation,game/1,edit/1,based/1,saves/cards,saves/backups,saves/cloud,video,boxart/lookup,boxart/sources,look,power/power,power/update,power/guard,storage/sd,storage/drives,storage/phone,bluetooth,diag,notes,connection,about,connect").split(",");
+	const routes = (process.env.ROUTES || "home,sysbk,sysbk/etc+dhcpcd.conf,library,games?system=PSX&title=PlayStation,game/1,edit/1,based/1,saves/cards,saves/backups,saves/cloud,video,boxart/lookup,boxart/sources,look,power/power,power/update,power/guard,storage/sd,storage/drives,storage/phone,bluetooth,diag,notes,connection,about,connect").split(",");
 	const out = T + "/shots" + (process.env.TAG || "");
 	fs.mkdirSync(out, { recursive: true });
 	await page.goto("http://localhost:8099/#home");

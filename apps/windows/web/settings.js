@@ -8,7 +8,7 @@ const SET_SECTIONS = [
 	{ id: "look", name: "Look", tabs: [["The TV's look", "tLook"]] },
 	{ id: "boxart", name: "Box art", tabs: [["Sources & logins", "tArt"]] },
 	{ grp: "SuperStation" },
-	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Update Phosphor", "tPhosUpd"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"]] },
+	{ id: "power", name: "Power & updates", tabs: [["Power", "tPower"], ["Update Phosphor", "tPhosUpd"], ["Updates & restore points", "tGuard"], ["File sharing", "tSamba"], ["MiSTer & Linux backups", "tSysbk"]] },
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"]] },
 	{ id: "saves", name: "Saves & memory cards", tabs: [["Memory cards", "tMc"], ["Backups", "tSnaps"], ["Cloud saves", "tCloud"]] },
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
@@ -1107,6 +1107,60 @@ class AppSettings {
 		html += `<div class="sub" style="margin-top:1.2rem">${spaced("Connections")}</div>`;
 		for (const i of s.interfaces || []) html += `<div class="row net"><span class="n"><b>${i.kind === "wifi" ? "WiFi" : "Wired"} (${esc(i.name)})</b><small>${(i.ips || []).map(esc).join(", ") || "no address"} · ${esc(i.mac || "")}${i.mbps ? ` · ${i.mbps} Mb/s` : ""}</small></span><span class="v">${i.up ? '<span class="mpill good">up</span>' : '<span class="mpill muted">down</span>'}</span></div>`;
 		$("#net").innerHTML = html;
+	}
+
+	/* ---------- MiSTer & Linux backups: every version of the system and settings files, on this PC (sysbk.go) ---------- */
+	async tSysbk(b) {
+		const alive = this.alive, me = this;
+		b.append(h(`<div class="col grow"><div class="acts" style="margin:0 0 .6rem;align-items:center"><button class="btn primary" id="sb_now" data-nav>Back up now</button><span class="note" id="sb_st"></span></div>
+			<div class="split"><div class="list" id="sb_l"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="sb_p"></div></div></div>`));
+		let S0 = null, sel = null;
+		const STAT = { "changed": ["muted", "changed"], "reset": ["bad", "looks reset"], "kept": ["good", "kept"], "not kept yet": ["muted", "not kept yet"], "not on the SS1": ["muted", "not on the SS1"] };
+		const when = t => t ? new Date(t * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+		const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " bytes";
+		const panel = it => {
+			const p = $("#sb_p");
+			if (!it) { p.innerHTML = ""; return; }
+			const vs = it.versions || [];
+			p.innerHTML = `<h2>${esc(it.name)}</h2><p class="note">${it.kind === "system" ? "A system file: put one back and restart the SS1 to use it." : "A settings file."} ${it.exists ? size(it.size) + " on the SS1." : "Not on the SS1 now."}</p>
+				${it.status === "reset" ? `<p class="note" style="color:#e3b341">It changed when MiSTer Linux was updated: the update probably put it back to stock. The one marked "before the update" is the version to put back.</p>` : ""}
+				<div class="sub" style="margin-top:1rem">${spaced("Versions on this PC")}</div>
+				${vs.length ? vs.map((v, i) => `<div class="row net"><span class="n"><b>${esc(when(v.seen))}${v.hash === it.hash ? " (on the SS1 now)" : it.before && v.hash === it.before.hash ? " (before the update)" : ""}</b><small>${size(v.size)} · MiSTer Linux ${esc(v.linux || "?")}</small></span>${v.hash === it.hash ? "" : `<button class="btn" data-nav data-put="${esc(v.hash)}">Put back</button>`}</div>`).join("")
+					: `<div class="empty">None yet: Back up now.</div>`}
+				<p class="note" style="margin-top:1rem">Putting one back keeps the file as it is on the SS1 first (phosphor/backups/sysbk there), so it can be undone.</p>`;
+			p.querySelectorAll("[data-put]").forEach(bt => twice(bt, "Press again to put it back", async () => {
+				try { await api("/api/sysbk", { do: "restore", id: it.id, hash: bt.dataset.put }); toast("Putting it back…"); me.every(1000, load); } catch (e) { toast(e.message); }
+			}));
+		};
+		const load = async () => {
+			try { S0 = await api("/api/sysbk"); } catch (e) { return false; }
+			if (!alive()) return false;
+			const st = $("#sb_st");
+			const pc = S0.total ? Math.round(S0.done * 100 / S0.total) : 0;
+			st.textContent = S0.busy ? (S0.job === "restore" ? "Putting it back… " : "Backing up ") + (S0.file || "") + (S0.total ? ` ${pc}%` : "…")
+				: S0.offline ? S0.offline : S0.error ? "Last try: " + S0.error : S0.last ? "Last checked " + when(S0.last) + (S0.restart ? " · restart the SS1 to use what was put back" : "") : "Not backed up yet";
+			$("#sb_now").disabled = !!S0.busy;
+			const l = $("#sb_l");
+			l.innerHTML = "";
+			let first = null;
+			for (const kind of ["settings", "system"]) {
+				const list = (S0.items || []).filter(x => x.kind === kind);
+				if (!list.length) continue;
+				l.appendChild(h(`<div class="sub" style="margin:.6rem 0 .2rem 1.5rem">${spaced(kind === "settings" ? "Settings files" : "System files")}</div>`));
+				for (const it of list) {
+					const [cls, word] = STAT[it.status] || ["muted", it.status];
+					const el = h(`<div class="row" data-nav><span class="n">${esc(it.name)}</span><span class="v"><span class="mpill ${cls}">${esc(word)}</span></span></div>`).firstChild;
+					el._onfocus = () => { sel = it.id; panel(it); };
+					el.onclick = () => { sel = it.id; panel(it); };
+					l.appendChild(el);
+					if (!first || it.id === sel) first = { el, it };
+				}
+			}
+			if (first) panel((S0.items || []).find(x => x.id === sel) || first.it);
+			return !!S0.busy;
+		};
+		$("#sb_now").onclick = async () => { try { await api("/api/sysbk", { do: "save" }); me.every(1000, load); } catch (e) { toast(e.message); } };
+		if (await load()) this.every(1000, load);
 	}
 
 	/* ---------- Video: MiSTer's own video settings (MiSTer.ini and its profiles), tried with Keep:

@@ -8,5 +8,6 @@
 
 void sha256(const void *data, size_t len, uint8_t out[32]);
 void sha256_hex(const void *data, size_t len, char out[65]);
+int sha256_file(const char *path, char out[65]);   /* a whole file, a piece at a time */
 
 #endif

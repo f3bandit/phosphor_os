@@ -1,6 +1,6 @@
 # Phosphor for Android
 
-The phone app for Phosphor (0.9.0): browse the MiSTer's library, fix box art and details, set "Based on"
+The phone app for Phosphor (0.9.1): browse the MiSTer's library, fix box art and details, set "Based on"
 links and start games on the TV; look up box art on the phone; saves (memory cards, backups, cloud), MiSTer's
 video settings (tried safely), power and updates, storage, Bluetooth (read only), diagnostics and
 notifications. Over the home network only. Android 8 and later. A separate app from SS1 Tool for Android,
@@ -41,6 +41,12 @@ The app follows the phone's text size within limits, and nothing ever runs off t
 - **Look**: the app takes the TV's accent colour and background texture (Settings > Look on the MiSTer).
 - **Power & updates**: the power check, Restart, Shut down safely, Reload the TV screen; installing a
   Phosphor package that's on the MiSTer, or rolling back; restore points (put back settings an update reset).
+- **MiSTer & Linux backups**: every version of the MiSTer's settings files (MiSTer.ini and its profiles,
+  Phosphor's settings, the network address, name and SSH settings) and system files (Main, the menu core,
+  the Linux kernel), kept on the phone and checked every half hour; Linux itself (about 400 MB) is left to
+  Phosphor for Windows. A settings file that changed when Linux did "looks reset" (with a notification);
+  any version can be put back (the MiSTer keeps the file as it was first). WiFi, SSH keys, pairings and
+  logins are never copied.
 - **Storage**: the SD card, NVMe and USB drives (free space, Gen 4 warning, checks, repair, mount again), and
   **This phone**: box art the phone downloaded. Each picture is kept until the MiSTer has it, then deleted
   (**Auto delete**, on unless turned off); one the MiSTer didn't get can be sent again; Delete all. Photos

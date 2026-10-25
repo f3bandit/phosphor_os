@@ -140,6 +140,7 @@ const MORE = [
 	["boxart", "Box art", "Look up box art and details, sources and logins"],
 	["look", "Look", "The TV's accent colour and background texture"],
 	["power", "Power & updates", "Power check, restart, Phosphor updates, restore points"],
+	["sysbk", "MiSTer & Linux backups", "Every version of the settings and system files, on this phone"],
 	["storage", "Storage", "SD card, NVMe and USB drives, and this phone"],
 	["bluetooth", "Bluetooth", "Controllers paired with the MiSTer"],
 	["diag", "Diagnostics", "The MiSTer's whole-system checks"],
@@ -1002,6 +1003,51 @@ PAGES.power = { async show(c, p) {
 		groll: async name => { g = await call("guard", { do: "rollback", items: [name] }); toast("Rolling back…"); draw(); },
 	};
 	await c.every(async () => { try { g = await call("guard"); err = ""; } catch (e) { err = e.message; } draw(); return g && g.job && g.job.busy ? 2000 : 8000; });
+} };
+
+/* ---------------------------------------------------------------- MiSTer & Linux backups (SysBackup.kt) */
+const SB_STAT = { changed: ["", "changed"], reset: ["badc", "looks reset"], kept: ["good", "kept"], "not kept yet": ["", "not kept yet"], "not on the SS1": ["", "not on the SS1"], "on the PC only": ["", "on the PC only"] };
+const sbSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " bytes";
+PAGES.sysbk = { async show(c, p) {
+	setBar("MiSTer & Linux backups");
+	let L = null, err = "", open = p.arg || "";
+	const st = () => L && L.state || {};
+	const draw = () => {
+		if (!L) { c.draw(err ? errp(err) : spin()); return; }
+		const S = st(), pc = S.total ? Math.round(S.done * 100 / S.total) : 0;
+		const line = S.busy ? (S.job === "restore" ? "Putting it back… " : "Backing up ") + (S.file || "") + (S.total ? " " + pc + "%" : "…")
+			: S.error ? "Last try: " + S.error : S.last ? "Last checked " + whenText(S.last * 1000) + (S.restart ? ". Restart the MiSTer to use what was put back." : "") : "Not backed up yet";
+		if (open) {
+			const it = (L.items || []).find(x => x.id === open);
+			if (!it) { open = ""; draw(); return; }
+			const vs = it.versions || [];
+			c.draw(errp(err) + `<p class="${S.busy ? "busy" : "small"}">${esc(line)}</p>`
+				+ card(`<h3>${esc(it.name)}</h3><p class="small">${it.kind === "system" ? "A system file: put one back and restart the MiSTer to use it." : "A settings file."} ${it.exists ? sbSize(it.size) + " on the MiSTer." : "Not on the MiSTer now."}</p>`
+					+ (it.status === "reset" ? `<p class="vw">It changed when MiSTer Linux was updated: the update probably put it back to stock. The version marked "before the update" is the one to put back.</p>` : ""), it.status === "reset" ? "warn" : "")
+				+ lbl("Versions on this phone")
+				+ (vs.length ? vs.map(v => card(`<div class="row" style="border:0;padding:0;min-height:0"><span class="t"><b>${esc(whenText(v.seen * 1000))}</b><span>${sbSize(v.size)} · MiSTer Linux ${esc(v.linux || "?")}${v.hash === it.hash ? " · on the MiSTer now" : it.before && v.hash === it.before.hash ? " · before the update" : ""}</span></span></div>`
+					+ (v.hash === it.hash ? "" : btn("Put back", "put", { arg: v.hash, off: S.busy, sure: "Press again to put it back" })))).join("") : note(it.id === "linux+linux.img" ? "Linux (about 400 MB) is kept by Phosphor for Windows, not the phone." : "None yet: Back up now."))
+				+ note("Putting one back keeps the file as it is on the MiSTer first (phosphor/backups/sysbk there), so it can be undone."));
+			return;
+		}
+		let h = errp(err) + `<p class="${S.busy ? "busy" : "small"}" style="margin:0 4px">${esc(line)}</p>` + btn(S.busy ? "Working…" : "Back up now", "save", { p: true, off: S.busy });
+		for (const kind of ["settings", "system"]) {
+			const list = (L.items || []).filter(x => x.kind === kind);
+			if (!list.length) continue;
+			h += lbl(kind === "settings" ? "Settings files" : "System files") + flat(list.map(x => {
+				const [cls, word] = SB_STAT[x.status] || ["", x.status];
+				return row(x.name, { tags: `<span class="tags"><span class="tag ${cls === "badc" ? "acc" : ""}"${cls ? ` style="color:var(--${cls === "good" ? "good" : "bad"})"` : ""}>${esc(word)}</span></span>`, go: "sysbk/" + x.id });
+			}).join(""));
+		}
+		c.draw(h + note("Checked by itself every half hour while the app is open; only files that changed are copied. Passwords, logins, pairings and keys stay on the MiSTer."));
+	};
+	const load = async () => { try { L = await app("sysbk"); err = ""; } catch (e) { err = e.message; } if (c.alive()) draw(); };
+	acts = {
+		save: async () => { L.state = await app("sysbkSave"); draw(); },
+		put: async hash => { try { await app("sysbkRestore", { id: open, hash }); toast("Put back"); } catch (e) { toast(e.message, true); } await load(); },
+	};
+	on("sysbk", s => { if (L && c.alive() && R.name === "sysbk") { L.state = s; if (!s.busy) load(); else draw(); } });
+	await load();
 } };
 
 /* ---------------------------------------------------------------- Storage */
