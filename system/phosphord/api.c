@@ -48,6 +48,7 @@
  *   video      [system] [set{what:value}] [preset] [undo]
  *                                           screen filters per system: no system = every system with
  *                                           a core and its settings; changes show next time it starts
+ *   vset [try {key:value}|keep|revert|undo] [secs]  MiSTer.ini video settings, tried with Keep (vtry.h)
  *   video_files kind                        filters | masks | gamma | presets: [relative paths]
  *   diag       [run] [bundle]               whole-system checks (diag module), in the background:
  *                                           {installed, busy, at, summary{level,text}, results:[{area,
@@ -95,6 +96,7 @@
 #include "diag.h"
 #include "wifi.h"
 #include "video.h"
+#include "vtry.h"
 #include "remote.h"
 #include "sshacc.h"
 #include "mccmd.h"
@@ -1420,6 +1422,12 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "wifi")) out = cmd_wifi(req);
 	else if (!strcmp(c->valuestring, "video")) out = cmd_video(req);
 	else if (!strcmp(c->valuestring, "video_files")) out = cmd_video_files(req);
+	else if (!strcmp(c->valuestring, "vset")) {
+		const char *e = NULL;
+		cJSON *o = vt_cmd(req, &e);
+		if (!o) out = fail(e ? e : "failed");
+		else { cJSON_AddBoolToObject(o, "ok", 1); out = reply(o); }
+	}
 	else if (!strcmp(c->valuestring, "edit")) out = cmd_edit(db, req);
 	else if (!strcmp(c->valuestring, "set_art")) out = cmd_set_art(db, req);
 	else if (!strcmp(c->valuestring, "remote")) out = cmd_remote(req);

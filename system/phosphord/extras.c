@@ -211,6 +211,8 @@ static int ini_keep(const char *file, char *kept, size_t kn)
 	return r;
 }
 
+int ex_ini_keep(const char *file, char *kept, size_t kn) { return ini_keep(file, kept, kn); }
+
 cJSON *ex_ini(cJSON *req, const char **err)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
