@@ -33,7 +33,7 @@ var lrSystems = map[string]lrMap{
 	"MegaCD":     {[]string{"Sega - Mega-CD - Sega CD"}, true},
 	"TGFX16CD":   {[]string{"NEC - PC Engine CD - TurboGrafx-CD"}, true},
 	"NES":        {[]string{"Nintendo - Nintendo Entertainment System", "Nintendo - Family Computer Disk System"}, false},
-	"SNES":       {[]string{"Nintendo - Super Nintendo Entertainment System"}, false},
+	"SNES":       {[]string{"Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview"}, false},
 	"Genesis":    {[]string{"Sega - Mega Drive - Genesis"}, false},
 	"N64":        {[]string{"Nintendo - Nintendo 64"}, false},
 	"SMS":        {[]string{"Sega - Master System - Mark III", "Sega - SG-1000"}, false},

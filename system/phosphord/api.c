@@ -177,6 +177,7 @@ static const char *scrape_state(sqlite3_stmt *st, int based_col, int key_col, in
 	const char *sc = (const char *)sqlite3_column_text(st, scrape_col);
 	if (sc && !strcmp(sc, "miss")) return "not_found";                           /* looked up, unknown: no art */
 	if (sc && !strcmp(sc, "done")) return "found";
+	if (sc && !strcmp(sc, "nogame")) return "not_a_game";                         /* a test ROM, a tool: no art expected */
 	if (!key || !strncmp(key, "n:", 2)) return "unidentified";                   /* not hashed (yet), or a .chd */
 	return "ready";
 }
@@ -335,10 +336,11 @@ static char *cmd_games(sqlite3 *db, cJSON *req)
 		else if (!strcmp(filter, "missing_details")) fw = " AND COALESCE(g.description, b.description) IS NULL";
 		else if (!strcmp(filter, "not_found")) fw = " AND g.scrape='miss' AND g.based_on IS NULL";
 		else if (!strcmp(filter, "linked")) fw = " AND g.based_on IS NOT NULL";
+		else if (!strcmp(filter, "not_game")) fw = " AND g.scrape='nogame'";
 		else if (!strcmp(filter, "unidentified")) fw = " AND g.key LIKE 'n:%'";
 		else if (!strcmp(filter, "favorites")) fw = " AND g.favorite=1";
 		else if (!strcmp(filter, "recent")) fw = " AND g.last_played IS NOT NULL";
-		else return fail("filter: missing_art, missing_details, not_found, linked, unidentified, favorites or recent");
+		else return fail("filter: missing_art, missing_details, not_found, linked, not_game, unidentified, favorites or recent");
 	}
 	char where[600];
 	snprintf(where, sizeof(where), " FROM games g LEFT JOIN games b ON b.id=g.based_on WHERE " VISIBLE "%s%s%s",
@@ -1706,6 +1708,20 @@ char *api_handle(sqlite3 *db, const char *request)
 		out = reply(o);
 	} else if (!strcmp(c->valuestring, "rescrape")) {
 		out = scraper_retry(db, req_id(req)) == 0 ? reply(ok()) : fail("no such game");
+	} else if (!strcmp(c->valuestring, "not_game")) {
+		/* {"id", "on"}: a test ROM, a boot file, a tool: out of "not found", no box art looked up; off puts it back */
+		long long gid = req_id(req);
+		int on = !cJSON_IsFalse(cJSON_GetObjectItem(req, "on"));
+		sqlite3_stmt *st;
+		int n = 0;
+		if (sqlite3_prepare_v2(db, on ? "UPDATE games SET scrape='nogame' WHERE id=? AND based_on IS NULL"
+		                              : "UPDATE games SET scrape='miss' WHERE id=? AND scrape='nogame'", -1, &st, NULL) == SQLITE_OK) {
+			sqlite3_bind_int64(st, 1, gid);
+			sqlite3_step(st);
+			n = sqlite3_changes(db);
+			sqlite3_finalize(st);
+		}
+		out = n ? reply(ok()) : fail(on ? "no such game, or it's linked to another" : "it isn't marked as not a game");
 	}
 	else if (!strcmp(c->valuestring, "launch")) {
 		char err[300];

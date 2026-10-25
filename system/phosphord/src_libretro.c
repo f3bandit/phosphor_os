@@ -31,7 +31,7 @@ static const lrmap_t MAP[] = {
 	{ "MegaCD",     { "Sega - Mega-CD - Sega CD" }, 1 },
 	{ "TGFX16CD",   { "NEC - PC Engine CD - TurboGrafx-CD" }, 1 },
 	{ "NES",        { "Nintendo - Nintendo Entertainment System", "Nintendo - Family Computer Disk System" }, 0 },
-	{ "SNES",       { "Nintendo - Super Nintendo Entertainment System" }, 0 },
+	{ "SNES",       { "Nintendo - Super Nintendo Entertainment System", "Nintendo - Satellaview" }, 0 },
 	{ "Genesis",    { "Sega - Mega Drive - Genesis" }, 0 },
 	{ "N64",        { "Nintendo - Nintendo 64" }, 0 },
 	{ "SMS",        { "Sega - Master System - Mark III", "Sega - SG-1000" }, 0 },

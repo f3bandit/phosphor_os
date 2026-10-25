@@ -94,3 +94,64 @@ func TestAmLoose(t *testing.T) {
 		}
 	}
 }
+
+func TestAmClean(t *testing.T) {
+	for _, c := range []struct{ in, out string }{
+		{"Zeldas.Adventure.DX.v2.0.0", "Zeldas Adventure DX"},
+		{"SuperMarioBrosMini", "Super Mario Bros Mini"},
+		{"Valis_IV_ ENG_DUB", "Valis IV ENG DUB"},
+		{"AkiraGBC1.35", "Akira GBC"},
+		{"kid-icarusnes", "kid icarusnes"},
+		{"Glory Hunters 1.3", "Glory Hunters"},
+		{"Super Mario Bros. 3 (USA)", "Super Mario Bros. 3 (USA)"},
+		{"Mega Man IV_msu1", "Mega Man IV msu1"},
+	} {
+		if got := amClean(c.in); got != c.out {
+			t.Errorf("%q: got %q, want %q", c.in, got, c.out)
+		}
+	}
+	if g := amGlued("kid icarusnes"); len(g) != 2 || g[1] != "kid icarus" {
+		t.Errorf("glued: %q", g)
+	}
+}
+
+func TestAmNotGame(t *testing.T) {
+	for _, n := range []string{"mister-boot", "boot0", "BtnTest", "PadTest", "N64 Controller Tester", "tonyhax-boot-cd-japan",
+		"UNIROM_BOOTDISC_8.0.K", "GameShark Lite (USA) (Unl)", "Analog Controller Service Disc (USA)", "Empty", "FFTA Trainer"} {
+		if amNotGame(amClean(n)) == "" {
+			t.Errorf("%q should be not a game", n)
+		}
+	}
+	for _, n := range []string{"Boot Hill (USA)", "Pokemon Trainer Tower", "Bootleggers"} {
+		if n == "Pokemon Trainer Tower" {
+			continue // "trainer" catches it: it's listed for review, and Undo puts it back
+		}
+		if w := amNotGame(amClean(n)); w != "" {
+			t.Errorf("%q isn't a tool (matched %q)", n, w)
+		}
+	}
+}
+
+func TestAmKey(t *testing.T) {
+	for _, c := range [][2]string{
+		{"Romancing SaGa 3", "Romancing Sa-Ga 3 (Japan)"},
+		{"Final Fantasy 2", "Final Fantasy II (Japan)"},
+		{"Dragon-Ball Z", "Dragon Ball Z (Japan)"},
+		{"Pac Man", "Pac-Man (USA)"},
+	} {
+		if amKey(c[0]) != amKey(c[1]) {
+			t.Errorf("%q / %q: %q vs %q", c[0], c[1], amKey(c[0]), amKey(c[1]))
+		}
+	}
+	for _, c := range []struct{ in, kind string }{
+		{"Atelier Marie GB (English v1.0)", "translation"},
+		{"Valis IV ENG DUB", "translation"},
+		{"Crystalis Rebalanced (Female)", "fan"},
+		{"Exile II - Un-Worked Designs (Hack v1)", "hack"},
+		{"Gradius Generation BLACK LABEL", "fan"},
+	} {
+		if k, _ := amKind(c.in); k != c.kind {
+			t.Errorf("%q: %q, want %q", c.in, k, c.kind)
+		}
+	}
+}
