@@ -217,7 +217,7 @@ function padLoop() {
 		const act = {
 			up: () => move(0, -1), down: () => move(0, 1), left: () => move(-1, 0), right: () => move(1, 0),
 			a: activate, b: () => { if (!(s && s.back && s.back())) back(); }, x: () => s && s.x && s.x(), y: () => (s && s.y ? s.y() : push(Search)),
-			lb: () => s && s.tab && s.tab(-1), rb: () => s && s.tab && s.tab(1), start: () => push(AppSettings),
+			lb: () => s && s.tab && s.tab(-1), rb: () => s && s.tab && s.tab(1), start: () => (s && s.start ? s.start() : push(AppSettings)),
 		};
 		for (const k in st) {
 			if (st[k] && !pad.held[k]) { touched = true; act[k](); pad.next[k] = now + 400; }
@@ -361,7 +361,10 @@ class Home {
 		try {
 			const j = await ss1({ cmd: "games", filter: "not_found", limit: 1 });
 			const el = $("#t-match");
-			if (el) { el.textContent = j.total ? `${n(j.total)} not found to review` : "nothing to review"; el.className = j.total ? "warn" : ""; }
+			let am = 0;
+			try { am = (await api("/api/automatch")).matches.filter(m => !m.kept).length; } catch (e) {}
+			const parts = [j.total ? `${n(j.total)} not found` : "", am ? `${n(am)} matched to check` : ""].filter(Boolean);
+			if (el) { el.textContent = parts.length ? parts.join(", ") : "nothing to review"; el.className = parts.length ? "warn" : ""; }
 		} catch (e) {}
 	}
 	async resume() {
@@ -550,7 +553,7 @@ class Game {
 			<div class="panel"><h2>${g.based_on ? "Based on " + esc(g.based_on.title) : "Not based on another game"}</h2>
 			<p class="note">A hack, translation or patched copy can use its base game's box art and details. The SS1 shows the link too.</p>
 			<div class="acts">${g.based_on ? `<button class="btn" id="unlink" data-nav>Unlink</button>` : ""}</div></div></div>`));
-		if ($("#unlink")) $("#unlink").onclick = async () => { try { await ss1({ cmd: "unlink", id: g.id }); this.g = await getGame(g.id, true); toast("Unlinked"); this.draw(); } catch (e) { toast(e.message); } };
+		if ($("#unlink")) $("#unlink").onclick = async () => { try { await ss1({ cmd: "unlink", id: g.id }); amForget(g.id); this.g = await getGame(g.id, true); toast("Unlinked"); this.draw(); } catch (e) { toast(e.message); } };
 		const q = $("#cq");
 		let t;
 		q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => this.cands(q.value), 250); });
@@ -565,7 +568,7 @@ class Game {
 			for (const c of j.games) {
 				const el = h(`<div class="cand" data-nav><div class="thumb" style="background-image:url('${artURL(c.id)}')"></div><div><b>${esc(c.title)}</b><small>${c.id === j.current ? "linked now" : "Link to this"}</small></div></div>`).firstChild;
 				el.onclick = async () => {
-					try { await ss1({ cmd: "link", id: this.id, base: c.id }); this.g = await getGame(this.id, true); toast(`Now based on ${c.title}`); this.draw(); }
+					try { await ss1({ cmd: "link", id: this.id, base: c.id }); amForget(this.id); this.g = await getGame(this.id, true); toast(`Now based on ${c.title}`); this.draw(); }
 					catch (e) { toast(e.message); }
 				};
 				box.appendChild(el);
@@ -580,13 +583,35 @@ class Game {
 }
 
 /* ---------- Match to base games: what box art couldn't find ---------- */
+/* an automatic match the user replaced by hand */
+const amForget = id => api("/api/automatch", { do: "forget", id }).catch(() => {});
+const AM_KIND = { translation: "Translation", hack: "Hack", fan: "Fan version", spelling: "Same game", name: "Other name", related: "Built on" };
+
 class Match {
-	constructor() { this.items = []; this.sel = 0; this.g = null; this.hints = [["A", "Link"], ["Y", "Search"], ["X", "Look up again"], ["B", "Back"]]; }
+	constructor(tab = 0) { this.t = tab; this.items = []; this.sel = 0; this.g = null; this.hints = [["A", "Link"], ["Y", "Search"], ["X", "Look up again"], ["B", "Back"]]; }
 	render(root) {
-		root.append(h(`<div class="sub">${spaced("Library · Not found")}</div><h1>Match to base games</h1>
+		root.append(h(`<div class="sub">${spaced("Library · Match")}</div><h1>Match to base games</h1><div id="tb" style="flex:none"></div>
 			<div class="split"><div class="list" id="nf"></div><div class="panel" id="info"><p class="note">Pick a game on the left.</p></div></div>`));
-		this.load();
+		this.bar();
+		if (this.t === 1) this.auto = new AutoMatch(this); else this.auto = null;
+		if (this.auto) this.auto.load(); else this.load();
 	}
+	/* the two tabs, with their counts */
+	async bar(counts) {
+		const tb = $("#tb");
+		if (!tb) return;
+		if (!counts) {
+			counts = [null, null];
+			try { counts[0] = (await ss1({ cmd: "games", filter: "not_found", limit: 1 })).total; } catch (e) {}
+			try { counts[1] = (await api("/api/automatch")).matches.filter(m => !m.kept).length; } catch (e) {}
+			if (!$("#tb")) return;
+		}
+		tb.innerHTML = "";
+		const lab = (t, c) => c == null ? t : `${t} · ${n(c)}`;
+		tabs(tb, [lab("Not found", counts[0]), lab("Matched automatically", counts[1])], this.t, i => this.go(i));
+	}
+	go(i) { if (i === this.t) return; this.t = i; this.sel = 0; show(this); }
+	start() { if (this.auto) this.auto.keepAll(); else push(AppSettings); }
 	/* grouped by system, Arcade first, then by generation; LB/RB jump between them */
 	async load() {
 		const box = $("#nf");
@@ -613,22 +638,15 @@ class Match {
 				box.appendChild(el);
 				if (this.groups[this.groups.length - 1] === null) this.groups[this.groups.length - 1] = el;
 			}
-			this.hints = [["A", "Link"], ["Y", "Search"], ["X", "Look up again"], ...(this.groups.length > 1 ? [["LB/RB", "Systems"]] : []), ["B", "Back"]];
+			this.hints = [["A", "Link"], ["Y", "Search"], ["X", "Look up again"], ["LB/RB", "Tabs"], ["B", "Back"]];
 			setHints(this.hints);
 			if (this.items.length) focus(this.rows()[Math.min(this.sel, this.items.length - 1)]);
 		} catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 	}
 	rows() { return [...$("#nf").querySelectorAll(".row")]; }
-	/* the first game of the next / previous system */
-	tab(d) {
-		if (!this.groups || this.groups.length < 2) return;
-		const r = this.rows(), i = Math.max(0, r.indexOf(cur));
-		let gi = 0;
-		this.groups.forEach((el, k) => { if (r.indexOf(el) <= i) gi = k; });
-		const to = this.groups[(gi + d + this.groups.length) % this.groups.length];
-		focus(to);
-		if (to.previousElementSibling) to.previousElementSibling.scrollIntoView({ block: "start" });
-	}
+	/* LB/RB: the other tab (Not found, Matched automatically) */
+	tab(d) { this.go(this.t === 1 ? 0 : 1); }
+
 	async panel(g) {
 		const info = $("#info");
 		try {
@@ -639,7 +657,7 @@ class Match {
 				<p class="note" style="margin-top:.2rem">${esc((f.path || "").split(/[\\/]/).pop())}${f.where ? " · " + esc(f.where) : ""}</p>
 				<div class="sub" style="margin-top:1.2rem">${spaced("Based on (suggested)")}</div><div id="cands"></div>
 				<p class="note">Uses the base game's box art and details; the SS1 shows it too.</p>
-				<div class="acts"><button class="btn" id="srch" data-nav>Search…</button><button class="btn" id="again" data-nav>Look it up again</button></div>`;
+				<div class="acts"><button class="btn" id="srch" data-nav>Search…</button><button class="btn" id="again" data-nav>Look it up again</button><button class="btn" id="amall" data-nav>Match all automatically</button></div>`;
 			const box = $("#cands");
 			const likely = c.games.filter(k => k.score >= 400);   /* only really alike ones; Search finds the rest */
 			if (!likely.length) box.innerHTML = `<div class="empty">No likely base game in your library. Use Search to pick one.</div>`;
@@ -649,6 +667,9 @@ class Match {
 				box.appendChild(el);
 			}
 			$("#srch").onclick = () => this.y();
+			$("#amall").onclick = async () => {
+				try { const r = await api("/api/automatch", { do: "run" }); if (!r.ok) return toast(r.error); toast("Matching to base games"); this.go(1); } catch (e) { toast(e.message); }
+			};
 			$("#again").onclick = () => this.x();
 		} catch (e) { info.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
 	}
@@ -677,9 +698,109 @@ class Match {
 			focus(next);
 		} catch (e) { toast(e.message); }
 	}
-	x() { const g = this.g; if (!g) return; ss1({ cmd: "rescrape", id: g.id }).then(() => toast("It'll be looked up again the next time box art runs"), e => toast(e.message)); }
-	y() { const g = this.g; if (g) push(Game, g.id, 1); }
-	restore() { this.load(); }
+	x() { if (this.auto) return this.auto.undo(); const g = this.g; if (!g) return; ss1({ cmd: "rescrape", id: g.id }).then(() => toast("It'll be looked up again the next time box art runs"), e => toast(e.message)); }
+	y() { if (this.auto) return this.auto.pick(); const g = this.g; if (g) push(Game, g.id, 1); }
+	restore() { this.bar(); if (this.auto) this.auto.load(); else this.load(); }
+}
+
+/* ---------- Match > Matched automatically: what automatic matching did, to keep or undo ---------- */
+class AutoMatch {
+	constructor(page) { this.page = page; this.items = []; this.m = null; this.sel = 0; }
+	async load() {
+		const box = $("#nf"), info = $("#info");
+		try {
+			const [j, sy, sc] = await Promise.all([api("/api/automatch"), ss1({ cmd: "systems", all: true }), api("/api/scrape")]);
+			const names = new Map(sy.systems.map(x => [x.id, x.name]));
+			this.items = j.matches;
+			const run = sc.state && sc.state.running;
+			clearTimeout(this.poll);
+			if (run) this.poll = setTimeout(() => { if ($("#nf") && this.page.auto === this && topScr() === this.page) { this.page.bar(); this.load(); } }, 2500);
+			box.innerHTML = "";
+			if (!this.items.length) {
+				box.innerHTML = `<div class="empty">${run ? esc(sc.state.status || "Working") + (sc.state.game ? ": " + esc(sc.state.game) : "") : "Nothing matched automatically yet."}</div>`;
+				info.innerHTML = `<h2>Matched automatically</h2>
+					<p>Translations, hacks and fan versions are matched to the game they're based on, by what their name says: <b>[T-En]</b>, <b>(Hack)</b>, <b>Redux</b>, <b>FastROM</b> and so on. When the base game is in your library they're linked to it; when it isn't, its box art and details are looked up.</p>
+					<p class="note">It runs at the end of Look up box art on this PC, or now. Every match is listed here to keep or undo.</p>
+					<div class="acts"><button class="btn primary" id="amrun" data-nav ${run ? "disabled" : ""}>Match automatically</button></div>`;
+				const b = $("#amrun");
+				if (b) { b.onclick = () => this.run(); focus(b); }
+				this.page.hints = [["A", "Choose"], ["LB/RB", "Tabs"], ["B", "Back"]];
+				setHints(this.page.hints);
+				return;
+			}
+			let last = null;
+			const pending = this.items.filter(m => !m.kept).length;
+			for (const m of this.items) {
+				const grp = m.kept ? "kept" : m.sys;
+				if (grp !== last) {
+					last = grp;
+					const cnt = this.items.filter(x => (x.kept ? "kept" : x.sys) === grp).length;
+					box.appendChild(h(`<div class="grp"><span>${spaced(m.kept ? "Kept" : names.get(m.sys) || m.system || m.sys)}</span><span>${cnt}</span></div>`).firstChild);
+				}
+				const el = h(`<div class="row" data-nav><span class="n">${esc(m.title)}</span><span class="tag">${esc(m.kept ? "Kept" : AM_KIND[m.kind] || "Match")}</span></div>`).firstChild;
+				el._m = m;
+				el.onclick = () => { const k = $("#amkeep"); if (k) focus(k); };
+				el._onfocus = () => { this.m = m; this.sel = this.items.indexOf(m); this.panel(m); };
+				box.appendChild(el);
+			}
+			this.page.hints = [["A", "Choose"], ["X", "Undo"], ["Y", "Pick another"], ...(pending ? [["Start", "Keep all"]] : []), ["LB/RB", "Tabs"], ["B", "Back"]];
+			setHints(this.page.hints);
+			const rows = [...box.querySelectorAll(".row")];
+			focus(rows[Math.min(this.sel, rows.length - 1)]);
+		} catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+	}
+	panel(m) {
+		const info = $("#info");
+		const lib = m.how === "library";
+		const when = new Date(m.at * 1000).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+		const why = { translation: "a translation", hack: "a hack", fan: "a fan version", spelling: "the same game, its name written a little differently", name: "the same game under a longer or shorter name", related: "most likely a game built on it (another subtitle)" }[m.kind] || "a version of another game";
+		const tagTxt = m.tag ? `<b>${esc(m.tag)}</b> in the name: ${why}` : `The lists know it as ${esc(m.base_title)}: ${why}`;
+		const added = [m.art ? "box art" : "", m.fields && m.fields.length ? "details" : ""].filter(Boolean).join(" and ");
+		const did = lib ? `Linked, ${when}` : added ? `${added[0].toUpperCase() + added.slice(1)} added, ${when}` : `Looked up, ${when}`;
+		info.innerHTML = `<h2>${esc(m.title)}</h2><p class="note">${esc(m.system || m.sys)}</p>
+			<div class="sub" style="margin-top:1.2rem">${spaced("Based on")}</div>
+			<div class="cand"><div class="thumb" style="background-image:url('${artURL(lib ? m.base_id : m.id)}')"></div><div><b>${esc(m.base_title)}</b><small>${lib ? "In your library · its box art and details" : "Looked up" + (m.found_by && m.found_by.length ? " on " + esc(m.found_by.join(", ")) : "") + " · its box art and details"}</small></div></div>
+			<div class="kv"><span>Why</span><span>${tagTxt}</span><span>How</span><span>${lib ? "Same name with the tags taken out" : "Not in your library: looked up by the base game's name"}</span><span>Done</span><span>${esc(did)}</span></div>
+			<div class="acts">${m.kept ? "" : `<button class="btn primary" id="amkeep" data-nav>Keep</button>`}<button class="btn" id="amundo" data-nav>Undo</button><button class="btn" id="ampick" data-nav>Pick another…</button></div>
+			<p class="note">Undo takes out only what this match added. It won't be matched again.</p>`;
+		if ($("#amkeep")) $("#amkeep").onclick = () => this.keep(m);
+		$("#amundo").onclick = () => this.undo();
+		$("#ampick").onclick = () => this.pick();
+	}
+	async run() {
+		try {
+			const j = await api("/api/automatch", { do: "run" });
+			if (!j.ok) return toast(j.error);
+			toast("Matching to base games");
+			const wait = async () => {
+				const sc = await api("/api/scrape").catch(() => null);
+				if (!$("#nf") || this.page.auto !== this) return;
+				if (sc && sc.state.running) { const e = $("#info .note"); if (e) e.textContent = sc.state.status + (sc.state.game ? ": " + sc.state.game : ""); setTimeout(wait, 1000); return; }
+				if (sc) toast(`${sc.state.matched || 0} matched`);
+				this.page.bar(); this.load();
+			};
+			setTimeout(wait, 800);
+		} catch (e) { toast(e.message); }
+	}
+	async keep(m) {
+		try { await api("/api/automatch", { do: "keep", id: m.id }); gameCache.delete(m.id); this.sel++; this.page.bar(); this.load(); } catch (e) { toast(e.message); }
+	}
+	async keepAll() {
+		if (!this.items.some(m => !m.kept)) return;
+		try { await api("/api/automatch", { do: "keep_all" }); toast("All kept"); this.page.bar(); this.load(); } catch (e) { toast(e.message); }
+	}
+	async undo() {
+		const m = this.m;
+		if (!m) return;
+		try {
+			const j = await api("/api/automatch", { do: "undo", id: m.id });
+			if (!j.ok) return toast(j.error);
+			gameCache.delete(m.id);
+			toast(`${m.title}: undone, back in Not found`);
+			this.page.bar(); this.load();
+		} catch (e) { toast(e.message); }
+	}
+	pick() { const m = this.m; if (m) push(Game, m.id, 1); }
 }
 
 /* ---------- Search, every system ---------- */

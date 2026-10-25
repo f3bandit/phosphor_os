@@ -51,5 +51,6 @@ void scraper_accounts(scrape_account_t *out, int *n);
 cJSON *scraper_todo(sqlite3 *db, cJSON *req);
 const char *scraper_result(sqlite3 *db, cJSON *req);
 void scraper_pc_done(const char *status);
+const char *scraper_undo(sqlite3 *db, cJSON *req);
 
 #endif

@@ -289,3 +289,9 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 .dipbox { border: 1px dashed var(--acc); border-radius: .6rem; padding: .8rem 1rem; margin-top: 1rem; }
 .dipbox > b { color: var(--acc); font-size: .875rem; }
 .dipbox .kv { margin: .4rem 0; }
+
+/* Match > Matched automatically */
+.row .tag { flex: none; font: .7rem/1 PhosMono, Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; padding: .3rem .45rem; border: 1px solid var(--line); border-radius: .3rem; color: var(--dim); }
+.row.f .tag { border-color: var(--acc); color: var(--acc); }
+.kv { display: grid; grid-template-columns: 6.5rem 1fr; gap: .4rem 1rem; font-size: .9rem; margin-top: 1rem; }
+.kv span:nth-child(odd) { color: var(--faint); }

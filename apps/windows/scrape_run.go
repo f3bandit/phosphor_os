@@ -125,6 +125,7 @@ type scrapeRun struct {
 	order    []*scrapeSource
 	mu       sync.Mutex
 	st       scrapeState
+	only     bool // only match the not-found games to their base games
 }
 
 type scrapeState struct {
@@ -135,6 +136,7 @@ type scrapeState struct {
 	Found    int      `json:"found"`
 	NotFound int      `json:"not_found"`
 	Later    int      `json:"later"`
+	Matched  int      `json:"matched"` // matched to the game they're based on (automatch.go)
 	Game     string   `json:"game"`
 	System   string   `json:"system"`
 	Notes    []string `json:"notes"`
@@ -333,7 +335,7 @@ func (s *scrapeRun) run() {
 			msg = st.Status
 		}
 		s.status(msg)
-		_ = ss1Call(map[string]any{"cmd": "scrape_pc_done", "status": fmt.Sprintf("%s (looked up on the PC: %d found, %d not found)", msg, st.Found, st.NotFound)}, nil)
+		_ = ss1Call(map[string]any{"cmd": "scrape_pc_done", "status": fmt.Sprintf("%s (looked up on the PC: %d found, %d not found, %d matched to base games)", msg, st.Found, st.NotFound, st.Matched)}, nil)
 		scrapeMu.Lock()
 		s.mu.Lock()
 		scrapeLast = s.st
@@ -341,6 +343,40 @@ func (s *scrapeRun) run() {
 		scrapeCur = nil
 		scrapeMu.Unlock()
 	}()
+	if s.only || s.lookupAll() {
+		if s.ctx.Err() == nil {
+			if s.order == nil {
+				s.loadConfig()
+			}
+			s.matchPhase()
+		}
+	}
+}
+
+// the sources' order and logins, as the SS1 has them
+func (s *scrapeRun) loadConfig() {
+	var raw struct {
+		Config struct {
+			Order    []string                     `json:"order"`
+			Accounts map[string]map[string]string `json:"accounts"`
+		} `json:"config"`
+	}
+	if ss1Call(map[string]any{"cmd": "scrape_todo", "miss": true, "limit": 1}, &raw) != nil {
+		return
+	}
+	s.accounts = raw.Config.Accounts
+	s.order = []*scrapeSource{}
+	for _, id := range raw.Config.Order {
+		for i := range scrapeSources {
+			if scrapeSources[i].id == id {
+				s.order = append(s.order, &scrapeSources[i])
+			}
+		}
+	}
+}
+
+// lookupAll: every game waiting for box art; true when it got through them all
+func (s *scrapeRun) lookupAll() bool {
 	first := true
 	var fails int32
 	seen := map[int64]bool{}
@@ -355,7 +391,7 @@ func (s *scrapeRun) run() {
 		}
 		if err := ss1Call(map[string]any{"cmd": "scrape_todo", "start": first, "limit": 400}, &todo); err != nil {
 			s.status("The SS1 didn't answer: " + err.Error())
-			return
+			return false
 		}
 		if first {
 			s.accounts = todo.Config.Accounts
@@ -379,7 +415,7 @@ func (s *scrapeRun) run() {
 			}
 		}
 		if len(games) == 0 {
-			return
+			return true
 		}
 		// Disc 2 and later after Disc 1: they borrow its art
 		sort.SliceStable(games, func(a, b int) bool { return discNo(games[a].Title) <= 1 && discNo(games[b].Title) > 1 })
@@ -435,12 +471,32 @@ func (s *scrapeRun) run() {
 		close(jobs)
 		wg.Wait()
 		if stopped.Load() {
-			return
+			return false
 		}
 	}
+	return false
 }
 
 // ---------- the app's API ----------
+
+// scrapeStart: a run (or only the matching); false when one is running already
+func scrapeStart(only bool) bool {
+	scrapeMu.Lock()
+	defer scrapeMu.Unlock()
+	return scrapeStartLocked(only)
+}
+
+func scrapeStartLocked(only bool) bool {
+	if scrapeCur != nil {
+		return false
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &scrapeRun{ctx: ctx, cancel: cancel, only: only}
+	s.st = scrapeState{Running: true, Status: "Starting", Started: time.Now().Unix()}
+	scrapeCur = s
+	go s.run()
+	return true
+}
 
 // GET: the state; POST {do: "start"|"stop"}
 func apiScrape(w http.ResponseWriter, r *http.Request) {
@@ -450,13 +506,7 @@ func apiScrape(w http.ResponseWriter, r *http.Request) {
 		scrapeMu.Lock()
 		switch req.Do {
 		case "start":
-			if scrapeCur == nil {
-				ctx, cancel := context.WithCancel(context.Background())
-				s := &scrapeRun{ctx: ctx, cancel: cancel}
-				s.st = scrapeState{Running: true, Status: "Starting", Started: time.Now().Unix()}
-				scrapeCur = s
-				go s.run()
-			}
+			scrapeStartLocked(false)
 		case "stop":
 			if scrapeCur != nil {
 				scrapeCur.cancel()

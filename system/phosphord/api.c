@@ -1622,6 +1622,9 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "scrape_result")) {
 		const char *e = scraper_result(db, req);
 		out = e ? fail(e) : reply(ok());
+	} else if (!strcmp(c->valuestring, "scrape_undo")) {
+		const char *e = scraper_undo(db, req);
+		out = e ? fail(e) : reply(ok());
 	} else if (!strcmp(c->valuestring, "scrape_pc_done")) {
 		scraper_pc_done(cJSON_GetStringValue(cJSON_GetObjectItem(req, "status")));
 		out = reply(ok());

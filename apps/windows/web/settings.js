@@ -186,8 +186,8 @@ class AppSettings {
 			if (!el || !st) return;
 			const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
 			el.innerHTML = st.running
-				? `<b>${esc(st.status || "Looking up box art")}</b>${st.total ? ` \u00B7 ${n(st.done)} of ${n(st.total)} (${pct}%)` : ""}<br>${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.game ? `<br><span class="dim">${esc(st.system || "")} \u203A ${esc(st.game)}</span>` : ""}`
-				: st.started ? `${esc(st.status || "Done")}: ${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}` : "";
+				? `<b>${esc(st.status || "Looking up box art")}</b>${st.total ? ` \u00B7 ${n(st.done)} of ${n(st.total)} (${pct}%)` : ""}<br>${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.matched ? `, ${n(st.matched)} matched to base games` : ""}${st.game ? `<br><span class="dim">${esc(st.system || "")} \u203A ${esc(st.game)}</span>` : ""}`
+				: st.started ? `${esc(st.status || "Done")}: ${n(st.found)} found, ${n(st.not_found)} not found${st.later ? `, ${n(st.later)} for later` : ""}${st.matched ? `, ${n(st.matched)} matched to base games (Library › Match)` : ""}` : "";
 			if (st.notes && st.notes.length) el.innerHTML += `<br>${st.notes.map(esc).join("<br>")}`;
 			$("#runpc").textContent = st.running ? "Stop" : "Look up on this PC";
 		};

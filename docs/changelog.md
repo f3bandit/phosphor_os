@@ -3,6 +3,24 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.32
+
+### New
+- **Matching to base games, automatically** (Phosphor for Windows 0.2.20, Library › Match). Translations
+  (`[T-En]`), hacks (`(Hack)`, `[h]`, Kaizo) and fan versions (Redux, FastROM, Undub, MSU-1, Redesign,
+  v1.1 ...) that box art couldn't find are matched by what their name says: linked to the base game when
+  it's in the library, otherwise given the base game's box art and details from the sources. Games the
+  lists know under a longer or shorter name are matched too (only when the lists leave one game). Runs at
+  the end of Look up box art on this PC, or from the Match page (Match all automatically).
+- **Matched automatically** tab: every match with what said so and what was done; Keep, Undo, Pick
+  another, Keep all (Start). Undo takes out only what the match added (the link, or the box art and the
+  details it filled in) and the game isn't matched automatically again. Kept on the PC in
+  `%APPDATA%\Phosphor\automatch.json`.
+- phosphord: `scrape_todo` with `miss` (the not-found games) and `scrape_undo`.
+
+### Changed
+- Library › Match: LB/RB switch between Not found and Matched automatically (they jumped between systems).
+
 ## 0.27.31
 
 ### Changed
