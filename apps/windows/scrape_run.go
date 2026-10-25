@@ -221,7 +221,13 @@ func putArt(id int64, jpg []byte) error {
 func (s *scrapeRun) fetchArt(g *sgame, r *sres, from int) int {
 	trouble := false
 	for i := from; i < len(r.art); i++ {
-		b, rc, _ := netRequest(s.ctx, "GET", r.art[i].url, nil, nil, 32<<20)
+		var b []byte
+		var rc int
+		if strings.HasPrefix(r.art[i].url, "pack:") { // Phosphor's own copy of a fan-made cover (fanart.go)
+			b, rc = fanpackGet(s.ctx, strings.TrimPrefix(r.art[i].url, "pack:"))
+		} else {
+			b, rc, _ = netRequest(s.ctx, "GET", r.art[i].url, nil, nil, 32<<20)
+		}
 		if rc < 0 {
 			trouble = true
 			continue
@@ -259,6 +265,11 @@ func (s *scrapeRun) one(g *sgame) (int, *sres) {
 	}
 	art := g.HasArt
 	found, trouble, tried := false, false, 0
+	// fan-made box art first: only games no database has are in that list, by their exact name
+	if fanartLookup(s.ctx, s, g, r) > 0 {
+		found = true
+		r.foundBy = append(r.foundBy, "Phosphor's fan art list")
+	}
 	for _, src := range s.order {
 		if s.ctx.Err() != nil {
 			return -1, r
