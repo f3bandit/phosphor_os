@@ -7778,7 +7778,6 @@ static void ig_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 static void ingame_open(void)
 {
 	if (cur == SCR_INGAME || !mainlink_has_ingame()) return;
-	if (mainlink_ingame(1)) return;
 	cur = SCR_INGAME;
 	ig_n = 0;
 	ig_rows[ig_n++] = IG_BACK;
@@ -7821,11 +7820,22 @@ static void ingame_open(void)
 			lv_obj_set_style_text_color(aic, PAL.acc, 0);
 			lv_obj_center(aic);
 		}
+		/* the text in a column, each part below the last: a title on two lines moves the rest down */
 		int tx = lx + aw + S(32), tw = W - S(460) - S(40) - tx;
-		lv_obj_t *t = mk_label(body, FONT_HEADING, PAL.text, api_str(ig_game, "title") ? api_str(ig_game, "title") : "");
-		lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_t *col = mk_box(body, tw, H - ly - S(110), PAL.bg, 0);
+		lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
+		lv_obj_set_pos(col, tx, ly);
+		lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_style_pad_row(col, S(12), 0);
+		lv_obj_t *t = mk_label(col, FONT_HEADING, PAL.text, api_str(ig_game, "title") ? api_str(ig_game, "title") : "");
+		lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_WRAP);
 		lv_obj_set_width(t, tw);
-		lv_obj_set_pos(t, tx, ly);
+		lv_obj_update_layout(t);
+		int lh = lv_font_get_line_height(FONT_HEADING);
+		if (lv_obj_get_height(t) > 2 * lh + S(4)) {      /* at most two lines */
+			lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_DOTS);
+			lv_obj_set_height(t, 2 * lh);
+		}
 		char meta[200] = "";
 		const char *keys[] = { "year", "developer", "players", "genre" };
 		for (int i = 0; i < 4; i++) {
@@ -7834,16 +7844,18 @@ static void ingame_open(void)
 			size_t l = strlen(meta);
 			snprintf(meta + l, sizeof(meta) - l, "%s%s%s", l ? "  \xC2\xB7  " : "", v, !strcmp(keys[i], "players") ? (strchr(v, 'p') ? "" : " players") : "");
 		}
-		lv_obj_t *m = mk_label(body, FONT_SMALL, PAL.acc, meta);
-		lv_label_set_long_mode(m, LV_LABEL_LONG_MODE_DOTS);
-		lv_obj_set_width(m, tw);
-		lv_obj_set_pos(m, tx, ly + S(48));
+		if (meta[0]) {
+			lv_obj_t *m = mk_label(col, FONT_SMALL, PAL.acc, meta);
+			lv_label_set_long_mode(m, LV_LABEL_LONG_MODE_WRAP);
+			lv_obj_set_width(m, tw);
+		}
 		const char *desc = api_str(ig_game, "description");
 		if (desc && *desc) {
-			lv_obj_t *d = mk_label(body, FONT_BODY, PAL.dim, desc);
+			lv_obj_t *d = mk_label(col, FONT_BODY, PAL.dim, desc);
+			lv_obj_set_width(d, tw);
+			lv_obj_set_flex_grow(d, 1);                   /* the rest of the column; "..." where it ends */
 			lv_label_set_long_mode(d, LV_LABEL_LONG_MODE_DOTS);
-			lv_obj_set_size(d, tw, S(380));
-			lv_obj_set_pos(d, tx, ly + S(88));
+			lv_obj_set_style_margin_top(d, S(8), 0);
 		}
 	}
 	char eb[200];
@@ -7862,6 +7874,10 @@ static void ingame_open(void)
 	static const char *const hints[] = { "A", "Select", "B", "Back to the game", NULL };
 	footer_set(hints);
 	ui_activity();
+	/* drawn in full first, then shown over the game: no flash of the old screen while it draws */
+	lv_obj_invalidate(lv_screen_active());
+	lv_refr_now(NULL);
+	if (mainlink_ingame(1)) show_home();
 }
 static void ingame_close(int to_game)
 {
