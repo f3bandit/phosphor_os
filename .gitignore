@@ -46,3 +46,6 @@ apps/windows/dist/
 tools/texture-maker/dist/
 tools/texture-maker/texture-maker*.json
 tools/texture-maker/texture-maker-last.ptm
+
+# the fan art backup pack is part of the repo (apps/windows/fanart/README.md)
+!apps/windows/fanart/pack.zip
