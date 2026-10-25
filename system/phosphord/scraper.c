@@ -602,6 +602,19 @@ static const char *PENDING =
 	"FROM games g WHERE g.scrape IS NULL AND g.based_on IS NULL AND (g.key NOT LIKE 'n:%' OR g.system_id='Arcade') "
 	"AND EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)";
 
+static void db_exec_id(sqlite3 *db, const char *sql, long long id)
+{
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) return;
+	sqlite3_bind_int64(st, 1, id);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+}
+
+static const char *MISSED =
+	"FROM games g WHERE g.scrape='miss' AND g.based_on IS NULL "
+	"AND EXISTS (SELECT 1 FROM files f WHERE f.game_id=g.id AND f.online=1)";
+
 static void mark(sqlite3 *db, long long gid, const char *state)
 {
 	sqlite3_stmt *st;
@@ -821,10 +834,15 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 	cJSON *lim = cJSON_GetObjectItem(req, "limit");
 	int limit = cJSON_IsNumber(lim) && lim->valueint > 0 && lim->valueint <= 5000 ? lim->valueint : 500;
 	int start = cJSON_IsTrue(cJSON_GetObjectItem(req, "start"));
+	/* "miss": the games nothing was found for, for matching them to the game they're based on (the PC) */
+	int miss = cJSON_IsTrue(cJSON_GetObjectItem(req, "miss"));
+	cJSON *offj = cJSON_GetObjectItem(req, "offset");
+	long offset = miss && cJSON_IsNumber(offj) && offj->valuedouble > 0 ? (long)offj->valuedouble : 0;
+	const char *from = miss ? MISSED : PENDING;
 	cfg_load();
-	if (start) { db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'"); arcade_relook_once(db); }
+	if (start && !miss) { db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'"); arcade_relook_once(db); }
 	char sql[1600];
-	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", PENDING);
+	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", from);
 	int total = count(db, sql);
 	pthread_mutex_lock(&lk);
 	pc_until = time(NULL) + 60;
@@ -835,6 +853,7 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 	pthread_mutex_unlock(&lk);
 	cJSON *o = cJSON_CreateObject();
 	cJSON_AddNumberToObject(o, "total", total);
+	if (miss) cJSON_AddBoolToObject(o, "miss", 1);   /* older versions ignore "miss": the app checks for this */
 	/* the same settings the SS1 would use (sent over the home network only) */
 	cJSON *cf = cJSON_AddObjectToObject(o, "config");
 	const source_t *src[NSRC];
@@ -856,7 +875,7 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 	         " (SELECT serial FROM files WHERE game_id=g.id AND serial IS NOT NULL LIMIT 1),"
 	         " g.art_box IS NOT NULL, g.description IS NOT NULL, g.developer IS NOT NULL, g.publisher IS NOT NULL,"
 	         " g.genre IS NOT NULL, g.year IS NOT NULL, g.players IS NOT NULL, g.region IS NOT NULL"
-	         " %s ORDER BY g.system_id, g.id LIMIT %d", PENDING, limit);
+	         " %s ORDER BY g.system_id, g.id LIMIT %d OFFSET %ld", from, limit, offset);
 	sqlite3_stmt *st;
 	if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) == SQLITE_OK) {
 		while (sqlite3_step(st) == SQLITE_ROW) {
@@ -940,6 +959,44 @@ const char *scraper_result(sqlite3 *db, cJSON *req)
 	snprintf(pg.source, sizeof(pg.source), "%.39s", pc_by);
 	snprintf(status_text, sizeof(status_text), "Being looked up by %s", pc_by);
 	pthread_mutex_unlock(&lk);
+	return NULL;
+}
+
+/* {"id", "fields":["description",...], "art":bool}: undo what an automatic match filled in (the PC
+ * remembers which fields and whether the box art came from it). Only those go; the game is "not found"
+ * again. Fields the user filled in are never in the list. */
+const char *scraper_undo(sqlite3 *db, cJSON *req)
+{
+	cJSON *idj = cJSON_GetObjectItem(req, "id");
+	if (!cJSON_IsNumber(idj)) return "id missing";
+	long long id = (long long)idj->valuedouble;
+	if (!has_col(db, id, "id")) return "no such game";
+	cJSON *f = cJSON_GetObjectItem(req, "fields"), *x;
+	cJSON_ArrayForEach(x, f) {
+		const char *v = cJSON_GetStringValue(x);
+		for (int i = 0; v && i < F_COUNT; i++) if (!strcmp(v, COLS[i])) {
+			char sql[96];
+			snprintf(sql, sizeof(sql), "UPDATE games SET %s=NULL WHERE id=?", COLS[i]);
+			db_exec_id(db, sql, id);
+		}
+	}
+	if (cJSON_IsTrue(cJSON_GetObjectItem(req, "art"))) {
+		sqlite3_stmt *st;
+		if (sqlite3_prepare_v2(db, "SELECT art_box FROM games WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
+			sqlite3_bind_int64(st, 1, id);
+			if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_text(st, 0)) {
+				char path[1024];
+				art_path((const char *)sqlite3_column_text(st, 0), path, sizeof(path));
+				unlink(path);
+				char *sl = strrchr(path, '/');
+				if (sl) { *sl = 0; rmdir(path); }        /* the game's art folder, when nothing else is in it */
+			}
+			sqlite3_finalize(st);
+		}
+		db_exec_id(db, "UPDATE games SET art_box=NULL WHERE id=?", id);
+	}
+	db_exec_id(db, "UPDATE games SET ref_name=NULL, scrape='miss' WHERE id=?", id);
+	plog("automatic match undone for game %lld", id);
 	return NULL;
 }
 

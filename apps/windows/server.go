@@ -46,6 +46,7 @@ func routes(mux *http.ServeMux) {
 	h := func(p string, f http.HandlerFunc) { mux.HandleFunc(p, guard(f)) }
 	h("/api/hello", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]any{"ok": true}) })
 	h("/api/state", apiState)
+	h("/api/automatch", apiAutomatch)
 	h("/api/discover", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "found": discover()})
 	})

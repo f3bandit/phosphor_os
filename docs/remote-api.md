@@ -60,6 +60,8 @@ Paired devices may use:
 | `edit` `{"id":20,"set":{"title":"...","description":"...","year":"1996","developer":"...","publisher":"...","genre":"...","players":"1-2","region":"USA"}}` | change details; `""` or `null` clears a field; the title can't be empty. Replies with the game. The scraper never overwrites a field that has a value. |
 | `link` `{"id":21,"base":20}`, `unlink`, `candidates` `{"id":21,"q":"tactics"}` | "Based on": a hack uses its base game's art and details |
 | `scrape`, `rescrape` `{"id":20}`, `scrape_sources` | box art and details lookup |
+| `scrape_todo` `{"start":true,"limit":400}` / `{"miss":true,"limit":1000,"offset":0}`, `scrape_result`, `scrape_pc_done` | box art looked up on the PC or phone: the games waiting (or, with `miss`, the ones nothing was found for, for matching to their base games; the reply then has `"miss":true`), the sources' order and logins; the result for one game; done |
+| `scrape_undo` `{"id":20,"fields":["description","year"],"art":true}` | undo an automatic match: only the listed details and (with `art`) the box art go, and the game is "not found" again |
 | `launch` `{"id":20}`, `favorite` `{"id":20,"on":true}`, `last`, `rescan` | remote control |
 | `sysbk` | MiSTer & Linux backups: the list with SHA-256 hashes; `get` a piece (base64), `put` pieces back (see `system/phosphord/sysbk.c`) |
 | `look` | the TV's accent colour (amber, red, green, blue, purple) and texture number, for the apps to match |

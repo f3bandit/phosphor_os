@@ -56,7 +56,7 @@ static const char *ALLOWED[] = {
 	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
-	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "remote_ssh", "scrape_todo", "scrape_result", "scrape_pc_done", "press", "network", "usb", "ini", "scripts", NULL,
+	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "remote_ssh", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts", NULL,
 };
 
 typedef struct {
