@@ -15,6 +15,8 @@ void ui_script_done(int status);
 void console_text(void);
 void console_quiet(void);
 void ui_tick(void);          /* every frame: status bar, scan progress, mount changes */
+void ui_game_events(void);    /* while a game runs (the shell sleeps): the in-game menu's button */
+int ui_ingame_open(void);       /* the in-game menu is on the screen: the shell is awake over the game */
 
 void ui_screensaver_now(void);   /* show the screensaver right away (snapshots) */
 void ui_activity(void);          /* back from a game or MiSTer's menu: the idle time starts again */
