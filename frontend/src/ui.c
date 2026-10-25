@@ -1565,7 +1565,9 @@ static void scripts_key(pkey_t k)
  * pick a value, A tries it: phosphord keeps the old file, restarts Main with the change, and puts it back
  * by itself unless Keep comes in 35 s. L/R switch the profile shown; one not in use can be tried as a
  * whole. X tries the copy from before the last change. The Keep window (below) shows over any screen,
- * whoever started the try (this menu, the phone, the PC). */
+ * whoever started the try (this menu, the phone, the PC).
+ * Profiles: up to four (Phosphor's Main, phosphord VT_ALT_MAX). Taki's values for MiSTer.ini and the four
+ * SS1 profiles, and why (the SS1's Sony video encoder): docs/ss1-video.md, install/ss1_video_ini.sh. */
 static vlist_t vd_list;
 static void vk_check(int now);
 static struct {

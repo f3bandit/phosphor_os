@@ -1,5 +1,8 @@
 /* MiSTer.ini video settings, explained: SS1 Tool's list (ss1_tool web/index.html, VRISK/VGROUPS/VOPT), from the
-   SuperStation wiki and docs and MiSTer's documentation and source. Keep the two in step. */
+   SuperStation wiki and docs and MiSTer's documentation and source. Keep the two in step.
+   The SS1's own video hardware (the Sony encoder needs vga_mode=subcarrier) and Taki's settings for
+   MiSTer.ini and its four profiles, which Phosphor's installer sets once per card: docs/ss1-video.md
+   and install/ss1_video_ini.sh. Read those before changing what a profile defaults to here. */
 "use strict";
 const VRISK={safe:["good","Safe"],blank:["warn","Can blank some screens"],hdmi:["muted","HDMI only"],crt:["muted","CRT / analog only"],never15:["bad","Never on a TV-style CRT"],audio:["warn","Can stop HDMI sound"]};
 const VGROUPS=[["hdmi","HDMI"],["cec","HDMI-CEC (TV remote and power) - needs MiSTer 20260603 or newer"],["analog","Analog outputs (CRT, SCART, component, S-Video, composite, VGA)"],["other","Other"]];

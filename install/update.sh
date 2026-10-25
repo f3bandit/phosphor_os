@@ -37,7 +37,7 @@ state() { # state, message, version, restart
 installed_version() { cut -d' ' -f1 "$ROOT/VERSION" 2>/dev/null; }
 
 pkg_version() { # the version inside a package, without unpacking it
-	tar -xzOf "$1" --wildcards '*/VERSION' 2>/dev/null | head -1 | cut -d' ' -f1
+	tar -xzOf "$1" "$(tar -tzf "$1" 2>/dev/null | head -1 | cut -d/ -f1)/VERSION" 2>/dev/null | head -1 | cut -d' ' -f1
 }
 
 list() {
