@@ -117,9 +117,11 @@ const Texture = (() => {
 		["Circuit board", SH.BOARD, 1280, 720, 1, LINE],
 		["Circuit board, bold", SH.BOARD, 1280, 720, 2, LINE],
 		/* sprite textures (26 on): the 7th item is the texture's data (tex_<id>.js) */
+		["mario", SH.SPRITES, 1280, 720, 1, LINE, TEX_MARIO],   /* 26 */
+		["zelda", SH.SPRITES, 1280, 720, 1, LINE, TEX_ZELDA],   /* 27 */
 		/* sprite textures: entries (tools/texture-maker) */
 	];
-	const ORDER = [0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25];
+	const ORDER = [0, 1, 8, 9, 2, 10, 3, 11, 12, 17, 22, 23, 18, 19, 20, 21, 4, 13, 14, 6, 15, 16, 24, 25, 26, 27];
 
 	function seg(px, py, ax, ay, bx, by) {
 		const vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay, l2 = vx * vx + vy * vy;
