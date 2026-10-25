@@ -20,6 +20,7 @@
 #include "texture.h"
 #include "padview.h"
 #include "theme.h"
+#include "video_opts.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +35,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -1058,7 +1059,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1154,6 +1155,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_BACKUP: snprintf(t, n, "Backups"); snprintf(val, vn, ">"); break;
 	case SET_PORTS: snprintf(t, n, "Front ports & memory cards"); snprintf(val, vn, ">"); break;
 	case SET_STORAGE: snprintf(t, n, "Storage"); snprintf(val, vn, ">"); break;
+	case SET_VIDEO: snprintf(t, n, "Video"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
 	case SET_UPDATE_ALL:
@@ -1558,6 +1560,432 @@ static void scripts_key(pkey_t k)
 	}
 }
 
+/* ---------- Video: MiSTer's own video settings (MiSTer.ini and its profiles), tried with Keep ----------
+ * The same list and words as the apps (video_opts.h, from apps/windows/web/video-options.js). Left/Right
+ * pick a value, A tries it: phosphord keeps the old file, restarts Main with the change, and puts it back
+ * by itself unless Keep comes in 35 s. L/R switch the profile shown; one not in use can be tried as a
+ * whole. X tries the copy from before the last change. The Keep window (below) shows over any screen,
+ * whoever started the try (this menu, the phone, the PC). */
+static vlist_t vd_list;
+static void vk_check(int now);
+static struct {
+	cJSON *st;                         /* phosphord's vset reply */
+	int nrows, row2opt[NVOPTS];        /* the list: options in group order */
+	int edited[NVOPTS];                /* a value picked but not tried yet: its index in vals */
+	char file[64];
+	lv_obj_t *chips, *panel, *pname, *prisk, *ptext, *pwarn, *pdip, *pfoot, *empty;
+} vd;
+static const char *const VD_HINTS[] = { "\xE2\x86\x90\xE2\x86\x92", "Change", "A", "Try", "X", "Earlier settings", "L/R", "Profile", "B", "Back", NULL };
+static const char *const VD_HINTS_PROF[] = { "A", "Try this profile", "L/R", "Profile", "B", "Back", NULL };
+
+static cJSON *vd_setting(const char *key) { return cJSON_GetObjectItem(cJSON_GetObjectItem(vd.st, "settings"), key); }
+static const char *vd_now(int o)
+{
+	cJSON *s = vd_setting(VOPTS[o].key);
+	return s && cJSON_IsTrue(cJSON_GetObjectItem(s, "set")) && api_str(s, "value") ? api_str(s, "value") : "";
+}
+static int vd_index(int o, const char *v)
+{
+	for (int i = 0; i < VOPTS[o].nv; i++) if (!strcmp(VOPTS[o].vals[i].v, v)) return i;
+	return -1;
+}
+static const char *vd_label(int o, const char *v, char *buf, size_t n)
+{
+	int i = vd_index(o, v);
+	if (i >= 0) return VOPTS[o].vals[i].label;
+	if (!*v) { snprintf(buf, n, "Not set (%s)", VOPTS[o].def); return buf; }
+	return v;
+}
+/* the value a row shows: the one picked, else the one in the file */
+static const char *vd_shown(int o) { return vd.edited[o] >= 0 ? VOPTS[o].vals[vd.edited[o]].v : vd_now(o); }
+
+static int vd_profile_count(void)
+{
+	int n = 0;
+	cJSON *f;
+	cJSON_ArrayForEach(f, cJSON_GetObjectItem(vd.st, "files")) if (api_num(f, "profile", -1) >= 0) n++;
+	return n;
+}
+static cJSON *vd_profile(int k)
+{
+	int n = 0;
+	cJSON *f;
+	cJSON_ArrayForEach(f, cJSON_GetObjectItem(vd.st, "files")) if (api_num(f, "profile", -1) >= 0 && n++ == k) return f;
+	return NULL;
+}
+static cJSON *vd_shown_profile(void)
+{
+	for (int k = 0; k < vd_profile_count(); k++) { cJSON *f = vd_profile(k); if (api_str(f, "name") && !strcmp(api_str(f, "name"), vd.file)) return f; }
+	return vd_profile(0);
+}
+
+/* the DIP switches on the side of the SS1 a set of analog settings needs (dipFor in video-options.js) */
+static int vd_dip(const char *mode, const char *csync, const char *pal, const char *label, char out[][64], int max)
+{
+	const char *reg = pal && !strcmp(pal, "1") ? "Up (PAL)" : "Down (NTSC)";
+	int n = 0;
+#define DIP(S, P) do { if (n < max) snprintf(out[n++], 64, "DIP %s   %s", S, P); } while (0)
+	if (!*mode) mode = "rgb";
+	if (!strcmp(mode, "subcarrier")) { DIP("3", "Down (Sony encoder)"); DIP("1", reg); DIP("2", reg); DIP("4", "Up (off)"); }
+	else if (!strcmp(mode, "svideo") || !strcmp(mode, "cvbs")) { DIP("3", "Up (FPGA encoder)"); DIP("1", reg); DIP("2", reg); DIP("4", "Up (off)"); }
+	else if (!strcmp(mode, "ypbpr")) DIP("4", "Down (sync on Y)");
+	else if (csync && !strcmp(csync, "0")) DIP("4", "Up (off)");
+	else if (label && !strcasecmp(label, "rgsb")) DIP("4", "Down (sync on green)");
+	else DIP("4", "Up for SCART / separate sync, Down for sync on green");
+#undef DIP
+	return n;
+}
+static int vd_is_analog(const char *k) { return !strcmp(k, "vga_mode") || !strcmp(k, "composite_sync") || !strcmp(k, "vga_sog") || !strcmp(k, "menu_pal"); }
+static int vd_opt(const char *k) { for (int o = 0; o < NVOPTS; o++) if (!strcmp(VOPTS[o].key, k)) return o; return -1; }
+
+static void vd_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	int o = vd.row2opt[i];
+	char buf[64];
+	const char *g = "";
+	for (int k = 0; k < NVGROUPS; k++) if (!strcmp(VGROUPS_[k][0], VOPTS[o].group)) g = VGROUPS_[k][1];
+	snprintf(t, n, "%s", VOPTS[o].name);
+	(void)g;
+	const char *l = vd_label(o, vd_shown(o), buf, sizeof(buf));
+	if (vd.edited[o] >= 0) snprintf(val, vn, "<  %.26s%s  >", l, strlen(l) > 26 ? "..." : "");
+	else snprintf(val, vn, "%.30s%s", l, strlen(l) > 30 ? "..." : "");
+	*dim = 0;
+}
+
+static void vd_panel(void)
+{
+	cJSON *pf = vd_shown_profile();
+	int using = pf && cJSON_IsTrue(cJSON_GetObjectItem(pf, "active"));
+	char dips[4][64];
+	int nd = 0;
+	lv_obj_set_hidden(vd_list.box, !using);
+	lv_obj_set_hidden(vd.empty, using);
+	if (!using) {
+		char t[200];
+		cJSON *act = NULL;
+		for (int k = 0; k < vd_profile_count(); k++) if (cJSON_IsTrue(cJSON_GetObjectItem(vd_profile(k), "active"))) act = vd_profile(k);
+		snprintf(t, sizeof(t), "%s isn't in use: Main uses %s now.", pf ? api_str(pf, "label") : "?", act ? api_str(act, "label") : "Main");
+		lv_label_set_text(vd.empty, t);
+		snprintf(t, sizeof(t), "Use %s", pf ? api_str(pf, "label") : "?");
+		lv_label_set_text(vd.pname, t);
+		lv_label_set_text(vd.prisk, "");
+		snprintf(t, sizeof(t), "%s. Trying it restarts the menu with this profile; it goes back by itself in %d seconds unless you keep it.",
+		         pf ? api_str(pf, "name") : "", (int)api_num(vd.st, "secs", 35));
+		lv_label_set_text(vd.ptext, t);
+		lv_label_set_text(vd.pwarn, "");
+		cJSON *s = cJSON_GetObjectItem(vd.st, "settings");
+		nd = vd_dip(api_str(cJSON_GetObjectItem(s, "vga_mode"), "value") ? api_str(cJSON_GetObjectItem(s, "vga_mode"), "value") : "",
+		            api_str(cJSON_GetObjectItem(s, "composite_sync"), "value"), api_str(cJSON_GetObjectItem(s, "menu_pal"), "value"), pf ? api_str(pf, "label") : "", dips, 4);
+		footer_set(VD_HINTS_PROF);
+	} else {
+		int o = vd.row2opt[vd_list.sel];
+		lv_label_set_text(vd.pname, VOPTS[o].name);
+		const char *rw = "";
+		int warn = 0;
+		for (int k = 0; k < NVRISKS; k++) if (!strcmp(VRISKS[k].id, VOPTS[o].risk)) { rw = VRISKS[k].words; warn = VRISKS[k].warn; }
+		lv_label_set_text(vd.prisk, rw);
+		lv_obj_set_style_text_color(vd.prisk, warn ? PAL.acc : PAL.dim, 0);
+		lv_label_set_text(vd.ptext, VOPTS[o].text);
+		char w[400] = "";
+		if (VOPTS[o].warn) snprintf(w, sizeof(w), "%s", VOPTS[o].warn);
+		cJSON *ov = cJSON_GetObjectItem(vd_setting(VOPTS[o].key), "overrides");
+		if (cJSON_GetArraySize(ov)) {
+			size_t l = strlen(w);
+			snprintf(w + l, sizeof(w) - l, "%sSome cores set their own:", l ? "  " : "");
+			cJSON *x;
+			cJSON_ArrayForEach(x, ov) { l = strlen(w); snprintf(w + l, sizeof(w) - l, " %s", x->valuestring); }
+		}
+		lv_label_set_text(vd.pwarn, w);
+		if (vd_is_analog(VOPTS[o].key) && vd.edited[o] >= 0) {
+			int m = vd_opt("vga_mode"), c = vd_opt("composite_sync"), p = vd_opt("menu_pal");
+			nd = vd_dip(vd_shown(m), vd_shown(c), vd_shown(p), pf ? api_str(pf, "label") : "", dips, 4);
+		}
+		footer_set(VD_HINTS);
+	}
+	char d[400] = "";
+	if (nd) {
+		snprintf(d, sizeof(d), "Set on the side of the SS1 first:");
+		for (int i = 0; i < nd; i++) { size_t l = strlen(d); snprintf(d + l, sizeof(d) - l, "\n%s", dips[i]); }
+		size_t l = strlen(d);
+		snprintf(d + l, sizeof(d) - l, "\nSS1 units made after December 2025. The ini and the switches have to agree.");
+	}
+	lv_label_set_text(vd.pdip, d);
+	lv_obj_set_hidden(vd.pdip, !nd);
+	char f[120];
+	if (cJSON_IsTrue(cJSON_GetObjectItem(vd.st, "game_running"))) snprintf(f, sizeof(f), "A game is running: close it first.");
+	else snprintf(f, sizeof(f), "Goes back by itself in %d seconds unless you keep it.", (int)api_num(vd.st, "secs", 35));
+	lv_label_set_text(vd.pfoot, f);
+}
+
+static void vd_chips(void)
+{
+	lv_obj_clean(vd.chips);
+	for (int k = 0; k < vd_profile_count(); k++) {
+		cJSON *f = vd_profile(k);
+		int shown = api_str(f, "name") && !strcmp(api_str(f, "name"), vd.file), act = cJSON_IsTrue(cJSON_GetObjectItem(f, "active"));
+		lv_obj_t *c = mk_box(vd.chips, LV_SIZE_CONTENT, S(32), shown ? PAL.panel_on : PAL.bg, S(16));
+		lv_obj_set_style_bg_opa(c, shown ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_style_border_width(c, LV_MAX(1, S(1)), 0);
+		lv_obj_set_style_border_color(c, shown ? PAL.acc : PAL.line, 0);
+		lv_obj_set_style_pad_hor(c, S(16), 0);
+		char t[48];
+		snprintf(t, sizeof(t), "%s%s", api_str(f, "label") ? api_str(f, "label") : "?", act ? "  \xE2\x9C\x93" : "");
+		lv_obj_t *l = mk_label(c, FONT_BODY, shown ? PAL.text : PAL.dim, t);
+		lv_obj_center(l);
+	}
+}
+
+static void vd_load(void)
+{
+	char req[120];
+	if (vd.file[0]) snprintf(req, sizeof(req), "{\"cmd\":\"vset\",\"file\":\"%s\"}", vd.file);
+	else snprintf(req, sizeof(req), "{\"cmd\":\"vset\"}");
+	cJSON *r = api_call("%s", req);
+	if (!api_ok(r)) {
+		cJSON_Delete(r);
+		toast_show(api_str(r, "error") ? "Video settings need phosphord 0.27.25 or later" : "phosphord isn't answering");
+		return;
+	}
+	cJSON_Delete(vd.st);
+	vd.st = r;
+	snprintf(vd.file, sizeof(vd.file), "%s", api_str(r, "file") ? api_str(r, "file") : "MiSTer.ini");
+	vd_chips();
+	vlist_refresh(&vd_list);
+	vd_panel();
+}
+
+static void show_video(void)
+{
+	cur = SCR_VIDEO;
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Video");
+	memset(vd.edited, 0xff, sizeof(vd.edited));
+	vd.file[0] = 0;
+	vd.nrows = 0;
+	for (int g = 0; g < NVGROUPS; g++)
+		for (int o = 0; o < NVOPTS; o++) if (!strcmp(VOPTS[o].group, VGROUPS_[g][0])) vd.row2opt[vd.nrows++] = o;
+	vd.chips = mk_box(body, W - S(112), S(36), PAL.bg, 0);
+	lv_obj_set_style_bg_opa(vd.chips, LV_OPA_TRANSP, 0);
+	lv_obj_set_flex_flow(vd.chips, LV_FLEX_FLOW_ROW);
+	lv_obj_set_style_pad_column(vd.chips, S(10), 0);
+	lv_obj_set_pos(vd.chips, S(56), S(170));
+	int lw = W - S(112) - S(500);
+	vlist_create(&vd_list, body, S(56), S(220), lw, S(410));
+	vd_list.fill = vd_fill;
+	vd_list.count = vd.nrows;
+	vd_list.sel = 0;
+	vd_list.top = 0;
+	vd.empty = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(vd.empty, lw - S(40));
+	lv_label_set_long_mode(vd.empty, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(vd.empty, S(80), S(232));
+	int px = S(56) + lw + S(30), pw2 = W - S(56) - px;
+	vd.panel = mk_box(body, pw2, S(410), PAL.panel, S(14));
+	lv_obj_set_pos(vd.panel, px, S(220));
+	lv_obj_set_style_border_width(vd.panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(vd.panel, PAL.line, 0);
+	lv_obj_set_flex_flow(vd.panel, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_all(vd.panel, S(22), 0);
+	lv_obj_set_style_pad_row(vd.panel, S(10), 0);
+	vd.pname = mk_label(vd.panel, FONT_TITLE, PAL.text, "");
+	vd.prisk = mk_label(vd.panel, FONT_SMALL, PAL.dim, "");
+	vd.ptext = mk_label(vd.panel, FONT_SMALL, PAL.dim, "");
+	vd.pwarn = mk_label(vd.panel, FONT_SMALL, PAL.acc, "");
+	vd.pdip = mk_label(vd.panel, FONT_SMALL, PAL.text, "");
+	vd.pfoot = mk_label(vd.panel, FONT_SMALL, PAL.faint, "");
+	lv_obj_t *ls[] = { vd.pname, vd.ptext, vd.pwarn, vd.pdip, vd.pfoot };
+	for (size_t i = 0; i < sizeof(ls) / sizeof(ls[0]); i++) { lv_obj_set_width(ls[i], pw2 - S(44)); lv_label_set_long_mode(ls[i], LV_LABEL_LONG_MODE_WRAP); }
+	lv_obj_set_style_border_width(vd.pdip, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(vd.pdip, PAL.acc, 0);
+	lv_obj_set_style_border_side(vd.pdip, LV_BORDER_SIDE_LEFT, 0);
+	lv_obj_set_style_pad_left(vd.pdip, S(12), 0);
+	lv_obj_set_width(vd.pdip, pw2 - S(44));
+	vd_load();
+}
+
+static void vd_try(const char *what)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "vset");
+	cJSON_AddStringToObject(q, "file", vd.file);
+	if (!strcmp(what, "undo")) cJSON_AddBoolToObject(q, "undo", 1);
+	else if (!strcmp(what, "profile")) cJSON_AddNumberToObject(q, "profile", api_num(vd_shown_profile(), "profile", 0));
+	else {
+		int o = vd.row2opt[vd_list.sel];
+		cJSON *t = cJSON_AddObjectToObject(q, "try");
+		cJSON_AddStringToObject(t, VOPTS[o].key, VOPTS[o].vals[vd.edited[o]].v);
+		if (vd_is_analog(VOPTS[o].key))           /* analog settings go together */
+			for (int x = 0; x < NVOPTS; x++) if (x != o && vd.edited[x] >= 0 && vd_is_analog(VOPTS[x].key)) cJSON_AddStringToObject(t, VOPTS[x].key, VOPTS[x].vals[vd.edited[x]].v);
+	}
+	char *s = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call("%s", s);
+	free(s);
+	if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering"); cJSON_Delete(r); return; }
+	cJSON_Delete(r);
+	for (int o = 0; o < NVOPTS; o++) if (strcmp(what, "value") || vd_is_analog(VOPTS[vd.row2opt[vd_list.sel]].key) ? vd_is_analog(VOPTS[o].key) || o == vd.row2opt[vd_list.sel] : o == vd.row2opt[vd_list.sel]) vd.edited[o] = -1;
+	vk_check(1);                                      /* the Keep window, now */
+}
+
+static void video_key(pkey_t k)
+{
+	cJSON *pf = vd_shown_profile();
+	int using = pf && cJSON_IsTrue(cJSON_GetObjectItem(pf, "active"));
+	if (k == K_L || k == K_R) {                      /* the profile shown */
+		int n = vd_profile_count(), at = 0;
+		for (int i = 0; i < n; i++) if (vd_profile(i) == pf) at = i;
+		if (n < 2) return;
+		at = (at + (k == K_R ? 1 : n - 1)) % n;
+		snprintf(vd.file, sizeof(vd.file), "%s", api_str(vd_profile(at), "name"));
+		memset(vd.edited, 0xff, sizeof(vd.edited));
+		vd_load();
+		return;
+	}
+	if (k == K_B || k == K_MENU) {
+		int any = 0;
+		for (int o = 0; o < NVOPTS; o++) if (vd.edited[o] >= 0) any = 1;
+		if (any && k == K_B) { memset(vd.edited, 0xff, sizeof(vd.edited)); vlist_refresh(&vd_list); vd_panel(); return; }
+		back_to_settings(SET_VIDEO);
+		return;
+	}
+	if (!using) { if (k == K_A) vd_try("profile"); return; }
+	if (vlist_key(&vd_list, k)) { vd_panel(); return; }
+	int o = vd.row2opt[vd_list.sel];
+	if (k == K_LEFT || k == K_RIGHT) {
+		int i = vd.edited[o] >= 0 ? vd.edited[o] : vd_index(o, vd_now(o));
+		int nv = VOPTS[o].nv;
+		i = i < 0 ? 0 : (i + (k == K_RIGHT ? 1 : nv - 1)) % nv;
+		vd.edited[o] = strcmp(VOPTS[o].vals[i].v, vd_now(o)) ? i : -1;
+		vlist_refresh(&vd_list);
+		vd_panel();
+	} else if (k == K_A) {
+		if (vd.edited[o] < 0) { toast_show("Pick another value with left and right first"); return; }
+		vd_try("value");
+	} else if (k == K_X) vd_try("undo");
+}
+
+/* ---------- the Keep window: a video try waits for Keep (from here, the phone or the PC) ---------- */
+static struct {
+	lv_obj_t *box, *what, *secs, *bar;
+	int open, total;
+	uint32_t until;                   /* lv_tick when it goes back by itself */
+} vk;
+
+static void vk_close(void)
+{
+	if (vk.box) lv_obj_delete(vk.box);
+	vk.box = NULL;
+	vk.open = 0;
+}
+
+static void vk_show(cJSON *p)
+{
+	vk_close();
+	char what[200] = "";
+	cJSON *ch = cJSON_GetObjectItem(p, "changes");
+	const char *kind = api_str(p, "kind");
+	if (kind && !strcmp(kind, "profile")) snprintf(what, sizeof(what), "Profile %d", (int)api_num(ch, "profile", 0));
+	else if (cJSON_IsTrue(cJSON_GetObjectItem(ch, "undo"))) snprintf(what, sizeof(what), "The settings from before");
+	else {
+		cJSON *x;
+		cJSON_ArrayForEach(x, ch) {
+			int o = vd_opt(x->string);
+			char buf[64];
+			size_t l = strlen(what);
+			if (o >= 0) snprintf(what + l, sizeof(what) - l, "%s%s: %s", l ? ", " : "", VOPTS[o].name, vd_label(o, x->valuestring ? x->valuestring : "", buf, sizeof(buf)));
+		}
+	}
+	int w = S(620), h = S(270);
+	vk.box = mk_box(root, w, h, PAL.panel, S(18));
+	lv_obj_set_style_border_width(vk.box, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(vk.box, PAL.acc, 0);
+	lv_obj_center(vk.box);
+	lv_obj_t *l = mk_label(vk.box, FONT_LABEL, PAL.dim, "T R Y I N G");
+	lv_obj_set_pos(l, S(30), S(24));
+	vk.what = mk_label(vk.box, FONT_TITLE, PAL.text, what);
+	lv_obj_set_width(vk.what, w - S(60));
+	lv_label_set_long_mode(vk.what, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_pos(vk.what, S(30), S(48));
+	l = mk_label(vk.box, FONT_BODY, PAL.dim, "Picture looks right? Keep it. Otherwise the old setting comes back by itself.");
+	lv_obj_set_width(l, w - S(60));
+	lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_pos(l, S(30), S(88));
+	lv_obj_t *track = mk_box(vk.box, w - S(160), S(6), PAL.line, S(3));
+	lv_obj_set_pos(track, S(30), S(156));
+	vk.bar = mk_box(track, w - S(160), S(6), PAL.acc, S(3));
+	vk.secs = mk_label(vk.box, FONT_NAME, PAL.acc, "");
+	lv_obj_set_pos(vk.secs, w - S(110), S(144));
+	lv_obj_t *b1 = mk_box(vk.box, S(270), S(48), PAL.acc, S(24));
+	lv_obj_set_pos(b1, S(30), h - S(48) - S(26));
+	l = mk_label(b1, FONT_NAME, PAL.bg, "A   Keep");
+	lv_obj_center(l);
+	lv_obj_t *b2 = mk_box(vk.box, S(270), S(48), PAL.panel, S(24));
+	lv_obj_set_style_border_width(b2, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(b2, PAL.line, 0);
+	lv_obj_set_pos(b2, w - S(30) - S(270), h - S(48) - S(26));
+	l = mk_label(b2, FONT_NAME, PAL.text, "B   Put back now");
+	lv_obj_center(l);
+	vk.total = (int)api_num(p, "secs", 35);
+	int left = (int)api_num(p, "secs_left", 35);
+	vk.until = lv_tick_get() + (uint32_t)left * 1000;
+	vk.open = 1;
+	lv_obj_move_foreground(vk.box);
+	ui_activity();
+}
+
+static void vk_tick(void)
+{
+	if (!vk.open) return;
+	int32_t ms = (int32_t)(vk.until - lv_tick_get());
+	int left = ms > 0 ? (ms + 999) / 1000 : 0;
+	char t[16];
+	snprintf(t, sizeof(t), "%d s", left);
+	if (strcmp(lv_label_get_text(vk.secs), t)) lv_label_set_text(vk.secs, t);
+	int tw = lv_obj_get_width(lv_obj_get_parent(vk.bar));
+	lv_obj_set_width(vk.bar, LV_MAX(1, tw * left / (vk.total > 0 ? vk.total : 35)));
+}
+
+/* is a try waiting? (the marker phosphord keeps on the SD card: a stat, so it can be looked at often) */
+static void vk_check(int now)
+{
+	static uint32_t last;
+	uint32_t t = lv_tick_get();
+	if (!now && t - last < 1000) return;
+	last = t;
+	char p[300];
+	snprintf(p, sizeof(p), "%s/phosphor/data/video_try", fat_dir());
+	int waiting = access(p, F_OK) == 0;
+	if (!waiting) {
+		if (vk.open) {
+			vk_close();
+			if ((int32_t)(vk.until - t) <= 1000) toast_show("Put back: the old video setting is back");
+			if (cur == SCR_VIDEO) vd_load();
+		}
+		return;
+	}
+	if (vk.open) return;
+	cJSON *r = api_call("{\"cmd\":\"vset\"}");
+	cJSON *pd = cJSON_GetObjectItem(r, "pending");
+	if (api_ok(r) && cJSON_IsObject(pd)) {
+		cJSON_AddNumberToObject(pd, "secs", api_num(r, "secs", 35));
+		vk_show(pd);
+	}
+	cJSON_Delete(r);
+}
+
+static int vk_key(pkey_t k)
+{
+	if (!vk.open) return 0;
+	if (k == K_A || k == K_B) {
+		cJSON *r = api_call(k == K_A ? "{\"cmd\":\"vset\",\"keep\":true}" : "{\"cmd\":\"vset\",\"revert\":true}");
+		vk_close();
+		toast_show(!api_ok(r) ? (api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering") : k == K_A ? "Kept" : "Put back");
+		cJSON_Delete(r);
+		if (cur == SCR_VIDEO) vd_load();
+	}
+	return 1;                                       /* nothing else while it's open */
+}
+
 /* ---------- Last update's log ----------
  * The downloader's own log (Update All runs the downloader too), cleaned up. Up/Down scroll, L/R a page, B back. */
 static lv_obj_t *log_box, *log_lab;
@@ -1768,6 +2196,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                  "Only a repair changes a drive, and only after you say so twice." },
 	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
 	                "The ports are only read while this screen is open." },
+	[SET_VIDEO] = { "MiSTer's own video settings: HDMI resolution, refresh and lag, scaling, HDR, the TV remote over HDMI, and the analog outputs, each explained. Try a change: it goes back by itself in 35 seconds unless you keep it.",
+	                 "Analog settings say which DIP switches on the side of the SS1 they need." },
 	[SET_ACCENT] = { "The colour used for highlights, the wordmark and the background texture. Left and right change it.", NULL },
 	[SET_TEXTURE] = { "A faint pattern behind the menus, in the accent colour. Left and right step through them; it changes as you go.",
 	                  "Drawn once when you pick it, so it costs nothing while you use the menu." },
@@ -2845,7 +3275,7 @@ static void remote_apply(cJSON *r)
 			snprintf(sub, sizeof(sub), "%s", r_err[0] ? r_err : "Starting...");
 		} else {
 			snprintf(h, sizeof(h), "On  \xC2\xB7  %s:%d", r_addr[0] ? r_addr : "no network yet", r_port);
-			snprintf(sub, sizeof(sub), "Paired devices can see and edit the library, box art and screen filters. WiFi and pairing stay here.");
+			snprintf(sub, sizeof(sub), "Paired devices can see and edit the library, box art and video settings. WiFi and pairing stay here.");
 		}
 		lv_label_set_text(rem_head, h);
 		lv_label_set_text(rem_sub, sub);
@@ -6924,6 +7354,7 @@ void ui_key(pkey_t k)
 	else if (saver_key()) return;
 	if (cur == SCR_MAP) { map_key(k); return; }       /* locked: only Select + Start (cancel) */
 	if (cur == SCR_CTEST) { tw_key(k); return; }    /* locked: Select + Start closes */
+	if (vk_key(k)) return;                           /* a video try waits for Keep */
 	if (pm_key(k)) return;
 	if (osk_key(k)) return;
 	if (sk_key(k)) return;
@@ -7010,6 +7441,9 @@ void ui_key(pkey_t k)
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
+	case SCR_VIDEO:
+		video_key(k);
+		break;
 	case SCR_ART:
 		art_key(k);
 		break;
@@ -7039,6 +7473,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_BACKUP) show_backup();
 			else if (set_list.sel == SET_PORTS) show_ports();
 			else if (set_list.sel == SET_STORAGE) show_storage();
+			else if (set_list.sel == SET_VIDEO) show_video();
 			else if (set_list.sel == SET_ABOUT) show_about();
 			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
 				if (set_list.sel == SET_UPDATE_ALL && !cr.all_available) { toast_show("Update All isn't on the SD card (Scripts/update_all.sh)"); break; }
@@ -7091,6 +7526,8 @@ void ui_tick(void)
 	}
 	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
 	sk_check(now);
+	vk_check(0);
+	vk_tick();
 	if (si_pending()) si_update();
 	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); update_check(); } }   /* the alerts, once after start-up */
 	saver_tick(now);

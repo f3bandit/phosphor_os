@@ -55,7 +55,8 @@ dependencies {
 
 /* the page's shared parts come from Phosphor for Windows (apps/windows/web), so both apps draw the
    console's textures the same way: the fonts, and look.js = the scripts Windows' index.html loads before
-   texture.js, then texture.js (circuit.js and the tex_*.js sprite textures Texture Maker adds there) */
+   texture.js, then texture.js (circuit.js and the tex_*.js sprite textures Texture Maker adds there),
+   and video-options.js (MiSTer's video settings, explained) */
 val webShared by tasks.registering {
     val win = rootProject.file("../windows/web")
     val out = layout.buildDirectory.dir("generated/webshared/web")
@@ -72,6 +73,7 @@ val webShared by tasks.registering {
         require(upTo >= 0) { "texture.js isn't in apps/windows/web/index.html" }
         val js = names.take(upTo + 1).joinToString("\n") { n -> "/* ---- $n */\n" + File(win, n).readText() }
         File(dir, "look.js").writeText("/* made by the build from apps/windows/web: don't edit */\n$js")
+        File(win, "video-options.js").copyTo(File(dir, "video-options.js"), true)
     }
 }
 tasks.named("preBuild") { dependsOn(webShared) }

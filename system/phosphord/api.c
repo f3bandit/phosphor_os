@@ -45,12 +45,8 @@
  *                                           {status{...}, scanning, networks:[{ssid, signal, bands,
  *                                           secure, saved}], saved:[{ssid, open}]}; passwords are
  *                                           never sent back
- *   video      [system] [set{what:value}] [preset] [undo]
- *                                           screen filters per system: no system = every system with
- *                                           a core and its settings; changes show next time it starts
  *   look                                    the TV's accent (amber|red|green|blue|purple) and texture number
  *   vset [try {key:value}|keep|revert|undo] [secs]  MiSTer.ini video settings, tried with Keep (vtry.h)
- *   video_files kind                        filters | masks | gamma | presets: [relative paths]
  *   diag       [run] [bundle]               whole-system checks (diag module), in the background:
  *                                           {installed, busy, at, summary{level,text}, results:[{area,
  *                                           key, level, message}], bundle}; run/bundle start them
@@ -96,7 +92,6 @@
 #include "db.h"
 #include "diag.h"
 #include "wifi.h"
-#include "video.h"
 #include "vtry.h"
 #include "remote.h"
 #include "sshacc.h"
@@ -607,78 +602,6 @@ static char *cmd_wifi(cJSON *req)
 		cJSON_AddBoolToObject(x, "current", st.connected && !strcmp(st.ssid, nets[i].ssid));
 		cJSON_AddItemToArray(na, x);
 	}
-	return reply(o);
-}
-
-static cJSON *video_json(const char *system_id, const char *core)
-{
-	video_state_t v;
-	video_get(core, &v);
-	cJSON *x = cJSON_CreateObject();
-	cJSON_AddStringToObject(x, "system", system_id);
-	const gsys_t *s = system_by_id(system_id);
-	cJSON_AddStringToObject(x, "name", s ? s->name : system_id);
-	cJSON_AddStringToObject(x, "core", core);
-	cJSON_AddBoolToObject(x, "custom", v.custom);
-	static const char *K[4] = { "filter", "vertical", "scanlines", "interlace" };
-	for (int i = 0; i < 4; i++) {
-		if (v.flt_on[i] && v.flt[i][0]) cJSON_AddStringToObject(x, K[i], v.flt[i]);
-		else cJSON_AddNullToObject(x, K[i]);
-	}
-	static const char *MM[5] = { "off", "1x", "2x", "1x rotated", "2x rotated" };
-	cJSON_AddStringToObject(x, "maskmode", MM[v.mask_mode >= 0 && v.mask_mode < 5 ? v.mask_mode : 0]);
-	if (v.mask_mode && v.mask[0]) cJSON_AddStringToObject(x, "mask", v.mask);
-	else cJSON_AddNullToObject(x, "mask");
-	if (v.gamma_on && v.gamma[0]) cJSON_AddStringToObject(x, "gamma", v.gamma);
-	else cJSON_AddNullToObject(x, "gamma");
-	return x;
-}
-
-static char *cmd_video(cJSON *req)
-{
-	const char *sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
-	char core[64], err[200] = "";
-	if (!sys) {
-		cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "systems");
-		for (int i = 0; i < NSYS; i++)
-			if (video_core_name(SYS[i].id, core, sizeof(core)) == 0) cJSON_AddItemToArray(arr, video_json(SYS[i].id, core));
-		return reply(o);
-	}
-	if (video_core_name(sys, core, sizeof(core))) return fail("No core installed for that system");
-	cJSON *set = cJSON_GetObjectItem(req, "set"), *it;
-	const char *preset = cJSON_GetStringValue(cJSON_GetObjectItem(req, "preset"));
-	if (cJSON_IsObject(set)) {
-		cJSON_ArrayForEach(it, set) {
-			const char *v = cJSON_IsString(it) ? it->valuestring : NULL;
-			if (video_set(core, it->string, v, err, sizeof(err))) return fail(err);
-		}
-	} else if (preset) {
-		if (video_preset(core, preset, err, sizeof(err))) return fail(err);
-	} else if (cJSON_IsTrue(cJSON_GetObjectItem(req, "undo"))) {
-		if (video_undo(core, err, sizeof(err))) return fail(err);
-	}
-	cJSON *o = ok();
-	cJSON_AddItemToObject(o, "video", video_json(sys, core));
-	return reply(o);
-}
-
-static void add_path(void *u, const char *rel) { cJSON_AddItemToArray((cJSON *)u, cJSON_CreateString(rel)); }
-
-static int str_cmp(const void *a, const void *b) { return natcmp(*(const char *const *)a, *(const char *const *)b); }
-
-static char *cmd_video_files(cJSON *req)
-{
-	const char *kind = cJSON_GetStringValue(cJSON_GetObjectItem(req, "kind"));
-	cJSON *tmp = cJSON_CreateArray();
-	if (!kind || video_list(kind, add_path, tmp)) { cJSON_Delete(tmp); return fail("kind is filters, masks, gamma or presets"); }
-	int n = cJSON_GetArraySize(tmp);
-	const char **v = malloc(sizeof(*v) * (size_t)(n ? n : 1));
-	for (int i = 0; i < n; i++) v[i] = cJSON_GetArrayItem(tmp, i)->valuestring;
-	qsort(v, (size_t)n, sizeof(*v), str_cmp);
-	cJSON *o = ok(), *arr = cJSON_AddArrayToObject(o, "files");
-	for (int i = 0; i < n; i++) cJSON_AddItemToArray(arr, cJSON_CreateString(v[i]));
-	free(v);
-	cJSON_Delete(tmp);
 	return reply(o);
 }
 
@@ -1441,8 +1364,6 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "candidates")) out = cmd_candidates(db, req);
 	else if (!strcmp(c->valuestring, "diag")) out = cmd_diag(req);
 	else if (!strcmp(c->valuestring, "wifi")) out = cmd_wifi(req);
-	else if (!strcmp(c->valuestring, "video")) out = cmd_video(req);
-	else if (!strcmp(c->valuestring, "video_files")) out = cmd_video_files(req);
 	else if (!strcmp(c->valuestring, "look")) out = cmd_look();
 	else if (!strcmp(c->valuestring, "vset")) {
 		const char *e = NULL;

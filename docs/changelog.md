@@ -3,9 +3,20 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.26
+## 0.27.27
 
 ### New
+- **Video on the TV** (Settings > Video): MiSTer's own video settings, each explained (the same list as
+  the apps and SS1 Tool). Left and right pick a value, A tries it, X tries the settings from before the
+  last change, L and R switch the profile shown (MiSTer.ini and the MiSTer_*.ini ones); one not in use
+  can be tried as a whole. Analog settings say which DIP switches on the side of the SS1 they need.
+- **The Keep window**: whenever a video change is being tried (from the TV, the phone or the PC), the TV
+  shows what's being tried and the seconds left: A keeps it, B puts it back now.
+- **Phosphor for Windows 0.2.18**: Settings > Video is the same try-out (the screen filters are gone).
+
+### Changes
+- The screen filters (per-system filters, scanlines, shadow masks, gamma) are gone from phosphord and the
+  apps: MiSTer's own OSD still has them for each core.
 - **The apps take the TV's look**: phosphord's `look` gives the accent colour and background texture picked
   on the TV (Settings > Look), and Phosphor for Android (and next Phosphor for Windows) use them.
 - **Phosphor for Android 0.9.0**: rebuilt in SS1 Tool for Android's layout (app bar, chips, two-column buttons

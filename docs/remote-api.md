@@ -61,7 +61,6 @@ Paired devices may use:
 | `link` `{"id":21,"base":20}`, `unlink`, `candidates` `{"id":21,"q":"tactics"}` | "Based on": a hack uses its base game's art and details |
 | `scrape`, `rescrape` `{"id":20}`, `scrape_sources` | box art and details lookup |
 | `launch` `{"id":20}`, `favorite` `{"id":20,"on":true}`, `last`, `rescan` | remote control |
-| `video`, `video_files` | screen filters per system |
 | `look` | the TV's accent colour (amber, red, green, blue, purple) and texture number, for the apps to match |
 | `vset` | MiSTer's video settings and profiles, tried with Keep (35 s, then put back by the MiSTer itself): see `system/phosphord/vtry.h` |
 | `backup` | snapshots on the MiSTer's drives: list, back up now, preview and restore (all or only saves) |

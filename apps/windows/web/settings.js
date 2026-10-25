@@ -14,7 +14,7 @@ const SET_SECTIONS = [
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
 	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"]] },
 	{ id: "network", name: "Network", tabs: [["Network", "tNet"]] },
-	{ id: "video", name: "Video", tabs: [["Screen filters", "tVideo"]] },
+	{ id: "video", name: "Video", tabs: [["Video settings", "tVideo"]] },
 	{ id: "remote", name: "Remote control", tabs: [["Remote control", "tRemote"]] },
 	{ id: "advanced", name: "Advanced", tabs: [["MiSTer.ini", "tIni"], ["Scripts", "tScripts"]] },
 	{ grp: "Tools" },
@@ -1109,43 +1109,124 @@ class AppSettings {
 		$("#net").innerHTML = html;
 	}
 
-	/* ---------- Video: each system's screen filters (as the TV's Video settings): a change backs up the core's files first ---------- */
+	/* ---------- Video: MiSTer's own video settings (MiSTer.ini and its profiles), tried with Keep:
+	   the SS1 keeps the old file, restarts the menu with the change and puts it back by itself after
+	   35 seconds unless Keep comes (phosphord's vset) ---------- */
 	async tVideo(b) {
 		const alive = this.alive, me = this;
-		b.append(h(`<div class="split" style="grid-template-columns:18rem 1fr"><div class="list" id="vs"><div class="empty"><span class="spin"></span></div></div><div class="list mcw" id="vp"></div></div>`));
-		let L, files = {};
-		try { L = (await ss1({ cmd: "video" })).systems || []; } catch (e) { if (alive()) $("#vs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-		if (!alive()) return;
-		const load = async k => files[k] || (files[k] = (await ss1({ cmd: "video_files", kind: k }).catch(() => ({ files: [] }))).files || []);
-		const vs = $("#vs");
-		if (!L.length) { vs.innerHTML = `<div class="empty">No cores with screen filters found.</div>`; return; }
-		const sel = (id, list, val, off = "Off") => `<select id="${id}" data-nav><option value="">${off}</option>${list.map(f => `<option value="${esc(f)}"${f === val ? " selected" : ""}>${esc(f.replace(/\.[^.]+$/, ""))}</option>`).join("")}</select>`;
-		const panel = async v => {
-			const [F, M, G, P] = await Promise.all(["filters", "masks", "gamma", "presets"].map(load));
+		b.append(h(`<div class="col grow"><div class="acts" id="vprof" style="margin:0 0 .8rem"></div>
+			<div class="split" style="grid-template-columns:minmax(0,1fr) 30rem"><div class="list" id="vl"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="vp"></div></div></div>`));
+		let v = null, file = null, sel = null, edits = {};
+		const now0 = k => { const s = v.settings[k]; return s && s.set ? s.value : ""; };
+		const vname = (k, val) => { const o = VOPT[k]; const x = o && o.v.find(e => e[0] === val); return x ? x[1] : (val === "" ? "Not set (" + (o ? o.d : "default") + ")" : val); };
+		const dipHTML = rows => `<div class="dipbox"><b>Set on the side of the SS1 first</b><dl class="kv">${rows.map(([n, p]) => `<dt>DIP ${n}</dt><dd>${esc(p)}</dd>`).join("")}</dl><div class="note">${esc(DIP_NOTE_UNITS)} The ini and the switches have to agree: otherwise the picture is black and white, or missing.</div></div>`;
+		const files = () => (v.files || []).filter(f => f.profile >= 0);
+		const shown = () => files().find(f => f.name === v.file) || files()[0];
+		const load = async () => {
+			try { v = await ss1(file ? { cmd: "vset", file } : { cmd: "vset" }); if (!file) file = v.file; }
+			catch (e) { if (alive()) $("#vl").innerHTML = `<div class="empty">${esc(/unknown/i.test(e.message) ? "Update Phosphor on the SS1 (0.27.25 or later) for this." : e.message)}</div>`; return; }
 			if (!alive()) return;
-			const vp = $("#vp");
-			vp.innerHTML = `<div class="mcard"><h3>${esc(v.name)} <span class="muted" style="font-weight:400">${esc(v.core)}${v.custom ? "" : " · MiSTer.ini's defaults"}</span></h3>
-				<div class="mrow"><label style="width:9rem">Preset</label>${sel("v_pre", P, "", "Choose a preset…")}<button class="btn" id="v_preok" data-nav>Use it</button></div>
-				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Filter</label>${sel("v_filter", F, v.filter)}</div>
-				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Vertical filter</label>${sel("v_vertical", F, v.vertical)}</div>
-				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Scanlines</label>${sel("v_scanlines", F, v.scanlines)}</div>
-				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Interlaced</label>${sel("v_interlace", F, v.interlace)}</div>
-				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Shadow mask</label><select id="v_maskmode" data-nav>${["off", "1x", "2x", "1x rotated", "2x rotated"].map(m => `<option${m === v.maskmode ? " selected" : ""}>${m}</option>`).join("")}</select>${sel("v_mask", M, v.mask, "None")}</div>
-				<div class="mrow" style="margin-top:.6rem"><label style="width:9rem">Gamma</label>${sel("v_gamma", G, v.gamma)}</div>
-				<div class="mrow" style="margin-top:1rem"><button class="btn" id="v_undo" data-nav>Undo the last change</button><span class="muted">Each change keeps the core's files first. It shows the next time the core starts.</span></div></div>`;
-			const set = async o => { try { const r = await ss1({ cmd: "video", system: v.system, ...o }); Object.assign(v, r.video); toast("Saved: it shows the next time " + v.name + " starts"); panel(v); } catch (e) { toast(e.message); } };
-			for (const k of ["filter", "vertical", "scanlines", "interlace", "mask", "gamma", "maskmode"]) $("#v_" + k).onchange = e => set({ set: { [k]: e.target.value || null } });
-			$("#v_preok").onclick = () => { const p = $("#v_pre").value; if (p) set({ preset: p }); };
-			$("#v_undo").onclick = () => set({ undo: true });
+			draw();
+			if (v.pending) keepWin();
 		};
-		vs.innerHTML = "";
-		L.forEach((v, i) => {
-			const el = h(`<div class="row" data-nav><span class="n">${esc(v.name)}</span><span class="v">${v.custom ? "own settings" : ""}</span></div>`).firstChild;
-			el._onfocus = () => { clearTimeout(me.vt); me.vt = setTimeout(() => panel(v), 120); };
-			el.onclick = () => panel(v);
-			vs.appendChild(el);
-		});
-		panel(L[0]);
+		const draw = () => {
+			const sh = shown(), using = sh && sh.active;
+			$("#vprof").innerHTML = files().map(f => `<button class="btn${f.name === v.file ? " primary" : ""}" data-nav data-file="${esc(f.name)}">${esc(f.label)}${f.active ? " ✓" : ""}</button>`).join("")
+				+ `<button class="btn" data-nav id="vundo"${!using || v.game_running ? " disabled" : ""}>Try the earlier settings</button>`;
+			$("#vprof").querySelectorAll("[data-file]").forEach(x => x.onclick = () => { file = x.dataset.file; edits = {}; sel = null; load(); });
+			$("#vundo").onclick = () => tryIt({ undo: true });
+			const vl = $("#vl");
+			vl.innerHTML = "";
+			if (!using) {
+				vl.innerHTML = `<div class="empty" style="text-align:left">${esc(sh ? sh.label : "")} isn't in use: Main uses ${esc((files().find(f => f.active) || {}).label || "Main")} now.</div>`;
+				panelProfile(sh);
+				return;
+			}
+			const grp = {};
+			Object.keys(VOPT).forEach(k => { (grp[VOPT[k].g] = grp[VOPT[k].g] || []).push(k); });
+			let first = null;
+			VGROUPS.forEach(([g, name]) => {
+				if (!(grp[g] || []).length) return;
+				vl.appendChild(h(`<div class="sub" style="margin:.9rem 0 .2rem 1.5rem">${spaced(name.split(" (")[0].split(" - ")[0])}</div>`));
+				grp[g].forEach(k => {
+					const val = k in edits ? edits[k] : now0(k), ch = k in edits;
+					const el = h(`<div class="row net" data-nav><span class="n"><b>${esc(VOPT[k].n)}</b><small${ch ? ' style="color:var(--acc)"' : ""}>${esc(vname(k, val))}</small></span></div>`).firstChild;
+					el._onfocus = () => { sel = k; panel(k); };
+					el.onclick = () => { sel = k; panel(k); const p = $("#vp [data-nav]"); if (p) focus(p); };
+					vl.appendChild(el);
+					if (k === sel || !first) first = first || el;
+				});
+			});
+			panel(sel || Object.keys(VOPT)[0]);
+		};
+		const panelProfile = sh => {
+			const vals = Object.fromEntries(Object.entries(v.settings).map(([k, s]) => [k, s.set ? s.value : ""]));
+			$("#vp").innerHTML = `<h2>Use ${esc(sh.label)}</h2><p class="note">${esc(sh.name)}. Trying it restarts the menu with this profile; it goes back by itself in ${v.secs || 35} seconds unless you keep it.</p>${dipHTML(dipFor(vals, sh.label))}
+				<div class="acts"><button class="btn primary" data-nav id="vtryp"${v.pending || v.game_running ? " disabled" : ""}>Try ${esc(sh.label)}</button></div>`;
+			$("#vtryp").onclick = () => tryIt({ profile: sh.profile });
+		};
+		const panel = k => {
+			const o = VOPT[k], now = now0(k), val = k in edits ? edits[k] : now, ch = k in edits;
+			const rk = VRISK[o.r] || ["muted", ""], ov = (v.settings[k] && v.settings[k].overrides) || [];
+			const all = Object.assign(Object.fromEntries(Object.keys(VOPT).map(x => [x, now0(x)])), edits);
+			$("#vp").innerHTML = `<h2>${esc(o.n)} ${rk[1] ? `<span class="mpill ${rk[0] === "warn" ? "muted" : rk[0]}">${esc(rk[1])}</span>` : ""}</h2>
+				<p class="note">${esc(o.t || "")}</p>${o.w ? `<p class="note" style="color:#e3b341">${esc(o.w)}</p>` : ""}
+				${ov.length ? `<p class="note" style="color:#e3b341">Some cores set their own: ${esc(ov.join(", "))}</p>` : ""}
+				<div class="acts" style="flex-wrap:nowrap;align-items:center"><button class="btn" data-nav id="vprev" aria-label="Previous value">◀</button><span style="flex:1;text-align:center;${ch ? "color:var(--acc)" : ""}">${esc(vname(k, val))}</span><button class="btn" data-nav id="vnext" aria-label="Next value">▶</button></div>
+				${ANALOG_KEYS.has(k) && ch ? dipHTML(dipFor(all, (shown() || {}).label)) : ""}
+				<div class="acts"><button class="btn primary" data-nav id="vtry"${!ch || v.pending || v.game_running ? " disabled" : ""}>Try it</button>${ch ? `<button class="btn" data-nav id="vcancel">Cancel</button>` : ""}</div>
+				${v.game_running ? `<p class="note">A game is running: close it first (trying restarts the menu).</p>` : `<p class="note">Goes back by itself in ${v.secs || 35} seconds unless you keep it.</p>`}`;
+			const step = d => {
+				const list = o.v.map(e => e[0]), at = list.indexOf(k in edits ? edits[k] : now);
+				edits[k] = list[at < 0 ? 0 : (at + d + list.length) % list.length];
+				if (edits[k] === now) delete edits[k];
+				const keep = document.querySelector(".f") && document.querySelector(".f").id;
+				draw(); panel(k);
+				const again = keep && $("#" + keep); if (again) focus(again, true);
+			};
+			$("#vprev").onclick = () => step(-1);
+			$("#vnext").onclick = () => step(1);
+			$("#vtry").onclick = () => {
+				const t = { [k]: edits[k] };
+				if (ANALOG_KEYS.has(k)) Object.keys(edits).filter(x => ANALOG_KEYS.has(x)).forEach(x => { t[x] = edits[x]; });
+				tryIt({ try: t }, () => Object.keys(t).forEach(x => delete edits[x]));
+			};
+			if (ch) $("#vcancel").onclick = () => { delete edits[k]; draw(); };
+		};
+		const tryIt = async (req, done) => {
+			try { v = await ss1(Object.assign({ cmd: "vset", file }, req)); if (done) done(); if (!alive()) return; draw(); keepWin(); }
+			catch (e) { toast(e.message); }
+		};
+		/* Keep? A window over everything until Keep, Put back, or the SS1 put it back by itself */
+		const keepWin = () => {
+			if (!v.pending || $(".lockwin.vkeep")) return;
+			const p = v.pending, prof = files().find(f => f.profile === (p.changes || {}).profile);
+			const what = p.kind === "profile" ? "profile " + (prof ? prof.label : p.changes.profile) : p.changes.undo ? "the settings from before"
+				: Object.keys(p.changes).map(k => (VOPT[k] ? VOPT[k].n : k) + ": " + vname(k, p.changes[k])).join(", ");
+			const w = h(`<div class="lockwin vkeep"><div class="win" style="max-width:34rem"><div><div class="sub">${spaced("Trying")}</div>
+				<h2 style="margin:.4rem 0 .6rem">${esc(what)}</h2><p class="note">Picture looks right on the TV? Keep it. Otherwise the old setting comes back by itself, even with no picture or this PC off.</p>
+				<div style="display:flex;align-items:center;gap:1rem;margin:1rem 0"><div style="flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden"><div id="kbar" style="height:6px;background:var(--acc);width:100%"></div></div><span class="mono" id="ksec" style="color:var(--acc)"></span></div>
+				<div class="acts"><button class="btn primary" id="kkeep" data-nav>Keep</button><button class="btn" id="kback" data-nav>Put back now</button></div></div></div></div>`).firstChild;
+			document.body.appendChild(w);
+			const prev = lockwin; lockwin = w;
+			let left = p.secs_left, total = v.secs || 35;
+			const close = () => { clearInterval(t); lockwin = prev; w.remove(); };
+			const tick = () => { $("#ksec", w).textContent = Math.max(0, left) + " s"; $("#kbar", w).style.width = Math.max(0, left) * 100 / total + "%"; };
+			tick();
+			const t = setInterval(async () => {
+				left--; tick();
+				if (left <= 0) { close(); toast("Put back: the SS1 went back to the old setting"); setTimeout(load, 2500); }
+			}, 1000);
+			const act = async what => {
+				try { v = await ss1({ cmd: "vset", file, [what]: true }); toast(what === "keep" ? "Kept" : "Put back"); } catch (e) { toast(e.message); }
+				close(); if (what === "keep") { file = null; edits = {}; } load();
+			};
+			$("#kkeep", w).onclick = () => act("keep");
+			$("#kback", w).onclick = () => act("revert");
+			w._esc = () => act("revert");
+			focus($("#kkeep", w));
+		};
+		await load();
 	}
 
 	/* ---------- Remote control: Phosphor's screen on the TV, from here (not network, pairing or remote access settings) ---------- */
