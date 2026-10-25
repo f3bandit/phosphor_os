@@ -15,7 +15,6 @@
 #include "storage.h"
 #include "memcard.h"
 #include "wifi.h"
-#include "heartbeat.h"
 #include "db.h"
 #include "indexer.h"
 #include "log.h"
@@ -137,7 +136,11 @@ int main(int argc, char **argv)
 	storage_prime();                          /* the drive list, in the background */
 	memcard_start();
 	wifi_start();
-	heartbeat_start();
+	{ /* the heartbeat log (a testing aid until 0.27.30) is gone: its files go too */
+		char hb[512];
+		snprintf(hb, sizeof(hb), "%s/phosphor/logs/heartbeat.log", p_fat()); unlink(hb);
+		snprintf(hb, sizeof(hb), "%s/phosphor/logs/heartbeat.log.1", p_fat()); unlink(hb);
+	}
 
 	plog("ready on %s", p_socket());
 	for (;;) {
