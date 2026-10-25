@@ -98,6 +98,11 @@ h1 { flex: none; font-weight: 600; font-size: 2rem; letter-spacing: -.01em; marg
 .row.f::before { content: ""; position: absolute; left: .5rem; top: .55rem; bottom: .55rem; width: 3px; border-radius: 2px; background: var(--acc); }
 .row.f .v { color: var(--acc); }
 .row .star { color: var(--acc); }
+.row.drive .n { display: flex; align-items: center; gap: .6rem; }
+.row.drive .ic { width: 1.25rem; height: 1.25rem; flex: none; color: var(--acc); display: inline-flex; }
+.row.drive .ic svg { width: 100%; height: 100%; }
+.row.drive .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.row.drive { margin-bottom: .5rem; }
 .col { display: flex; flex-direction: column; min-height: 0; }
 .row.net { height: 3.8rem; }
 .grp { display: flex; justify-content: space-between; padding: 1.1rem 1rem .4rem 1.5rem; font: .72rem/1 PhosMono, Consolas, monospace; letter-spacing: .3em; text-transform: uppercase; color: var(--faint); }

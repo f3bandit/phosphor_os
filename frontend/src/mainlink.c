@@ -19,6 +19,8 @@
 #include <unistd.h>
 
 static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
+/* API 5: the dock's drive (disc events) and Phosphor's in-game menu (ingame) */
+static int disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1;
 /* a controller mapping Main runs for the shell (its steps come as events) */
 static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
@@ -70,11 +72,19 @@ static int take(void)
 	    || !((pads = strstr(r, "\"pads\":true") != NULL), 1)
 	    || !((scripts = strstr(r, "\"scripts\":true") != NULL), 1)
 	    || !((mapping = strstr(r, "\"mapping\":true") != NULL), 1)
+	    || !((disc_api = strstr(r, "\"disc\":true") != NULL), 1)
+	    || !((ingame_api = strstr(r, "\"ingame\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
 		return 0;
 	}
+	/* in a game (Main restarts with each core, and the shell reconnects): a short press of the menu
+	   button opens Phosphor's in-game menu, a long one MiSTer's; the drive as Settings › Discs says */
+	in_game = ask("status", r, sizeof(r)) == 0 && strstr(r, "\"menu\":false") != NULL;
+	if (ingame_api) ask("sheet on", r, sizeof(r));
+	if (disc_api) ask(disc_want ? "disc on" : "disc off", r, sizeof(r));
+	disc_changed = 1;
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 	plog("phosphor-main: the shell has the screen");
 	ever = 1;
@@ -96,6 +106,32 @@ int mainlink_hidden(void) { return fd >= 0 && hidden; }
 int mainlink_pads(void) { return fd >= 0 && pads; }
 int mainlink_fd(void) { return fd; }
 int mainlink_script_running(void) { return script_on; }
+int mainlink_has_disc(void) { return fd >= 0 && disc_api; }
+int mainlink_has_ingame(void) { return fd >= 0 && ingame_api; }
+int mainlink_in_game(void) { return fd >= 0 && in_game; }
+static int take_flag(int *f) { int v = *f; *f = 0; return v; }
+int mainlink_disc_changed(void) { return take_flag(&disc_changed); }
+int mainlink_menu_button(void) { return take_flag(&menu_btn); }
+int mainlink_ingame_ended(void) { return take_flag(&ingame_ended); }
+
+static int say(const char *line)
+{
+	if (fd < 0) return -1;
+	char b[80];
+	int n = snprintf(b, sizeof(b), "%s\n", line);
+	return send(fd, b, (size_t)n, MSG_NOSIGNAL) == n ? 0 : -1;
+}
+/* replies to these come back as {"ok":...} lines among the events; nothing waits for them */
+int mainlink_disc_enable(int on) { disc_want = on; return disc_api ? say(on ? "disc on" : "disc off") : -1; }
+int mainlink_ingame(int on) { return ingame_api ? say(on ? "ingame on" : "ingame off") : -1; }
+int mainlink_ingame_osd(void) { return ingame_api ? say("ingame osd") : -1; }
+/* from the in-game menu back to Phosphor: the menu core again (Phosphor's, where it's installed) */
+int mainlink_quit_game(void)
+{
+	if (fd < 0) return -1;
+	say("ingame off");
+	return say(access("/media/fat/menu.rbf", F_OK) == 0 ? "launch /media/fat/menu.rbf" : "launch /media/fat/phosphor/cores/menu_phosphor.rbf");
+}
 
 int mainlink_script(const char *path)
 {
@@ -168,6 +204,12 @@ int mainlink_poll(void)
 						else input_watch("main", lbuf);                /* not understood: show it in the watch log */
 						continue;
 					}
+					/* the drive changed (phosphord names what's in it); a game started or ended; the menu
+					   button in a game (Phosphor's in-game menu); Main took the in-game screen back */
+					if (strstr(lbuf, "\"event\":\"disc\"")) { disc_changed = 1; continue; }
+					if (strstr(lbuf, "\"event\":\"core\"")) { in_game = strstr(lbuf, "\"menu\":false") != NULL; continue; }
+					if (strstr(lbuf, "\"event\":\"menu_button\"")) { if (in_game) menu_btn = 1; continue; }
+					if (strstr(lbuf, "\"event\":\"ingame\"")) { ingame_ended = 1; continue; }
 					/* the controller mapping: a step, the end, or a refused command */
 					if (strstr(lbuf, "\"event\":\"map\"")) {
 						const char *q;

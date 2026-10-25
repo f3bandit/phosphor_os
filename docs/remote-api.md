@@ -71,12 +71,17 @@ Paired devices may use:
 | `bluetooth` | the paired controllers, read only: pairing, disconnecting and forgetting only from the MiSTer itself |
 | `memcard`, `pads`, `pad_analog`, `ports` | front ports (phosphor-main + the Phosphor menu core): memory card backups and putting one back (the card is backed up first), controllers live. `memcard {"do":"prepare"}` loads the Phosphor menu core, from the menu only |
 | `cloud` | cloud saves: status, storage places, send now, preview and get saves back, add a storage place (passwords and sign-in tokens go only to the MiSTer) |
+| `disc`, `disc_play`, `disc_eject`, `disc_enable` `{"on":true}` | the dock's CD/DVD drive (see `docs/discs.md`): what's in it, start it on its console, open the tray, Settings › Discs |
 | `diag` | read the latest checks (`run` starts them; support bundles only from the MiSTer) |
 
 Not allowed remotely: `wifi`, `remote`, `import`, `set_art` with a file path (use `PUT /art`).
 
 ### `GET /art/<game id>`
 The game's box art as JPEG, or the base game's art when the game is linked. `404` when there's none.
+
+### `GET /art/disc`
+The box art of the disc in the dock's drive (JPEG, or PNG when it came from libretro's thumbnails), or
+`404`. It changes with the disc: put the disc's serial in the URL so a cached image isn't reused.
 
 ### `PUT /art/<game id>`
 Body: an image (PNG, JPEG, GIF, BMP...; up to 16 MB). Phosphor scales it to 512 px on the long side,

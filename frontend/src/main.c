@@ -257,7 +257,8 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 		}
-		int active = menu_active() && !mainlink_hidden() && !mainlink_script_running();
+		/* awake in the menu core, or over a game while Phosphor's in-game menu is open */
+		int active = (menu_active() || ui_ingame_open()) && !mainlink_hidden() && !mainlink_script_running();
 		if (!active) {
 			/* a game is running: drain input so nothing happens behind it, and sleep */
 			while (input_poll(now) != KEY_NONE_) {}
@@ -270,8 +271,16 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 				if (mainlink_script_running()) console_text();
 			}
 			was_active = 0;
+			ui_game_events();                    /* the menu button: the in-game menu wakes the shell */
+			if (ui_ingame_open()) continue;
 			usleep(200000);
 			continue;
+		}
+		if (!was_active && ui_ingame_open()) {
+			/* over a game: the in-game menu drew itself in full before it was shown; another full
+			   repaint (below) would flicker on top of it */
+			plog("in-game menu");
+			was_active = 1;
 		}
 		if (!was_active) {
 			plog("back in the menu");

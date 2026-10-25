@@ -28,6 +28,17 @@ int mainlink_script_result(void);
 /* MiSTer's controller mapping, run by Main for the shell (phosphor-main api 4): what is "start VVVV:PPPP",
  * "skip" or "cancel"; 0 sent. mainlink_map_state: 1 while it runs; step is MiSTer's (-100 before the
  * first), done/saved once it's over, err when Main refused */
+/* API 5 (phosphor-main disc-support): the dock's CD/DVD drive and Phosphor's in-game menu */
+int mainlink_has_disc(void);
+int mainlink_has_ingame(void);
+int mainlink_in_game(void);           /* a game core is running */
+int mainlink_disc_changed(void);      /* 1 once after the drive changed (ask phosphord "disc") */
+int mainlink_menu_button(void);       /* 1 once: the menu button was pressed briefly in a game */
+int mainlink_ingame_ended(void);      /* 1 once: Main took the in-game screen back */
+int mainlink_disc_enable(int on);     /* Settings › Discs; kept for reconnects */
+int mainlink_ingame(int on);          /* Phosphor's screen over the game (controllers to Phosphor), or off */
+int mainlink_ingame_osd(void);        /* to MiSTer's menu, from the in-game menu */
+int mainlink_quit_game(void);         /* leave the game: the menu core (Phosphor) again */
 int mainlink_can_map(void);
 int mainlink_map(const char *what);
 int mainlink_map_state(int *step, int *done, int *saved, char *dev, size_t dn, char *err, size_t en);

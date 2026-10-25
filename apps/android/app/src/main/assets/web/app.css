@@ -207,3 +207,12 @@ textarea.f { min-height: 140px; resize: vertical; }
 	#conn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
 .row .t .tags .tag { display: inline-block; }
+/* the disc in the dock's drive (Library › Disc) */
+.card.drive { gap: 12px; }
+.disc { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.disc .cover { width: 56px; height: 74px; flex: none; border-radius: 8px; object-fit: cover; background: var(--panel2); border: 1px solid var(--line); }
+.disc .t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.disc .t .lbl { margin: 0; }
+.disc .t b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disc .t span { font-size: 13px; color: var(--dim); }
+.disc .t span.warnc { color: var(--warn); }
