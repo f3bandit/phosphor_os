@@ -402,7 +402,159 @@ func amLoose(all []*LREntry, title string) (*LREntry, string) {
 			return best(groups[pick]), "fuzzy"
 		}
 	}
+	if len(groups) == 0 {
+		// a translated title: no main title in common (#142)
+		if gs := amTranslated(all, base); len(gs) > 0 {
+			return best(func() []cand {
+				var cs []cand
+				for _, e := range gs {
+					cs = append(cs, cand{e, score(e)})
+				}
+				return cs
+			}()), "translated"
+		}
+	}
 	return nil, ""
+}
+
+// ---------- translated titles (#142) ----------
+
+// amParts: a name's words (amWords) in its main title and its subtitle
+func amParts(t string) (main, sub []string) {
+	m := amMain(t)
+	main = strings.Fields(amWords(m))
+	if m != t {
+		sub = strings.Fields(amWords(strings.TrimSpace(strings.TrimPrefix(t, m))))
+	}
+	return
+}
+
+func amNums(ws []string) string {
+	var n []string
+	for _, w := range ws {
+		if strings.Trim(w, "0123456789") == "" {
+			n = append(n, w)
+		}
+	}
+	return strings.Join(n, " ")
+}
+
+// amRare: a word that tells games apart: 5 letters or more, not a number, not "super"
+func amRare(w string) bool { return len(w) >= 5 && w != "super" && strings.Trim(w, "0123456789") != "" }
+
+// amOneLetter: two words of 6 letters or more with one letter changed, added or left out ("Nankoku" / "Nangoku")
+func amOneLetter(a, b string) bool {
+	if len(a) < 6 || len(b) < 6 || a == b {
+		return false
+	}
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	if len(b)-len(a) > 1 {
+		return false
+	}
+	i := 0
+	for i < len(a) && a[i] == b[i] {
+		i++
+	}
+	if len(a) == len(b) {
+		return a[i+1:] == b[i+1:]
+	}
+	return a[i:] == b[i+1:]
+}
+
+// amTranslated: the list's entries for the one game a translated or re-spelt title is, by the first
+// of these that points at exactly one game:
+//  1. the same words with one long word spelt one letter differently (Nankoku / Nangoku Shounen Papuwa-kun)
+//  2. the same subtitle of two words or more, the numbers matching (Demon Child Zenki / Kishin Douji
+//     Zenki - Battle Raiden)
+//  3. two telling words in common, one in the main title and one in the subtitle (a main title's word
+//     in their main title too), half or more of each name's words, the numbers matching (Mysterious Dungeon 2 - Shiren / Fushigi no Dungeon 2 -
+//     Fuurai no Shiren)
+func amTranslated(all []*LREntry, base string) []*LREntry {
+	om, os := amParts(base)
+	ow := append(append([]string{}, om...), os...)
+	if len(ow) < 2 {
+		return nil
+	}
+	nums := amNums(ow)
+	osK := strings.Join(os, "")
+	rule := [3]map[string][]*LREntry{{}, {}, {}}
+	for _, e := range all {
+		if k, _ := amKind(e.Name); k != "" {
+			continue
+		}
+		nb := amStrip(e.Name)
+		tm, ts := amParts(nb)
+		tw := append(append([]string{}, tm...), ts...)
+		if amNums(tw) != nums {
+			continue
+		}
+		key := strings.Join(tw, " ")
+		// 1. one letter
+		if len(tw) == len(ow) {
+			diff, ok := 0, true
+			for i := range ow {
+				if ow[i] == tw[i] {
+					continue
+				}
+				if amOneLetter(ow[i], tw[i]) {
+					diff++
+				} else {
+					ok = false
+					break
+				}
+			}
+			if ok && diff == 1 {
+				rule[0][key] = append(rule[0][key], e)
+			}
+		}
+		// 2. the same subtitle
+		if len(os) >= 2 && len(osK) >= 10 && strings.Join(ts, "") == osK {
+			rule[1][key] = append(rule[1][key], e)
+		}
+		// 3. telling words in both parts
+		if len(os) > 0 && len(ts) > 0 {
+			has := func(ws []string, w string) bool {
+				for _, x := range ws {
+					if x == w {
+						return true
+					}
+				}
+				return false
+			}
+			inMain, inSub, n, moved := false, false, 0, false
+			for _, w := range ow {
+				if amRare(w) && has(tw, w) {
+					n++
+					inMain = inMain || has(om, w)
+					inSub = inSub || has(os, w)
+					moved = moved || (has(om, w) && !has(tm, w)) // our main title's word only in their subtitle: another game
+				}
+			}
+			if n >= 2 && inMain && inSub && !moved && 2*n >= len(amRareOnly(ow)) && 2*n >= len(amRareOnly(tw)) {
+				rule[2][key] = append(rule[2][key], e)
+			}
+		}
+	}
+	for _, r := range rule {
+		if len(r) == 1 {
+			for _, es := range r {
+				return es
+			}
+		}
+	}
+	return nil
+}
+
+func amRareOnly(ws []string) []string {
+	var out []string
+	for _, w := range ws {
+		if amRare(w) {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // amSameWord: the same word, or one spelt a little shorter ("Saiya" / "Saiyan", "Gokuu" / "Goku")

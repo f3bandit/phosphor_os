@@ -142,9 +142,6 @@ suspend fun tgdbLookup(s: ScrapeRun, g: SGame, r: SRes): Int {
 
 private val ssLock = Mutex() // one request at a time (a user's thread limit)
 
-/** a developer login, or the regular screenscraper.fr login on its own (used for both then) */
-private fun ssDev(s: ScrapeRun, k: String, userK: String) =
-    if (s.acct("screenscraper", "devid").isNotEmpty()) s.acct("screenscraper", k) else s.acct("screenscraper", userK)
 
 private fun langText(arr: JSONArray, field: String): String {
     var first: JSONObject? = null
@@ -160,16 +157,25 @@ suspend fun ssLookup(s: ScrapeRun, g: SGame, r: SRes): Int {
     val p = platOf[g.sys] ?: return 0
     if (g.crc.isEmpty() && g.serial.isEmpty()) return 0
     val nm = if (g.arcade) g.serial else g.title
-    var u = "https://api.screenscraper.fr/api2/jeuInfos.php?devid=${netEscape(ssDev(s, "devid", "user"))}&devpassword=${netEscape(ssDev(s, "devpassword", "password"))}" +
+    val (devid, devpw) = ssDevLogin(s::acct)
+    var u = "https://api.screenscraper.fr/api2/jeuInfos.php?devid=${netEscape(devid)}&devpassword=${netEscape(devpw)}" +
         "&softname=Phosphor&output=json&ssid=${netEscape(s.acct("screenscraper", "user"))}&sspassword=${netEscape(s.acct("screenscraper", "password"))}" +
         "&systemeid=${p.ss}&romtype=rom&romnom=${netEscape(nm)}"
     if (g.crc.isNotEmpty()) u += "&crc=" + g.crc
     if (g.disc && g.serial.isNotEmpty()) u += "&serialnum=" + netEscape(g.serial)
     if (g.size > 0) u += "&romtaille=" + g.size
     val res = ssLock.withLock { netRequest("GET", u, max = 16L shl 20) }
-    if (res.rc == 2) { s.note("ScreenScraper refused the login (HTTP ${res.http})"); return 0 }
-    if (res.http == 430 || res.http == 429) return -1
-    if (res.rc != 0) return if (res.rc < 0) -1 else 0
+    if (res.http == 429) return -1   // too fast: later
+    val (msg, stop0) = ssAnswer(res.rc, res.http, res.body)
+    if (msg.isNotEmpty()) {
+        var stop = stop0
+        var m = msg
+        if (!stop && ++s.ssFails >= 3) { stop = true; m = "$msg: stopped asking it for this run (3 failed in a row)" }
+        if (stop) { if (s.ssOff.isEmpty()) s.ssOff = m; s.note(m) }
+        return if (res.rc < 0) -1 else 0
+    }
+    s.ssFails = 0
+    if (res.rc != 0) return 0
     val j = parse(res.body) ?: return 0
     val jeu = jo(jo(j, "response"), "jeu") ?: return 0
     if (g.official.isEmpty()) langText(ja(jeu, "noms"), "text").let { if (it.isNotEmpty()) g.official = it }

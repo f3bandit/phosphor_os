@@ -11,9 +11,15 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.9.2"
+        versionCode = 13
+        versionName = "0.9.3"
+        // Phosphor's own ScreenScraper developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD
+        // in the environment), never in the repo; empty without it
+        fun lit(v: String?) = "\"" + (v ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        buildConfigField("String", "SS_DEVID", lit(System.getenv("PHOSPHOR_SS_DEVID")))
+        buildConfigField("String", "SS_DEVPASSWORD", lit(System.getenv("PHOSPHOR_SS_DEVPASSWORD")))
     }
+    buildFeatures { buildConfig = true }
 
     buildTypes {
         release {

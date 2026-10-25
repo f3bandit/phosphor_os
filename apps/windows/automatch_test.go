@@ -96,6 +96,14 @@ func TestAmLoose(t *testing.T) {
 		{Name: "Tengai Makyou - Fuuun Kabuki Den (Japan)"},
 		{Name: "Star Ocean - The Second Story (USA) (Disc 1)"},
 		{Name: "Star Ocean - The Second Story (USA) (Disc 2)"},
+		{Name: "Kishin Douji Zenki - Battle Raiden (Japan)"},
+		{Name: "Kishin Douji Zenki - Tenchi Meidou (Japan)"},
+		{Name: "Fushigi no Dungeon 2 - Fuurai no Shiren (Japan)"},
+		{Name: "Nangoku Shounen Papuwa-kun (Japan)"},
+		{Name: "Final Fantasy Legend, The (USA)"},
+		{Name: "Final Fantasy Adventure (USA)"},
+		{Name: "Final Fantasy Mystic Quest (USA)"},
+		{Name: "Army Men - World War - Final Front (USA)"},
 	}
 	for _, c := range []struct{ in, want string }{
 		{"Rockman 7 (Japan)", "Rockman 7 - Shukumei no Taiketsu! (Japan)"},
@@ -105,6 +113,13 @@ func TestAmLoose(t *testing.T) {
 		{"Tengai Makyou - Ziria (English v1.2)", ""},
 		{"Dragon-Ball-Z - Super Gokuden 2", ""}, // shares only "super" and "2" with Super Butouden 2
 		{"Star Ocean - The Second Story - Disc 2 (U) [UNDUB]", "Star Ocean - The Second Story (USA) (Disc 2)"},
+		// translated titles (#142)
+		{"Demon Child Zenki - Battle Raiden", "Kishin Douji Zenki - Battle Raiden (Japan)"},
+		{"Mysterious Dungeon 2 - Shiren the Wanderer", "Fushigi no Dungeon 2 - Fuurai no Shiren (Japan)"},
+		{"Nankoku Shounen Papuwa-kun", "Nangoku Shounen Papuwa-kun (Japan)"},
+		{"Final Fantasy Tactics", ""}, // a series: Final Fantasy Legend, Final Fantasy Adventure ...
+		{"Tengai Makyou Zero - Something Else", ""},
+		{"Final Fantasy Tactics FF6 - World of Ruin", ""}, // "Final" only in Army Men's subtitle
 	} {
 		e, _ := amLoose(all, c.in) // Rockman 7: the same main title; Zelda: the same words
 		got := ""

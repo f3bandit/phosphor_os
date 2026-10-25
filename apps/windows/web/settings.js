@@ -237,7 +237,7 @@ class AppSettings {
 		box.innerHTML = "";
 		this.srcs.forEach((x, i) => {
 			const a = k => (this.acc.find(q => q.sec === x.id && q.key === k) || {}).set;
-			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" && a("user") ? "Needs the password" : "Needs a login";
+			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" ? (!a("user") ? "Needs your login" : !a("password") ? "Needs the password" : "Needs a developer ID") : "Needs a login";
 			const el = h(`<div class="row src" data-nav><span class="n"><b>${i + 1}. ${esc(x.name)}</b></span><span class="v">${st}</span></div>`).firstChild;
 			el.onclick = () => { this.srcs[i].on = !this.srcs[i].on; this.saveSources(i); };
 			el._onfocus = () => { this.sx = i; this.drawAccount(x); };
@@ -264,7 +264,7 @@ class AppSettings {
 		const p = $("#acct");
 		if (!p || !x) return;
 		const F = {
-			screenscraper: [["user", "User name", "text"], ["password", "Password", "password"], ["devid", "Developer id (only if you have one)", "text"], ["devpassword", "Developer password", "password"]],
+			screenscraper: [["user", "User name", "text"], ["password", "Password", "password"], ["devid", S.ss_builtin ? "Developer ID (only if you have your own)" : "Developer ID", "text"], ["devpassword", "Developer password", "password"]],
 			thegamesdb: [["apikey", "API key (free, from thegamesdb.net)", "password"]],
 			igdb: [["client_id", "Client ID (Twitch developer app)", "text"], ["client_secret", "Client secret", "password"]],
 		}[x.id];
@@ -273,7 +273,7 @@ class AppSettings {
 			arcadedb: "No account. Arcade games by their MAME set name.",
 			launchbox: "No account. LaunchBox's games database, downloaded once (about 110 MB) and kept on the SS1.",
 			thegamesdb: "Needs a free API key from thegamesdb.net.",
-			screenscraper: "Your screenscraper.fr login is enough (a free account). A developer login works too, if you have one; with both, the developer login is used for the program and yours for your lookups a day.",
+			screenscraper: "Needs your free screenscraper.fr login and a developer ID. Phosphor's own developer ID is on its way from ScreenScraper; until it comes, use your own if you have one (ask on the screenscraper.fr forum). Your login counts the lookups against your account (20,000 a day for a member).",
 			igdb: "Needs a free Twitch developer app (dev.twitch.tv): its Client ID and secret.",
 		};
 		let html = `<h2>${esc(x.name)}</h2><p class="note">${esc(ABOUT[x.id] || "")}</p>`;
@@ -284,10 +284,19 @@ class AppSettings {
 				const ph = type === "password" ? (a.set ? "Saved (type to change)" : "Not set") : "Not set";
 				html += `<div class="field"><label for="ac_${k}">${esc(label)}</label><input id="ac_${k}" type="${type}" data-nav autocomplete="off" placeholder="${esc(ph)}" value="${esc(val)}"></div>`;
 			}
-			html += `<div class="acts"><button class="btn primary" id="acsave" data-nav>Save</button></div><p class="note">Saved on the SS1 (phosphor/config/scraper.ini), sent over your home network only.</p>`;
+			html += `<div class="acts"><button class="btn primary" id="acsave" data-nav>Save</button>${x.id === "screenscraper" ? `<button class="btn" id="accheck" data-nav>Check login</button>` : ""}</div>${x.id === "screenscraper" ? `<p class="note" id="acst"></p>` : ""}<p class="note">Saved on the SS1 (phosphor/config/scraper.ini), sent over your home network only.</p>`;
 		}
 		p.innerHTML = html;
 		if (!F) return;
+		if ($("#accheck")) $("#accheck").onclick = async () => {
+			const st = $("#acst");
+			st.className = "note"; st.textContent = "Asking ScreenScraper…";
+			try {
+				const j = await api("/api/sscheck");
+				if (!j.ok) throw new Error(j.error);
+				st.className = "note " + (j.works ? "good" : "bad"); st.textContent = j.message;
+			} catch (e) { st.className = "note bad"; st.textContent = e.message; }
+		};
 		$("#acsave").onclick = async () => {
 			try {
 				for (const [k, , type] of F) {

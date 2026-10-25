@@ -834,11 +834,11 @@ const SOURCE_ABOUT = {
 	arcadedb: "No account. Arcade games by their MAME set name.",
 	launchbox: "No account. LaunchBox's games database: on the phone it's downloaded once (about 110 MB) and kept in the app's cache.",
 	thegamesdb: "Needs a free API key from thegamesdb.net.",
-	screenscraper: "Your screenscraper.fr login is enough (a free account). A developer login works too, if you have one.",
+	screenscraper: "Needs your free screenscraper.fr login and a developer ID. Phosphor's own developer ID is on its way from ScreenScraper; until it comes, use your own if you have one (ask on the screenscraper.fr forum).",
 	igdb: "Needs a free Twitch developer app (dev.twitch.tv): its Client ID and secret.",
 };
 const SOURCE_FIELDS = {
-	screenscraper: [["user", "User name", false], ["password", "Password", true], ["devid", "Developer id (only if you have one)", false], ["devpassword", "Developer password", true]],
+	screenscraper: [["user", "User name", false], ["password", "Password", true], ["devid", "Developer ID", false], ["devpassword", "Developer password", true]],
 	thegamesdb: [["apikey", "API key (free, from thegamesdb.net)", true]],
 	igdb: [["client_id", "Client ID (Twitch developer app)", false], ["client_secret", "Client secret", true]],
 };
@@ -904,7 +904,7 @@ PAGES.boxart = { async show(c, p) {
 		await c.every(async () => { try { ss1 = await call("scrape_progress"); err = ""; } catch (e) { err = e.message; } draw(); return ss1 && ss1.running ? 2000 : 6000; });
 		return;
 	}
-	let sources = null, accounts = [], sel = 0, vals = {}, err = "", busy = false;
+	let sources = null, accounts = [], sel = 0, vals = {}, err = "", busy = false, ssMsg = null;
 	const fill = () => {
 		vals = {};
 		const x = sources && sources[sel];
@@ -916,13 +916,15 @@ PAGES.boxart = { async show(c, p) {
 		const x = sources[sel];
 		c.draw(errp(err) + note("Asked in this order, by the MiSTer and by the phone. Tap one for what it needs; the switch turns it on or off.")
 			+ flat(sources.map((s, i) => {
-				const st = !s.on ? "Off" : s.ready ? "On" : s.id === "screenscraper" && isSet(s, "user") ? "Needs the password" : "Needs a login";
+				const st = !s.on ? "Off" : s.ready ? "On" : s.id === "screenscraper" ? (!isSet(s, "user") ? "Needs your login" : !isSet(s, "password") ? "Needs the password" : "Needs a developer ID") : "Needs a login";
 				return `<div class="srow${i === sel ? " on" : ""}"><button type="button" class="t" data-act="sel" data-arg="${i}"><b>${i + 1}. ${esc(s.name)}</b><span class="${s.on && s.ready ? "good" : s.on ? "warnc" : ""}">${esc(st)}</span></button>
 					<span class="ctl">${tog(s.on, "toggle").replace("data-act", `data-arg="${i}" data-act`)}<button type="button" class="b" aria-label="Move up" data-act="up" data-arg="${i}"${i ? "" : " disabled"}>↑</button><button type="button" class="b" aria-label="Move down" data-act="down" data-arg="${i}"${i < sources.length - 1 ? "" : " disabled"}>↓</button></span></div>`;
 			}).join(""))
 			+ (x ? lbl(x.name) + note(SOURCE_ABOUT[x.id] || "") + (SOURCE_FIELDS[x.id] ? SOURCE_FIELDS[x.id].map(([k, name, secret]) =>
 				`<div class="flbl">${esc(name)}</div><input class="f" data-in="s:${k}"${secret ? ' type="password"' : ""} autocomplete="off" value="${attr(vals[k] || "")}" placeholder="${secret && isSet(x, k) ? "Saved (type to change)" : "Not set"}">`).join("")
-				+ btn(busy ? "Saving…" : "Save on the MiSTer", "save", { p: true, off: busy }) + note("Saved on the MiSTer (phosphor/config/scraper.ini), sent over your home network only.") : "") : ""));
+				+ `<div class="btns">${btn(busy ? "Saving…" : "Save on the MiSTer", "save", { p: true, off: busy })}${x.id === "screenscraper" ? btn("Check login", "sscheck") : ""}</div>`
+				+ (x.id === "screenscraper" && ssMsg ? `<p class="${ssMsg.works ? "vw good" : "err"}">${esc(ssMsg.message)}</p>` : "")
+				+ note("Saved on the MiSTer (phosphor/config/scraper.ini), sent over your home network only.") : "") : ""));
 		(SOURCE_FIELDS[x && x.id] || []).forEach(([k]) => { acts["input:s:" + k] = val => { vals[k] = val; }; });
 	};
 	const save = async (list, s) => {
@@ -931,6 +933,7 @@ PAGES.boxart = { async show(c, p) {
 	};
 	acts = {
 		sel: i => { sel = Number(i); fill(); draw(); },
+		sscheck: async () => { ssMsg = { works: true, message: "Asking ScreenScraper…" }; draw(); try { ssMsg = await app("ssCheck", {}); } catch (e) { ssMsg = { works: false, message: e.message }; } draw(); },
 		toggle: i => save(sources.map((x, j) => j === Number(i) ? Object.assign({}, x, { on: !x.on }) : x), Number(i)),
 		up: i => { i = Number(i); const l = sources.slice(); [l[i - 1], l[i]] = [l[i], l[i - 1]]; return save(l, i - 1); },
 		down: i => { i = Number(i); const l = sources.slice(); [l[i + 1], l[i]] = [l[i], l[i + 1]]; return save(l, i + 1); },

@@ -84,14 +84,18 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi, priv
         Source("arcadedb", "ArcadeDB", { true }) { s, g, r -> adbLookup(s, g, r) },
         Source("launchbox", "LaunchBox", { true }) { s, g, r -> launchbox.lookup(s, g, r) },
         Source("thegamesdb", "TheGamesDB", { it.acct("thegamesdb", "apikey").isNotEmpty() }) { s, g, r -> tgdbLookup(s, g, r) },
-        Source("screenscraper", "ScreenScraper", {
-            (it.acct("screenscraper", "devid").isNotEmpty() && it.acct("screenscraper", "devpassword").isNotEmpty()) ||
-                (it.acct("screenscraper", "user").isNotEmpty() && it.acct("screenscraper", "password").isNotEmpty())
+        Source("screenscraper", "ScreenScraper", { run ->
+            val m = ssMissing(run::acct)
+            if (m.isNotEmpty()) run.note(m)
+            m.isEmpty() && run.ssOff.isEmpty()
         }) { s, g, r -> ssLookup(s, g, r) },
         Source("igdb", "IGDB", { it.acct("igdb", "client_id").isNotEmpty() && it.acct("igdb", "client_secret").isNotEmpty() }) { s, g, r -> igdbLookup(s, g, r) },
     )
 
     fun acct(sec: String, key: String) = accounts[sec]?.get(key) ?: ""
+    /** ScreenScraper this run: off after a refused login, a used-up day or 3 failed requests in a row */
+    @Volatile var ssOff = ""
+    @Volatile var ssFails = 0
     fun status(t: String) = PhoneScrape.update { it.copy(status = t) }
     fun note(t: String) = PhoneScrape.update { if (t in it.notes) it else it.copy(notes = it.notes + t) }
 

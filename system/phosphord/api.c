@@ -510,6 +510,8 @@ static char *cmd_candidates(sqlite3 *db, cJSON *req)
 		sqlite3_finalize(st);
 	}
 	title_norm(me, mine, sizeof(mine));
+	char mysub[512];
+	title_subtitle(me, mysub, sizeof(mysub));
 	cand_t *c = NULL;
 	int n = 0, cap = 0;
 	if (sqlite3_prepare_v2(db, "SELECT g.id, g.title FROM games g WHERE g.system_id=? AND g.id<>? AND g.based_on IS NULL", -1, &st, NULL) != SQLITE_OK)
@@ -524,6 +526,13 @@ static char *cmd_candidates(sqlite3 *db, cJSON *req)
 		if (n == cap) { cap = cap ? cap * 2 : 256; c = realloc(c, sizeof(*c) * (size_t)cap); }
 		c[n].id = sqlite3_column_int64(st, 0);
 		c[n].score = title_similarity(q[0] ? q : mine, norm);
+		if (!q[0] && mysub[0]) {
+			/* the same subtitle under another main title: a translated name (Demon Child Zenki /
+			   Kishin Douji Zenki - Battle Raiden, #142) */
+			char sub[512];
+			title_subtitle(t, sub, sizeof(sub));
+			if (!strcmp(sub, mysub) && c[n].score < 900) c[n].score = 900;
+		}
 		c[n].title = strdup(t);
 		n++;
 	}
@@ -1478,6 +1487,7 @@ char *api_handle(sqlite3 *db, const char *request)
 		cJSON_AddNumberToObject(o, "found", pr.found);
 		cJSON_AddNumberToObject(o, "not_found", pr.not_found);
 		cJSON_AddNumberToObject(o, "later", pr.later);
+		cJSON_AddStringToObject(o, "note", pr.note);
 		/* per system, in the order the scraper goes through them: games, with box art, still to look up */
 		cJSON *arr = cJSON_AddArrayToObject(o, "systems");
 		sqlite3_stmt *st;

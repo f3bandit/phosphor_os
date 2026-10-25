@@ -184,7 +184,75 @@ fun amLoose(all: List<LrEntry>, title: String): Pair<LrEntry?, String> {
         if (top >= 2 && top > second && top * 3 >= sub.size * 2 && top * 2 >= shared[pick]!!.second)
             return groups[pick]!!.maxByOrNull { score(it) } to "fuzzy"
     }
+    // a translated title: no main title in common (#142)
+    if (groups.isEmpty()) amTranslated(all, base).takeIf { it.isNotEmpty() }?.let { gs -> return gs.maxByOrNull { score(it) } to "translated" }
     return null to ""
+}
+
+// ---------- translated titles (#142, the same rules as Phosphor for Windows' automatch.go) ----------
+
+private fun amParts(t: String): Pair<List<String>, List<String>> {
+    val m = amMain(t)
+    return fields(amWords(m)) to (if (m != t) fields(amWords(t.removePrefix(m).trim())) else emptyList())
+}
+
+private fun amNums(ws: List<String>) = ws.filter { w -> w.trim { it in '0'..'9' }.isEmpty() }.joinToString(" ")
+
+/** a word that tells games apart: 5 letters or more, not a number, not "super" */
+private fun amRare(w: String) = w.length >= 5 && w != "super" && w.trim { it in '0'..'9' }.isNotEmpty()
+
+/** two words of 6 letters or more with one letter changed, added or left out ("Nankoku" / "Nangoku") */
+fun amOneLetter(a0: String, b0: String): Boolean {
+    var a = a0; var b = b0
+    if (a.length < 6 || b.length < 6 || a == b) return false
+    if (a.length > b.length) { val t = a; a = b; b = t }
+    if (b.length - a.length > 1) return false
+    var i = 0
+    while (i < a.length && a[i] == b[i]) i++
+    return if (a.length == b.length) a.substring(i + 1) == b.substring(i + 1) else a.substring(i) == b.substring(i + 1)
+}
+
+/** the list's entries for the one game a translated or re-spelt title is: one letter off in a long word;
+ *  the same subtitle of two words or more; two telling words in common across main title and subtitle
+ *  (a main title's word in their main title too), half or more of each name's words. Numbers must match. */
+fun amTranslated(all: List<LrEntry>, base: String): List<LrEntry> {
+    val (om, os) = amParts(base)
+    val ow = om + os
+    if (ow.size < 2) return emptyList()
+    val nums = amNums(ow)
+    val osK = os.joinToString("")
+    val rule = List(3) { LinkedHashMap<String, ArrayList<LrEntry>>() }
+    for (e in all) {
+        if (amKind(e.name).first.isNotEmpty()) continue
+        val (tm, ts) = amParts(amStrip(e.name))
+        val tw = tm + ts
+        if (amNums(tw) != nums) continue
+        val key = tw.joinToString(" ")
+        if (tw.size == ow.size) {
+            var diff = 0; var ok = true
+            for (i in ow.indices) {
+                if (ow[i] == tw[i]) continue
+                if (amOneLetter(ow[i], tw[i])) diff++ else { ok = false; break }
+            }
+            if (ok && diff == 1) rule[0].getOrPut(key) { ArrayList() }.add(e)
+        }
+        if (os.size >= 2 && osK.length >= 10 && ts.joinToString("") == osK) rule[1].getOrPut(key) { ArrayList() }.add(e)
+        if (os.isNotEmpty() && ts.isNotEmpty()) {
+            var inMain = false; var inSub = false; var n = 0; var moved = false
+            for (w in ow) {
+                if (amRare(w) && w in tw) {
+                    n++
+                    inMain = inMain || w in om
+                    inSub = inSub || w in os
+                    moved = moved || (w in om && w !in tm)
+                }
+            }
+            if (n >= 2 && inMain && inSub && !moved && 2 * n >= ow.count { amRare(it) } && 2 * n >= tw.count { amRare(it) })
+                rule[2].getOrPut(key) { ArrayList() }.add(e)
+        }
+    }
+    for (r in rule) if (r.size == 1) return r.values.first()
+    return emptyList()
 }
 
 // ---------- the matches kept for review ----------

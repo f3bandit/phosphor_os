@@ -213,14 +213,6 @@ func tgdbLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 
 var ssLock sync.Mutex // one request at a time (a user's thread limit)
 
-// a developer login, or the regular screenscraper.fr login on its own (used for both then)
-func ssDev(s *scrapeRun, k, userK string) string {
-	if s.acct("screenscraper", "devid") != "" {
-		return s.acct("screenscraper", k)
-	}
-	return s.acct("screenscraper", userK)
-}
-
 func langText(arr []any, field string) string {
 	var first map[string]any
 	for _, x := range arr {
@@ -250,8 +242,9 @@ func ssLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 	if g.Arcade {
 		nm = g.Serial
 	}
+	devid, devpw := ssDevLogin(s.acct)
 	u := fmt.Sprintf("https://api.screenscraper.fr/api2/jeuInfos.php?devid=%s&devpassword=%s&softname=Phosphor&output=json&ssid=%s&sspassword=%s&systemeid=%d&romtype=rom&romnom=%s",
-		netEscape(ssDev(s, "devid", "user")), netEscape(ssDev(s, "devpassword", "password")),
+		netEscape(devid), netEscape(devpw),
 		netEscape(s.acct("screenscraper", "user")), netEscape(s.acct("screenscraper", "password")), p.ss, netEscape(nm))
 	if g.CRC != "" {
 		u += "&crc=" + g.CRC
@@ -265,17 +258,34 @@ func ssLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 	ssLock.Lock()
 	b, rc, http := netRequest(ctx, "GET", u, nil, nil, 16<<20)
 	ssLock.Unlock()
-	if rc == 2 {
-		s.note(fmt.Sprintf("ScreenScraper refused the login (HTTP %d)", http))
-		return 0
-	}
-	if http == 430 || http == 429 {
+	if http == 429 { // too fast: later
 		return -1
 	}
-	if rc != 0 {
+	if msg, stop := ssAnswer(rc, http, b); msg != "" {
+		s.mu.Lock()
+		if !stop {
+			s.ss.fails++
+			stop = s.ss.fails >= 3
+			if stop {
+				msg += ": stopped asking it for this run (3 failed in a row)"
+			}
+		}
+		if stop && s.ss.off == "" {
+			s.ss.off = msg
+		}
+		s.mu.Unlock()
+		if stop {
+			s.note(msg)
+		}
 		if rc < 0 {
 			return -1
 		}
+		return 0
+	}
+	s.mu.Lock()
+	s.ss.fails = 0
+	s.mu.Unlock()
+	if rc != 0 {
 		return 0
 	}
 	var j map[string]any

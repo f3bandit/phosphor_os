@@ -4,6 +4,7 @@
  * Keys go in config/scraper.ini; a source without its key is skipped. ScreenScraper is asked by
  * content (CRC32 / product code); TheGamesDB and IGDB by the official name a content match gave. */
 #include "scrape_src.h"
+#include "scraper.h"
 #include "cJSON.h"
 #include "ident.h"
 #include "log.h"
@@ -105,17 +106,52 @@ static int tgdb_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 
 const source_t SRC_TGDB = { "thegamesdb", "TheGamesDB", "[thegamesdb] apikey", tgdb_ready, tgdb_lookup };
 
-/* ---------- ScreenScraper (screenscraper.fr: Phosphor's developer id + optional user login) ---------- */
+/* ---------- ScreenScraper (screenscraper.fr), the way Console Mode does it (#137) ----------
+ * Every request needs a developer login (devid / devpassword: Phosphor's own, built in, or the
+ * person's own from scraper.ini) and the person's screenscraper.fr login (user / password). The
+ * person's login is never sent as the developer login: ScreenScraper refuses that. */
 
-/* a developer login, or a regular screenscraper.fr login on its own (used for both then) */
+/* Phosphor's own developer login: a build secret (cmake -DPHOS_SS_DEVID=... -DPHOS_SS_DEVPASSWORD=...),
+   never in the repo. Empty until ScreenScraper gives one. */
+#ifdef PHOS_SS_SECRET
+#include "ss_secret.h"
+#endif
+#ifndef PHOS_SS_DEVID
+#define PHOS_SS_DEVID ""
+#endif
+#ifndef PHOS_SS_DEVPASSWORD
+#define PHOS_SS_DEVPASSWORD ""
+#endif
+
+static const char *ss_devid(void) { return *PHOS_SS_DEVID && *PHOS_SS_DEVPASSWORD ? PHOS_SS_DEVID : scfg("screenscraper", "devid"); }
+static const char *ss_devpw(void) { return *PHOS_SS_DEVID && *PHOS_SS_DEVPASSWORD ? PHOS_SS_DEVPASSWORD : scfg("screenscraper", "devpassword"); }
+
+/* this run: off after a refused login, a used-up day, or 3 failed requests in a row */
+static char ss_off[160];
+static int ss_fails;
+void ss_run_reset(void) { ss_off[0] = 0; ss_fails = 0; }
+
 static int ss_ready(void)
 {
-	return (*scfg("screenscraper", "devid") && *scfg("screenscraper", "devpassword")) ||
-	       (*scfg("screenscraper", "user") && *scfg("screenscraper", "password"));
+	return *scfg("screenscraper", "user") && *scfg("screenscraper", "password") && *ss_devid() && *ss_devpw() && !ss_off[0];
 }
-static const char *ss_dev(const char *k, const char *user_k)
+
+/* ScreenScraper's answer in words ("" when it's fine: found or not found); *stop: off for the run */
+static const char *ss_answer(int rc, int http, const char *body, int *stop)
 {
-	return *scfg("screenscraper", "devid") ? scfg("screenscraper", k) : scfg("screenscraper", user_k);
+	*stop = 1;
+	if (body && strstr(body, "Erreur de login") && (strstr(body, "veloppeur") || strstr(body, "VELOPPEUR")))
+		return "ScreenScraper refused the developer ID";
+	if (body && strstr(body, "Erreur de login")) return "ScreenScraper refused your login: check the user name and password";
+	if (http == 401) return "ScreenScraper's API is closed to non-members right now: try later";
+	if (http == 423) return "ScreenScraper is down for maintenance: try later";
+	if (http == 426) return "ScreenScraper blocked this version of Phosphor: update it";
+	if (http == 430) return "Today's ScreenScraper lookups are used up: it goes on tomorrow";
+	if (http == 431) return "Too many not-found lookups at ScreenScraper today: it goes on tomorrow";
+	if (http == 403) return "ScreenScraper refused the request (HTTP 403)";
+	*stop = 0;
+	if (rc < 0) return "Can't reach screenscraper.fr";
+	return "";
 }
 
 /* the English text from a [{langue, text}] list, else the first */
@@ -137,8 +173,8 @@ static int ss_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 	if (!p) return 0;
 	if (!g->crc[0] && !g->serial[0]) return 0;
 	char a[200], b[200], c[200], d[200], nm[700], ser[120], url[2000];
-	net_escape(ss_dev("devid", "user"), a, sizeof(a));
-	net_escape(ss_dev("devpassword", "password"), b, sizeof(b));
+	net_escape(ss_devid(), a, sizeof(a));
+	net_escape(ss_devpw(), b, sizeof(b));
 	net_escape(scfg("screenscraper", "user"), c, sizeof(c));
 	net_escape(scfg("screenscraper", "password"), d, sizeof(d));
 	net_escape(g->arcade ? g->serial : g->title, nm, sizeof(nm));
@@ -151,9 +187,20 @@ static int ss_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 	char *body = NULL;
 	int http = 0;
 	int rc = net_request("GET", url, NULL, NULL, &body, NULL, &http);
-	if (rc == 2) { plog("ScreenScraper refused the login (HTTP %d)", http); free(body); return 0; }
-	if (http == 430 || http == 429) { free(body); return -1; }      /* over the daily/thread limit: later */
-	if (rc) { free(body); return rc < 0 ? -1 : 0; }
+	if (http == 429) { free(body); return -1; }                     /* too fast: later */
+	int stop;
+	const char *msg = ss_answer(rc, http, body, &stop);
+	if (*msg) {
+		if (!stop && ++ss_fails >= 3) {
+			stop = 1;
+			snprintf(ss_off, sizeof(ss_off), "%s: stopped asking it for this run (3 failed in a row)", msg);
+		} else if (stop) snprintf(ss_off, sizeof(ss_off), "%s", msg);
+		if (stop) { plog("%s", ss_off); scrape_note(ss_off); }
+		free(body);
+		return rc < 0 ? -1 : 0;
+	}
+	ss_fails = 0;
+	if (rc) { free(body); return 0; }
 	cJSON *j = cJSON_Parse(body);
 	free(body);
 	cJSON *jeu = cJSON_GetObjectItem(cJSON_GetObjectItem(j, "response"), "jeu");
@@ -183,7 +230,8 @@ art_done:
 	return 1;
 }
 
-const source_t SRC_SCREENSCRAPER = { "screenscraper", "ScreenScraper", "[screenscraper] user, password (or a devid, devpassword)", ss_ready, ss_lookup };
+const source_t SRC_SCREENSCRAPER = { "screenscraper", "ScreenScraper",
+	"[screenscraper] user, password, and a devid, devpassword (until Phosphor's own developer ID is built in)", ss_ready, ss_lookup };
 
 /* ---------- IGDB (api.igdb.com via a Twitch developer app) ---------- */
 

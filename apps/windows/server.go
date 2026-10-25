@@ -132,6 +132,7 @@ func routes(mux *http.ServeMux) {
 	h("/api/sysbk", apiSysbk)     // MiSTer & Linux backups on this PC
 	sdRoutes(h)                   // Tools > SD card flash & health
 	h("/api/scrape", apiScrape)   // box art looked up on this PC
+	h("/api/sscheck", apiSSCheck) // ScreenScraper's Check login
 	h("/api/sshkeys", apiSSHKeys) // this PC's SSH keys, to offer to the SS1 (yes on the TV)
 	h("/api/art/", apiArt)
 }
@@ -141,7 +142,7 @@ func apiState(w http.ResponseWriter, r *http.Request) {
 	c := cfg
 	cfgMu.Unlock()
 	st := map[string]any{"ok": true, "app_version": appVersion, "address": c.Address, "name": c.Name,
-		"paired": c.TokenEnc != "", "accent": c.Accent, "texture": c.Texture}
+		"paired": c.TokenEnc != "", "accent": c.Accent, "texture": c.Texture, "ss_builtin": ssBuiltinID != ""}
 	if c.Address != "" && c.TokenEnc != "" {
 		if b, code, err := call(json.RawMessage(`{"cmd":"status"}`)); err == nil && code == 200 {
 			st["connected"] = true
