@@ -3,6 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.25
+
+### New
+- **Trying video settings safely** (phosphord; the menu, the Windows app and the Android app get
+  their screens for it next): `vset` changes MiSTer's own video settings (resolution, vsync, scaling,
+  HDMI, analog output...) in the ini in use, or switches profile (MiSTer.ini and the MiSTer_*.ini
+  profiles, such as the SuperStation's RGHV, RGsB, SVID and YPbP). The menu restarts with the
+  change, and unless Keep comes within 35 seconds the old file or profile goes back by itself, even
+  with no picture or no app connected. If the power goes before Keep, it goes back at the next start.
+  The old file is kept in phosphor/backups/ini first, like every ini save.
+
 ## 0.27.24
 
 ### Fixes

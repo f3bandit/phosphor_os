@@ -8,6 +8,7 @@
  * and keeps play time. Sleeps in poll() between events. */
 #include "busy.h"
 #include "api.h"
+#include "vtry.h"
 #include "remote.h"
 #include "sshacc.h"
 #include "phantom.h"
@@ -111,6 +112,8 @@ static void serve(sqlite3 *db, client_t *c)
 int main(int argc, char **argv)
 {
 	const char *serial = NULL;
+	/* the video timer switches the profile back with this (vtry.c) */
+	if (argc == 3 && !strcmp(argv[1], "--altcfg")) return vt_altcfg(atoi(argv[2])) < 0;
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--log-serial")) serial = (i + 1 < argc && argv[i + 1][0] == '/') ? argv[++i] : "/dev/ttyS0";
 		else { fprintf(stderr, "usage: phosphord [--log-serial [DEV]]\n"); return 2; }
@@ -120,6 +123,7 @@ int main(int argc, char **argv)
 	log_open(serial);
 	plog("starting");
 	systems_load();
+	vt_boot();                                /* a video try that was never kept goes back */
 	sqlite3 *db = db_open();
 	if (!db) return 1;
 	int lfd = listen_socket();
