@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## Phosphor for Windows 0.2.27
+
+### Changed
+- The hints at the bottom name the PC's keys (Enter, Esc, X, Y, Q/E, M), drawn as keys: the controller
+  in the SuperStation's ports can't drive the Windows app. A controller plugged into the PC still
+  works; once it's used, the hints name its buttons, until a key is pressed again. M now does what Start
+  does on a controller (Keep all on Matched automatically), and opens Settings elsewhere as before.
+
 ## 0.27.34, Phosphor for Windows 0.2.26, Phosphor for Android 0.9.2
 
 ### New
