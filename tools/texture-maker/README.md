@@ -19,13 +19,14 @@ closes by itself a few minutes after its window is closed.
      colour looks (CIE L\*).
    - **Shades** (how many steps), **Darkest shade** (so dark colours stay visible), and
      **Brightest is** *Strongest* or *Faintest*.
-3. **Layout:**
-   - The whole screen (1280×720 base pixels, no repeat) or a tile that repeats. **Auto** tile size
-     makes the tile big enough for every sprite to land about twice at the density picked, so the
-     repeat is a scatter, not a grid of one sprite.
-   - Pixel scale (base pixels per sprite pixel), density and minimum gap.
-   - Angle: random 90° turns, or **Set** any angle (0–359.5°, typed) for every sprite; flip left to right (as it shows on screen) at random, every other sprite, or off.
-   - Grid snap and a seed with **Re-roll**.
+3. **Grid:** the sprites in rows and columns over the whole screen.
+   - Each row has your sprites in the order they were added, one per column, then again from the
+     first.
+   - **Mirror every other:** every other sprite in a row is mirrored left to right.
+   - **Tilt:** any angle (0–359.5°, typed) turns the whole grid, sprites and all, about the middle
+     of the screen.
+   - Pixel scale, column spacing and row spacing (the gap between sprites; every cell is the size
+     of the biggest sprite).
 4. **Look:** *Sprites* (accent on the sprites) or *Inverted* (accent everywhere else), and
    strength. Phosphor's own textures use 0.13.
 5. The preview shows the real strength (or a brighter view to check the layout) in any accent,

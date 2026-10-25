@@ -18,7 +18,7 @@ typedef struct {
 	uint16_t nspr;
 	const tex_sprite_t *spr;
 	const uint8_t *pix;
-	uint16_t npl;                /* sprites placed: x, y, sprite, orientation (4 numbers each) */
+	uint16_t npl;                /* sprites placed: x, y (signed 16-bit), sprite, orientation (4 numbers each) */
 	const uint16_t *pl;          /* orientation: bits 0-1 turns of 90 degrees clockwise, bit 2 mirrored first,
 	                                bit 3 the free angle the other way round (a sprite flipped on screen) */
 	int32_t cq, sq;              /* a free angle (under 90 degrees, clockwise) every sprite is then turned by,

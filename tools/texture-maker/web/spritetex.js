@@ -10,7 +10,8 @@
      spr    each sprite: width, height, and its pixels as shades 0..15 (0 = empty, 15 = full), two to
             a byte (the left one in the high half), each row padded to a whole byte; an array of
             bytes, or base64 in the exported JS
-     pl     each sprite placed: x, y (its top left, base pixels), which sprite, orientation
+     pl     each sprite placed: x, y (its top left, base pixels, signed 16-bit: it may start off the
+            screen), which sprite, orientation
             (bits 0-1: turns of 90 degrees clockwise, bit 2: mirrored left to right before turning,
             bit 3: the free angle below the other way round, for a sprite flipped on screen)
      cq, sq a free angle (under 90 degrees, clockwise) every sprite is turned by after that, about its
@@ -46,7 +47,7 @@ const SpriteTex = (() => {
 		const cq = t.cq === undefined ? 65536 : t.cq, sq = t.sq === undefined ? 0 : t.sq;
 		const free = cq !== 65536 || sq !== 0, cs = cq / 65536, sn0 = sq / 65536;
 		for (let i = 0; i + 3 < t.pl.length; i += 4) {
-			const x0 = t.pl[i], y0 = t.pl[i + 1], o = t.pl[i + 3];
+			const x0 = (t.pl[i] << 16) >> 16, y0 = (t.pl[i + 1] << 16) >> 16, o = t.pl[i + 3];   /* x, y are signed 16-bit (a grid starts off the screen) */
 			const [sw, sh, px] = spr[t.pl[i + 2]];
 			const ow = (o & 1) ? sh : sw, oh = (o & 1) ? sw : sh;
 			for (let wy = tile ? -1 : 0; wy <= (tile ? 1 : 0); wy++)
