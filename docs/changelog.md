@@ -3,7 +3,7 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## Next (0.27.38)
+## 0.27.38, Phosphor for Windows 0.2.31, Phosphor for Android 0.9.6
 
 ### Added
 - **Music.** Phosphor's own music player, with its own tile on the home screen and a Now playing card:
