@@ -18,8 +18,10 @@ int ra_get_cores(char *err, size_t errn);                 /* odelot's cores from
 /* the RetroAchievements core for a system, when logged in and it's there: rbf (for the .mgl) and set name */
 int ra_core_for(const char *sys, char *rbf, size_t rn, char *setname, size_t sn);
 int ra_match(char *err, size_t errn);                     /* match the library to RetroAchievements, in the background */
-cJSON *ra_profile(sqlite3 *db, char *err, size_t errn);   /* the viewer */
-cJSON *ra_game(sqlite3 *db, long long game_id, char *err, size_t errn);
+/* the viewer, answered at once from the last result; *updating while a fresh one is fetched in the background.
+ * NULL with err when there's none yet (with *updating: still asking) */
+cJSON *ra_profile(char *err, size_t errn, int *updating);
+cJSON *ra_game(sqlite3 *db, long long game_id, char *err, size_t errn, int *updating);
 void ra_badge(sqlite3 *db, long long game_id, cJSON *g);  /* adds "ra":{total,unlocked} when known */
 
 #endif

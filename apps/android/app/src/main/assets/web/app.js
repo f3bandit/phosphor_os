@@ -27,6 +27,19 @@ function bridge(kind, a, b) {
 }
 /** a phosphord command (docs/remote-api.md) */
 const call = (cmd, extra) => bridge("call", Object.assign({ cmd }, extra || {}));
+/** a RetroAchievements command: phosphord answers at once with what it last got and asks again in the
+ *  background ("updating"); show() gets each answer with data; asked again every 1.5 s while it updates
+ *  (up to 2 minutes). Throws when there's an error and nothing to show. */
+async function callFresh(cmd, extra, show, alive = () => true) {
+	for (let i = 0; i < 80 && alive(); i++) {
+		let j;
+		try { j = await call(cmd, extra); }
+		catch (e) { if (!/^Still asking/.test(e.message || "")) throw e; j = { updating: true }; }   // (nothing kept yet)
+		if (j.ok !== false && (j.profile || j.ra)) show(j);
+		if (!j.updating) return;
+		await new Promise(res => setTimeout(res, 1500));
+	}
+}
 /** something only the phone does */
 const app = (action, args) => bridge("app", action, args);
 
@@ -1308,12 +1321,15 @@ PAGES.ra = { async show(c, p) {
 	const noRA = e => /unknown|no such/i.test(e.message) ? "This SS1's Phosphor doesn't have RetroAchievements yet: update Phosphor." : e.message;
 	if (tab === "progress") {
 		let pr;
-		try { pr = (await call("ra_profile")).profile; } catch (e) { c.draw(errp(noRA(e))); return; }
-		c.draw(card(`<div style="display:flex;gap:12px;align-items:center">${pr.picture ? `<img src="${attr(pr.picture)}" alt="" style="width:52px;height:52px;border-radius:8px">` : ""}<div><b style="font-size:1.1em">${esc(pr.user)}</b><br><span class="small">${(pr.points || 0).toLocaleString()} points${pr.rank ? ` · rank ${pr.rank.toLocaleString()}` : ""}</span><br><span class="small">${pr.achievements} achievements · ${pr.mastered} mastered</span></div></div>`)
+		const drawProfile = pr => c.draw(card(`<div style="display:flex;gap:12px;align-items:center">${pr.picture ? `<img src="${attr(pr.picture)}" alt="" style="width:52px;height:52px;border-radius:8px">` : ""}<div><b style="font-size:1.1em">${esc(pr.user)}</b><br><span class="small">${(pr.points || 0).toLocaleString()} points${pr.rank ? ` · rank ${pr.rank.toLocaleString()}` : ""}</span><br><span class="small">${pr.achievements} achievements · ${pr.mastered} mastered</span></div></div>`)
 			+ ((pr.games || []).length ? lbl("Recently played") + flat(pr.games.map(g => row(g.title, {
 				pre: g.icon ? `<img class="cover" loading="lazy" src="${attr(g.icon)}" alt="" style="height:auto;aspect-ratio:1">` : "",
 				sub: [g.console, g.award, g.game_id ? "" : "not in your library"].filter(Boolean).join(" · "), value: `${g.unlocked} / ${g.total}`, go: g.game_id ? "ach/" + g.game_id : undefined,
 			})).join("")) : note("No games played with achievements yet.")));
+		c.draw(note("Asking RetroAchievements…"));
+		const page = location.hash;
+		try { await callFresh("ra_profile", null, j => location.hash === page && drawProfile(j.profile), () => location.hash === page); }
+		catch (e) { if (location.hash === page) c.draw(errp(noRA(e))); }
 		return;
 	}
 	let r = null, err = "";
@@ -1349,14 +1365,18 @@ PAGES.ra = { async show(c, p) {
 PAGES.ach = { async show(c, p) {
 	const id = Number(p.arg);
 	setBar("Achievements");
-	let r;
-	try { r = (await call("ra_game", { id })).ra; } catch (e) { c.draw(errp(e.message)); return; }
+	c.draw(note("Asking RetroAchievements…"));
+	const page = location.hash;
+	try { await callFresh("ra_game", { id }, j => location.hash === page && drawAch(j.ra), () => location.hash === page); }
+	catch (e) { if (location.hash === page) c.draw(errp(e.message)); }
+	function drawAch(r) {
 	if (!r.supported) { c.draw(flat(row("No achievements for this version", { sub: "RetroAchievements doesn't know this file", dim: true }))); return; }
 	c.draw(note(`${r.unlocked} of ${r.total} unlocked${r.hardcore ? ` (${r.hardcore} in hardcore)` : ""} · ${r.points_unlocked} of ${r.points} points`)
 		+ flat((r.achievements || []).map(a => row(a.title, {
 			pre: a.badge ? `<img class="cover" loading="lazy" src="${attr(a.badge)}" alt="" style="height:auto;aspect-ratio:1">` : "",
 			sub: a.description, value: `${a.points}${a.unlocked ? (a.hardcore ? " ✓✓" : " ✓") : ""}`, accent: a.unlocked, dim: !a.unlocked,
 		})).join("")));
+	}
 } };
 
 /* ---------------------------------------------------------------- Screenshots: the SS1's (screenshots/<system>/ on its SD card) */

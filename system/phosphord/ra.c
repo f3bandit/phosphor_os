@@ -17,6 +17,7 @@
 #include "log.h"
 #include "net.h"
 #include "paths.h"
+#include "rachd.h"
 #include "systems.h"
 #include "version.h"
 #include "rc_hash.h"
@@ -157,6 +158,8 @@ static int web_key(char *out, size_t n)
 	return out[0] != 0;
 }
 
+static void cache_clear(void);   /* the viewer's kept results (below) */
+
 /* ---------- requests ---------- */
 
 static cJSON *get_json(const char *url, int *res)
@@ -206,6 +209,7 @@ int ra_login(const char *user, const char *password, char *err, size_t errn)
 	int w = cfg_set(keys, vals, 3);
 	cJSON_Delete(j);
 	if (w) { snprintf(err, errn, "Couldn't save the login on the SD card"); return -1; }
+	cache_clear();
 	plog("retroachievements: logged in as %s (token kept, no password)", vals[0]);
 	return 0;
 }
@@ -215,6 +219,7 @@ void ra_logout(void)
 	const char *keys[] = { "token", "password" };
 	const char *vals[] = { NULL, NULL };
 	cfg_set(keys, vals, 2);
+	cache_clear();
 }
 
 int ra_logged_in(void)
@@ -258,13 +263,14 @@ int ra_set_key(const char *key, char *err, size_t errn)
 {
 	char p[600];
 	key_path(p, sizeof(p));
-	if (!key || !*key) { unlink(p); return 0; }
+	if (!key || !*key) { unlink(p); cache_clear(); return 0; }
 	for (const char *c = key; *c; c++) if (!isalnum((unsigned char)*c)) { snprintf(err, errn, "That doesn't look like a Web API key (letters and numbers only)"); return -1; }
 	if (strlen(key) != 32) { snprintf(err, errn, "A Web API key is 32 letters and numbers: that's %d", (int)strlen(key)); return -1; }
 	FILE *f = fopen(p, "w");
 	if (!f) { snprintf(err, errn, "Couldn't save it on the SD card"); return -1; }
 	fprintf(f, "%s\n", key);
 	fclose(f);
+	cache_clear();
 	return 0;
 }
 
@@ -538,18 +544,141 @@ int ra_match(char *err, size_t errn)
 	return 0;
 }
 
-/* the user's progress for every game they've played: updates the library's badges, and is the viewer */
-cJSON *ra_profile(sqlite3 *db, char *err, size_t errn)
+/* ---------- the viewer: answered at once from the last result, refreshed in the background ----------
+ * RetroAchievements can be slow or down, and asking it on the API thread held up every TV and app request.
+ * The last result is kept (in memory, and under data/ra for after a restart) and handed back at once, with
+ * "updating":true while a fresh one is fetched: one at a time for the profile, one at a time for games. */
+#define RA_FRESH 60                 /* seconds a result counts as fresh */
+#define RA_NGAMES 32                /* games' lists kept in memory */
+
+static int gen;                     /* bumped on login, logout or a new key: anything fetched before is dropped */
+static struct { cJSON *data; char user[128], err[300]; time_t at, tried; int busy, loaded, err_new; } prof;
+typedef struct { long long game_id, ra_id; cJSON *data; char user[128], err[300]; time_t at, tried; int err_new; } gcache_t;
+static gcache_t gc[RA_NGAMES];
+static struct { int busy; long long cur, cur_ra, want, want_ra; } gjob;   /* the game being fetched, and the next one asked for */
+typedef struct { char user[128], key[80]; int gen; } who_t;                /* a fetch's own copy of the login */
+
+static const char *fetch_err(int r)
 {
-	char key[80], user[128];
-	if (!cfg_get("username", user, sizeof(user)) || !user[0]) { snprintf(err, errn, "Log in to RetroAchievements first"); return NULL; }
-	if (!web_key(key, sizeof(key))) { snprintf(err, errn, "Add your Web API key first"); return NULL; }
+	return r == 2 || r == 401 || r == 403 ? "RetroAchievements refused the Web API key" : "No answer from RetroAchievements";
+}
+
+/* due for a refresh: older than RA_FRESH (or the clock went back, as it can at boot without the network) */
+static int stale(time_t at, time_t tried, time_t now)
+{
+	time_t t = at > tried ? at : tried;
+	return now - t >= RA_FRESH || now < t;
+}
+
+static void cache_path(char *out, size_t n, long long game_id)
+{
+	if (game_id) snprintf(out, n, "%s/ra/game_%lld.json", p_data(), game_id);
+	else snprintf(out, n, "%s/ra/viewer.json", p_data());
+}
+
+/* {"user", "ra_id", "data"}: whose it is, so another login's never shows */
+static void cache_save(long long game_id, const char *user, long long ra_id, const cJSON *data)
+{
+	char p[700], tmp[720];
+	snprintf(p, sizeof(p), "%s/ra", p_data());
+	ra_mkdirs(p);
+	cache_path(p, sizeof(p), game_id);
+	snprintf(tmp, sizeof(tmp), "%s.new", p);
+	cJSON *w = cJSON_CreateObject();
+	cJSON_AddStringToObject(w, "user", user);
+	cJSON_AddNumberToObject(w, "ra_id", (double)ra_id);
+	cJSON_AddItemToObject(w, "data", cJSON_Duplicate(data, 1));
+	char *s = cJSON_PrintUnformatted(w);
+	cJSON_Delete(w);
+	FILE *f = s ? fopen(tmp, "w") : NULL;
+	if (f) {
+		int bad = fputs(s, f) < 0;
+		if (fclose(f) || bad || rename(tmp, p)) unlink(tmp);
+	}
+	free(s);
+}
+
+static cJSON *cache_load(long long game_id, const char *user, long long ra_id, time_t *at)
+{
+	char p[700];
+	struct stat sb;
+	cache_path(p, sizeof(p), game_id);
+	if (stat(p, &sb) || sb.st_size <= 0 || sb.st_size > 8 * 1024 * 1024) return NULL;
+	FILE *f = fopen(p, "r");
+	if (!f) return NULL;
+	char *b = malloc((size_t)sb.st_size + 1);
+	size_t n = b ? fread(b, 1, (size_t)sb.st_size, f) : 0;
+	fclose(f);
+	if (!b) return NULL;
+	b[n] = 0;
+	cJSON *w = cJSON_Parse(b), *d = NULL;
+	free(b);
+	const char *u = cJSON_GetStringValue(cJSON_GetObjectItem(w, "user"));
+	if (u && !strcasecmp(u, user) && (long long)cJSON_GetNumberValue(cJSON_GetObjectItem(w, "ra_id")) == ra_id
+	    && cJSON_IsObject(cJSON_GetObjectItem(w, "data"))) {
+		d = cJSON_DetachItemFromObject(w, "data");
+		*at = sb.st_mtime;
+	}
+	cJSON_Delete(w);
+	return d;
+}
+
+/* on login, logout or a new key: what was kept belongs to the old one */
+static void cache_clear(void)
+{
+	pthread_mutex_lock(&lk);
+	gen++;
+	cJSON_Delete(prof.data);
+	prof.data = NULL;
+	prof.user[0] = prof.err[0] = 0;
+	prof.at = prof.tried = 0;
+	prof.loaded = prof.err_new = 0;                 /* (busy stays: a fetch still running finds gen changed) */
+	for (int i = 0; i < RA_NGAMES; i++) { cJSON_Delete(gc[i].data); memset(&gc[i], 0, sizeof(gc[i])); }
+	gjob.want = 0;
+	pthread_mutex_unlock(&lk);
+	char dir[700], p[1000];
+	snprintf(dir, sizeof(dir), "%s/ra", p_data());
+	DIR *d = opendir(dir);
+	struct dirent *e;
+	while (d && (e = readdir(d)))
+		if (!strcmp(e->d_name, "viewer.json") || !strncmp(e->d_name, "game_", 5)) { snprintf(p, sizeof(p), "%s/%s", dir, e->d_name); unlink(p); }
+	if (d) closedir(d);
+}
+
+static who_t *who(const char *user, const char *key)   /* with lk held */
+{
+	who_t *w = calloc(1, sizeof(*w));
+	if (!w) return NULL;
+	snprintf(w->user, sizeof(w->user), "%s", user);
+	snprintf(w->key, sizeof(w->key), "%s", key);
+	w->gen = gen;
+	return w;
+}
+
+static void who_free(who_t *w)
+{
+	memset(w, 0, sizeof(*w));
+	free(w);
+}
+
+static int start(void *(*fn)(void *), who_t *w)
+{
+	pthread_t t;
+	if (!w) return -1;
+	if (pthread_create(&t, NULL, fn, w)) { who_free(w); return -1; }
+	pthread_detach(t);
+	return 0;
+}
+
+/* the user's progress for every game they've played (two calls); updates the library's badges */
+static cJSON *fetch_profile(sqlite3 *db, const char *user, const char *key, char *err, size_t errn)
+{
 	char eu[300], url[600];
 	net_escape(user, eu, sizeof(eu));
 	snprintf(url, sizeof(url), RA_SITE "/API/API_GetUserSummary.php?u=%s&g=0&a=0&y=%s", eu, key);
 	int r = 0;
 	cJSON *sum = get_json(url, &r);
-	if (!sum) { snprintf(err, errn, r == 2 ? "RetroAchievements refused the Web API key" : "No answer from RetroAchievements"); return NULL; }
+	if (!sum) { snprintf(err, errn, "%s", fetch_err(r)); return NULL; }
 	snprintf(url, sizeof(url), RA_SITE "/API/API_GetUserCompletionProgress.php?u=%s&c=500&y=%s", eu, key);
 	cJSON *prog = get_json(url, &r);
 	cJSON *o = cJSON_CreateObject();
@@ -563,6 +692,7 @@ cJSON *ra_profile(sqlite3 *db, char *err, size_t errn)
 	cJSON *games = cJSON_AddArrayToObject(o, "games");
 	cJSON *g;
 	int mastered = 0, achievements = 0;
+	if (db) sqlite3_exec(db, "BEGIN", NULL, NULL, NULL);
 	cJSON_ArrayForEach(g, cJSON_GetObjectItem(prog, "Results")) {
 		long long id = (long long)cJSON_GetNumberValue(cJSON_GetObjectItem(g, "GameID"));
 		int tot = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(g, "MaxPossible"));
@@ -596,6 +726,7 @@ cJSON *ra_profile(sqlite3 *db, char *err, size_t errn)
 		}
 		cJSON_AddItemToArray(games, x);
 	}
+	if (db) sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
 	cJSON_AddNumberToObject(o, "achievements", achievements);
 	cJSON_AddNumberToObject(o, "mastered", mastered);
 	cJSON_Delete(sum);
@@ -603,30 +734,18 @@ cJSON *ra_profile(sqlite3 *db, char *err, size_t errn)
 	return o;
 }
 
-/* one library game: its achievements (the game page's list) */
-cJSON *ra_game(sqlite3 *db, long long game_id, char *err, size_t errn)
+/* one library game's achievements (the game page's list); updates its badge */
+static cJSON *fetch_game(sqlite3 *db, long long game_id, long long ra_id, const char *user, const char *key, char *err, size_t errn)
 {
-	char key[80], user[128];
-	if (!web_key(key, sizeof(key))) { snprintf(err, errn, "Add your Web API key first"); return NULL; }
-	cfg_get("username", user, sizeof(user));
-	sqlite3_stmt *st;
-	long long ra_id = -1;
-	if (sqlite3_prepare_v2(db, "SELECT ra_id FROM ra_games WHERE game_id=?", -1, &st, NULL) == SQLITE_OK) {
-		sqlite3_bind_int64(st, 1, game_id);
-		if (sqlite3_step(st) == SQLITE_ROW) ra_id = sqlite3_column_int64(st, 0);
-		sqlite3_finalize(st);
-	}
-	if (ra_id < 0) { snprintf(err, errn, "Not matched yet: Settings > RetroAchievements > Match my library"); return NULL; }
-	cJSON *o = cJSON_CreateObject();
-	cJSON_AddNumberToObject(o, "ra_id", (double)ra_id);
-	if (!ra_id) { cJSON_AddBoolToObject(o, "supported", 0); return o; }
-	cJSON_AddBoolToObject(o, "supported", 1);
 	char eu[300], url[600];
 	net_escape(user, eu, sizeof(eu));
 	snprintf(url, sizeof(url), RA_SITE "/API/API_GetGameInfoAndUserProgress.php?g=%lld&u=%s&y=%s", ra_id, eu, key);
 	int r = 0;
 	cJSON *g = get_json(url, &r);
-	if (!g) { cJSON_Delete(o); snprintf(err, errn, "No answer from RetroAchievements"); return NULL; }
+	if (!g) { snprintf(err, errn, "%s", fetch_err(r)); return NULL; }
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddNumberToObject(o, "ra_id", (double)ra_id);
+	cJSON_AddBoolToObject(o, "supported", 1);
 	int tot = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(g, "NumAchievements"));
 	int un = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(g, "NumAwardedToUser"));
 	int hc = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(g, "NumAwardedToUserHardcore"));
@@ -654,11 +773,199 @@ cJSON *ra_game(sqlite3 *db, long long game_id, char *err, size_t errn)
 	}
 	cJSON_AddNumberToObject(o, "points", pts);
 	cJSON_AddNumberToObject(o, "points_unlocked", pts_un);
-	if (sqlite3_prepare_v2(db, "UPDATE ra_games SET total=?, unlocked=?, hc=? WHERE game_id=?", -1, &st, NULL) == SQLITE_OK) {
+	sqlite3_stmt *st;
+	if (db && sqlite3_prepare_v2(db, "UPDATE ra_games SET total=?, unlocked=?, hc=? WHERE game_id=?", -1, &st, NULL) == SQLITE_OK) {
 		sqlite3_bind_int(st, 1, tot); sqlite3_bind_int(st, 2, un); sqlite3_bind_int(st, 3, hc); sqlite3_bind_int64(st, 4, game_id);
 		sqlite3_step(st); sqlite3_finalize(st);
 	}
 	cJSON_Delete(g);
+	return o;
+}
+
+static void *profile_job(void *arg)
+{
+	who_t *w = arg;
+	char err[300] = "";
+	sqlite3 *db = db_open();
+	cJSON *p = fetch_profile(db, w->user, w->key, err, sizeof(err));
+	if (db) sqlite3_close(db);
+	if (p) cache_save(0, w->user, 0, p);
+	pthread_mutex_lock(&lk);
+	if (w->gen == gen) {
+		prof.tried = time(NULL);
+		if (p) {
+			cJSON_Delete(prof.data);
+			prof.data = p;
+			p = NULL;
+			prof.at = prof.tried;
+			snprintf(prof.user, sizeof(prof.user), "%s", w->user);
+			prof.err[0] = 0;
+			prof.err_new = 0;
+		} else { snprintf(prof.err, sizeof(prof.err), "%s", err); prof.err_new = 1; }
+	} else if (p) {                                  /* logged out or a new key meanwhile: not kept */
+		char c[700];
+		cache_path(c, sizeof(c), 0);
+		unlink(c);
+	}
+	prof.busy = 0;
+	pthread_mutex_unlock(&lk);
+	cJSON_Delete(p);
+	who_free(w);
+	return NULL;
+}
+
+/* a game's place in gc (with lk held): found, or a free or the oldest one taken; emptied if it was another
+ * match or login's */
+static gcache_t *gslot(long long game_id, long long ra_id, const char *user)
+{
+	gcache_t *e = NULL;
+	for (int i = 0; i < RA_NGAMES && !e; i++) if (gc[i].game_id == game_id) e = &gc[i];
+	if (e && e->ra_id == ra_id && !strcasecmp(e->user, user)) return e;
+	if (!e) {
+		e = &gc[0];
+		for (int i = 0; i < RA_NGAMES; i++) {
+			if (!gc[i].game_id) { e = &gc[i]; break; }
+			time_t a = gc[i].at > gc[i].tried ? gc[i].at : gc[i].tried, b = e->at > e->tried ? e->at : e->tried;
+			if (a < b) e = &gc[i];
+		}
+	}
+	cJSON_Delete(e->data);
+	memset(e, 0, sizeof(*e));
+	e->game_id = game_id;
+	e->ra_id = ra_id;
+	snprintf(e->user, sizeof(e->user), "%s", user);
+	return e;
+}
+
+/* fetches the game asked for, then the next one asked for meanwhile, if any */
+static void *game_job(void *arg)
+{
+	who_t *w = arg;
+	sqlite3 *db = db_open();
+	pthread_mutex_lock(&lk);
+	for (;;) {
+		long long id = gjob.cur, ra_id = gjob.cur_ra;
+		pthread_mutex_unlock(&lk);
+		char err[300] = "";
+		cJSON *g = fetch_game(db, id, ra_id, w->user, w->key, err, sizeof(err));
+		if (g) cache_save(id, w->user, ra_id, g);
+		pthread_mutex_lock(&lk);
+		if (w->gen == gen) {
+			gcache_t *e = gslot(id, ra_id, w->user);
+			e->tried = time(NULL);
+			if (g) { cJSON_Delete(e->data); e->data = g; g = NULL; e->at = e->tried; e->err[0] = 0; e->err_new = 0; }
+			else { snprintf(e->err, sizeof(e->err), "%s", err); e->err_new = 1; }
+		} else if (g) {
+			char c[700];
+			cache_path(c, sizeof(c), id);
+			unlink(c);
+		}
+		cJSON_Delete(g);
+		if (w->gen != gen || !gjob.want) break;
+		gjob.cur = gjob.want;
+		gjob.cur_ra = gjob.want_ra;
+		gjob.want = 0;
+	}
+	gjob.busy = 0;
+	pthread_mutex_unlock(&lk);
+	if (db) sqlite3_close(db);
+	who_free(w);
+	return NULL;
+}
+
+/* the viewer: the last profile at once, a fresh one fetched in the background when it's older than a minute */
+cJSON *ra_profile(char *err, size_t errn, int *updating)
+{
+	char key[80], user[128];
+	*updating = 0;
+	if (!cfg_get("username", user, sizeof(user)) || !user[0]) { snprintf(err, errn, "Log in to RetroAchievements first"); return NULL; }
+	if (!web_key(key, sizeof(key))) { snprintf(err, errn, "Add your Web API key first"); return NULL; }
+	/* the first time since starting: the last one from the SD card */
+	pthread_mutex_lock(&lk);
+	int load = !prof.data && !prof.loaded, g0 = gen;
+	pthread_mutex_unlock(&lk);
+	time_t at = 0;
+	cJSON *disk = load ? cache_load(0, user, 0, &at) : NULL, *o = NULL;
+	pthread_mutex_lock(&lk);
+	if (load && g0 == gen) {
+		prof.loaded = 1;
+		if (disk && !prof.data) { prof.data = disk; disk = NULL; prof.at = at; snprintf(prof.user, sizeof(prof.user), "%s", user); }
+	}
+	if (prof.data && strcasecmp(prof.user, user)) { cJSON_Delete(prof.data); prof.data = NULL; }   /* someone else's */
+	/* a refresh: when it's old, or there's none and the last try's failure has been told */
+	if (!prof.busy && (prof.data ? stale(prof.at, prof.tried, time(NULL)) : !prof.err_new)) {
+		prof.busy = 1;
+		if (start(profile_job, who(user, key))) prof.busy = 0;
+	}
+	*updating = prof.busy;
+	if (prof.data) {
+		o = cJSON_Duplicate(prof.data, 1);
+		if (o && prof.err[0]) cJSON_AddStringToObject(o, "error", prof.err);   /* the last refresh failed */
+	} else if (prof.err_new && !prof.busy) { snprintf(err, errn, "%s", prof.err); prof.err_new = 0; }
+	else snprintf(err, errn, prof.busy ? "Still asking RetroAchievements: try again in a moment" : "Couldn't ask RetroAchievements");
+	pthread_mutex_unlock(&lk);
+	cJSON_Delete(disk);
+	memset(key, 0, sizeof(key));
+	if (o) cJSON_AddBoolToObject(o, "updating", *updating);
+	return o;
+}
+
+/* one library game's achievements: the last list at once, a fresh one fetched in the background */
+cJSON *ra_game(sqlite3 *db, long long game_id, char *err, size_t errn, int *updating)
+{
+	char key[80], user[128];
+	*updating = 0;
+	if (!web_key(key, sizeof(key))) { snprintf(err, errn, "Add your Web API key first"); return NULL; }
+	cfg_get("username", user, sizeof(user));
+	sqlite3_stmt *st;
+	long long ra_id = -1;
+	if (sqlite3_prepare_v2(db, "SELECT ra_id FROM ra_games WHERE game_id=?", -1, &st, NULL) == SQLITE_OK) {
+		sqlite3_bind_int64(st, 1, game_id);
+		if (sqlite3_step(st) == SQLITE_ROW) ra_id = sqlite3_column_int64(st, 0);
+		sqlite3_finalize(st);
+	}
+	if (ra_id < 0) { snprintf(err, errn, "Not matched yet: Settings > RetroAchievements > Match my library"); return NULL; }
+	cJSON *o = NULL;
+	if (!ra_id) {
+		o = cJSON_CreateObject();
+		cJSON_AddNumberToObject(o, "ra_id", 0);
+		cJSON_AddBoolToObject(o, "supported", 0);
+		cJSON_AddBoolToObject(o, "updating", 0);
+		return o;
+	}
+	/* not in memory: the last one from the SD card */
+	pthread_mutex_lock(&lk);
+	int load = 1, g0 = gen;
+	for (int i = 0; i < RA_NGAMES; i++)
+		if (gc[i].game_id == game_id && gc[i].data && gc[i].ra_id == ra_id && !strcasecmp(gc[i].user, user)) load = 0;
+	pthread_mutex_unlock(&lk);
+	time_t at = 0;
+	cJSON *disk = load ? cache_load(game_id, user, ra_id, &at) : NULL;
+	pthread_mutex_lock(&lk);
+	gcache_t *e = gslot(game_id, ra_id, user);
+	if (disk && g0 == gen && !e->data) { e->data = disk; disk = NULL; e->at = at; }
+	int busy = gjob.busy && (gjob.cur == game_id || gjob.want == game_id);
+	if (!busy && (e->data ? stale(e->at, e->tried, time(NULL)) : !e->err_new)) {
+		if (gjob.busy) { gjob.want = game_id; gjob.want_ra = ra_id; busy = 1; }   /* next, after the one being fetched */
+		else {
+			gjob.busy = 1;
+			gjob.cur = game_id;
+			gjob.cur_ra = ra_id;
+			gjob.want = 0;
+			if (start(game_job, who(user, key))) gjob.busy = 0;
+			else busy = 1;
+		}
+	}
+	*updating = busy;
+	if (e->data) {
+		o = cJSON_Duplicate(e->data, 1);
+		if (o && e->err[0]) cJSON_AddStringToObject(o, "error", e->err);
+	} else if (e->err_new && !busy) { snprintf(err, errn, "%s", e->err); e->err_new = 0; }
+	else snprintf(err, errn, busy ? "Still asking RetroAchievements: try again in a moment" : "Couldn't ask RetroAchievements");
+	pthread_mutex_unlock(&lk);
+	cJSON_Delete(disk);
+	memset(key, 0, sizeof(key));
+	if (o) cJSON_AddBoolToObject(o, "updating", *updating);
 	return o;
 }
 
@@ -720,4 +1027,5 @@ cJSON *ra_status(void)
 void ra_init(void)
 {
 	snprintf(UA, sizeof(UA), "Phosphor/%s (MiSTer)", PHOSD_VERSION);
+	rachd_init();   /* .chd discs for matching */
 }

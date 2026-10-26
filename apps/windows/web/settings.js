@@ -527,10 +527,12 @@ class AppSettings {
 	async tRaProg(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="list grow" id="rap"><div class="empty"><span class="spin"></span>Asking RetroAchievements…</div></div>`));
-		let p;
-		try { p = (await ss1({ cmd: "ra_profile" })).profile; } catch (e) { if (alive()) $("#rap").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-		if (!alive()) return;
+		try { await ss1Fresh({ cmd: "ra_profile" }, j => alive() && this.raProgList(j.profile), alive); }
+		catch (e) { if (alive()) $("#rap").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+	}
+	raProgList(p) {
 		const box = $("#rap");
+		if (!box || !p) return;
 		box.innerHTML = `<div style="display:flex;gap:1rem;align-items:center;margin-bottom:.8rem">${p.picture ? `<img src="${esc(p.picture)}" alt="" style="width:3.5rem;height:3.5rem;border-radius:6px">` : ""}
 			<div><h2 style="margin:0">${esc(p.user)}</h2><p class="note" style="margin:.2rem 0 0">${n(p.points)} points${p.softcore_points ? ` · ${n(p.softcore_points)} softcore` : ""}${p.rank ? ` · rank ${n(p.rank)}` : ""} · ${n(p.achievements)} achievements · ${n(p.mastered)} mastered</p></div></div>`;
 		if (!(p.games || []).length) { box.append(h(`<div class="empty">No games played with achievements yet.</div>`)); return; }

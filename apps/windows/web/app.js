@@ -31,6 +31,19 @@ async function ss1(cmd) {
 	if (!j.ok) throw new Error(j.error || "the SS1 didn't answer");
 	return j;
 }
+/* a RetroAchievements command: phosphord answers at once with what it last got and asks again in the
+   background ("updating"). show() gets each answer with data; asked again every 1.5 s while it updates
+   (up to 2 minutes). Throws when there's an error and nothing to show. */
+async function ss1Fresh(cmd, show, alive = () => true) {
+	for (let i = 0; i < 80 && alive(); i++) {
+		const j = await api("/api/call", cmd);
+		if (j.forgotten) { S.paired = false; replace(Connect); return; }
+		if (j.ok) show(j);
+		else if (!j.updating) throw new Error(j.error || "the SS1 didn't answer");
+		if (!j.updating) return;
+		await new Promise(res => setTimeout(res, 1500));
+	}
+}
 const artURL = id => `/api/art/${id}?k=${encodeURIComponent(KEY)}`;
 
 /* ---------- small helpers ---------- */
@@ -829,10 +842,12 @@ class Game {
 	/* RetroAchievements: this game's set and what's unlocked (needs the Web API key on the SS1) */
 	async achievements(body) {
 		body.append(h(`<div class="list grow" id="ach"><div class="empty"><span class="spin"></span>Asking RetroAchievements…</div></div>`));
-		let r;
-		try { r = (await ss1({ cmd: "ra_game", id: this.id })).ra; } catch (e) { if ($("#ach")) $("#ach").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		try { await ss1Fresh({ cmd: "ra_game", id: this.id }, j => this.achList(j.ra), () => !!$("#ach")); }
+		catch (e) { if ($("#ach")) $("#ach").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+	}
+	achList(r) {
 		const box = $("#ach");
-		if (!box) return;
+		if (!box || !r) return;
 		if (!r.supported) { box.innerHTML = `<div class="empty">RetroAchievements has no achievements for this version of the game.</div>`; return; }
 		box.innerHTML = `<p class="note">${r.unlocked} of ${r.total} unlocked${r.hardcore ? ` (${r.hardcore} in hardcore)` : ""} · ${n(r.points_unlocked)} of ${n(r.points)} points</p>`;
 		(r.achievements || []).forEach(a => box.append(h(`<div class="row" data-nav style="gap:.8rem;${a.unlocked ? "" : "opacity:.6"}">${a.badge ? `<img src="${esc(a.badge)}" alt="" style="width:2.4rem;height:2.4rem;border-radius:4px;flex:none">` : ""}
