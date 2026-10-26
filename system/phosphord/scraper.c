@@ -333,6 +333,12 @@ static const char *const ACCT[][2] = {
 };
 #define NACCT (int)(sizeof(ACCT) / sizeof(ACCT[0]))
 
+/* passwords and keys: never sent anywhere, only shown as set / not set */
+static int acct_secret(const char *key)
+{
+	return strcmp(key, "user") && strcmp(key, "devid") && strcmp(key, "client_id");
+}
+
 int scraper_account_ok(const char *sec, const char *key)
 {
 	for (int i = 0; i < NACCT; i++) if (!strcmp(ACCT[i][0], sec) && !strcmp(ACCT[i][1], key)) return 1;
@@ -397,8 +403,7 @@ void scraper_accounts(scrape_account_t *out, int *n)
 		snprintf(a->key, sizeof(a->key), "%s", ACCT[i][1]);
 		const char *v = scfg(ACCT[i][0], ACCT[i][1]);
 		a->set = *v != 0;
-		int secret = strcmp(ACCT[i][1], "user") && strcmp(ACCT[i][1], "devid") && strcmp(ACCT[i][1], "client_id");
-		snprintf(a->value, sizeof(a->value), "%s", secret ? "" : v);
+		snprintf(a->value, sizeof(a->value), "%s", acct_secret(ACCT[i][1]) ? "" : v);
 	}
 }
 
@@ -875,16 +880,24 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 	cJSON *o = cJSON_CreateObject();
 	cJSON_AddNumberToObject(o, "total", total);
 	if (miss) cJSON_AddBoolToObject(o, "miss", 1);   /* older versions ignore "miss": the app checks for this */
-	/* the same settings the SS1 would use (sent over the home network only) */
+	/* the sources' order, and which logins are set. Remote access is plain HTTP, so passwords and
+	 * keys stay on the SS1: the PC app keeps its own copy (entered in its Settings > Box art).
+	 * "accounts" has the user names / IDs only (strings, as older apps expect); "set" says which
+	 * keys have a value: {"screenscraper": {"user": true, "password": true}, ...} */
 	cJSON *cf = cJSON_AddObjectToObject(o, "config");
 	const source_t *src[NSRC];
 	int n = sources_in_order(src);
 	cJSON *ord = cJSON_AddArrayToObject(cf, "order");
 	for (int i = 0; i < n; i++) if (source_on(src[i])) cJSON_AddItemToArray(ord, cJSON_CreateString(src[i]->id));
 	cJSON *ac = cJSON_AddObjectToObject(cf, "accounts");
+	cJSON *set = cJSON_AddObjectToObject(cf, "set");
 	for (int i = 0; i < NACCT; i++) {
 		const char *v = scfg(ACCT[i][0], ACCT[i][1]);
 		if (!*v) continue;
+		cJSON *ss = cJSON_GetObjectItem(set, ACCT[i][0]);
+		if (!ss) ss = cJSON_AddObjectToObject(set, ACCT[i][0]);
+		cJSON_AddBoolToObject(ss, ACCT[i][1], 1);
+		if (acct_secret(ACCT[i][1])) continue;
 		cJSON *sec = cJSON_GetObjectItem(ac, ACCT[i][0]);
 		if (!sec) sec = cJSON_AddObjectToObject(ac, ACCT[i][0]);
 		cJSON_AddStringToObject(sec, ACCT[i][1], v);

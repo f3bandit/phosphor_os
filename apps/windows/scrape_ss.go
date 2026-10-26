@@ -110,23 +110,22 @@ func ssCheck(ctx context.Context, acct func(sec, key string) string) (string, bo
 	return fmt.Sprintf("Login works: %s of %s lookups used today", u.Today, u.Max), true
 }
 
-// /api/sscheck: Check login, with the login saved on the SS1 (Sources › ScreenScraper)
+// /api/sscheck: Check login, with this PC's copy of the login (Settings › Box art › ScreenScraper)
 func apiSSCheck(w http.ResponseWriter, r *http.Request) {
-	var raw struct {
-		Miss   bool `json:"miss"`
-		Config struct {
-			Accounts map[string]map[string]string `json:"accounts"`
-		} `json:"config"`
+	acc := pcAccounts()
+	get := func(sec, key string) string { return acc[sec][key] }
+	if ssMissing(get) != "" {
+		// set up on the SS1 only? say so, rather than what's missing
+		var raw struct {
+			Config todoConfig `json:"config"`
+		}
+		if ss1Call(map[string]any{"cmd": "scrape_todo", "miss": true, "limit": 1}, &raw) == nil {
+			if m := ss1Only(ss1SetFrom(raw.Config.Set, raw.Config.Accounts), "screenscraper", false); m != "" {
+				writeJSON(w, map[string]any{"ok": true, "works": false, "message": m})
+				return
+			}
+		}
 	}
-	if err := ss1Call(map[string]any{"cmd": "scrape_todo", "miss": true, "limit": 1}, &raw); err != nil {
-		fail(w, "The SS1 didn't answer: "+err.Error())
-		return
-	}
-	if !raw.Miss {
-		fail(w, "Update Phosphor on the SS1 (0.27.32 or later) to check the login from here")
-		return
-	}
-	acc := raw.Config.Accounts
-	msg, ok := ssCheck(r.Context(), func(sec, key string) string { return acc[sec][key] })
+	msg, ok := ssCheck(r.Context(), get)
 	writeJSON(w, map[string]any{"ok": true, "works": ok, "message": msg})
 }

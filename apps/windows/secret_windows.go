@@ -4,7 +4,7 @@
 
 package main
 
-// The pairing key is kept with DPAPI (CryptProtectData): only this Windows user on this PC can
+// The pairing key (and the box-art passwords and keys, accounts.go) is kept with DPAPI (CryptProtectData): only this Windows user on this PC can
 // read it back.
 
 import (
