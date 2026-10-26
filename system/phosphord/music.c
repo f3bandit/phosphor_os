@@ -13,6 +13,7 @@
  * Music CDs: the table of contents gives the MusicBrainz disc ID; names come from MusicBrainz and the cover
  * from the Cover Art Archive, kept in data/music_cd so the same CD is named at once next time. */
 #include "music.h"
+#include "art.h"
 #include "flacenc.h"
 #include "log.h"
 #include "net.h"
@@ -58,7 +59,8 @@ extern char **environ;
 typedef struct { char path[1024], title[200]; int no; } track_t;
 typedef struct {
 	char id[17], dir[1024], title[200], artist[200], year[16], source[16], cover[1100];
-	int ntracks;
+	char src[1100];            /* where the cover comes from: an image file, or a track with art in it (emb) */
+	int ntracks, emb;
 } album_t;
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
@@ -144,18 +146,189 @@ static void album_meta(album_t *a)
 	cJSON_Delete(j);
 }
 
+/* The cover the TV and the apps show is a JPEG made from the album's own picture (cover.jpg, any image
+ * in the folder) or, without one, the art inside its first track (FLAC picture, MP3 ID3 APIC): 512 px at
+ * most, in data/music_covers/<id>.jpg, made in the background after a scan (covers_thread). A big PNG
+ * or a 3000 px scan would be slow to draw on the TV, and art in the files would be missed. */
+#define COVER_MAX 512
+static void cover_path(const char *id, char *out, size_t n) { snprintf(out, n, "%s/music_covers/%s.jpg", p_data(), id); }
+static time_t mtime_of(const char *p) { struct stat sb; return stat(p, &sb) ? 0 : sb.st_mtime; }
+
 static void album_cover(album_t *a)
 {
-	static const char *const N[] = { "cover.jpg", "cover.png", "folder.jpg", "front.jpg", "Cover.jpg", "Folder.jpg", NULL };
-	for (int i = 0; N[i]; i++) {
-		snprintf(a->cover, sizeof(a->cover), "%s/%s", a->dir, N[i]);
-		if (file_exists(a->cover)) return;
+	static const char *const N[] = { "cover.jpg", "cover.png", "folder.jpg", "front.jpg", "Cover.jpg", "Folder.jpg", "Cover.png", "Front.jpg", NULL };
+	a->cover[0] = a->src[0] = 0;
+	a->emb = 0;
+	for (int i = 0; N[i] && !a->src[0]; i++) {
+		snprintf(a->src, sizeof(a->src), "%s/%s", a->dir, N[i]);
+		if (!file_exists(a->src)) a->src[0] = 0;
 	}
-	a->cover[0] = 0;
+	char first[256] = "";
 	DIR *d = opendir(a->dir);
 	struct dirent *e;
-	while (d && (e = readdir(d))) if (e->d_name[0] != '.' && image_ext(e->d_name)) { snprintf(a->cover, sizeof(a->cover), "%s/%s", a->dir, e->d_name); break; }
+	while (d && (e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		if (!a->src[0] && image_ext(e->d_name)) snprintf(a->src, sizeof(a->src), "%s/%s", a->dir, e->d_name);
+		const char *x = strrchr(e->d_name, '.');
+		if (x && (!strcasecmp(x, ".flac") || !strcasecmp(x, ".mp3")) && (!first[0] || strcasecmp(e->d_name, first) < 0))
+			snprintf(first, sizeof(first), "%s", e->d_name);
+	}
 	if (d) closedir(d);
+	if (!a->src[0] && first[0]) { snprintf(a->src, sizeof(a->src), "%s/%s", a->dir, first); a->emb = 1; }
+	if (!a->src[0]) return;
+	char t[700];
+	cover_path(a->id, t, sizeof(t));
+	if (file_exists(t) && mtime_of(t) >= mtime_of(a->src)) snprintf(a->cover, sizeof(a->cover), "%s", t);
+}
+
+static uint32_t be32(const unsigned char *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
+#define ART_MAX_BYTES (16u * 1024 * 1024)
+
+/* the picture inside a FLAC (a PICTURE metadata block; the front cover when there are several) */
+static unsigned char *flac_art(FILE *f, size_t *len)
+{
+	unsigned char h[4];
+	if (fread(h, 1, 4, f) != 4 || memcmp(h, "fLaC", 4)) return NULL;
+	unsigned char *best = NULL;
+	size_t bestlen = 0;
+	int last = 0;
+	while (!last) {
+		if (fread(h, 1, 4, f) != 4) break;
+		last = h[0] & 0x80;
+		int type = h[0] & 0x7f;
+		uint32_t bl = (uint32_t)h[1] << 16 | (uint32_t)h[2] << 8 | h[3];
+		if (type != 6 || bl > ART_MAX_BYTES + 4096) { if (fseek(f, bl, SEEK_CUR)) break; continue; }
+		unsigned char *b = malloc(bl);
+		if (!b || fread(b, 1, bl, f) != bl) { free(b); break; }
+		uint32_t o = 0, ptype = be32(b);
+		o = 4; if (o + 4 > bl) { free(b); break; }
+		uint32_t ml = be32(b + o); o += 4 + ml; if (o + 4 > bl) { free(b); break; }
+		uint32_t dl = be32(b + o); o += 4 + dl + 16; if (o + 4 > bl) { free(b); break; }
+		uint32_t pl = be32(b + o); o += 4;
+		if (pl == 0 || o + pl > bl) { free(b); continue; }
+		if (!best || ptype == 3) {
+			free(best);
+			best = malloc(pl);
+			if (best) { memcpy(best, b + o, pl); bestlen = pl; }
+		}
+		free(b);
+		if (best && ptype == 3) break;
+	}
+	*len = bestlen;
+	return best;
+}
+
+/* the picture in an MP3's ID3v2 tag (an APIC frame; the front cover when there are several) */
+static unsigned char *id3_art(FILE *f, size_t *len)
+{
+	unsigned char h[10];
+	if (fread(h, 1, 10, f) != 10 || memcmp(h, "ID3", 3) || h[3] < 3 || h[3] > 4 || (h[5] & 0x80)) return NULL;
+	uint32_t size = (uint32_t)(h[6] & 0x7f) << 21 | (uint32_t)(h[7] & 0x7f) << 14 | (uint32_t)(h[8] & 0x7f) << 7 | (h[9] & 0x7f);
+	if (size > ART_MAX_BYTES + 65536) return NULL;
+	unsigned char *tag = malloc(size);
+	if (!tag || fread(tag, 1, size, f) != size) { free(tag); return NULL; }
+	uint32_t o = 0;
+	if (h[5] & 0x40) {                                  /* an extended header first */
+		uint32_t xl = h[3] == 4 ? ((uint32_t)(tag[0] & 0x7f) << 21 | (uint32_t)(tag[1] & 0x7f) << 14 | (uint32_t)(tag[2] & 0x7f) << 7 | (tag[3] & 0x7f)) : be32(tag) + 4;
+		o = xl;
+	}
+	unsigned char *best = NULL;
+	size_t bestlen = 0;
+	while (o + 10 <= size && tag[o]) {
+		const unsigned char *fr = tag + o;
+		uint32_t fl = h[3] == 4 ? ((uint32_t)(fr[4] & 0x7f) << 21 | (uint32_t)(fr[5] & 0x7f) << 14 | (uint32_t)(fr[6] & 0x7f) << 7 | (fr[7] & 0x7f)) : be32(fr + 4);
+		if (fl > size - o - 10) break;
+		if (!memcmp(fr, "APIC", 4) && fl > 4 && !(fr[9] & 0x0e)) {          /* not compressed, encrypted or unsynchronised */
+			const unsigned char *d = fr + 10, *end = d + fl;
+			int enc = d[0];
+			const unsigned char *p = d + 1;
+			while (p < end && *p) p++;                     /* MIME type */
+			p++;
+			if (p >= end) goto next;
+			int ptype = *p++;
+			if (enc == 1 || enc == 2) { while (p + 1 < end && (p[0] || p[1])) p += 2; p += 2; }   /* UTF-16 description */
+			else { while (p < end && *p) p++; p++; }
+			if (p >= end) goto next;
+			if (!best || ptype == 3) {
+				free(best);
+				bestlen = (size_t)(end - p);
+				best = malloc(bestlen);
+				if (best) memcpy(best, p, bestlen); else bestlen = 0;
+			}
+			if (best && ptype == 3) break;
+		}
+	next:
+		o += 10 + fl;
+	}
+	free(tag);
+	*len = bestlen;
+	return best;
+}
+
+static int make_cover(const char *id, const char *src, int emb)
+{
+	char out[700], dir[640];
+	snprintf(dir, sizeof(dir), "%s/music_covers", p_data());
+	mkdir(dir, 0755);
+	cover_path(id, out, sizeof(out));
+	if (!emb) return art_thumb(src, NULL, 0, out, COVER_MAX);
+	FILE *f = fopen(src, "rb");
+	if (!f) return -1;
+	size_t n = 0;
+	const char *x = strrchr(src, '.');
+	unsigned char *b = x && !strcasecmp(x, ".flac") ? flac_art(f, &n) : id3_art(f, &n);
+	fclose(f);
+	int r = b ? art_thumb(NULL, b, n, out, COVER_MAX) : -1;
+	free(b);
+	return r;
+}
+
+/* after a scan: the covers not made yet (one album at a time, so the library is never held up) */
+static int covers_busy;
+static void *covers_thread(void *arg)
+{
+	(void)arg;
+	for (int again = 1; again; ) {
+		again = 0;
+		char id[17] = "", src[1100] = "";
+		int emb = 0;
+		pthread_mutex_lock(&lk);
+		for (int i = 0; i < nalbums; i++) {
+			album_t *a = &albums[i];
+			if (a->cover[0] || !a->src[0] || a->emb < 0) continue;
+			snprintf(id, sizeof(id), "%s", a->id);
+			snprintf(src, sizeof(src), "%s", a->src);
+			emb = a->emb;
+			a->emb = a->emb ? -2 : -1;            /* tried (also when it fails: no retry until the next scan) */
+			break;
+		}
+		pthread_mutex_unlock(&lk);
+		if (!id[0]) break;
+		again = 1;
+		if (make_cover(id, src, emb) == 0) {
+			char t[700];
+			cover_path(id, t, sizeof(t));
+			pthread_mutex_lock(&lk);
+			for (int i = 0; i < nalbums; i++) if (!strcmp(albums[i].id, id)) snprintf(albums[i].cover, sizeof(albums[i].cover), "%s", t);
+			pthread_mutex_unlock(&lk);
+		} else plog("music: no cover for %s", src);
+	}
+	pthread_mutex_lock(&lk);
+	covers_busy = 0;
+	pthread_mutex_unlock(&lk);
+	return NULL;
+}
+
+static void covers_start(void)
+{
+	pthread_mutex_lock(&lk);
+	int start = !covers_busy;
+	if (start) covers_busy = 1;
+	pthread_mutex_unlock(&lk);
+	if (!start) return;
+	pthread_t t;
+	if (pthread_create(&t, NULL, covers_thread, NULL) == 0) pthread_detach(t);
+	else { pthread_mutex_lock(&lk); covers_busy = 0; pthread_mutex_unlock(&lk); }
 }
 
 static void scan_dir(const char *dir, const char *parent_name, int depth, album_t *out, int *n)
@@ -186,6 +359,7 @@ static void scan_dir(const char *dir, const char *parent_name, int depth, album_
 		snprintf(a->source, sizeof(a->source), strstr(dir, "/Steam/") ? "steam" : "files");
 		a->ntracks = tracks;
 		album_meta(a);
+		if (!strcmp(a->source, "steam") && !strcmp(a->artist, "Steam")) a->artist[0] = 0;   /* the folder, not an artist */
 		album_cover(a);
 	}
 	const char *me = strrchr(dir, '/');
@@ -238,6 +412,7 @@ void music_scan(void)
 	nalbums = n;
 	scanned_at = time(NULL);
 	pthread_mutex_unlock(&lk);
+	covers_start();
 }
 
 /* where new albums go (rips, Steam): the first drive's Music folder, else the SD card's */

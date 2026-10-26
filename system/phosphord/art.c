@@ -122,3 +122,37 @@ int art_store_box(const char *system_id, const char *game_key, const char *src, 
 	unlink(final_);                                  /* from an earlier version */
 	return 0;
 }
+
+int art_thumb(const char *src, const unsigned char *mem, size_t memlen, const char *out, int max)
+{
+	int w, h, n;
+	int ok = src ? stbi_info(src, &w, &h, &n) : stbi_info_from_memory(mem, (int)memlen, &w, &h, &n);
+	if (!ok || w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS) return -1;
+	unsigned char *px = src ? stbi_load(src, &w, &h, &n, 4) : stbi_load_from_memory(mem, (int)memlen, &w, &h, &n, 4);
+	if (!px) return -1;
+	int nw = w, nh = h;
+	if (w > max || h > max) {
+		if (w >= h) { nw = max; nh = (int)((long)h * max / w); }
+		else { nh = max; nw = (int)((long)w * max / h); }
+		if (nw < 1) nw = 1;
+		if (nh < 1) nh = 1;
+		unsigned char *s = downscale(px, w, h, nw, nh);
+		stbi_image_free(px);
+		if (!s) return -1;
+		px = s;
+	}
+	for (long i = 0; i < (long)nw * nh; i++) {
+		unsigned char *p = px + i * 4;
+		int a = p[3];
+		if (a == 255) continue;
+		static const int bg[3] = { 24, 24, 28 };
+		for (int c = 0; c < 3; c++) p[c] = (unsigned char)((p[c] * a + bg[c] * (255 - a)) / 255);
+		p[3] = 255;
+	}
+	char tmp[1200];
+	snprintf(tmp, sizeof(tmp), "%s.tmp", out);
+	ok = stbi_write_jpg(tmp, nw, nh, 4, px, 85);
+	free(px);
+	if (!ok) { unlink(tmp); return -1; }
+	return rename(tmp, out) ? -1 : 0;
+}
