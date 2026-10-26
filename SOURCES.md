@@ -19,6 +19,7 @@ License version 3. Their complete source, the exact version in each release:
 | 0.27.38-beta | [source/phosphor-0.27.38](https://github.com/f3bandit/phosphor-main/tree/source/phosphor-0.27.38) | [source/phosphor-0.27.38](https://github.com/f3bandit/phosphor-menu/tree/source/phosphor-0.27.38) |
 | 0.27.39-beta | [source/phosphor-0.27.39](https://github.com/f3bandit/phosphor-main/tree/source/phosphor-0.27.39) | [source/phosphor-0.27.39](https://github.com/f3bandit/phosphor-menu/tree/source/phosphor-0.27.39) |
 | 0.27.40-beta | [source/phosphor-0.27.40](https://github.com/f3bandit/phosphor-main/tree/source/phosphor-0.27.40) | [source/phosphor-0.27.40](https://github.com/f3bandit/phosphor-menu/tree/source/phosphor-0.27.40) |
+| 0.27.41-beta | [source/phosphor-0.27.41](https://github.com/f3bandit/phosphor-main/tree/source/phosphor-0.27.41) | [source/phosphor-0.27.41](https://github.com/f3bandit/phosphor-menu/tree/source/phosphor-0.27.41) |
 
 The licence text is in each repository (phosphor-main: `LICENSE`; phosphor-menu: `COPYING`). MiSTer's
 Main is GPL-3.0; MiSTer's menu core is GPL-2.0-or-later, and Phosphor's version is GPL-3.0.
