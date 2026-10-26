@@ -3,6 +3,43 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.41, Phosphor for Windows 0.2.42, Phosphor for Android 0.9.8
+
+### Licences
+- Every download now carries the licences of what's in it: THIRD_PARTY_NOTICES.md (the libraries and
+  fonts in Phosphor and the apps, in full), and the GPL-3.0 text with SOURCE.md, which links the exact
+  source of Phosphor's Main and menu core. Both forks (phosphor-main, phosphor-menu) are public;
+  SOURCES.md in this repository does the same for every earlier release. The SD card image has a
+  LICENSES folder: where the source of MiSTer's Linux, kernel, u-boot, Main, menu core, Mr. Fusion and
+  Update All is. About (TV, Windows, Android) points to all of it.
+- Phosphor's programs on the SS1 are built with musl (MIT) instead of glibc.
+- The "mario" and "zelda" background textures are gone (Nintendo's art); if one was picked, it's none.
+- The fan-made box art and the RetroAchievements unlock sound are credited to their makers, with a
+  disclaimer that they aren't Phosphor's work.
+
+### Fixed
+- Phosphor for Windows: the window opens again after Exit (Edge kept it hidden).
+- Security: the apps send their key only to an SS1 that proves it already has it (when they look for it
+  on the network); the remote API answers that proof without the key being sent.
+- Library: a scan stopped partway, or a drive with folders it couldn't read, no longer removes games.
+- WiFi: a network name or password with } in it no longer breaks the saved networks.
+- Controllers: a backup that couldn't be written (a full card) stops restore and reset from deleting.
+- Memory cards: on a damaged card, deleting one save no longer clears another's; a restore writes the
+  card's directory last.
+- Updates: rolling back to the oldest kept version works; an update's menu core never replaces
+  MiSTer's saved menu.rbf; update.sh isn't overwritten while it runs.
+- The shell: R on an empty list (a crash), a direction held while a game ended repeating forever, a
+  launch sent twice, Left on Get box art starting a scrape, the keyboard or a menu left open over the
+  in-game menu, and a few smaller ones.
+- Phosphor's Main: a direction held as the in-game menu closed kept repeating; a mapping could be
+  cancelled by a Start press left over from the last one.
+- phosphord: network lookups no longer hang while music plays; box art undo keeps a cover other discs
+  use; RetroAchievements tries again games it couldn't fingerprint; bad disc images are refused safely.
+- Phosphor for Windows: Steam lists only soundtracks and reports every album that failed; SD card
+  writing checks the disk's size and id and fails on a short image; backup names are checked.
+- Phosphor for Android: turning the phone no longer reloads the app; photos upload the right way up;
+  About shows the real version.
+
 ## 0.27.40
 
 ### Fixed
