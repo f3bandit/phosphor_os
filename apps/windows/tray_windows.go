@@ -412,9 +412,10 @@ func runTray(url string) {
 
 // closeWindows: the Edge windows on Phosphor's own window profile (never the user's own Edge)
 func closeWindows() {
-	prof := strings.ToLower(filepath.Join(configDir(), "window"))
-	ps := `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains('` +
-		strings.ReplaceAll(prof, "'", "''") + `') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+	// this copy's profile only (the administrator one is "window-admin", which "window" is the start of)
+	prof := strings.ToLower(windowProfile())
+	ps := `$p = [regex]::Escape('` + strings.ReplaceAll(prof, "'", "''") + `') + '(["\s]|$)'; ` +
+		`Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.ToLower() -match $p } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
 	c := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", ps)
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	_ = c.Run()
