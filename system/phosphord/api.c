@@ -124,6 +124,7 @@
 #include "systems.h"
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1357,9 +1358,18 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "game_at")) {          /* the game a file belongs to (the in-game menu: what's running) */
 		const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(req, "path"));
 		long long gid = -1;
-		sqlite3_stmt *st;
-		if (path && *path && sqlite3_prepare_v2(db, "SELECT game_id FROM files WHERE path=? ORDER BY online DESC LIMIT 1", -1, &st, NULL) == SQLITE_OK) {
-			sqlite3_bind_text(st, 1, path, -1, SQLITE_STATIC);
+		/* MiSTer's menu gives paths relative to the SD card ("../usb0/games/NES/x.nes"): the full path, as the library has it */
+		char full[1200] = "", real[PATH_MAX] = "";
+		if (path && *path) {
+			if (path[0] == '/') snprintf(full, sizeof(full), "%s", path);
+			else snprintf(full, sizeof(full), "%s/%s", p_fat(), path);
+			if (!realpath(full, real)) real[0] = 0;
+		}
+		const char *try_[2] = { full, real };
+		for (int k = 0; k < 2 && gid < 0; k++) {
+			sqlite3_stmt *st;
+			if (!try_[k][0] || sqlite3_prepare_v2(db, "SELECT game_id FROM files WHERE path=? ORDER BY online DESC LIMIT 1", -1, &st, NULL) != SQLITE_OK) continue;
+			sqlite3_bind_text(st, 1, try_[k], -1, SQLITE_STATIC);
 			if (sqlite3_step(st) == SQLITE_ROW) gid = sqlite3_column_int64(st, 0);
 			sqlite3_finalize(st);
 		}
