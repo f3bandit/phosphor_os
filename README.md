@@ -59,4 +59,6 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md): use, modify and share for any non-commercial purpose;
 selling it or a product built on it is not permitted. The Main and menu core forks are separate
-repositories under the GPL, like MiSTer, and will be public with the first release.
+repositories under the GPL, like MiSTer, and public: [phosphor-main](https://github.com/f3bandit/phosphor-main)
+and [phosphor-menu](https://github.com/f3bandit/phosphor-menu). [SOURCES.md](SOURCES.md) links the exact
+source of every release, the other free software in them, and the credits and disclaimers.
