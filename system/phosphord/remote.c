@@ -55,7 +55,9 @@ static const char *ALLOWED[] = {
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "not_game", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
 	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
-	"disc", "disc_play", "disc_eject", "disc_enable", NULL,
+	"disc", "disc_play", "disc_eject", "disc_enable",
+	/* RetroAchievements: looking and the Web API key; logging in (a password) only on the MiSTer itself */
+	"ra", "ra_set", "ra_key", "ra_cores", "ra_match", "ra_profile", "ra_game", NULL,
 };
 
 typedef struct {

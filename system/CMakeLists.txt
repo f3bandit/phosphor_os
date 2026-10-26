@@ -31,10 +31,19 @@ target_include_directories(chdr PUBLIC ${CHDR_DIR}/include ${CHDR_DIR}/deps/mini
 target_compile_definitions(chdr PRIVATE Z7_ST _7ZIP_ST ZSTD_DISABLE_ASM)
 target_compile_options(chdr PRIVATE -w -O2)
 
+# rcheevos' hashing (RetroAchievements, MIT): matching the library to RetroAchievements' games
+set(RC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rcheevos)
+add_library(rhash STATIC ${RC_DIR}/src/rhash/hash.c ${RC_DIR}/src/rhash/hash_rom.c ${RC_DIR}/src/rhash/hash_disc.c
+                         ${RC_DIR}/src/rhash/hash_zip.c ${RC_DIR}/src/rhash/md5.c ${RC_DIR}/src/rhash/cdreader.c
+                         ${RC_DIR}/src/rc_compat.c ${RC_DIR}/src/rc_util.c ${RC_DIR}/src/rcheevos/consoleinfo.c)
+target_include_directories(rhash PUBLIC ${RC_DIR}/include PRIVATE ${RC_DIR}/src)
+target_compile_definitions(rhash PRIVATE RC_HASH_NO_ENCRYPTED)
+target_compile_options(rhash PRIVATE -w -O2)
+
 file(GLOB PHOSD_SOURCES CONFIGURE_DEPENDS phosphord/*.c)
 add_executable(phosphord ${PHOSD_SOURCES})
 target_include_directories(phosphord PRIVATE phosphord third_party/stb)
-target_link_libraries(phosphord PRIVATE sqlite3 cjson chdr pthread m)
+target_link_libraries(phosphord PRIVATE sqlite3 cjson chdr rhash pthread m)
 # Phosphor's own ScreenScraper developer login: a build secret from the environment (PHOSPHOR_SS_DEVID,
 # PHOSPHOR_SS_DEVPASSWORD), written to a header in the build folder, never in the repo
 if(DEFINED ENV{PHOSPHOR_SS_DEVID} AND DEFINED ENV{PHOSPHOR_SS_DEVPASSWORD})

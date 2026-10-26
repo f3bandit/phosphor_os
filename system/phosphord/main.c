@@ -10,6 +10,7 @@
 #include "api.h"
 #include "vtry.h"
 #include "remote.h"
+#include "ra.h"
 #include "phantom.h"
 #include "storage.h"
 #include "memcard.h"
@@ -130,6 +131,7 @@ int main(int argc, char **argv)
 	busy_init();
 	indexer_start();
 	scraper_start();
+	ra_init();
 	remote_start();
 	storage_prime();                          /* the drive list, in the background */
 	memcard_start();

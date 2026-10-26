@@ -89,6 +89,7 @@
  *                                           devices:[{id, name, created, last_seen}]} */
 #include "api.h"
 #include "disc.h"
+#include "ra.h"
 #include "art.h"
 #include "cJSON.h"
 #include "db.h"
@@ -407,6 +408,7 @@ static char *cmd_game(sqlite3 *db, long long id)
 {
 	cJSON *g = id >= 0 ? game_json(db, id) : NULL;
 	if (!g) return fail("no such game");
+	ra_badge(db, id, g);                     /* RetroAchievements: "ra":{total,unlocked} when known */
 	cJSON *o = ok();
 	cJSON_AddItemToObject(o, "game", g);
 	return reply(o);
@@ -1727,6 +1729,43 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "disc_eject")) {
 		char err[300];
 		out = disc_eject(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	}
+	/* RetroAchievements (ra.c) */
+	else if (!strcmp(c->valuestring, "ra")) {
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "ra", ra_status());
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "ra_login")) {
+		char err[300];
+		const char *u = cJSON_GetStringValue(cJSON_GetObjectItem(req, "user"));
+		const char *pw = cJSON_GetStringValue(cJSON_GetObjectItem(req, "password"));
+		out = ra_login(u, pw, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "ra_logout")) {
+		ra_logout();
+		out = reply(ok());
+	} else if (!strcmp(c->valuestring, "ra_set")) {
+		char err[300];
+		out = ra_set(req, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "ra_key")) {
+		char err[300];
+		const char *k = cJSON_GetStringValue(cJSON_GetObjectItem(req, "key"));
+		out = ra_set_key(k ? k : "", err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "ra_cores")) {
+		char err[300];
+		out = ra_get_cores(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "ra_match")) {
+		char err[300];
+		out = ra_match(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "ra_profile")) {
+		char err[300];
+		cJSON *p = ra_profile(db, err, sizeof(err));
+		if (!p) out = fail(err);
+		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "profile", p); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "ra_game")) {
+		char err[300];
+		cJSON *g = ra_game(db, req_id(req), err, sizeof(err));
+		if (!g) out = fail(err);
+		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "ra", g); out = reply(o); }
 	}
 	else if (!strcmp(c->valuestring, "launch")) {
 		char err[300];
