@@ -5,6 +5,7 @@
  * ("load_core <file>" on /dev/MiSTer_cmd); arcade .mra files are loaded directly. When MiSTer's
  * running core goes back to MENU, the time since the launch is added to the game's play time. */
 #include "play.h"
+#include "ra.h"
 #include "db.h"
 #include "log.h"
 #include "paths.h"
@@ -102,13 +103,19 @@ int play_launch(sqlite3 *db, long long id, char *err, size_t errn)
 			snprintf(err, errn, "The %s core isn't installed", s->name);
 			return -1;
 		}
-		char esc[1100], mgl[600];
+		char esc[1100], mgl[600], setname[64] = "";
 		xml_escape(esc, sizeof(esc), path);
+		/* RetroAchievements: logged in and its core for this system is here -> that core (odelot's), under
+		   its RA_ set name (the same games folder: same_dir) */
+		char rarbf[96];
+		if (ra_core_for(s->id, rarbf, sizeof(rarbf), setname, sizeof(setname))) snprintf(rbf, sizeof(rbf), "%s", rarbf);
 		snprintf(mgl, sizeof(mgl), "%s/launch.mgl", p_tmp());
 		FILE *f = fopen(mgl, "w");
 		if (!f) { snprintf(err, errn, "couldn't write %s", mgl); return -1; }
-		fprintf(f, "<mistergamedescription>\n\t<rbf>%s</rbf>\n\t<file delay=\"%d\" type=\"%c\" index=\"%d\" path=\"%s\"/>\n</mistergamedescription>\n",
-		        rbf, s->delay, s->type, s->index, esc);
+		fprintf(f, "<mistergamedescription>\n\t<rbf>%s</rbf>\n", rbf);
+		if (setname[0]) fprintf(f, "\t<setname same_dir=\"1\">%s</setname>\n", setname);
+		fprintf(f, "\t<file delay=\"%d\" type=\"%c\" index=\"%d\" path=\"%s\"/>\n</mistergamedescription>\n",
+		        s->delay, s->type, s->index, esc);
 		fclose(f);
 		snprintf(cmd, sizeof(cmd), "load_core %s\n", mgl);
 	}

@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCHEMA_VERSION 4
+#define SCHEMA_VERSION 5
 
 static const char *SCHEMA =
 	"CREATE TABLE IF NOT EXISTS systems ("
@@ -72,6 +72,14 @@ static const char *MIGRATE_4 =
 	"  WHERE serial GLOB '[A-Z][A-Z][A-Z][A-Z][A-Z][0-9][0-9]*'"
 	"  AND game_id IN (SELECT id FROM games WHERE system_id='PSX');"
 	"UPDATE games SET scrape=NULL WHERE scrape='miss' OR (scrape='done' AND art_box IS NULL AND based_on IS NULL);";
+
+/* 5: RetroAchievements: each game's hash (rcheevos), its RetroAchievements game (0: none) and progress */
+static const char *MIGRATE_5 =
+	"CREATE TABLE IF NOT EXISTS ra_games ("
+	"  game_id INTEGER PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,"
+	"  hash TEXT, ra_id INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,"
+	"  unlocked INTEGER NOT NULL DEFAULT 0, hc INTEGER NOT NULL DEFAULT 0, checked INTEGER NOT NULL DEFAULT 0);"
+	"CREATE INDEX IF NOT EXISTS ra_games_ra ON ra_games(ra_id);";
 
 /* natural order: "Quest 2" before "Quest 10"; case doesn't matter */
 int natcmp(const char *a, const char *b)
@@ -176,6 +184,7 @@ sqlite3 *db_open(void)
 		if (ver < 2 && db_exec(db, MIGRATE_2) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		if (ver < 3 && db_exec(db, MIGRATE_3) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		if (ver < 4 && db_exec(db, MIGRATE_4) != SQLITE_OK) { sqlite3_close(db); return NULL; }
+		if (ver < 5 && db_exec(db, MIGRATE_5) != SQLITE_OK) { sqlite3_close(db); return NULL; }
 		char v[64];
 		snprintf(v, sizeof(v), "PRAGMA user_version=%d", SCHEMA_VERSION);
 		db_exec(db, v);
