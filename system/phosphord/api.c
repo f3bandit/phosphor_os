@@ -10,8 +10,8 @@
  *                                           filter: missing_art|missing_details|not_found|linked|unidentified|favorites|recent
  *   game       id                           details, art (absolute path), play history, files
  *   last                                    the last game played (same shape as game), or null
- *   launch     id [core]                    start it (core: an index from "cores"; none: the usual one)
- *   cores      id                           the cores it can start on: [{index, name, core}]
+ *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
+ *   game_cores id                           the cores it can start on: [{index, name, core}]
  *   favorite   id on                        mark or unmark
  *   rescan [stop:true]                      look for games (list them, then identify them); only ever on request.
  *                                           stop: stop it (what's done stays)
@@ -1856,7 +1856,7 @@ char *api_handle(sqlite3 *db, const char *request)
 		char err[300];
 		cJSON *core = cJSON_GetObjectItem(req, "core");   /* (an index from "cores"; none: the usual one) */
 		out = play_launch_core(db, req_id(req), cJSON_IsNumber(core) ? core->valueint : -1, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
-	} else if (!strcmp(c->valuestring, "cores")) {     /* the cores a game can start on (the in-game menu) */
+	} else if (!strcmp(c->valuestring, "game_cores")) {     /* the cores a game can start on (the in-game menu) */
 		char err[300];
 		cJSON *a = play_cores(db, req_id(req), err, sizeof(err));
 		if (!a) out = fail(err);

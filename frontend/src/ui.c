@@ -8755,7 +8755,7 @@ static void igp_load(void)
 		free(b);
 	} else if (igp.view == IGP_GAMES) r = api_call("{\"cmd\":\"games\",\"system\":\"%s\"}", igp.sys);
 	else if (igp.view == IGP_SYSTEMS) r = api_call("{\"cmd\":\"systems\"}");
-	else r = api_call("{\"cmd\":\"cores\",\"id\":%lld}", ig_game ? (long long)api_num(ig_game, "id", -1) : -1LL);
+	else r = api_call("{\"cmd\":\"game_cores\",\"id\":%lld}", ig_game ? (long long)api_num(ig_game, "id", -1) : -1LL);
 	const char *key = igp.view == IGP_GAMES ? "games" : igp.view == IGP_SYSTEMS ? "systems" : "cores";
 	if (api_ok(r)) igp.items = cJSON_DetachItemFromObject(r, key);
 	else if (r && api_str(r, "error")) toast_show(api_str(r, "error"));

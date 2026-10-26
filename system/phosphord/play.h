@@ -9,7 +9,7 @@
 
 int mister_cmd(const char *cmd, char *err, size_t errn);
 int play_launch(sqlite3 *db, long long game_id, char *err, size_t errn);
-/* on one of the cores play_cores lists (its index; -1: the usual one) */
+/* on one of the cores play_cores lists ("game_cores") (its index; -1: the usual one) */
 int play_launch_core(sqlite3 *db, long long game_id, int core, char *err, size_t errn);
 /* the cores this game can start on: [{index, name, core}], the first the usual one; NULL (err) when it can't start */
 cJSON *play_cores(sqlite3 *db, long long game_id, char *err, size_t errn);
