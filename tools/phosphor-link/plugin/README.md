@@ -6,8 +6,8 @@ Lets Claude run commands, copy files, watch the console and press buttons on a S
   the dock's USB-C debug port otherwise. The boot log and reboots always use the debug port.
 - Watchdog: SSH keepalives, Ctrl-C and a check when the console stops answering, the link reopened
   by itself, and an old copy still holding the COM port stopped.
-- Logs in with the Phosphor app's SSH key for this PC when there is one (password after), so it
-  still works when the SS1's SSH is set to Keys only (once the key is added there, with a yes on the TV).
+- Logs in with MiSTer's own SSH login (Phosphor 0.27.38 and later have no SSH settings of their own;
+  a key from an older Phosphor app is still tried first when there is one).
 - The program is inside the plugin, so updating is just installing the next package. Settings
   (optional) go in phosphor-link.ini next to server/phosphor-link.exe.
 

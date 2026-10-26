@@ -10,7 +10,6 @@
 #include "api.h"
 #include "vtry.h"
 #include "remote.h"
-#include "sshacc.h"
 #include "phantom.h"
 #include "storage.h"
 #include "memcard.h"
@@ -131,7 +130,6 @@ int main(int argc, char **argv)
 	busy_init();
 	indexer_start();
 	scraper_start();
-	sshacc_boot();
 	remote_start();
 	storage_prime();                          /* the drive list, in the background */
 	memcard_start();
@@ -151,7 +149,6 @@ int main(int argc, char **argv)
 			if (cl[i].fd >= 0) { idx[n - 1] = i; p[n++] = (struct pollfd){ cl[i].fd, POLLIN, 0 }; }
 		int r = poll(p, (nfds_t)n, 2000);   /* wakes every 2 s only to keep play time */
 		play_tick(db);
-		sshacc_tick();
 		phantom_tick();
 		if (r <= 0) continue;
 		if (p[0].revents & POLLIN) {

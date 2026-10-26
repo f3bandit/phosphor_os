@@ -3331,19 +3331,7 @@ static int r_left;
 static vlist_t rem_list;
 static lv_obj_t *rem_head, *rem_sub, *pair_box, *pair_code, *pair_info, *pair_left;
 static const char *const REM_HINTS[] = { "A", "Change", "X", "Forget device", "B", "Back", NULL };
-/* SSH (Off, Password, Keys only), its keys, and the copy kept on another drive */
-enum { RR_ON, RR_PAIR, RR_SSH, RR_PW, RR_KEYS, RR_KEEP, RR_COUNT };
-typedef struct { char id[13], name[160], type[40], tail[12]; } rkey_t;
-static struct {
-	char mode[12], keep_dir[64], keep_err[120];
-	int own_pw, available, nkeys, npend, nplaces, keys_view, place_i;
-	long keep_saved;
-	rkey_t keys[32];
-	char places[8][2][64];      /* dir, name */
-} rs;
-static const char *const REM_KEYS_HINTS[] = { "X", "Remove key", "B", "Back", NULL };
-static const char *const REM_PW_HINTS[] = { "A", "Set a new one", "X", "MiSTer's own", "B", "Back", NULL };
-static const char *const REM_KEEP_HINTS[] = { "\xE2\x86\x90\xE2\x86\x92", "Drive", "A", "Save now", "B", "Back", NULL };
+enum { RR_ON, RR_PAIR, RR_COUNT };
 static const char *const PAIR_HINTS[] = { "B", "Close", NULL };
 
 static void when(long t, char *out, size_t n)
@@ -3408,47 +3396,8 @@ static void remote_apply(cJSON *r)
 		d->created = (long)api_num(it, "created", 0);
 		d->last_seen = (long)api_num(it, "last_seen", 0);
 	}
-	cJSON *sh = cJSON_GetObjectItem(r, "ssh");
-	if (cJSON_IsObject(sh)) {
-		snprintf(rs.mode, sizeof(rs.mode), "%s", api_str(sh, "mode") ? api_str(sh, "mode") : "password");
-		rs.own_pw = cJSON_IsTrue(cJSON_GetObjectItem(sh, "own_password"));
-		rs.available = cJSON_IsTrue(cJSON_GetObjectItem(sh, "available"));
-		rs.nkeys = 0;
-		cJSON_ArrayForEach(it, cJSON_GetObjectItem(sh, "keys")) {
-			if (rs.nkeys >= 32) break;
-			rkey_t *k = &rs.keys[rs.nkeys++];
-			snprintf(k->id, sizeof(k->id), "%s", api_str(it, "id") ? api_str(it, "id") : "");
-			snprintf(k->name, sizeof(k->name), "%s", api_str(it, "name") ? api_str(it, "name") : "key");
-			snprintf(k->type, sizeof(k->type), "%s", api_str(it, "type") ? api_str(it, "type") : "");
-			snprintf(k->tail, sizeof(k->tail), "%s", api_str(it, "tail") ? api_str(it, "tail") : "");
-		}
-		rs.npend = cJSON_GetArraySize(cJSON_GetObjectItem(sh, "pending"));
-		cJSON *kp = cJSON_GetObjectItem(sh, "keep");
-		snprintf(rs.keep_dir, sizeof(rs.keep_dir), "%s", kp && api_str(kp, "dir") ? api_str(kp, "dir") : "");
-		snprintf(rs.keep_err, sizeof(rs.keep_err), "%s", kp && api_str(kp, "error") ? api_str(kp, "error") : "");
-		rs.keep_saved = kp ? (long)api_num(kp, "saved", 0) : 0;
-		cJSON *pl = cJSON_GetObjectItem(sh, "places");
-		if (cJSON_IsArray(pl)) {
-			rs.nplaces = 0;
-			cJSON_ArrayForEach(it, pl) {
-				if (rs.nplaces >= 8) break;
-				snprintf(rs.places[rs.nplaces][0], 64, "%s", api_str(it, "dir") ? api_str(it, "dir") : "");
-				snprintf(rs.places[rs.nplaces][1], 64, "%s", api_str(it, "name") ? api_str(it, "name") : "");
-				rs.nplaces++;
-			}
-		}
-		const char *note = api_str(r, "note");
-		if (note && *note) toast_show(note);
-	}
 	cJSON_Delete(r);
-	if (rem_head && rs.keys_view) {
-		char h[80];
-		snprintf(h, sizeof(h), "%d SSH key%s", rs.nkeys, rs.nkeys == 1 ? "" : "s");
-		lv_label_set_text(rem_head, h);
-		lv_label_set_text(rem_sub, "Keys log in as root without a password. Add one from the Phosphor app on your PC (Settings \xE2\x80\xBA Remote).");
-		rem_list.count = rs.nkeys;
-		vlist_refresh(&rem_list);
-	} else if (rem_head) {
+	if (rem_head) {
 		char h[160], sub[200];
 		if (!r_on) {
 			snprintf(h, sizeof(h), "Off");
@@ -3474,46 +3423,10 @@ static void remote_apply(cJSON *r)
 	}
 }
 
-static const char *ssh_mode_name(const char *m) { return !strcmp(m, "off") ? "Off" : !strcmp(m, "keys") ? "Keys only" : "Password"; }
-
 static void rem_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	if (rs.keys_view) {
-		if (i >= rs.nkeys) { t[0] = 0; return; }
-		rkey_t *k = &rs.keys[i];
-		snprintf(t, n, "%s", k->name);
-		snprintf(val, vn, "%s  \xE2\x80\xA6%s", k->type, k->tail);
-		return;
-	}
 	if (i == RR_ON) { snprintf(t, n, "Remote access"); snprintf(val, vn, "<  %s  >", r_on ? "On" : "Off"); *dim = !r_on; return; }
 	if (i == RR_PAIR) { snprintf(t, n, "Pair a device"); snprintf(val, vn, r_on ? ">" : "turn it on first"); *dim = !r_on; return; }
-	if (i == RR_SSH) { snprintf(t, n, "SSH"); snprintf(val, vn, "<  %s  >", ssh_mode_name(rs.mode)); *dim = !strcmp(rs.mode, "off"); return; }
-	if (i == RR_PW) {
-		snprintf(t, n, "SSH password");
-		snprintf(val, vn, !strcmp(rs.mode, "keys") ? "not used: keys only" : rs.own_pw ? "your own  >" : "MiSTer's own (1)  >");
-		*dim = strcmp(rs.mode, "password") != 0;
-		return;
-	}
-	if (i == RR_KEYS) {
-		snprintf(t, n, "SSH keys");
-		snprintf(val, vn, "%s%d key%s  >", rs.npend ? "waiting for you  \xC2\xB7  " : "", rs.nkeys, rs.nkeys == 1 ? "" : "s");
-		*dim = !strcmp(rs.mode, "off");
-		return;
-	}
-	if (i == RR_KEEP) {
-		snprintf(t, n, "Keep a copy");
-		const char *nm = rs.keep_dir;
-		for (int p = 0; p < rs.nplaces; p++) if (!strcmp(rs.places[p][0], rs.keep_dir)) nm = rs.places[p][1];
-		if (!rs.keep_dir[0]) snprintf(val, vn, "<  Off  >");
-		else if (rs.keep_err[0]) snprintf(val, vn, "<  %s  \xC2\xB7  not saved  >", nm);
-		else {
-			char w[32] = "not yet";
-			if (rs.keep_saved > 0) { time_t tt = rs.keep_saved; struct tm a; localtime_r(&tt, &a); strftime(w, sizeof(w), "%b %d %H:%M", &a); }
-			snprintf(val, vn, "<  %s  \xC2\xB7  saved %s  >", nm, w);
-		}
-		*dim = !rs.keep_dir[0];
-		return;
-	}
 	rdev_t *d = &rdevs[i - RR_COUNT];
 	char a[32], b[32];
 	when(d->created, a, sizeof(a));
@@ -3562,43 +3475,8 @@ static void show_remote(void)
 	rem_list.sel = 0;
 	rem_list.top = 0;
 	rem_list.count = RR_COUNT;
-	rs.keys_view = 0;
-	remote_apply(api_call("{\"cmd\":\"remote\",\"places\":true}"));
-	footer_set(REM_HINTS);
-}
-
-static void rem_footer(void)
-{
-	if (rs.keys_view) footer_set(REM_KEYS_HINTS);
-	else if (rem_list.sel == RR_PW) footer_set(REM_PW_HINTS);
-	else if (rem_list.sel == RR_KEEP) footer_set(REM_KEEP_HINTS);
-	else footer_set(REM_HINTS);
-}
-
-static void rem_keys_open(int on)
-{
-	rs.keys_view = on;
-	rem_list.sel = on ? 0 : RR_KEYS;
-	rem_list.top = 0;
 	remote_apply(api_call("{\"cmd\":\"remote\"}"));
-	rem_footer();
-}
-
-static void ssh_pw_done(const char *text)
-{
-	if (!text) { rem_footer(); return; }
-	cJSON *q = cJSON_CreateObject();
-	cJSON_AddStringToObject(q, "cmd", "remote");
-	cJSON_AddStringToObject(q, "do", "ssh_password");
-	cJSON_AddStringToObject(q, "password", text);
-	char *js = cJSON_PrintUnformatted(q);
-	cJSON_Delete(q);
-	cJSON *r = js ? api_call("%s", js) : NULL;
-	free(js);
-	if (api_ok(r)) toast_show("New SSH password set: log in as root with it");
-	else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't set the password");
-	remote_apply(r);
-	rem_footer();
+	footer_set(REM_HINTS);
 }
 
 static void remote_key(pkey_t k)
@@ -3611,58 +3489,8 @@ static void remote_key(pkey_t k)
 		}
 		return;
 	}
-	if (rs.keys_view) {
-		if (vlist_key(&rem_list, k)) return;
-		int i = rem_list.sel;
-		if (k == K_X && i < rs.nkeys) {
-			cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"ssh_key_remove\",\"id\":\"%s\"}", rs.keys[i].id);
-			if (api_ok(r)) toast_show("Key removed");
-			else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't remove it");
-			remote_apply(r);
-		} else if (k == K_B || k == K_MENU) rem_keys_open(0);
-		return;
-	}
-	if (vlist_key(&rem_list, k)) { rem_footer(); return; }
+	if (vlist_key(&rem_list, k)) return;
 	int i = rem_list.sel;
-	if (i == RR_SSH && (k == K_A || k == K_LEFT || k == K_RIGHT)) {
-		static const char *M[3] = { "off", "password", "keys" };
-		int c = !strcmp(rs.mode, "off") ? 0 : !strcmp(rs.mode, "keys") ? 2 : 1;
-		c = (c + (k == K_LEFT ? 2 : 1)) % 3;
-		cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"ssh_mode\",\"mode\":\"%s\"}", M[c]);
-		if (api_ok(r)) { char m[80]; snprintf(m, sizeof(m), "SSH: %s", ssh_mode_name(M[c])); toast_show(m); }
-		else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't change SSH");
-		remote_apply(r);
-		return;
-	}
-	if (i == RR_PW) {
-		if (strcmp(rs.mode, "password")) { if (k == K_A) toast_show("SSH is set to keys only or off: no password is used"); return; }
-		if (k == K_A) { osk_open("SSH password", "A new password for root, at least 4 characters, then Done.", 0, 64, ssh_pw_done, REM_PW_HINTS); return; }
-		if (k == K_X && rs.own_pw) {
-			cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"ssh_password_reset\"}");
-			toast_show(api_ok(r) ? "SSH password: MiSTer's own again (1)" : "Couldn't change it back");
-			remote_apply(r);
-			return;
-		}
-	}
-	if (i == RR_KEYS && k == K_A) { rem_keys_open(1); return; }
-	if (i == RR_KEEP && (k == K_LEFT || k == K_RIGHT)) {
-		int c = 0;                     /* 0 off, 1.. places */
-		for (int p = 0; p < rs.nplaces; p++) if (!strcmp(rs.places[p][0], rs.keep_dir)) c = p + 1;
-		if (!rs.nplaces) { toast_show("Plug in a USB drive, or use the NVMe, to keep a copy on"); return; }
-		c = (c + (k == K_LEFT ? rs.nplaces : 1)) % (rs.nplaces + 1);
-		cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"keep\",\"dir\":\"%s\",\"places\":true}", c ? rs.places[c - 1][0] : "");
-		if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't change that");
-		else toast_show(c ? "A copy is kept there: a freshly flashed SD card gets your remote access back" : "No copy kept");
-		remote_apply(r);
-		return;
-	}
-	if (i == RR_KEEP && k == K_A) {
-		if (!rs.keep_dir[0]) { toast_show("Choose a drive with Left / Right first"); return; }
-		cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"keep_now\"}");
-		toast_show(api_ok(r) ? "Copy saved" : r && api_str(r, "error") ? api_str(r, "error") : "Couldn't save the copy");
-		remote_apply(r);
-		return;
-	}
 	if (i == RR_ON && (k == K_A || k == K_LEFT || k == K_RIGHT)) {
 		remote_apply(api_call("{\"cmd\":\"remote\",\"on\":%s}", r_on ? "false" : "true"));
 		toast_show(r_on ? "Remote access is on" : "Remote access is off");
@@ -7436,88 +7264,6 @@ static void saver_tick(uint32_t now)
 void ui_screensaver_now(void) { saver_show(); }   /* tests and snapshots */
 void ui_activity(void) { last_input = lv_tick_get(); saver_hide(); }
 
-/* ---------- SSH keys offered by a paired device ----------
- * The Phosphor app (or another paired device) offers its SSH key; it only gets in after a yes here.
- * Shows over any screen, one key at a time. Also the one-time notice after a fresh SD card got the
- * remote access setup back from the kept copy. */
-static struct { lv_obj_t *dim; int open, n; } sk;
-
-static void sk_close(void)
-{
-	if (sk.dim) lv_obj_delete(sk.dim);
-	sk.dim = NULL;
-	sk.open = 0;
-}
-
-static void sk_check(uint32_t now)
-{
-	static uint32_t last, first;
-	static int restored_done;
-	if (!first) first = now ? now : 1;
-	if (now - last < 1000) return;
-	last = now;
-	if (!restored_done && now - first > 5000) {
-		restored_done = 1;
-		cJSON *r = api_call("{\"cmd\":\"remote_ssh\"}");
-		cJSON *x = r ? cJSON_GetObjectItem(cJSON_GetObjectItem(r, "ssh"), "restored") : NULL;
-		if (cJSON_IsObject(x)) {
-			char m[200];
-			snprintf(m, sizeof(m), "Remote access and SSH were brought back from the copy on %s", api_str(x, "from") ? api_str(x, "from") + (strncmp(api_str(x, "from"), "/media/", 7) ? 0 : 7) : "another drive");
-			toast_show(m);
-			cJSON_Delete(api_call("{\"cmd\":\"remote\",\"do\":\"restored_seen\"}"));
-		}
-		cJSON_Delete(r);
-	}
-	if (sk.open || osk.open || pm.open || cur == SCR_MAP || cur == SCR_CTEST || powering) return;
-	char p[300];
-	const char *t = getenv("PHOS_TMP");
-	snprintf(p, sizeof(p), "%s/ssh-key-request", t && *t ? t : "/tmp/phosphor");
-	if (access(p, F_OK)) return;
-	cJSON *r = api_call("{\"cmd\":\"remote\"}");
-	cJSON *pd = r ? cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetObjectItem(r, "ssh"), "pending"), 0) : NULL;
-	if (!pd) { cJSON_Delete(r); return; }
-	saver_hide();
-	ui_activity();
-	sk.open = 1;
-	sk.n = (int)api_num(pd, "n", 0);
-	sk.dim = lv_obj_create(lv_layer_top());
-	lv_obj_remove_style_all(sk.dim);
-	lv_obj_set_size(sk.dim, W, H);
-	lv_obj_set_style_bg_color(sk.dim, lv_color_hex(0x08080a), 0);
-	lv_obj_set_style_bg_opa(sk.dim, LV_OPA_80, 0);
-	lv_obj_t *box = mk_box(sk.dim, S(720), LV_SIZE_CONTENT, PAL.panel, S(16));
-	lv_obj_set_style_border_width(box, LV_MAX(1, S(1)), 0);
-	lv_obj_set_style_border_color(box, PAL.acc, 0);
-	lv_obj_set_style_pad_all(box, S(32), 0);
-	lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
-	lv_obj_set_style_pad_row(box, S(10), 0);
-	lv_obj_center(box);
-	lv_obj_t *l = mk_label(box, FONT_LABEL, PAL.dim, "SSH KEY");
-	lv_obj_set_style_text_letter_space(l, S(3), 0);
-	mk_label(box, FONT_TITLE, PAL.text, "Let this key log in?");
-	char m[400];
-	snprintf(m, sizeof(m), "%s wants to log in to this SS1 over SSH, as root, with its key:\n%s  \xE2\x80\xA6%s\n\nOnly say yes if you just asked for this on that device.",
-	         api_str(pd, "from") ? api_str(pd, "from") : "A paired device", api_str(pd, "type") ? api_str(pd, "type") : "", api_str(pd, "tail") ? api_str(pd, "tail") : "");
-	lv_obj_t *b = mk_label(box, FONT_BODY, PAL.dim, m);
-	lv_label_set_long_mode(b, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(b, S(656));
-	lv_obj_t *hn = mk_label(box, FONT_SMALL, PAL.dim, "A  Yes, add it        B  No");
-	lv_obj_set_style_pad_top(hn, S(14), 0);
-	cJSON_Delete(r);
-}
-
-static int sk_key(pkey_t k)
-{
-	if (!sk.open) return 0;
-	if (k != K_A && k != K_B) return 1;
-	cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"%s\",\"n\":%d}", k == K_A ? "ssh_key_accept" : "ssh_key_decline", sk.n);
-	if (k == K_A) toast_show(api_ok(r) ? "Key added: it can log in over SSH now" : r && api_str(r, "error") ? api_str(r, "error") : "Couldn't add it");
-	else toast_show("Not added");
-	sk_close();
-	if (cur == SCR_REMOTE && !pair_box) remote_apply(r); else cJSON_Delete(r);
-	return 1;
-}
-
 /* Remote control from the Windows app: never into network, pairing or remote access settings */
 static int app_key_blocked(pkey_t k)
 {
@@ -7540,7 +7286,6 @@ void ui_key(pkey_t k)
 	if (vk_key(k)) return;                           /* a video try waits for Keep */
 	if (pm_key(k)) return;
 	if (osk_key(k)) return;
-	if (sk_key(k)) return;
 	switch (cur) {
 	case SCR_HOME:
 		if (k == K_LEFT) shelf_go(home.sel - 1);
@@ -7943,7 +7688,6 @@ void ui_tick(void)
 	if (mainlink_disc_changed()) disc_refresh();
 	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_refresh(); } }
 	ui_game_events();
-	sk_check(now);
 	vk_check(0);
 	vk_tick();
 	if (si_pending()) si_update();

@@ -44,9 +44,13 @@ done
 if [ -f "$HERE/bin/phos-nvme" ]; then
 	cp "$HERE/bin/phos-nvme" "$ROOT/bin/phos-nvme.new" && chmod 755 "$ROOT/bin/phos-nvme.new" && mv -f "$ROOT/bin/phos-nvme.new" "$ROOT/bin/phos-nvme"
 fi
-# phos-ssh.sh: SSH for Settings > Remote access (Off, Password, Keys only) and its copy on another drive
-if [ -f "$HERE/bin/phos-ssh.sh" ]; then
-	cp "$HERE/bin/phos-ssh.sh" "$ROOT/bin/phos-ssh.sh.new" && chmod 755 "$ROOT/bin/phos-ssh.sh.new" && mv -f "$ROOT/bin/phos-ssh.sh.new" "$ROOT/bin/phos-ssh.sh"
+# Phosphor's SSH settings are gone since 0.27.38 (pairing with the code is all remote access needs):
+# MiSTer's own SSH again (its own password, its own keys), once, then the script and its settings go.
+# A copy kept on another drive (<drive>/phosphor-keep) is the user's own and stays.
+if [ -f "$ROOT/bin/phos-ssh.sh" ]; then
+	bash "$ROOT/bin/phos-ssh.sh" stock > /dev/null 2>&1
+	rm -f "$ROOT/bin/phos-ssh.sh"
+	rm -rf "$ROOT/config/ssh"
 fi
 # phosphor-main (Phosphor's Main fork): only copied; nothing starts it or replaces MiSTer's Main
 if [ -f "$HERE/bin/MiSTer_phosphor" ]; then

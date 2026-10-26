@@ -50,7 +50,7 @@ if(DEFINED ENV{PHOSPHOR_SS_DEVID} AND DEFINED ENV{PHOSPHOR_SS_DEVPASSWORD})
 endif()
 target_compile_options(phosphord PRIVATE -Wall -Wextra -Wno-unused-parameter)
 set_source_files_properties(phosphord/art.c PROPERTIES COMPILE_OPTIONS "-Wno-sign-compare;-Wno-unused-function")
-set_source_files_properties(phosphord/ctrl.c phosphord/sshacc.c phosphord/vtry.c phosphord/sysbk.c PROPERTIES COMPILE_OPTIONS "-Wno-format-truncation")
+set_source_files_properties(phosphord/ctrl.c phosphord/vtry.c phosphord/sysbk.c PROPERTIES COMPILE_OPTIONS "-Wno-format-truncation")
 
 add_executable(phos phos/phos.c)
 # the NVMe drive behind the SS1 dock's JMicron bridge (model, temperature, health)

@@ -1031,33 +1031,7 @@ class AppSettings {
 			<div class="acts"><button class="btn" id="repair" data-nav>Pair again…</button><button class="btn" id="forget" data-nav>Forget this SS1</button></div></div>
 			<div class="panel"><h2>Connection</h2><p class="note">This PC reaches the SS1 over your home network with Phosphor's remote access, paired with a code. The pairing key stays on this PC, protected for your Windows account. Nothing goes over the internet.</p>
 			<p class="note"><b>Reconnect automatically:</b> when the SS1 restarts or your router gives it a new address, Phosphor finds it again on your network by itself, no pairing needed. Only the SS1 this PC is paired with can answer, so another one on the network is never picked up.</p>
-			<p class="note">After the SS1's SD card is reflashed it doesn't know this PC any more: pair again then, unless the SS1 keeps a copy of its remote access on the NVMe or a USB drive (Settings \u203A Remote access on the TV), which a fresh card brings back by itself.</p></div></div>
-			<div class="split" style="margin-top:1.5rem"><div class="list"><dl class="kv" style="max-width:34rem" id="ssh_kv"><dt>SSH</dt><dd>…</dd></dl>
-			<div class="acts"><button class="btn" id="ssh_add" data-nav>Add this PC's SSH key…</button></div></div>
-			<div class="panel"><h2>SSH</h2><p class="note">SSH logs in to the SS1's Linux as root: for phosphor-link, a terminal or WinSCP. Off, Password (MiSTer's own, or one you set) or Keys only are chosen on the TV, in Settings \u203A Remote access: another device can't change them.</p>
-			<p class="note"><b>Add this PC's SSH key</b> offers this PC's keys to the SS1 (Phosphor's own, which phosphor-link uses too, and any in your .ssh folder). Each one only gets in after you say yes on the TV. Private keys never leave this PC.</p></div></div>`));
-		const sshDraw = async () => {
-			let j;
-			try { j = (await ss1({ cmd: "remote_ssh" })).ssh; } catch (e) { $("#ssh_kv").innerHTML = `<dt>SSH</dt><dd>${esc(e.message)}</dd>`; return; }
-			if (!alive()) return;
-			const mode = { off: "Off", password: "Password", keys: "Keys only" }[j.mode] || j.mode;
-			const pw = j.mode === "password" ? (j.own_password ? "your own" : "MiSTer's own") : "not used";
-			const keys = (j.keys || []).map(k => `${esc(k.name)} <span class="dim">${esc(k.type)} \u2026${esc(k.tail)}</span>`).join("<br>") || "none";
-			const wait = (j.pending || []).length ? `<dt>Waiting on the TV</dt><dd>${j.pending.length} key${j.pending.length > 1 ? "s" : ""}: say yes there</dd>` : "";
-			const keep = j.keep && j.keep.dir ? `${esc(j.keep.dir.replace("/media/", ""))}${j.keep.saved ? ", saved " + new Date(j.keep.saved * 1000).toLocaleString() : ""}` : "off";
-			$("#ssh_kv").innerHTML = `<dt>SSH</dt><dd>${mode}</dd><dt>Password</dt><dd>${pw}</dd><dt>Keys</dt><dd>${keys}</dd>${wait}<dt>Copy kept on</dt><dd>${keep}</dd>`;
-		};
-		sshDraw();
-		$("#ssh_add").onclick = async () => {
-			try {
-				const k = await api("/api/sshkeys");
-				if (!k.keys || !k.keys.length) { toast("No SSH keys on this PC"); return; }
-				const j = await ss1({ cmd: "remote_ssh", offer: k.keys });
-				toast(`Look at the TV: say yes to add ${j.offered === 1 ? "the key" : j.offered + " keys"}`);
-			} catch (e) { toast(e.message); }
-			sshDraw();
-			for (let i = 0; i < 20 && alive(); i++) { await new Promise(r => setTimeout(r, 3000)); if (alive()) await sshDraw(); }
-		};
+			<p class="note">After the SS1's SD card is reflashed it doesn't know this PC any more: pair again then, with the code from Settings \u203A Remote access on the TV.</p></div></div>`));
 		$("#rc_now").onclick = async () => {
 			$("#rc_now").textContent = "Looking…";
 			try {
