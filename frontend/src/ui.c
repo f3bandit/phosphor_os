@@ -35,7 +35,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -458,6 +458,10 @@ static struct {
 static void systems_disc_update(void);
 static void discs_screen_update(void);
 static void show_discs(void);
+static void show_ra(void);
+static void ra_key(int k);
+static void raview_key(int k);
+static void ra_tick(void);
 static void discs_key(int k);
 static void ingame_key(int k);
 static void ingame_open(void);
@@ -950,6 +954,13 @@ static void game_detail(void)
 		if (info[0]) strncat(info, "  \xC2\xB7  ", sizeof(info) - strlen(info) - 1);
 		strncat(info, parts[i], sizeof(info) - strlen(info) - 1);
 	}
+	/* RetroAchievements: this game's progress, when the library is matched (Settings › RetroAchievements) */
+	cJSON *rab = d ? cJSON_GetObjectItem(d, "ra") : NULL;
+	if (cJSON_IsObject(rab)) {
+		char ra[64];
+		snprintf(ra, sizeof(ra), "%sAchievements %d / %d", info[0] ? "  \xC2\xB7  " : "", (int)api_num(rab, "unlocked", 0), (int)api_num(rab, "total", 0));
+		strncat(info, ra, sizeof(info) - strlen(info) - 1);
+	}
 	lv_label_set_text(g_info, info);
 	lv_obj_set_hidden(g_info, !info[0]);
 	lv_obj_set_y(g_desc, info[0] ? info_y + S(28) : info_y);
@@ -1233,7 +1244,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1334,6 +1345,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		if (!dk.known) { *dim = 1; snprintf(val, vn, "Needs Phosphor's Main with disc support"); }
 		else snprintf(val, vn, "%s  >", dk.enabled ? "On" : "Off");
 		break;
+	case SET_RA: snprintf(t, n, "RetroAchievements"); snprintf(val, vn, ">"); break;
 	case SET_VIDEO: snprintf(t, n, "Video"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
@@ -2377,6 +2389,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                  "Only a repair changes a drive, and only after you say so twice." },
 	[SET_DISCS] = { "Play games from the dock's CD/DVD drive: PlayStation, Saturn, Mega-CD, PC Engine CD, Neo Geo CD, CD-i and 3DO, and MSU-1 / MD+ discs. A disc shows at the top of Disc while it's in.",
 	                "Disc support by Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)." },
+	[SET_RA] = { "Achievements in your games, from retroachievements.org: log in once, then games on NES, SNES, Mega Drive, N64, PlayStation, Game Boy, GBA and more start on the RetroAchievements cores. Your progress and each game's achievements are here too.",
+	             "RetroAchievements support by odelot (Main_MiSTer, RA cores); rcheevos by the RetroAchievements team." },
 	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
 	                "The ports are only read while this screen is open." },
 	[SET_VIDEO] = { "MiSTer's own video settings: HDMI resolution, refresh and lag, scaling, HDR, the TV remote over HDMI, and the analog outputs, each explained. Try a change: it goes back by itself in 35 seconds unless you keep it.",
@@ -7301,6 +7315,12 @@ void ui_key(pkey_t k)
 	case SCR_DISCS:
 		discs_key(k);
 		break;
+	case SCR_RA:
+		ra_key(k);
+		break;
+	case SCR_RAVIEW:
+		raview_key(k);
+		break;
 	case SCR_INGAME:
 		ingame_key(k);
 		break;
@@ -7415,6 +7435,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_PORTS) show_ports();
 			else if (set_list.sel == SET_STORAGE) show_storage();
 			else if (set_list.sel == SET_DISCS) show_discs();
+			else if (set_list.sel == SET_RA) show_ra();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else if (set_list.sel == SET_ABOUT) show_about();
 			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
@@ -7506,49 +7527,364 @@ static void discs_key(int k)
 	else if (k == K_B || k == K_MENU) back_to_settings(SET_DISCS);
 }
 
+
+/* ---------- Settings › RetroAchievements (phosphord ra.c; achievements run in Phosphor's Main) ----------
+ * Log in once (only the token RetroAchievements gives back is kept), Hardcore, the pop-up corner and the
+ * unlock sound (read by Main), odelot's cores, the Web API key for the viewer, matching the library. */
+static vlist_t ra_list;
+enum { RA_ACCOUNT, RA_HC, RA_POP, RA_SND, RA_CORES, RA_KEY, RA_MATCH, RA_VIEW, RA_COUNT };
+static cJSON *ras;                 /* phosphord's "ra" */
+static char ra_user_typed[80];
+static lv_obj_t *ra_note;
+static void ra_load(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"ra\"}");
+	cJSON *x = api_ok(r) ? cJSON_DetachItemFromObject(r, "ra") : NULL;
+	cJSON_Delete(r);
+	if (x) { cJSON_Delete(ras); ras = x; }
+}
+static int ra_b(const char *k) { return ras && cJSON_IsTrue(cJSON_GetObjectItem(ras, k)); }
+static void ra_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	int in = ra_b("logged_in");
+	cJSON *job = ras ? cJSON_GetObjectItem(ras, "job") : NULL, *mt = ras ? cJSON_GetObjectItem(ras, "match") : NULL;
+	switch (i) {
+	case RA_ACCOUNT:
+		snprintf(t, n, "Account");
+		if (in) snprintf(val, vn, "%s  \xC2\xB7  logged in", api_str(ras, "user") ? api_str(ras, "user") : "");
+		else snprintf(val, vn, "Log in  >");
+		break;
+	case RA_HC: snprintf(t, n, "Hardcore"); snprintf(val, vn, "<  %s  >", ra_b("hardcore") ? "On" : "Off"); *dim = !in; break;
+	case RA_POP: {
+		const char *p = ras && api_str(ras, "popups") ? api_str(ras, "popups") : "left";
+		snprintf(t, n, "Pop-ups"); snprintf(val, vn, "<  Top %s  >", p); *dim = !in; break;
+	}
+	case RA_SND: snprintf(t, n, "Unlock sound"); snprintf(val, vn, "<  %s  >", ra_b("sound") ? "On" : "Off"); *dim = !in; break;
+	case RA_CORES:
+		snprintf(t, n, "RetroAchievements cores");
+		if (job && cJSON_IsTrue(cJSON_GetObjectItem(job, "busy"))) snprintf(val, vn, "%s", api_str(job, "message") ? api_str(job, "message") : "Getting them...");
+		else snprintf(val, vn, "%d of %d  \xC2\xB7  get updates  >", ras ? (int)api_num(ras, "cores_installed", 0) : 0,
+		              ras ? cJSON_GetArraySize(cJSON_GetObjectItem(ras, "cores")) : 0);
+		break;
+	case RA_KEY: snprintf(t, n, "Web API key (for Your progress)"); snprintf(val, vn, ra_b("web_key") ? "set  >" : "add  >"); break;
+	case RA_MATCH:
+		snprintf(t, n, "Match my library");
+		if (mt && api_str(mt, "message") && *api_str(mt, "message")) snprintf(val, vn, "%s", api_str(mt, "message"));
+		else snprintf(val, vn, ">");
+		*dim = !ra_b("web_key");
+		break;
+	case RA_VIEW: snprintf(t, n, "Your progress"); snprintf(val, vn, ">"); *dim = !in || !ra_b("web_key"); break;
+	}
+}
+static const char *const RA_HINTS[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
+static const char *const RA_HINTS_OUT[] = { "A", "Select", "X", "Log out", "B", "Back", NULL };
+static void ra_footer(void) { footer_set(ra_list.sel == RA_ACCOUNT && ra_b("logged_in") ? RA_HINTS_OUT : RA_HINTS); }
+static void ra_refresh(void) { if (cur != SCR_RA) return; ra_load(); vlist_refresh(&ra_list); }
+static void show_ra(void)
+{
+	cur = SCR_RA;
+	ra_load();
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "RetroAchievements");
+	vlist_create(&ra_list, body, S(56), S(176), S(700), S(440));
+	ra_list.count = RA_COUNT;
+	ra_list.fill = ra_fill;
+	ra_list.sel = 0;
+	ra_list.top = 0;
+	vlist_refresh(&ra_list);
+	lv_obj_t *panel = mk_box(body, S(444), S(400), PAL.panel, S(16));
+	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(panel, PAL.line, 0);
+	lv_obj_set_pos(panel, S(780), S(176));
+	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "RetroAchievements");
+	lv_obj_set_pos(h, S(24), S(22));
+	ra_note = mk_label(panel, FONT_BODY, PAL.dim,
+		"Log in once: your password goes to RetroAchievements and only the login it gives back is kept. Games on the "
+		"RetroAchievements cores get achievements; unlocks pop up in the game.\n\nHardcore: no save states, cheats or slow motion. "
+		"Your progress needs your Web API key, from your settings on retroachievements.org (or paste it from the phone or PC app).");
+	lv_label_set_long_mode(ra_note, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(ra_note, S(396));
+	lv_obj_set_pos(ra_note, S(24), S(64));
+	lv_obj_t *cr = mk_label(panel, FONT_SMALL, PAL.faint, "RetroAchievements support by odelot.\nrcheevos by the RetroAchievements team.");
+	lv_obj_set_pos(cr, S(24), S(340));
+	ra_footer();
+}
+static void ra_pw_done(const char *pw)
+{
+	if (!pw) { ra_footer(); return; }
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "ra_login");
+	cJSON_AddStringToObject(q, "user", ra_user_typed);
+	cJSON_AddStringToObject(q, "password", pw);
+	char *js = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	toast_show("Logging in...");
+	lv_refr_now(NULL);
+	cJSON *r = js ? api_call_slow(20000, "%s", js) : NULL;
+	if (js) { memset(js, 0, strlen(js)); free(js); }
+	if (api_ok(r)) toast_show("Logged in. Get the RetroAchievements cores next, if you haven't.");
+	else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't log in");
+	cJSON_Delete(r);
+	ra_refresh();
+	ra_footer();
+}
+static void ra_user_done(const char *u)
+{
+	if (!u || !*u) { ra_footer(); return; }
+	snprintf(ra_user_typed, sizeof(ra_user_typed), "%s", u);
+	osk_open("RetroAchievements password", "Used once to log in, then forgotten: only the login it gives back is kept.", 1, 64, ra_pw_done, RA_HINTS);
+}
+static void ra_key_done(const char *k)
+{
+	if (!k) { ra_footer(); return; }
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "ra_key");
+	cJSON_AddStringToObject(q, "key", k);
+	char *js = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = js ? api_call("%s", js) : NULL;
+	free(js);
+	toast_show(api_ok(r) ? (*k ? "Web API key saved: Match my library next" : "Web API key removed") : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't save it"));
+	cJSON_Delete(r);
+	ra_refresh();
+	ra_footer();
+}
+static void ra_set_one(const char *json)
+{
+	cJSON *r = api_call("{\"cmd\":\"ra_set\",%s}", json);
+	if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't change it");
+	cJSON_Delete(r);
+	ra_refresh();
+}
+static void show_raview(void);
+static void ra_key(int k)
+{
+	if (vlist_key(&ra_list, k)) { ra_footer(); return; }
+	int in = ra_b("logged_in");
+	int lr = k == K_LEFT || k == K_RIGHT || k == K_A;
+	switch (ra_list.sel) {
+	case RA_ACCOUNT:
+		if (k == K_A && !in) osk_open("RetroAchievements username", "Your username on retroachievements.org", 0, 64, ra_user_done, RA_HINTS);
+		else if (k == K_X && in) { cJSON_Delete(api_call("{\"cmd\":\"ra_logout\"}")); toast_show("Logged out: games start on the usual cores again"); ra_refresh(); ra_footer(); }
+		break;
+	case RA_HC:
+		if (lr && in) { int on = !ra_b("hardcore"); ra_set_one(on ? "\"hardcore\":true" : "\"hardcore\":false"); toast_show(on ? "Hardcore on: from the next game you start" : "Hardcore off"); }
+		break;
+	case RA_POP:
+		if (lr && in) {
+			static const char *const P[] = { "left", "center", "right" };
+			const char *cur_p = api_str(ras, "popups") ? api_str(ras, "popups") : "left";
+			int c = !strcmp(cur_p, "center") ? 1 : !strcmp(cur_p, "right") ? 2 : 0;
+			c = (c + (k == K_LEFT ? 2 : 1)) % 3;
+			char j[64];
+			snprintf(j, sizeof(j), "\"popups\":\"%s\"", P[c]);
+			ra_set_one(j);
+		}
+		break;
+	case RA_SND:
+		if (lr && in) ra_set_one(ra_b("sound") ? "\"sound\":false" : "\"sound\":true");
+		break;
+	case RA_CORES:
+		if (k == K_A) { cJSON *r = api_call("{\"cmd\":\"ra_cores\"}"); toast_show(api_ok(r) ? "Getting odelot's RetroAchievements cores from GitHub" : "Couldn't start"); cJSON_Delete(r); ra_refresh(); }
+		break;
+	case RA_KEY:
+		if (k == K_A) osk_open("Web API key", "From retroachievements.org: Settings, Authentication, Web API key (letters and numbers). Empty removes it.", 0, 64, ra_key_done, RA_HINTS);
+		break;
+	case RA_MATCH:
+		if (k == K_A) {
+			if (!ra_b("web_key")) { toast_show("Add your Web API key first"); break; }
+			cJSON *r = api_call("{\"cmd\":\"ra_match\"}");
+			toast_show(api_ok(r) ? "Matching your library to RetroAchievements..." : "Couldn't start");
+			cJSON_Delete(r);
+			ra_refresh();
+		}
+		break;
+	case RA_VIEW:
+		if (k == K_A) {
+			if (!in) toast_show("Log in first");
+			else if (!ra_b("web_key")) toast_show("Add your Web API key first");
+			else show_raview();
+		}
+		break;
+	}
+	if (k == K_B || k == K_MENU) back_to_settings(SET_RA);
+}
+/* while a download or a match runs: its progress */
+static void ra_tick(void)
+{
+	if (cur != SCR_RA || !ras) return;
+	cJSON *job = cJSON_GetObjectItem(ras, "job"), *mt = cJSON_GetObjectItem(ras, "match");
+	static int was;
+	int busy = cJSON_IsTrue(cJSON_GetObjectItem(job, "busy")) || cJSON_IsTrue(cJSON_GetObjectItem(mt, "busy"));
+	if (busy || was) ra_refresh();
+	was = busy;
+}
+
+/* ---------- Settings › RetroAchievements › Your progress (the viewer) ---------- */
+static vlist_t rv_list, rv_ach;
+static cJSON *rv, *rv_game;        /* the profile; the achievements of one game (A) */
+static lv_obj_t *rv_head, *rv_sub, *rv_title, *rv_info, *rv_desc;
+static int rv_mode;                /* 0: games, 1: one game's achievements */
+static cJSON *rv_games(void) { return rv ? cJSON_GetObjectItem(rv, "games") : NULL; }
+static void rv_panel(void)
+{
+	cJSON *g = cJSON_GetArrayItem(rv_games(), rv_list.sel);
+	if (!g) { lv_label_set_text(rv_title, ""); lv_label_set_text(rv_info, ""); return; }
+	lv_label_set_text(rv_title, api_str(g, "title") ? api_str(g, "title") : "");
+	char t[300];
+	int tot = (int)api_num(g, "total", 0), un = (int)api_num(g, "unlocked", 0);
+	snprintf(t, sizeof(t), "%s\n%d of %d achievements (%d%%)%s%s\n%s", api_str(g, "console") ? api_str(g, "console") : "",
+	         un, tot, tot ? un * 100 / tot : 0, api_num(g, "hardcore", 0) > 0 ? ", hardcore " : "", "",
+	         api_num(g, "game_id", 0) > 0 ? "In your library: X plays it" : "Not matched to your library");
+	lv_label_set_text(rv_info, t);
+}
+static void rv_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	cJSON *g = cJSON_GetArrayItem(rv_games(), i);
+	*dim = 0;
+	snprintf(t, n, "%s", g && api_str(g, "title") ? api_str(g, "title") : "");
+	int tot = g ? (int)api_num(g, "total", 0) : 0, un = g ? (int)api_num(g, "unlocked", 0) : 0;
+	const char *aw = g ? api_str(g, "award") : NULL;
+	if (aw && (!strcmp(aw, "mastered") || !strcmp(aw, "completed"))) snprintf(val, vn, "%d / %d  \xC2\xB7  %s", un, tot, aw);
+	else snprintf(val, vn, "%d / %d  \xC2\xB7  %d%%", un, tot, tot ? un * 100 / tot : 0);
+	if (i == rv_list.sel) rv_panel();
+}
+static void rv_ach_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	cJSON *a = cJSON_GetArrayItem(cJSON_GetObjectItem(rv_game, "achievements"), i);
+	int got = a && cJSON_IsTrue(cJSON_GetObjectItem(a, "unlocked"));
+	snprintf(t, n, "%s%s", got ? "\xE2\x9C\x93  " : "", a && api_str(a, "title") ? api_str(a, "title") : "");
+	snprintf(val, vn, "%d pts%s", a ? (int)api_num(a, "points", 0) : 0, a && cJSON_IsTrue(cJSON_GetObjectItem(a, "hardcore")) ? "  \xC2\xB7  hardcore" : "");
+	*dim = !got;
+	if (i == rv_ach.sel && rv_desc) lv_label_set_text(rv_desc, a && api_str(a, "description") ? api_str(a, "description") : "");
+}
+static const char *const RV_HINTS[] = { "A", "Achievements", "X", "Play", "B", "Back", NULL };
+static const char *const RV_ACH_HINTS[] = { "\xE2\x86\x95", "Look", "B", "Back", NULL };
+static void rv_draw(void)
+{
+	lv_obj_clean(body);
+	rv_desc = NULL;
+	char sub[200] = "";
+	if (rv) snprintf(sub, sizeof(sub), "%d points  \xC2\xB7  %d achievements  \xC2\xB7  %d games mastered", (int)api_num(rv, "points", 0),
+	                 (int)api_num(rv, "achievements", 0), (int)api_num(rv, "mastered", 0));
+	screen_title("SETTINGS  \xC2\xB7  RETROACHIEVEMENTS", rv && api_str(rv, "user") ? api_str(rv, "user") : "Your progress");
+	rv_sub = mk_label(body, FONT_SMALL, PAL.dim, sub);
+	lv_obj_set_pos(rv_sub, S(56), S(168));
+	if (rv_mode == 0) {
+		vlist_create(&rv_list, body, S(56), S(200), S(700), S(420));
+		lv_obj_t *panel = mk_box(body, S(444), S(300), PAL.panel, S(16));
+		lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
+		lv_obj_set_style_border_color(panel, PAL.line, 0);
+		lv_obj_set_pos(panel, S(780), S(200));
+		rv_title = mk_label(panel, FONT_TITLE, PAL.text, "");
+		lv_label_set_long_mode(rv_title, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(rv_title, S(396));
+		lv_obj_set_pos(rv_title, S(24), S(22));
+		rv_info = mk_label(panel, FONT_BODY, PAL.dim, "");
+		lv_label_set_long_mode(rv_info, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_width(rv_info, S(396));
+		lv_obj_set_pos(rv_info, S(24), S(64));
+		rv_list.fill = rv_fill;
+		rv_list.count = cJSON_GetArraySize(rv_games());
+		vlist_refresh(&rv_list);
+		if (!rv_list.count) { lv_label_set_text(rv_title, "No games yet"); lv_label_set_text(rv_info, "Play a game on a RetroAchievements core and it shows here."); }
+		footer_set(RV_HINTS);
+	} else {
+		cJSON *g = cJSON_GetArrayItem(rv_games(), rv_list.sel);
+		rv_head = mk_label(body, FONT_TITLE, PAL.text, g && api_str(g, "title") ? api_str(g, "title") : "");
+		lv_obj_set_pos(rv_head, S(56), S(196));
+		vlist_create(&rv_ach, body, S(56), S(240), W - S(112), S(340));
+		rv_ach.fill = rv_ach_fill;
+		rv_ach.count = cJSON_GetArraySize(cJSON_GetObjectItem(rv_game, "achievements"));
+		rv_desc = mk_label(body, FONT_BODY, PAL.dim, "");
+		lv_label_set_long_mode(rv_desc, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_width(rv_desc, W - S(112));
+		lv_obj_set_pos(rv_desc, S(56), S(600));
+		vlist_refresh(&rv_ach);
+		footer_set(RV_ACH_HINTS);
+	}
+}
+static void show_raview(void)
+{
+	cur = SCR_RAVIEW;
+	rv_mode = 0;
+	toast_show("Asking RetroAchievements...");
+	lv_refr_now(NULL);
+	cJSON *r = api_call_slow(30000, "{\"cmd\":\"ra_profile\"}");
+	cJSON_Delete(rv);
+	rv = api_ok(r) ? cJSON_DetachItemFromObject(r, "profile") : NULL;
+	if (!rv) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAchievements didn't answer");
+	cJSON_Delete(r);
+	rv_list.sel = 0;
+	rv_list.top = 0;
+	rv_draw();
+}
+static void raview_key(int k)
+{
+	if (rv_mode == 1) {
+		if (vlist_key(&rv_ach, k)) return;
+		if (k == K_B || k == K_MENU) { rv_mode = 0; rv_draw(); }
+		return;
+	}
+	if (vlist_key(&rv_list, k)) return;
+	cJSON *g = cJSON_GetArrayItem(rv_games(), rv_list.sel);
+	long long gid = g ? (long long)api_num(g, "game_id", 0) : 0;
+	if (k == K_A && g) {
+		if (gid <= 0) { toast_show("Not in your library (or not matched yet), so its list isn't here"); return; }
+		toast_show("Asking RetroAchievements...");
+		lv_refr_now(NULL);
+		cJSON *r = api_call_slow(30000, "{\"cmd\":\"ra_game\",\"id\":%lld}", gid);
+		cJSON_Delete(rv_game);
+		rv_game = api_ok(r) ? cJSON_DetachItemFromObject(r, "ra") : NULL;
+		if (!rv_game) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAchievements didn't answer");
+		cJSON_Delete(r);
+		if (rv_game) { rv_mode = 1; rv_ach.sel = 0; rv_ach.top = 0; rv_draw(); }
+	} else if (k == K_X && gid > 0) {
+		cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", gid);
+		toast_show(api_ok(r) ? "Starting..." : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"));
+		cJSON_Delete(r);
+	} else if (k == K_B || k == K_MENU) show_ra();
+}
+
 /* ---------- the in-game menu ----------
  * A short press of the menu button in a game (a long one opens MiSTer's menu, as before): Phosphor's
  * screen over the running game (Main's "ingame"; the game keeps running behind it) and the controller
  * here, until Back. Needs Phosphor's Main with API 5. */
 static vlist_t ig_list;
-enum { IG_BACK, IG_DISC, IG_OSD, IG_QUIT };
-static int ig_rows[4], ig_n;
+enum { IG_BACK, IG_ACH, IG_DISC, IG_OSD, IG_QUIT };
+static int ig_rows[5], ig_n;
+/* RetroAchievements in the game being played (Main's "ra"): the Achievements row and its list */
+static struct { int on, total, unlocked, points, points_unlocked, hardcore, view; cJSON *list; } igra;
+static lv_obj_t *ig_left, *ig_ach_desc;
+static vlist_t ig_ach_list;
 static void ig_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	static const char *const NAME[] = { "Back to the game", "Change disc", "MiSTer menu", "Quit to Phosphor" };
+	static const char *const NAME[] = { "Back to the game", "Achievements", "Change disc", "MiSTer menu", "Quit to Phosphor" };
 	*dim = 0;
 	snprintf(t, n, "%s", NAME[ig_rows[i]]);
-	snprintf(val, vn, "%s", ig_rows[i] == IG_BACK ? "" : ">");
+	if (ig_rows[i] == IG_ACH) snprintf(val, vn, "%d / %d", igra.unlocked, igra.total);
+	else snprintf(val, vn, "%s", ig_rows[i] == IG_BACK ? "" : ">");
 }
-static void ingame_open(void)
+static void ig_ach_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	if (cur == SCR_INGAME || !mainlink_has_ingame()) return;
-	cur = SCR_INGAME;
-	ig_n = 0;
-	ig_rows[ig_n++] = IG_BACK;
-	if (ig_from_disc && dk.enabled) ig_rows[ig_n++] = IG_DISC;
-	ig_rows[ig_n++] = IG_OSD;
-	ig_rows[ig_n++] = IG_QUIT;
-	lv_obj_clean(body);
-	lv_obj_t *dimbg = mk_box(body, W, H, lv_color_hex(0x000000), 0);
-	lv_obj_set_pos(dimbg, 0, 0);
-	lv_obj_t *sheet = mk_box(body, S(460), H, PAL.panel, 0);
-	lv_obj_set_pos(sheet, W - S(460), 0);
-	lv_obj_set_style_border_side(sheet, LV_BORDER_SIDE_LEFT, 0);
-	lv_obj_set_style_border_width(sheet, LV_MAX(1, S(1)), 0);
-	lv_obj_set_style_border_color(sheet, PAL.line, 0);
-	/* the game on the left: its box art and what it's about (as on its page in the library). Started
-	   some other way (the phone, Phosphor for Windows) or the shell restarted: the last game launched */
-	if (!ig_game) {
-		cJSON *r = api_call("{\"cmd\":\"last\"}");
-		cJSON *gg = api_ok(r) ? cJSON_DetachItemFromObject(r, "game") : NULL;
-		if (cJSON_IsObject(gg)) { ig_game = gg; if (!ig_title[0] && api_str(gg, "title")) snprintf(ig_title, sizeof(ig_title), "%s", api_str(gg, "title")); }
-		else cJSON_Delete(gg);
-		cJSON_Delete(r);
-	}
+	cJSON *a = cJSON_GetArrayItem(cJSON_GetObjectItem(igra.list, "achievements"), i);
+	int got = a && cJSON_IsTrue(cJSON_GetObjectItem(a, "unlocked"));
+	snprintf(t, n, "%s%s", got ? "\xE2\x9C\x93  " : "", a && api_str(a, "title") ? api_str(a, "title") : "");
+	const char *pr = a ? api_str(a, "progress") : NULL;
+	snprintf(val, vn, "%s%s%d pts", pr && *pr && !got ? pr : "", pr && *pr && !got ? "  \xC2\xB7  " : "", a ? (int)api_num(a, "points", 0) : 0);
+	*dim = !got;
+	if (ig_ach_desc && i == ig_ach_list.sel)
+		lv_label_set_text(ig_ach_desc, a && api_str(a, "description") ? api_str(a, "description") : "");
+}
+/* the left side: the game (box art, what it's about) */
+static void ig_left_game(void)
+{
+	lv_obj_clean(ig_left);
+	ig_ach_desc = NULL;
 	if (ig_game) {
 		int lx = S(56), ly = S(110), aw = S(240), ah = S(300);
-		lv_obj_t *art = mk_box(body, aw, ah, lv_color_hex(0x2a2119), S(10));
+		lv_obj_t *art = mk_box(ig_left, aw, ah, lv_color_hex(0x2a2119), S(10));
 		lv_obj_set_style_clip_corner(art, true, 0);
 		lv_obj_set_pos(art, lx, ly);
 		const char *a = api_str(ig_game, "art");
@@ -7567,7 +7903,7 @@ static void ingame_open(void)
 		}
 		/* the text in a column, each part below the last: a title on two lines moves the rest down */
 		int tx = lx + aw + S(32), tw = W - S(460) - S(40) - tx;
-		lv_obj_t *col = mk_box(body, tw, H - ly - S(110), PAL.bg, 0);
+		lv_obj_t *col = mk_box(ig_left, tw, H - ly - S(110), PAL.bg, 0);
 		lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
 		lv_obj_set_pos(col, tx, ly);
 		lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
@@ -7603,8 +7939,86 @@ static void ingame_open(void)
 			lv_obj_set_style_margin_top(d, S(8), 0);
 		}
 	}
+}
+/* the left side: this game's achievements, unlocked first (Main's "ra list") */
+static void ig_left_ach(void)
+{
+	lv_obj_clean(ig_left);
+	cJSON_Delete(igra.list);
+	char *l = mainlink_query("ra list");
+	igra.list = l ? cJSON_Parse(l) : NULL;
+	free(l);
+	int n = cJSON_GetArraySize(cJSON_GetObjectItem(igra.list, "achievements"));
+	lv_obj_t *e = mk_label(ig_left, FONT_LABEL, PAL.dim, "ACHIEVEMENTS");
+	lv_obj_set_style_text_letter_space(e, S(3), 0);
+	lv_obj_set_pos(e, S(56), S(96));
+	char h[160];
+	snprintf(h, sizeof(h), "%d of %d  \xC2\xB7  %d of %d points%s", igra.unlocked, igra.total, igra.points_unlocked, igra.points,
+	         igra.hardcore ? "  \xC2\xB7  Hardcore" : "");
+	lv_obj_t *hl = mk_label(ig_left, FONT_TITLE, PAL.text, h);
+	lv_obj_set_pos(hl, S(56), S(120));
+	vlist_create(&ig_ach_list, ig_left, S(48), S(170), W - S(460) - S(96), S(400));
+	ig_ach_list.fill = ig_ach_fill;
+	ig_ach_list.count = n;
+	ig_ach_list.sel = 0;
+	ig_ach_list.top = 0;
+	ig_ach_desc = mk_label(ig_left, FONT_BODY, PAL.dim, "");
+	lv_label_set_long_mode(ig_ach_desc, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(ig_ach_desc, W - S(460) - S(112));
+	lv_obj_set_pos(ig_ach_desc, S(56), S(590));
+	if (!n) lv_label_set_text(ig_ach_desc, igra.list ? "No achievements for this game." : "RetroAchievements didn't answer.");
+	vlist_refresh(&ig_ach_list);
+	static const char *const hints[] = { "\xE2\x86\x95", "Look", "B", "Back", NULL };
+	footer_set(hints);
+}
+static void ingame_open(void)
+{
+	if (cur == SCR_INGAME || !mainlink_has_ingame()) return;
+	cur = SCR_INGAME;
+	/* RetroAchievements: the game being played has a set (a RetroAchievements core, logged in) */
+	memset(&igra, 0, sizeof(igra));
+	if (mainlink_has_ra()) {
+		char *q = mainlink_query("ra");
+		cJSON *r = q ? cJSON_Parse(q) : NULL;
+		free(q);
+		if (r && api_num(r, "game", 0) > 0 && api_num(r, "total", 0) > 0) {
+			igra.on = 1;
+			igra.total = (int)api_num(r, "total", 0); igra.unlocked = (int)api_num(r, "unlocked", 0);
+			igra.points = (int)api_num(r, "points", 0); igra.points_unlocked = (int)api_num(r, "points_unlocked", 0);
+			igra.hardcore = cJSON_IsTrue(cJSON_GetObjectItem(r, "hardcore"));
+		}
+		cJSON_Delete(r);
+	}
+	ig_n = 0;
+	ig_rows[ig_n++] = IG_BACK;
+	if (igra.on) ig_rows[ig_n++] = IG_ACH;
+	if (ig_from_disc && dk.enabled) ig_rows[ig_n++] = IG_DISC;
+	ig_rows[ig_n++] = IG_OSD;
+	ig_rows[ig_n++] = IG_QUIT;
+	lv_obj_clean(body);
+	lv_obj_t *dimbg = mk_box(body, W, H, lv_color_hex(0x000000), 0);
+	lv_obj_set_pos(dimbg, 0, 0);
+	ig_left = mk_box(body, W - S(460), H, lv_color_hex(0x000000), 0);
+	lv_obj_set_style_bg_opa(ig_left, LV_OPA_TRANSP, 0);
+	lv_obj_set_pos(ig_left, 0, 0);
+	lv_obj_t *sheet = mk_box(body, S(460), H, PAL.panel, 0);
+	lv_obj_set_pos(sheet, W - S(460), 0);
+	lv_obj_set_style_border_side(sheet, LV_BORDER_SIDE_LEFT, 0);
+	lv_obj_set_style_border_width(sheet, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(sheet, PAL.line, 0);
+	/* the game on the left: its box art and what it's about (as on its page in the library). Started
+	   some other way (the phone, Phosphor for Windows) or the shell restarted: the last game launched */
+	if (!ig_game) {
+		cJSON *r = api_call("{\"cmd\":\"last\"}");
+		cJSON *gg = api_ok(r) ? cJSON_DetachItemFromObject(r, "game") : NULL;
+		if (cJSON_IsObject(gg)) { ig_game = gg; if (!ig_title[0] && api_str(gg, "title")) snprintf(ig_title, sizeof(ig_title), "%s", api_str(gg, "title")); }
+		else cJSON_Delete(gg);
+		cJSON_Delete(r);
+	}
+	ig_left_game();
 	char eb[200];
-	snprintf(eb, sizeof(eb), "%s%s", ig_title[0] ? ig_title : "In game", ig_from_disc ? "  \xC2\xB7  from the disc" : "");
+	snprintf(eb, sizeof(eb), "%s%s%s", ig_title[0] ? ig_title : "In game", ig_from_disc ? "  \xC2\xB7  from the disc" : "",
+	         igra.hardcore ? "  \xC2\xB7  Hardcore" : "");   /* RetroAchievements asks for Hardcore to show while playing */
 	lv_obj_t *e = mk_label(sheet, FONT_LABEL, PAL.dim, eb);
 	lv_obj_set_style_text_letter_space(e, S(2), 0);
 	lv_label_set_long_mode(e, LV_LABEL_LONG_MODE_DOTS);
@@ -7635,11 +8049,22 @@ static void ingame_close(int to_game)
 }
 static void ingame_key(int k)
 {
+	if (igra.view) {                         /* the achievements on the left */
+		if (vlist_key(&ig_ach_list, k)) return;     /* (filling the rows sets the highlighted one's description) */
+		if (k == K_B || k == K_MENU) {
+			igra.view = 0;
+			ig_left_game();
+			static const char *const hints[] = { "A", "Select", "B", "Back to the game", NULL };
+			footer_set(hints);
+		}
+		return;
+	}
 	if (vlist_key(&ig_list, k)) return;
 	if (k == K_B || k == K_MENU) { ingame_close(1); return; }
 	if (k != K_A) return;
 	switch (ig_rows[ig_list.sel]) {
 	case IG_BACK: ingame_close(1); break;
+	case IG_ACH: igra.view = 1; ig_left_ach(); break;
 	case IG_DISC:
 		disc_eject_now();
 		ingame_close(1);
@@ -7720,6 +8145,7 @@ void ui_tick(void)
 		   screen is right again by itself after Main restarts */
 		{ static int pt_tick; if (cur == SCR_PORTS && !pt.busy && ++pt_tick % 2 == 0) pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
+		if (cur == SCR_RA && !osk.open) ra_tick();
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }

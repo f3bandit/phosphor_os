@@ -20,7 +20,7 @@
 
 static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
 /* API 5: the dock's drive (disc events) and Phosphor's in-game menu (ingame) */
-static int disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1;
+static int ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1;
 /* a controller mapping Main runs for the shell (its steps come as events) */
 static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
@@ -74,6 +74,7 @@ static int take(void)
 	    || !((mapping = strstr(r, "\"mapping\":true") != NULL), 1)
 	    || !((disc_api = strstr(r, "\"disc\":true") != NULL), 1)
 	    || !((ingame_api = strstr(r, "\"ingame\":true") != NULL), 1)
+	    || !((ra_api = strstr(r, "\"ra\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
@@ -109,6 +110,38 @@ int mainlink_script_running(void) { return script_on; }
 int mainlink_has_disc(void) { return fd >= 0 && disc_api; }
 int mainlink_has_ingame(void) { return fd >= 0 && ingame_api; }
 int mainlink_in_game(void) { return fd >= 0 && in_game; }
+int mainlink_has_ra(void) { return fd >= 0 && ra_api; }
+
+/* one command on its own short connection (the one holding the screen carries events): the reply line,
+   malloc'd (the caller frees), or NULL. For answers that can be long, like "ra list". */
+char *mainlink_query(const char *cmd)
+{
+	int q = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (q < 0) return NULL;
+	struct sockaddr_un a = { .sun_family = AF_UNIX };
+	snprintf(a.sun_path, sizeof(a.sun_path), "%s", path());
+	char line[160];
+	int n = snprintf(line, sizeof(line), "%s\n", cmd);
+	if (connect(q, (struct sockaddr *)&a, sizeof(a)) || send(q, line, (size_t)n, MSG_NOSIGNAL) != n) { close(q); return NULL; }
+	size_t cap = 4096, len = 0;
+	char *out = malloc(cap);
+	long long end = now_ms() + 2000;
+	while (out) {
+		struct pollfd p = { q, POLLIN, 0 };
+		int left = (int)(end - now_ms());
+		if (left <= 0 || poll(&p, 1, left) <= 0) break;
+		if (len + 4096 > cap) { char *nb = realloc(out, cap * 2); if (!nb) break; out = nb; cap *= 2; }
+		ssize_t r = recv(q, out + len, cap - len - 1, 0);
+		if (r <= 0) break;
+		len += (size_t)r;
+		out[len] = 0;
+		char *nl = memchr(out, '\n', len);
+		if (nl) { *nl = 0; close(q); return out; }
+	}
+	free(out);
+	close(q);
+	return NULL;
+}
 static int take_flag(int *f) { int v = *f; *f = 0; return v; }
 int mainlink_disc_changed(void) { return take_flag(&disc_changed); }
 int mainlink_menu_button(void) { return take_flag(&menu_btn); }

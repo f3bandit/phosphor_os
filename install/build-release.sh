@@ -18,6 +18,8 @@ done
 cp frontend/build-arm/phosphor system/build-arm/phosphord system/build-arm/phos system/build-arm/phos-nvme "$D/bin/"
 # phosphor-main (GPL-3.0, its own repo): copied in when built next to this repo; never started by the installer
 if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/bin/MiSTer_phosphor"; fi
+# RetroAchievements' unlock sound (from odelot's RetroAchievements Main, in phosphor-main)
+if [ -f ../phosphor-main/achievement.wav ]; then cp ../phosphor-main/achievement.wav "$D/achievement.wav"; fi
 # phosphor-menu (the menu core with the front ports): its GitHub Actions build, saved next to the repo
 if [ -f ../phosphor-menu/menu_phosphor.rbf ]; then mkdir -p "$D/cores"; cp ../phosphor-menu/menu_phosphor.rbf "$D/cores/"; fi
 for f in "$D"/bin/*; do case "$f" in *.sh) continue ;; esac; file "$f" | grep -q "ARM" || { echo "$f isn't an ARM build" >&2; exit 1; }; done
