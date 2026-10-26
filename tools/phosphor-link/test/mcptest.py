@@ -1,3 +1,4 @@
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 import json, subprocess, sys, time
 p = subprocess.Popen(["./phosphor-link", "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open("mcp.err","w"), text=True)
 n = 0

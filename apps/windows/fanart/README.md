@@ -1,6 +1,8 @@
 # Fan art (fanart.json, pack.zip)
 
-Covers for games no box art database has: ROM hacks, fan translations, homebrew and prototypes. Each is credited below; the covers belong to their makers, and the games to theirs. Ask and a cover is taken out.
+Covers for games no box art database has: ROM hacks, fan translations, homebrew and prototypes. Each is credited below, with where it was posted.
+
+**Disclaimer.** These covers are not Phosphor's work and are not covered by Phosphor's licence. They belong to the people who made them, and the games, characters and names on them belong to their owners (some show characters owned by Nintendo, The Pokémon Company, Konami and others; Phosphor is not affiliated with any of them). They are included only so a game without official box art shows the cover its community made, credited to its maker. Phosphor doesn't sell them or anything with them. If you made one and want it taken out or credited differently, open an issue at https://github.com/f3bandit/phosphor_os/issues and it's done.
 
 - **2021 Moon Escape** (GAMEBOY): Mike Yamato (Incube8 Games). Cover as posted at https://gamesdb.launchbox-app.com/games/details/375600-2021-moon-escape.
 - **AkiraGBC1.35** (GAMEBOY): KanedaAkira (rigbyisagoodboy). Cover as posted at https://rigbyisagoodboy.itch.io/akira-gbc.

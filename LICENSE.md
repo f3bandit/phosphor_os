@@ -6,10 +6,27 @@ You may use, modify and share this software for any purpose that is
 not a commercial one. Selling it, or a product built on it, is not
 permitted. This copyright notice must be kept.
 
-This licence covers everything in this repository (frontend, modules,
-documentation and mockups). The MiSTer Main and menu core forks used by
-Phosphor are separate repositories licensed under GPL-3.0, as required
-by the MiSTer projects they are based on.
+This licence covers Phosphor's own work in this repository: the TV
+interface, phosphord, the apps, tools, scripts, documentation, mockups and
+artwork. It does not cover:
+
+- third-party code, which keeps its own licence: frontend/third_party/ and
+  system/third_party/ (LVGL, cJSON, SQLite, rcheevos, libchdr, stb,
+  dr_libs and the libraries inside them);
+- the fonts (frontend/fonts/ and apps/windows/web/fonts/: Inter, SIL Open
+  Font License 1.1; DejaVu Sans Mono, Bitstream Vera licence);
+- the fan-made box art in apps/windows/fanart/, which belongs to the
+  people who made it (credited in its README.md);
+- achievement.wav, the RetroAchievements unlock sound, which comes with
+  odelot's RetroAchievements Main (GPL-3.0).
+
+THIRD_PARTY_NOTICES.md has the notices and licences of all of these.
+
+The MiSTer Main and menu core forks used by Phosphor are separate
+repositories, under the GNU GPL as required by the MiSTer projects they
+are based on: phosphor-main (GPL-3.0) and phosphor-menu (GPL-3.0; MiSTer's
+Menu core is GPL-2.0-or-later). Their builds in each release come with
+SOURCE.md, which links the exact source.
 
 Required Notice: Copyright (C) 2026 f3bandit (https://github.com/f3bandit)
 

@@ -1,4 +1,5 @@
 /* SS1 Tool's controller layouts (its web/index.html PTL) and Phosphor's additions, for the shell:
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  * generated from apps/windows/web/padlayouts.js (frontend/tools/gen_padlayouts.js). x, y on a 600 x 345 drawing; t: c circle, r pill, t trigger, s stick, d D-pad, l lever. */
 typedef struct { char t; const char *id; short x, y, a, b; const char *lab; } pl_item_t;
 typedef struct { const char *key, *name, *group; int n; const pl_item_t *it; } pl_layout_t;

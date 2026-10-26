@@ -31,6 +31,7 @@
 #
 # usage: ss1_video_ini.sh <card root, e.g. /media/fat> <backup folder>
 # prints one "changed <file> <key> <old> -> <new>" line per edit, "made <file>", "renamed <file>"
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 set -e
 FAT="$1"; BK="$2"
 [ -f "$FAT/MiSTer.ini" ] || { echo "no MiSTer.ini in $FAT"; exit 1; }

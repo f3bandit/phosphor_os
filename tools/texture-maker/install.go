@@ -1,3 +1,4 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package main
 
 // Adding a texture to Phosphor's source: its data files next to texture.c and texture.js, its line

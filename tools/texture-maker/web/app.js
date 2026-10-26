@@ -1,4 +1,5 @@
 /* Phosphor Texture Maker: the page. Sprites are read here (each colour turned into a shade), laid
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
    out, drawn with SpriteTex (the same drawing Phosphor does) and exported. */
 "use strict";
 const TOKEN = new URLSearchParams(location.search).get("k") || "";

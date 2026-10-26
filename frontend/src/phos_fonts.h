@@ -1,5 +1,6 @@
-/* Phosphor fonts: Inter (SIL OFL 1.1) and DejaVu Sans Mono (Bitstream Vera licence),
- * converted to LVGL bitmap fonts by tools/make_fonts.sh. */
+/* Phosphor fonts: Inter (SIL OFL 1.1) and DejaVu Sans Mono (Bitstream Vera licence), converted to
+ * LVGL bitmap fonts by tools/make_fonts.sh; the fonts keep their own licences (THIRD_PARTY_NOTICES.md).
+ * This header: Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 #ifndef PHOS_FONTS_H
 #define PHOS_FONTS_H
 

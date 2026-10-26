@@ -1,5 +1,6 @@
 # Draws install/wallpaper/phosphor-wallpaper.png, the picture behind MiSTer's own menu (1920x1080).
 # python3 make_wallpaper.py   (Inter and DejaVu Sans Mono fonts; "mock" also draws a mockup with the OSD)
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import sys
 W,H=1920,1080

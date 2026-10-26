@@ -165,6 +165,42 @@ if [ -n "$WIFI_CONF" ]; then
 	sed 's/\r$//' "$WIFI_CONF" > "$WORK/rel/files/linux/wpa_supplicant.conf"
 fi
 
+# ---- licences: the image passes on MiSTer's and Mr. Fusion's free software (GPL/LGPL): their licence
+# texts and where their source is, on the installer's partition (LICENSES/) and, since the installer
+# replaces that partition, on the finished card too (phosphor/LICENSES/)
+LIC="$WORK/licenses"
+mkdir -p "$LIC"
+cp "$REPO"/image/licenses/*.txt "$LIC/"
+cat > "$LIC/SOURCES.txt" <<EOF
+Free software on this SD card image, and where its source is
+
+This image passes these on unmodified (except where noted), as their projects publish them. Each is
+free software; its source is at the address given, in the version named.
+
+- MiSTer $MISTER (https://github.com/MiSTer-devel/SD-Installer-Win64_MiSTer): MiSTer's Linux
+  (linux/linux.img, built with buildroot; GPL-2.0, LGPL-2.1 and other free licences), the Linux
+  kernel (linux/zImage_dtb; GPL-2.0: https://github.com/MiSTer-devel/Linux-Kernel_MiSTer), u-boot
+  (linux/u-boot.img; GPL-2.0: https://github.com/MiSTer-devel/u-boot_MiSTer), MiSTer Main
+  (MiSTer; GPL-3.0: https://github.com/MiSTer-devel/Main_MiSTer) and the menu core (menu.rbf;
+  GPL-2.0-or-later: https://github.com/MiSTer-devel/Menu_MiSTer), the versions in that release.
+- Mr. Fusion $MRF_VER, the installer (https://github.com/MiSTer-devel/mr-fusion/tree/$MRF_VER;
+  GPL-3.0, its Linux built with buildroot under GPL-2.0/LGPL-2.1). Changed here:
+  de10_nano_hdmi_config.bin, its background colour from blue to dark.
+- Update All (Scripts/update_all.sh; GPL-3.0: https://github.com/theypsilon/Update_All_MiSTer).
+- Phosphor $PHOS_VER (phosphor/): Phosphor's own programs under the PolyForm Noncommercial License
+  1.0.0 (phosphor/LICENSE.md, with the notices of the libraries in it in
+  phosphor/THIRD_PARTY_NOTICES.md); Phosphor's Main and menu core under GPL-3.0, their exact source
+  in phosphor/SOURCE.md.
+
+Licence texts: GPL-2.0.txt, GPL-3.0.txt and LGPL-2.1.txt in this folder.
+EOF
+mkdir -p "$WORK/fat/LICENSES" "$WORK/rel/files/phosphor/LICENSES"
+cp "$LIC"/* "$WORK/fat/LICENSES/"
+cp "$LIC"/* "$WORK/rel/files/phosphor/LICENSES/"
+for f in LICENSE.md THIRD_PARTY_NOTICES.md SOURCE.md; do
+	[ -f "$WORK/rel/files/phosphor/$f" ] || { echo "phosphor/$f isn't in the image (the package needs it)" >&2; exit 1; }
+done
+
 # ---- 4. Repack. Plain LZMA2 without filters, so Mr. Fusion's older 7zr unpacks it.
 say "Packing the release"
 (cd "$WORK/rel" && 7z a -t7z -bd -mx=7 -m0=LZMA2 -mf=off -ms=on "$WORK/fat/release.7z" . > /dev/null)
@@ -194,12 +230,15 @@ rm -f "$OUT/$NAME.img.zip"
 cat > "$OUT/$NAME.txt" <<EOF
 Phosphor $PHOS_VER SD card image
   MiSTer release: $MISTER (https://github.com/MiSTer-devel/SD-Installer-Win64_MiSTer)
-  Mr. Fusion:     $MRF_VER (https://github.com/MiSTer-devel/mr-fusion, GPL-3.0; source and
-                  licences of the Linux kernel and tools it contains: its legal-info folder);
+  Mr. Fusion:     $MRF_VER (https://github.com/MiSTer-devel/mr-fusion, GPL-3.0);
                   de10_nano_hdmi_config.bin's background colour changed from blue to dark
   Update All:     Scripts/update_all.sh (https://github.com/theypsilon/Update_All_MiSTer, GPL-3.0)
   Phosphor:       $(cat "$PDIR/VERSION")
+
+Licences and where the source of everything on the card is: LICENSES/SOURCES.txt on the image
+(phosphor/LICENSES/ once it's installed).
 EOF
+cat "$LIC/SOURCES.txt" >> "$OUT/$NAME.txt"
 # this version's section of docs/changelog.md (fixes and changes since the last image)
 CHANGES="$(awk -v v="## $PHOS_VER" '$0 == v { on = 1; next } on && /^## / { exit } on' "$REPO/docs/changelog.md" 2>/dev/null)"
 [ -n "$CHANGES" ] && printf '\nWhat changed in %s\n%s\n' "$PHOS_VER" "$CHANGES" >> "$OUT/$NAME.txt"

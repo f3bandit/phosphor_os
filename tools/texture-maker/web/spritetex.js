@@ -16,6 +16,7 @@
             bit 3: the free angle below the other way round, for a sprite flipped on screen)
      cq, sq a free angle (under 90 degrees, clockwise) every sprite is turned by after that, about its
             middle: its cosine and sine times 65536, whole numbers, so the TV and the Windows app
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
             work from exactly the same values; left out (or 65536, 0) for none */
 "use strict";
 const SpriteTex = (() => {

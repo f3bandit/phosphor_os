@@ -1,5 +1,6 @@
 #!/bin/sh
 # Builds Windows and Linux versions (macOS needs cgo for USB port details: build it on a Mac) into dist/. Needs Go 1.26+ (go.mod pins toolchain go1.27.3).
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 set -e
 cd "$(dirname "$0")"
 mkdir -p dist
@@ -8,4 +9,6 @@ GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/phosphor-l
 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/phosphor-link-linux .
 # the Claude plugin (the marketplace in the repo root lists it)
 cp dist/phosphor-link.exe plugin/server/phosphor-link.exe
+# the notices of the Go libraries in it travel with it
+cp ../../THIRD_PARTY_NOTICES.md plugin/server/THIRD_PARTY_NOTICES.md
 ls -l dist plugin/server

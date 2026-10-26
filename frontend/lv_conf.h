@@ -1,6 +1,7 @@
 /**
  * @file lv_conf.h
  * Configuration file for v9.6.0
+ * LVGL's lv_conf_template.h (MIT, Copyright LVGL Kft; see THIRD_PARTY_NOTICES.md) with Phosphor's settings.
  */
 
 /*

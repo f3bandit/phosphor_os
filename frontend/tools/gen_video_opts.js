@@ -1,6 +1,7 @@
 // Makes src/video_opts.h from apps/windows/web/video-options.js (MiSTer's video settings, explained:
 // the same list the apps show), so the TV's Video screen says the same things.
 //   node frontend/tools/gen_video_opts.js
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 "use strict";
 const fs = require("fs"), path = require("path");
 const root = path.join(__dirname, "../..");
@@ -11,6 +12,7 @@ const c = s => JSON.stringify(String(s == null ? "" : s)).replace(/\\u([0-9a-f]{
 	return [...b].map(x => "\\x" + x.toString(16).padStart(2, "0")).join("") + '""';
 });
 let out = `/* MiSTer's video settings, explained: made by tools/gen_video_opts.js from apps/windows/web/video-options.js.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  * Don't edit: change video-options.js and run it again. */
 #ifndef PHOS_VIDEO_OPTS_H
 #define PHOS_VIDEO_OPTS_H
