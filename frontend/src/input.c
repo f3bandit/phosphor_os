@@ -78,6 +78,8 @@ enum { CB_SELECT, CB_START };
 #define SRC_MAIN (1u << 31)
 #define SRC_LOCAL (1u << 30)                /* keyboards and controllers read here (holders[] already merges them) */
 static unsigned cb_down[2];             /* which sources hold each one */
+static int main_down;                   /* MiSTer's Main says D-pad Down is held (the screenshot combo) */
+static int down_held(void);
 static int cb_combo;                    /* this press of the pair opened the power window */
 static void centre_press(int which, unsigned src)
 {
@@ -86,6 +88,7 @@ static void centre_press(int which, unsigned src)
 	cb_down[which] |= src;
 	if (was) return;                     /* already down from somewhere else */
 	if (cb_down[!which] && !cb_combo) { cb_combo = 1; input_push(K_POWER); }
+	else if (which == CB_START && !cb_combo && down_held()) { cb_combo = 1; input_push(K_SHOT); }   /* Down + Start */
 }
 static void centre_release(int which, unsigned src)
 {
@@ -101,7 +104,7 @@ static void centre_release(int which, unsigned src)
 static int fifo_fd = -1, fifo_keep = -1;
 static char fifo_buf[128];
 static size_t fifo_len;
-static const char *const KNAMES[] = { "-", "up", "down", "left", "right", "a", "b", "x", "y", "start", "select", "l", "r", "power" };
+static const char *const KNAMES[] = { "-", "up", "down", "left", "right", "a", "b", "x", "y", "start", "select", "l", "r", "power", "shot" };
 
 void input_watch(const char *src, const char *what)
 {
@@ -183,9 +186,12 @@ void input_main_pad(const char *b, int p)
 		if (p == 1) centre_press(w, SRC_MAIN); else if (p == 0) centre_release(w, SRC_MAIN);
 		return;
 	}
+	if (!strcmp(b, "down")) main_down = p != 0;
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
 	for (size_t i = 0; i < sizeof(M) / sizeof(M[0]); i++) if (!strcmp(b, M[i].n)) { input_push(M[i].k); return; }
 }
+
+static int down_held(void) { return holders[K_DOWN] != 0 || main_down; }
 
 static int have_pad(void)
 {
@@ -441,7 +447,7 @@ pkey_t input_poll(unsigned now)
 	pkey_t k = queue[qh];
 	last_app = queue_app[qh];
 	qh = (qh + 1) % 32;
-	if (k > KEY_NONE_ && k <= K_POWER) input_watch("shell", KNAMES[k]);
+	if (k > KEY_NONE_ && k <= K_SHOT) input_watch("shell", KNAMES[k]);
 	return k;
 }
 
@@ -450,7 +456,7 @@ pkey_t key_from_name(const char *n)
 	static const struct { const char *n; pkey_t k; } T[] = {
 		{ "up", K_UP }, { "down", K_DOWN }, { "left", K_LEFT }, { "right", K_RIGHT }, { "a", K_A }, { "b", K_B },
 		{ "x", K_X }, { "y", K_Y }, { "menu", K_MENU }, { "select", K_SELECT }, { "l", K_L }, { "r", K_R },
-		{ "power", K_POWER },
+		{ "power", K_POWER }, { "shot", K_SHOT },
 	};
 	for (size_t i = 0; i < sizeof(T) / sizeof(T[0]); i++) if (!strcasecmp(n, T[i].n)) return T[i].k;
 	return KEY_NONE_;

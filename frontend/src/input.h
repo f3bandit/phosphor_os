@@ -12,6 +12,7 @@ typedef enum {
 	K_SELECT,
 	K_L, K_R,   /* shoulders, PgUp/PgDn: jump a page */
 	K_POWER,    /* Select + Start together: the power window (on their own they are Select and Menu) */
+	K_SHOT,     /* D-pad Down held, then Start: a screenshot (that Start isn't Menu) */
 } pkey_t;
 
 void input_init(void);

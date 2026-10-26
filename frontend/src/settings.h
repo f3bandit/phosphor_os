@@ -10,7 +10,8 @@ typedef struct {
 	int clock24;
 	int texture;      /* background texture (texture.h), 0 = none */
 	int setup_done;   /* first-start setup finished (a new card shows it; existing installs don't) */
-	int saver_min;    /* screensaver after this many idle minutes, 0 = never */   /* the controllers on the front ports move around Phosphor (needs phosphor-main) */
+	int saver_min;    /* screensaver after this many idle minutes, 0 = never */
+	int shot_off;     /* the screenshot combo (D-pad Down + Start) turned off */   /* the controllers on the front ports move around Phosphor (needs phosphor-main) */
 } settings_t;
 
 extern settings_t SETTINGS;

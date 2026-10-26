@@ -35,7 +35,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -474,6 +474,11 @@ static void ra_key(int k);
 static void raview_key(int k);
 static void ra_tick(void);
 static void discs_key(int k);
+static void show_shots(void);
+static void shots_key(int k);
+static void shotgrid_key(int k);
+static void shotview_key(int k);
+static void take_shot(void);
 static void ingame_key(int k);
 static void ingame_open(void);
 static void ingame_close(int to_game);
@@ -1268,7 +1273,7 @@ static void restart_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1370,6 +1375,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		else snprintf(val, vn, "%s  >", dk.enabled ? "On" : "Off");
 		break;
 	case SET_RA: snprintf(t, n, "RetroAchievements"); snprintf(val, vn, ">"); break;
+	case SET_SHOTS: snprintf(t, n, "Screenshots"); snprintf(val, vn, "%s  >", SETTINGS.shot_off ? "Off" : "Down + Start"); break;
 	case SET_VIDEO: snprintf(t, n, "Video"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
@@ -2415,6 +2421,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                "Disc support by Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)." },
 	[SET_RA] = { "Achievements in your games, from retroachievements.org: log in once, then games on NES, SNES, Mega Drive, N64, PlayStation, Game Boy, GBA and more start on the RetroAchievements cores. Your progress and each game's achievements are here too.",
 	             "RetroAchievements support by odelot (Main_MiSTer, RA cores); rcheevos by the RetroAchievements team." },
+	[SET_SHOTS] = { "Hold D-pad Down and press Start to save a picture of the screen: the game, or Phosphor's own screens. They're on the SD card in screenshots, by system.",
+	                "In a game, that Start doesn't reach the game. Off: the combo does nothing." },
 	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
 	                "The ports are only read while this screen is open." },
 	[SET_VIDEO] = { "MiSTer's own video settings: HDMI resolution, refresh and lag, scaling, HDR, the TV remote over HDMI, and the analog outputs, each explained. Try a change: it goes back by itself in 35 seconds unless you keep it.",
@@ -7324,6 +7332,7 @@ void ui_key(pkey_t k)
 	if (upd_key(k)) return;
 	if (app_key_blocked(k)) { toast_show("Network, Bluetooth and remote access are changed on the SuperStation itself"); return; }
 	if (k == K_POWER) saver_hide();
+	else if (k == K_SHOT) { if (!SETTINGS.shot_off) take_shot(); return; }    /* Down + Start, anywhere */
 	else if (saver_key()) return;
 	if (cur == SCR_MAP) { map_key(k); return; }       /* locked: only Select + Start (cancel) */
 	if (cur == SCR_CTEST) { tw_key(k); return; }    /* locked: Select + Start closes */
@@ -7351,6 +7360,15 @@ void ui_key(pkey_t k)
 		break;
 	case SCR_MUSIC:
 		music_key(k);
+		break;
+	case SCR_SHOTS:
+		shots_key(k);
+		break;
+	case SCR_SHOTGRID:
+		shotgrid_key(k);
+		break;
+	case SCR_SHOTVIEW:
+		shotview_key(k);
 		break;
 	case SCR_NOWPLAY:
 		nowplay_key(k);
@@ -7473,6 +7491,7 @@ void ui_key(pkey_t k)
 			else if (set_list.sel == SET_STORAGE) show_storage();
 			else if (set_list.sel == SET_DISCS) show_discs();
 			else if (set_list.sel == SET_RA) show_ra();
+			else if (set_list.sel == SET_SHOTS) show_shots();
 			else if (set_list.sel == SET_VIDEO) show_video();
 			else if (set_list.sel == SET_ABOUT) show_about();
 			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
@@ -7564,6 +7583,210 @@ static void discs_key(int k)
 	else if (k == K_B || k == K_MENU) back_to_settings(SET_DISCS);
 }
 
+
+
+/* ---------- Settings › Screenshots (phosphord shot.c) ----------
+ * D-pad Down held + Start: in a game Phosphor's Main takes MiSTer's own screenshot (screenshots/<core>/);
+ * on Phosphor's screens phosphord saves the framebuffer (screenshots/Phosphor/). Here: the combo on or
+ * off, and the screenshots (a grid of small copies; A one full screen, Left/Right through them, Y deletes). */
+static vlist_t shot_list;
+enum { SH_COMBO, SH_MINE, SH_WHERE, SHOT_ROWS };
+static cJSON *shots;               /* phosphord's "shots" */
+static int shot_sel, shot_top, shot_del_armed;
+static uint32_t shot_del_at;
+static char shot_src[16][840];     /* the grid's pictures ("A:<path>") */
+static char shotv_src[840];
+#define SHOT_COLS 5
+#define SHOT_ROWS_VIS 2
+static void take_shot(void)
+{
+	cJSON *r = api_call_slow(8000, "{\"cmd\":\"shot\"}");
+	if (api_ok(r)) toast_show(!strcmp(api_str(r, "where") ? api_str(r, "where") : "", "game") ? "Screenshot saved" : "Screenshot saved: Settings › Screenshots");
+	else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't take the screenshot");
+	cJSON_Delete(r);
+}
+static void shots_load(void)
+{
+	cJSON_Delete(shots);
+	cJSON *r = api_call("{\"cmd\":\"shots\"}");
+	shots = api_ok(r) ? r : (cJSON_Delete(r), NULL);
+}
+static int shots_n(void) { return cJSON_GetArraySize(cJSON_GetObjectItem(shots, "shots")); }
+static void shots_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	if (i == SH_COMBO) { snprintf(t, n, "Button combo"); snprintf(val, vn, "<  %s  >", SETTINGS.shot_off ? "Off" : "Down + Start"); }
+	else if (i == SH_MINE) {
+		snprintf(t, n, "Your screenshots");
+		double mb = api_num(shots, "bytes", 0) / 1048576.0;
+		if (shots_n()) snprintf(val, vn, "%d  \xC2\xB7  %.0f MB  >", shots_n(), mb < 1 && mb > 0 ? 1.0 : mb);
+		else { snprintf(val, vn, "none yet"); *dim = 1; }
+	} else { snprintf(t, n, "Where they're saved"); snprintf(val, vn, "SD card \xC2\xB7 screenshots"); *dim = 1; }
+}
+static void show_shots(void)
+{
+	cur = SCR_SHOTS;
+	shots_load();
+	lv_obj_clean(body);
+	screen_title("SETTINGS", "Screenshots");
+	vlist_create(&shot_list, body, S(56), S(176), S(700), S(440));
+	shot_list.count = SHOT_ROWS;
+	shot_list.fill = shots_fill;
+	vlist_refresh(&shot_list);
+	lv_obj_t *panel = mk_box(body, S(444), S(300), PAL.panel, S(16));
+	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(panel, PAL.line, 0);
+	lv_obj_set_pos(panel, S(780), S(176));
+	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "Screenshots");
+	lv_obj_set_pos(h, S(24), S(22));
+	lv_obj_t *nt = mk_label(panel, FONT_BODY, PAL.dim, "Hold D-pad Down and press Start to save a picture of the screen: the game, or Phosphor's own screens. "
+	                        "In a game that Start doesn't reach the game. Off: the combo does nothing.");
+	lv_label_set_long_mode(nt, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(nt, S(396));
+	lv_obj_set_pos(nt, S(24), S(64));
+	static const char *const hints[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
+	footer_set(hints);
+}
+static void show_shotgrid(void);
+static void shots_key(int k)
+{
+	if (vlist_key(&shot_list, k)) return;
+	if (shot_list.sel == SH_COMBO && (k == K_LEFT || k == K_RIGHT || k == K_A)) {
+		SETTINGS.shot_off = !SETTINGS.shot_off;
+		settings_save();
+		mainlink_shot_combo(!SETTINGS.shot_off);
+		vlist_refresh(&shot_list);
+		toast_show(SETTINGS.shot_off ? "Screenshot combo off" : "Screenshots: hold Down, press Start");
+	} else if (shot_list.sel == SH_MINE && k == K_A && shots_n()) { shot_sel = 0; shot_top = 0; show_shotgrid(); }
+	else if (k == K_B || k == K_MENU) back_to_settings(SET_SHOTS);
+}
+static const char *shot_id(int i) { return api_str(cJSON_GetArrayItem(cJSON_GetObjectItem(shots, "shots"), i), "id"); }
+static void shot_caption(int i, char *out, size_t n)
+{
+	cJSON *x = cJSON_GetArrayItem(cJSON_GetObjectItem(shots, "shots"), i);
+	time_t at = (time_t)api_num(x, "at", 0);
+	struct tm tm;
+	localtime_r(&at, &tm);
+	char when[48];
+	strftime(when, sizeof(when), SETTINGS.clock24 ? "%b %d, %H:%M" : "%b %d, %I:%M %p", &tm);
+	snprintf(out, n, "%s  \xC2\xB7  %s  \xC2\xB7  %d of %d", api_str(x, "core") ? api_str(x, "core") : "", when, i + 1, shots_n());
+}
+static lv_obj_t *shot_cap;
+static void show_shotgrid(void)
+{
+	cur = SCR_SHOTGRID;
+	shot_del_armed = 0;
+	int n = shots_n();
+	if (!n) { show_shots(); return; }
+	if (shot_sel >= n) shot_sel = n - 1;
+	if (shot_sel < shot_top * SHOT_COLS) shot_top = shot_sel / SHOT_COLS;
+	if (shot_sel >= (shot_top + SHOT_ROWS_VIS) * SHOT_COLS) shot_top = shot_sel / SHOT_COLS - SHOT_ROWS_VIS + 1;
+	lv_obj_clean(body);
+	char title[64];
+	snprintf(title, sizeof(title), "%d screenshot%s", n, n == 1 ? "" : "s");
+	screen_title("SCREENSHOTS", title);
+	int gap = S(16), cw = (W - S(112) - gap * (SHOT_COLS - 1)) / SHOT_COLS, ch = cw * 9 / 16;
+	for (int k = 0; k < SHOT_COLS * SHOT_ROWS_VIS; k++) {
+		int i = shot_top * SHOT_COLS + k;
+		if (i >= n) break;
+		lv_obj_t *c = mk_box(body, cw, ch, PAL.panel, S(8));
+		lv_obj_set_pos(c, S(56) + (k % SHOT_COLS) * (cw + gap), S(180) + (k / SHOT_COLS) * (ch + gap));
+		lv_obj_set_style_clip_corner(c, true, 0);
+		if (i == shot_sel) { lv_obj_set_style_outline_width(c, S(3), 0); lv_obj_set_style_outline_color(c, PAL.acc, 0); lv_obj_set_style_outline_pad(c, S(3), 0); }
+		cJSON *r = api_call("{\"cmd\":\"shot_img\",\"id\":\"%s\"}", shot_id(i) ? shot_id(i) : "");
+		if (api_ok(r) && api_str(r, "path")) {
+			snprintf(shot_src[k], sizeof(shot_src[k]), "A:%s", api_str(r, "path"));
+			lv_obj_t *im = lv_image_create(c);
+			lv_obj_set_size(im, cw, ch);
+			lv_image_set_inner_align(im, LV_IMAGE_ALIGN_COVER);
+			lv_image_set_src(im, shot_src[k]);
+			lv_obj_center(im);
+		}
+		cJSON_Delete(r);
+	}
+	char cap[160];
+	shot_caption(shot_sel, cap, sizeof(cap));
+	shot_cap = mk_label(body, FONT_BODY, PAL.dim, cap);
+	lv_obj_set_pos(shot_cap, S(56), S(180) + SHOT_ROWS_VIS * (ch + gap) + S(8));
+	static const char *const hints[] = { "A", "View", "Y", "Delete", "B", "Back", NULL };
+	footer_set(hints);
+}
+static int shot_delete_sel(void)
+{
+	uint32_t now = lv_tick_get();
+	if (!shot_del_armed || now - shot_del_at > 3000) {
+		shot_del_armed = 1;
+		shot_del_at = now;
+		toast_show("Press Y again to delete this screenshot");
+		return 0;
+	}
+	shot_del_armed = 0;
+	char id[320];
+	snprintf(id, sizeof(id), "%s", shot_id(shot_sel) ? shot_id(shot_sel) : "");
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "shot_delete");
+	cJSON_AddStringToObject(q, "id", id);
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = b ? api_call("%s", b) : NULL;
+	free(b);
+	int ok = api_ok(r);
+	toast_show(ok ? "Deleted" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't delete it"));
+	cJSON_Delete(r);
+	shots_load();
+	return ok;
+}
+static void show_shotview(void);
+static void shotgrid_key(int k)
+{
+	int n = shots_n(), s = shot_sel;
+	if (k == K_LEFT && s > 0) s--;
+	else if (k == K_RIGHT && s + 1 < n) s++;
+	else if (k == K_UP && s >= SHOT_COLS) s -= SHOT_COLS;
+	else if (k == K_DOWN && s + SHOT_COLS < n) s += SHOT_COLS;
+	else if (k == K_DOWN && s / SHOT_COLS < (n - 1) / SHOT_COLS) s = n - 1;
+	else if (k == K_A) { show_shotview(); return; }
+	else if (k == K_Y) { if (shot_delete_sel()) show_shotgrid(); return; }
+	else if (k == K_B || k == K_MENU) { show_shots(); shot_list.sel = SH_MINE; vlist_refresh(&shot_list); return; }
+	if (s != shot_sel) { shot_sel = s; show_shotgrid(); }
+}
+/* one full screen (a TV-sized copy), Left / Right through them */
+static void show_shotview(void)
+{
+	cur = SCR_SHOTVIEW;
+	shot_del_armed = 0;
+	if (!shots_n()) { show_shots(); return; }
+	lv_obj_clean(body);
+	lv_obj_t *bg = mk_box(body, W, H, lv_color_hex(0x000000), 0);
+	lv_obj_set_pos(bg, 0, 0);
+	cJSON *r = api_call_slow(8000, "{\"cmd\":\"shot_img\",\"id\":\"%s\",\"view\":true}", shot_id(shot_sel) ? shot_id(shot_sel) : "");
+	if (api_ok(r) && api_str(r, "path")) {
+		snprintf(shotv_src, sizeof(shotv_src), "A:%s", api_str(r, "path"));
+		lv_obj_t *im = lv_image_create(bg);
+		lv_obj_set_size(im, W - S(112), H - S(84) - S(76));       /* between the status bar and the hints */
+		lv_image_set_inner_align(im, LV_IMAGE_ALIGN_CONTAIN);
+		lv_image_set_src(im, shotv_src);
+		lv_obj_set_pos(im, S(56), S(84));
+	} else {
+		lv_obj_t *e = mk_label(bg, FONT_BODY, PAL.dim, "This screenshot can't be shown.");
+		lv_obj_center(e);
+	}
+	cJSON_Delete(r);
+	char cap[160];
+	shot_caption(shot_sel, cap, sizeof(cap));
+	lv_obj_t *c = mk_label(bg, FONT_SMALL, PAL.dim, cap);
+	lv_obj_align(c, LV_ALIGN_BOTTOM_RIGHT, -S(56), -S(30));
+	static const char *const hints[] = { "\xE2\x86\x94", "Next", "Y", "Delete", "B", "Back", NULL };
+	footer_set(hints);
+}
+static void shotview_key(int k)
+{
+	int n = shots_n();
+	if (k == K_LEFT && shot_sel > 0) { shot_sel--; show_shotview(); }
+	else if (k == K_RIGHT && shot_sel + 1 < n) { shot_sel++; show_shotview(); }
+	else if (k == K_Y) { if (shot_delete_sel()) { if (!shots_n()) show_shots(); else { if (shot_sel >= shots_n()) shot_sel = shots_n() - 1; show_shotview(); } } }
+	else if (k == K_B || k == K_MENU || k == K_A) show_shotgrid();
+}
 
 
 /* ---------- Music (phosphord music.c): albums, a music CD in the drive, Now playing ----------
@@ -8635,6 +8858,7 @@ void ui_init(int w, int h)
 	}
 	lv_obj_set_style_bg_color(root, PAL.bg, 0);
 	texture_apply(root, (texture_t)SETTINGS.texture);    /* redrawn in the accent colour */
+	mainlink_shot_combo(!SETTINGS.shot_off);
 	upd_note();
 	status_bar();
 	body = mk_box(root, w, h, PAL.bg, 0);
