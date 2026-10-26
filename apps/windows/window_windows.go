@@ -4,6 +4,11 @@ package main
 
 // The window: Edge in app mode (no address bar or tabs), with its own profile so it opens fast and
 // remembers its size. Without Edge, the default browser.
+//
+// The profile is a different one when Phosphor runs as administrator: an Edge started as administrator
+// on a profile keeps it (Edge stays running in the background), and an Edge started normally then can't
+// hand the window over to it, so it opened nothing until Phosphor was run as administrator again. And
+// when the window still doesn't appear, the page opens in the default browser instead.
 
 import (
 	"encoding/json"
@@ -32,16 +37,49 @@ func edgePath() string {
 	return ""
 }
 
-func openWindow(url string) {
-	if edge := edgePath(); edge != "" {
-		c := exec.Command(edge, "--app="+url, "--window-size=1440,900", "--user-data-dir="+filepath.Join(configDir(), "window"),
-			"--no-first-run", "--disable-features=Translate")
-		c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		if c.Start() == nil {
-			return
-		}
+// windowProfile: Edge's profile for Phosphor's window, one for each of normal and administrator
+func windowProfile() string {
+	name := "window"
+	if windows.GetCurrentProcessToken().IsElevated() {
+		name = "window-admin"
 	}
+	return filepath.Join(configDir(), name)
+}
+
+func openBrowser(url string) {
 	_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}
+
+// openWindow: the window; returns a channel that's closed once it's open (or the browser was used
+// instead), so a copy that only opens a window for the running one waits for it before quitting
+func openWindow(url string) <-chan struct{} {
+	done := make(chan struct{})
+	edge := edgePath()
+	if edge == "" {
+		openBrowser(url)
+		close(done)
+		return done
+	}
+	c := exec.Command(edge, "--app="+url, "--window-size=1440,900", "--user-data-dir="+windowProfile(),
+		"--no-first-run", "--disable-features=Translate")
+	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if c.Start() != nil {
+		openBrowser(url)
+		close(done)
+		return done
+	}
+	go func() { _ = c.Wait() }()
+	go func() {
+		defer close(done)
+		for i := 0; i < 60; i++ { // up to 15 s: Edge starting cold on a slow PC
+			time.Sleep(250 * time.Millisecond)
+			if findWindow() != 0 {
+				return
+			}
+		}
+		openBrowser(url) // Edge didn't open one: the page in the default browser
+	}()
+	return done
 }
 
 // otherInstance: the address of a copy that's already running (it answers), or ""
@@ -96,11 +134,17 @@ var (
 	pSetForegroundWnd = windows.NewLazySystemDLL("user32.dll").NewProc("SetForegroundWindow")
 )
 
-// focusWindow: Phosphor's window (Edge app window titled "Phosphor") to the front; false if none is open
-func focusWindow() bool {
+// findWindow: Phosphor's window (an Edge app window titled "Phosphor"), 0 if none is open
+func findWindow() uintptr {
 	cls, _ := windows.UTF16PtrFromString("Chrome_WidgetWin_1")
 	t, _ := windows.UTF16PtrFromString("Phosphor")
 	h, _, _ := pFindWindow.Call(uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(t)))
+	return h
+}
+
+// focusWindow: Phosphor's window to the front; false if none is open
+func focusWindow() bool {
+	h := findWindow()
 	if h == 0 {
 		return false
 	}

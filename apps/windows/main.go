@@ -19,7 +19,7 @@ import (
 	"os"
 )
 
-const appVersion = "0.2.38"
+const appVersion = "0.2.39"
 
 //go:embed web
 var webFS embed.FS
@@ -40,7 +40,7 @@ func main() {
 	}
 	if url != "" && !*noWindow { // already running: show that window
 		if !focusWindow() {
-			openWindow(url)
+			<-openWindow(url) // wait for it (or the browser) before this copy quits
 		}
 		return
 	}

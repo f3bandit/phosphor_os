@@ -7,7 +7,12 @@ import (
 	"os"
 )
 
-func openWindow(url string)          { fmt.Println("open", url) }
+func openWindow(url string) <-chan struct{} {
+	fmt.Println("open", url)
+	c := make(chan struct{})
+	close(c)
+	return c
+}
 func otherInstance() string          { return "" }
 func replaceOlder(url string) string { return url }
 
