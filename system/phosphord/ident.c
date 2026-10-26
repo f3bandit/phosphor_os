@@ -157,6 +157,7 @@ static const unsigned char SYNC[12] = { 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0
 
 static int disc_read(disc_t *d, long lba, unsigned char out[2048])
 {
+	if (lba < 0 || lba > 0x7fffffffL / 2448) return -1;   /* a damaged image's sector number */
 	if (d->chd) {
 		long frame = lba + (long)d->pregap;
 		long hunk = frame / (long)d->frames_per_hunk;
@@ -287,7 +288,9 @@ static int psx_boot(disc_t *d, char *serial, int n)
 		for (int i = 0; i < 2048;) {
 			int rl = dir[i];
 			if (!rl || i + rl > 2048) break;
+			if (rl < 34) break;                      /* too short to be a directory record */
 			int nl = dir[i + 32];
+			if (i + 33 + nl > 2048) break;
 			if (nl >= 10 && !strncasecmp((const char *)dir + i + 33, "SYSTEM.CNF", 10)) {
 				long flba = dir[i + 2] | dir[i + 3] << 8 | dir[i + 4] << 16 | (long)dir[i + 5] << 24;
 				unsigned char cnf[2049];

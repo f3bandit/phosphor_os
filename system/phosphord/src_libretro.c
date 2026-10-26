@@ -225,7 +225,9 @@ static int ref_load(sqlite3 *db, const char *lr, int disc)
 {
 	char mk[200], v[32];
 	snprintf(mk, sizeof(mk), "ref:%s", lr);
-	if (db_meta_get(db, mk, v, sizeof(v))[0]) return 0;
+	/* loaded: kept. Not there when last asked ("missing:<when>"): asked again after a week, in case
+	   libretro moved or renamed the list */
+	if (db_meta_get(db, mk, v, sizeof(v))[0] && (strncmp(v, "missing:", 8) || time(NULL) - atol(v + 8) < 7 * 86400)) return 0;
 	char dir[600], dest[800], url[900], esc[400];
 	snprintf(dir, sizeof(dir), "%s/ref", p_data());
 	mkdirs(dir);
@@ -238,7 +240,7 @@ static int ref_load(sqlite3 *db, const char *lr, int disc)
 	load_t l = { .db = db, .lr = lr };
 	db_exec(db, "BEGIN");
 	sqlite3_stmt *del;
-	if (sqlite3_prepare_v2(db, "DELETE FROM ref WHERE lrsys=?", -1, &del, NULL) == SQLITE_OK) {
+	if (rc == 0 && sqlite3_prepare_v2(db, "DELETE FROM ref WHERE lrsys=?", -1, &del, NULL) == SQLITE_OK) {   /* (no new list: the old one stays) */
 		sqlite3_bind_text(del, 1, lr, -1, SQLITE_STATIC);
 		sqlite3_step(del);
 		sqlite3_finalize(del);
@@ -270,7 +272,7 @@ static int ref_load(sqlite3 *db, const char *lr, int disc)
 	sqlite3_finalize(l.upd_crc);
 	sqlite3_finalize(l.upd_serial);
 	sqlite3_finalize(l.upd_name);
-	snprintf(v, sizeof(v), "%ld", (long)time(NULL));
+	snprintf(v, sizeof(v), "%s%ld", rc == 0 ? "" : "missing:", (long)time(NULL));
 	db_meta_set(db, mk, v);
 	db_exec(db, "COMMIT");
 	return 0;

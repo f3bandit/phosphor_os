@@ -128,6 +128,9 @@ int mc_parse(const unsigned char *img, mc_card_t *c)
 		int seen[16] = { 0 };
 		for (int cur = b;;) {
 			if (cur < 1 || cur > 15 || seen[cur]) { s->broken = 1; break; }
+			/* past the first block, only a middle (0x52) or last (0x53) block of a save: a damaged
+			   card's link into another save's block stops here */
+			if (cur != b && cdir(img, cur)[0] != 0x52 && cdir(img, cur)[0] != 0x53) { s->broken = 1; break; }
 			seen[cur] = 1;
 			s->blocks[s->nblocks++] = cur;
 			unsigned next = u16(cdir(img, cur) + 8);
@@ -221,6 +224,11 @@ int mc_remove(unsigned char *img, int slot, const char **err)
 	const mc_save_t *s = find(&c, slot);
 	if (!s) { *err = "no save starts in that block"; return -1; }
 	for (int i = 0; i < s->nblocks; i++) {
+		/* on a damaged card two saves' links can lead into the same block: that one is kept */
+		int shared = 0;
+		for (int j = 0; j < c.nsaves && !shared; j++)
+			if (&c.saves[j] != s) for (int k = 0; k < c.saves[j].nblocks; k++) if (c.saves[j].blocks[k] == s->blocks[i]) shared = 1;
+		if (shared) continue;
 		unsigned char *f = dir(img, s->blocks[i]);
 		memset(f, 0, FRAME);
 		f[0] = 0xA0;

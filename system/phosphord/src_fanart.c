@@ -185,7 +185,7 @@ static int zip_extract(const char *zip, const char *name, const char *dest)
 	}
 	free(cd);
 	if (local < 0) { fclose(f); return 1; }
-	if ((method != 0 && method != 8) || usize > (32u << 20) || csize > (32u << 20)) { fclose(f); return -1; }
+	if ((method != 0 && method != 8) || usize > (32u << 20) || csize > (32u << 20) || (method == 0 && usize != csize)) { fclose(f); return -1; }
 	unsigned char lh[30];
 	fseek(f, local, SEEK_SET);
 	if (fread(lh, 1, 30, f) != 30) { fclose(f); return -1; }

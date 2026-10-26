@@ -471,10 +471,13 @@ static void run_job(const char *job, int port, const char *name)
 				pthread_mutex_lock(&slk);
 				snprintf(st.file, sizeof(st.file), "%s", file);
 				pthread_mutex_unlock(&slk);
-				/* 2: the sectors that differ, each read back */
+				/* 2: the sectors that differ, each read back. The saves' data first and the directory
+				   (block 0, sectors 0-63) last, so a write that stops partway never leaves a directory
+				   describing data that isn't there yet */
 				int bad = -1, r = 0, written = 0;
-				for (int s = 0; s < SECTORS && bad < 0; s++) {
-					if (s % 32 == 0) progress(SECTORS + s, "Writing");
+				for (int i = 0; i < SECTORS && bad < 0; i++) {
+					int s = (i + 64) % SECTORS;
+					if (i % 32 == 0) progress(SECTORS + i, "Writing");
 					if (!memcmp(card + s * SECTOR, want + s * SECTOR, SECTOR)) continue;
 					unsigned char back[SECTOR];
 					for (int t = 0; t < 2; t++) {
