@@ -55,9 +55,11 @@ static int run_curl(const char *const *args, const char *body, char **out, size_
 	for (int i = 0; args[i] && a < 62; i++) argv[a++] = args[i];
 	argv[a] = NULL;
 
+	/* close-on-exec: other threads spawn too, and a stray copy of the write end means no EOF here
+	   (dup2 onto 0-2 in the child clears it for curl's own copy) */
 	int po[2], pi[2] = { -1, -1 };
-	if (pipe(po)) return -1;
-	if (body && pipe(pi)) { close(po[0]); close(po[1]); return -1; }
+	if (pipe2(po, O_CLOEXEC)) return -1;
+	if (body && pipe2(pi, O_CLOEXEC)) { close(po[0]); close(po[1]); return -1; }
 	posix_spawn_file_actions_t fa;
 	posix_spawn_file_actions_init(&fa);
 	posix_spawn_file_actions_adddup2(&fa, po[1], 1);

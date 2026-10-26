@@ -63,8 +63,17 @@ put_menu_core() {
 	[ -s "$ours" ] || return 0
 	cmp -s "$ours" "$m" 2>/dev/null && return 0
 	mkdir -p "$ROOT/backup"
-	[ -f "$m" ] && cp "$m" "$ROOT/backup/menu.rbf.mister"
-	cp "$ours" "$m.new" && mv -f "$m.new" "$m" && echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
+	# only MiSTer's is kept: an older Phosphor core (an update brought a new one) never takes its place
+	known="$ROOT/backup/menu.rbf.phosphor"   # the Phosphor cores put in before, one md5 a line
+	if [ -f "$m" ]; then
+		h="$(md5sum "$m" | cut -c1-32)"; phos=0
+		grep -qxF "$h" "$known" 2>/dev/null && phos=1
+		for c in "$ROOT"/backup/versions/*/cores/menu_phosphor.rbf; do cmp -s "$c" "$m" && phos=1; done
+		[ "$phos" = 1 ] || cp "$m" "$ROOT/backup/menu.rbf.mister"
+	fi
+	cp "$ours" "$m.new" && mv -f "$m.new" "$m" || return 1
+	h="$(md5sum "$m" | cut -c1-32)"; grep -qxF "$h" "$known" 2>/dev/null || echo "$h" >> "$known"
+	echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
 }
 
 case "${1:-status}" in

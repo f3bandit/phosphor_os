@@ -63,7 +63,7 @@ boot_flag() {
 	fi
 }
 
-backup_installed() {
+backup_installed() { # (a version given is never pruned: the one a roll back puts back)
 	local v d
 	v="$(installed_version)"
 	[ -n "$v" ] || return 0
@@ -76,7 +76,7 @@ backup_installed() {
 	date '+%Y-%m-%d %H:%M' > "$d.new/.saved"                 # (the SD card's file times can't be trusted)
 	rm -rf "$d" && mv "$d.new" "$d" || return 1
 	# the newest $KEEP versions
-	ls -1dt "$ROOT"/backup/versions/*/ 2>/dev/null | tail -n +$((KEEP + 1)) | while read -r old; do rm -rf "$old"; done
+	ls -1dt "$ROOT"/backup/versions/*/ 2>/dev/null | grep -vxF "$ROOT/backup/versions/${1:-}/" | tail -n +$((KEEP + 1)) | while read -r old; do rm -rf "$old"; done
 	sync
 }
 
@@ -140,7 +140,8 @@ install_pkg() {
 		PHOSPHOR_ROOT="$ROOT" "$dir/modules/$m/install.sh" >> "$LOG" 2>&1
 		N=$((N + 1))
 	done
-	cp -f "$dir/update.sh" "$ROOT/update.sh" 2>/dev/null && chmod 755 "$ROOT/update.sh"
+	# (renamed into place: bash is still reading the running copy)
+	cp -f "$dir/update.sh" "$ROOT/update.sh.new" 2>/dev/null && chmod 755 "$ROOT/update.sh.new" && mv -f "$ROOT/update.sh.new" "$ROOT/update.sh"
 	sync
 	local restart=0
 	[ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ] && restart=1
@@ -153,21 +154,25 @@ install_pkg() {
 rollback() {
 	local v="$1" d="$ROOT/backup/versions/$1" main_before
 	case "$v" in */*|*..*|"") state failed "no such version"; return 1 ;; esac
-	[ -f "$d/VERSION" ] || { state failed "Phosphor $v isn't kept"; return 1; }
+	[ -f "$d/VERSION" ] && [ -d "$d/bin" ] || { state failed "Phosphor $v isn't kept"; return 1; }
 	JOB=rollback FROM="$(installed_version)" STEP=backup
 	state working "Keeping a copy of Phosphor $FROM..." "$v" 0
 	local now; now="$(installed_version)"
-	[ "$now" != "$v" ] && backup_installed
+	[ "$now" != "$v" ] && backup_installed "$v"
+	[ -f "$d/VERSION" ] && [ -d "$d/bin" ] || { state failed "Phosphor $v's copy is gone: nothing was changed" "$v"; return 1; }
 	main_before="$(md5 "$ROOT/bin/MiSTer_phosphor")"
 	STEP=install
 	state working "Putting back Phosphor $v..." "$v" 0
 	stop_for_update
+	local put=0
 	for x in bin modules cores; do
 		[ -d "$d/$x" ] || continue
 		rm -rf "$ROOT/$x.old" && mv "$ROOT/$x" "$ROOT/$x.old" 2>/dev/null
-		cp -a "$d/$x" "$ROOT/$x" && rm -rf "$ROOT/$x.old" || { rm -rf "$ROOT/$x"; mv "$ROOT/$x.old" "$ROOT/$x"; }
+		cp -a "$d/$x" "$ROOT/$x" && rm -rf "$ROOT/$x.old" && { [ "$x" != bin ] || put=1; } || { rm -rf "$ROOT/$x"; mv "$ROOT/$x.old" "$ROOT/$x"; }
 	done
-	for f in phosphor.sh uninstall.sh update.sh VERSION; do [ -f "$d/$f" ] && cp -a "$d/$f" "$ROOT/$f"; done
+	[ "$put" = 1 ] || { state failed "Phosphor $v's programs couldn't be put back: see phosphor/logs/update.log" "$v"; start_after_update; return 1; }
+	# (each renamed into place: bash is still reading the running update.sh)
+	for f in phosphor.sh uninstall.sh update.sh VERSION; do [ -f "$d/$f" ] && cp -a "$d/$f" "$ROOT/$f.new" && mv -f "$ROOT/$f.new" "$ROOT/$f"; done
 	# a version without the updater keeps this one, so it can come forward again
 	[ -f "$ROOT/update.sh" ] || cp -a "$0" "$ROOT/update.sh"
 	sync
