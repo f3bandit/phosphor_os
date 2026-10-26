@@ -1375,7 +1375,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		else snprintf(val, vn, "%s  >", dk.enabled ? "On" : "Off");
 		break;
 	case SET_RA: snprintf(t, n, "RetroAchievements"); snprintf(val, vn, ">"); break;
-	case SET_SHOTS: snprintf(t, n, "Screenshots"); snprintf(val, vn, "%s  >", SETTINGS.shot_off ? "Off" : "Down + Start"); break;
+	case SET_SHOTS: snprintf(t, n, "Screenshots"); snprintf(val, vn, "%s  >", SETTINGS.shot_off ? "Off" : "L3 + R3"); break;
 	case SET_VIDEO: snprintf(t, n, "Video"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
 	case SET_CORES: snprintf(t, n, "Update"); cores_value(val, vn); break;
@@ -2421,8 +2421,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                "Disc support by Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)." },
 	[SET_RA] = { "Achievements in your games, from retroachievements.org: log in once, then games on NES, SNES, Mega Drive, N64, PlayStation, Game Boy, GBA and more start on the RetroAchievements cores. Your progress and each game's achievements are here too.",
 	             "RetroAchievements support by odelot (Main_MiSTer, RA cores); rcheevos by the RetroAchievements team." },
-	[SET_SHOTS] = { "Hold D-pad Down and press Start to save a picture of the screen: the game, or Phosphor's own screens. They're on the SD card in screenshots, by system.",
-	                "In a game, that Start doesn't reach the game. Off: the combo does nothing." },
+	[SET_SHOTS] = { "Press both sticks in (L3 + R3) to save a picture of the screen: the game, or Phosphor's own screens. They're on the SD card in screenshots, by system.",
+	                "Off: the combo does nothing." },
 	[SET_PORTS] = { "The controllers and memory cards in the front ports: see what's plugged in, and back up or copy memory card saves.",
 	                "The ports are only read while this screen is open." },
 	[SET_VIDEO] = { "MiSTer's own video settings: HDMI resolution, refresh and lag, scaling, HDR, the TV remote over HDMI, and the analog outputs, each explained. Try a change: it goes back by itself in 35 seconds unless you keep it.",
@@ -7332,7 +7332,7 @@ void ui_key(pkey_t k)
 	if (upd_key(k)) return;
 	if (app_key_blocked(k)) { toast_show("Network, Bluetooth and remote access are changed on the SuperStation itself"); return; }
 	if (k == K_POWER) saver_hide();
-	else if (k == K_SHOT) { if (!SETTINGS.shot_off) take_shot(); return; }    /* Down + Start, anywhere */
+	else if (k == K_SHOT) { if (!SETTINGS.shot_off) take_shot(); return; }    /* L3 + R3 (Main tells us) */
 	else if (saver_key()) return;
 	if (cur == SCR_MAP) { map_key(k); return; }       /* locked: only Select + Start (cancel) */
 	if (cur == SCR_CTEST) { tw_key(k); return; }    /* locked: Select + Start closes */
@@ -7586,7 +7586,7 @@ static void discs_key(int k)
 
 
 /* ---------- Settings › Screenshots (phosphord shot.c) ----------
- * D-pad Down held + Start: in a game Phosphor's Main takes MiSTer's own screenshot (screenshots/<core>/);
+ * Both sticks in (L3 + R3): in a game Phosphor's Main takes MiSTer's own screenshot (screenshots/<core>/);
  * on Phosphor's screens phosphord saves the framebuffer (screenshots/Phosphor/). Here: the combo on or
  * off, and the screenshots (a grid of small copies; A one full screen, Left/Right through them, Y deletes). */
 static vlist_t shot_list;
@@ -7601,7 +7601,7 @@ static char shotv_src[840];
 static void take_shot(void)
 {
 	cJSON *r = api_call_slow(8000, "{\"cmd\":\"shot\"}");
-	input_flush();          /* Down was held while the picture was saved: its repeats would scroll the screen */
+	input_flush();          /* presses made while the picture was saved would land all at once */
 	if (api_ok(r)) toast_show(!strcmp(api_str(r, "where") ? api_str(r, "where") : "", "game") ? "Screenshot saved" : "Screenshot saved: Settings › Screenshots");
 	else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't take the screenshot");
 	cJSON_Delete(r);
@@ -7616,7 +7616,7 @@ static int shots_n(void) { return cJSON_GetArraySize(cJSON_GetObjectItem(shots, 
 static void shots_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	*dim = 0;
-	if (i == SH_COMBO) { snprintf(t, n, "Button combo"); snprintf(val, vn, "<  %s  >", SETTINGS.shot_off ? "Off" : "Down + Start"); }
+	if (i == SH_COMBO) { snprintf(t, n, "Button combo"); snprintf(val, vn, "<  %s  >", SETTINGS.shot_off ? "Off" : "Both sticks in (L3 + R3)"); }
 	else if (i == SH_MINE) {
 		snprintf(t, n, "Your screenshots");
 		double mb = api_num(shots, "bytes", 0) / 1048576.0;
@@ -7640,8 +7640,8 @@ static void show_shots(void)
 	lv_obj_set_pos(panel, S(780), S(176));
 	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "Screenshots");
 	lv_obj_set_pos(h, S(24), S(22));
-	lv_obj_t *nt = mk_label(panel, FONT_BODY, PAL.dim, "Hold D-pad Down and press Start to save a picture of the screen: the game, or Phosphor's own screens. "
-	                        "In a game that Start doesn't reach the game. Off: the combo does nothing.");
+	lv_obj_t *nt = mk_label(panel, FONT_BODY, PAL.dim, "Press both sticks in (L3 + R3) to save a picture of the screen: the game, or Phosphor's own screens. "
+	                        "Off: the combo does nothing.");
 	lv_label_set_long_mode(nt, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_width(nt, S(396));
 	lv_obj_set_pos(nt, S(24), S(64));
@@ -7657,7 +7657,7 @@ static void shots_key(int k)
 		settings_save();
 		mainlink_shot_combo(!SETTINGS.shot_off);
 		vlist_refresh(&shot_list);
-		toast_show(SETTINGS.shot_off ? "Screenshot combo off" : "Screenshots: hold Down, press Start");
+		toast_show(SETTINGS.shot_off ? "Screenshot combo off" : "Screenshots: press both sticks in (L3 + R3)");
 	} else if (shot_list.sel == SH_MINE && k == K_A && shots_n()) { shot_sel = 0; shot_top = 0; show_shotgrid(); }
 	else if (k == K_B || k == K_MENU) back_to_settings(SET_SHOTS);
 }
