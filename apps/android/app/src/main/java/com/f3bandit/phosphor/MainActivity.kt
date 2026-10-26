@@ -166,6 +166,14 @@ class MainActivity : ComponentActivity() {
     // ---------------------------------------------------------------- box art for the page
 
     private fun artResponse(path: String): WebResourceResponse {
+        if (path.substringBefore('?').substringBefore('/') == "mcover") {   // a music album's cover (the player follows the album, not kept)
+            val id = path.substringBefore('?').substringAfter('/')
+            val api = model.api ?: return notFound()
+            if (!Regex("[A-Za-z0-9_-]{1,40}").matches(id)) return notFound()
+            val b = runCatching { runBlocking { api.musicCover(id) } }.getOrNull() ?: return notFound()
+            val png = b.size > 4 && b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte()
+            return WebResourceResponse(if (png) "image/png" else "image/jpeg", null, ByteArrayInputStream(b))
+        }
         if (path.substringBefore('?').substringBefore('/') == "disc") {     // the disc in the drive: changes with the disc, not kept
             val api = model.api ?: return notFound()
             val b = runCatching { runBlocking { api.discArt() } }.getOrNull() ?: return notFound()
