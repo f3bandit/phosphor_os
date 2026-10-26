@@ -3,7 +3,7 @@
 #ifndef PHOS_SETTINGS_H
 #define PHOS_SETTINGS_H
 
-#define PHOS_VERSION "0.27.38"
+#define PHOS_VERSION "0.27.39"
 
 typedef struct {
 	int accent;
@@ -11,7 +11,7 @@ typedef struct {
 	int texture;      /* background texture (texture.h), 0 = none */
 	int setup_done;   /* first-start setup finished (a new card shows it; existing installs don't) */
 	int saver_min;    /* screensaver after this many idle minutes, 0 = never */
-	int shot_off;     /* the screenshot combo (D-pad Down + Start) turned off */   /* the controllers on the front ports move around Phosphor (needs phosphor-main) */
+	int shot_off;     /* the screenshot combo (L3 + R3) turned off */
 } settings_t;
 
 extern settings_t SETTINGS;

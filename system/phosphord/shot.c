@@ -2,7 +2,7 @@
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  *
  * They live where MiSTer keeps its own: screenshots/<core>/ on the SD card. In a game, MiSTer's Main
- * takes them (Phosphor's Main: D-pad Down + Start, or "screenshot" for the apps); on Phosphor's own
+ * takes them (Phosphor's Main: both sticks pressed in, L3 + R3, or "screenshot" for the apps); on Phosphor's own
  * screens Main's capture only sees the menu core's picture, so the framebuffer the shell draws on is
  * saved here instead, in screenshots/Phosphor/. The apps list them, see small copies (made once, kept
  * in data/shot_thumbs) and the full picture, and delete them. */

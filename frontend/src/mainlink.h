@@ -36,7 +36,7 @@ int mainlink_disc_changed(void);      /* 1 once after the drive changed (ask pho
 int mainlink_menu_button(void);       /* 1 once: the menu button was pressed briefly in a game */
 int mainlink_ingame_ended(void);      /* 1 once: Main took the in-game screen back */
 int mainlink_disc_enable(int on);
-int mainlink_shot_combo(int on);   /* Down + Start takes a screenshot in games (Phosphor's Main) */     /* Settings › Discs; kept for reconnects */
+int mainlink_shot_combo(int on);   /* L3 + R3 (both sticks in) takes a screenshot (Phosphor's Main); kept for reconnects */
 int mainlink_ingame(int on);          /* Phosphor's screen over the game (controllers to Phosphor), or off */
 int mainlink_ingame_osd(void);        /* to MiSTer's menu, from the in-game menu */
 int mainlink_quit_game(void);         /* leave the game: the menu core (Phosphor) again */
