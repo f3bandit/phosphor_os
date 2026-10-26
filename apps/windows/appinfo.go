@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Steam's own record of every app it knows (appcache/appinfo.vdf, binary KeyValues), read only for the
@@ -129,8 +131,9 @@ func kvStr(m map[string]any, path ...string) string {
 	return s
 }
 
-// parseAppinfo: the album info of the wanted apps (all apps of type Music when want is nil)
-func parseAppinfo(d []byte, want map[string]bool) (map[string]albumInfo, error) {
+// parseAppinfo: the album info of the wanted apps (all apps of type Music when want is nil); known, when
+// given, gets every app id whose record was read, Music or not
+func parseAppinfo(d []byte, want map[string]bool, known map[string]bool) (map[string]albumInfo, error) {
 	if len(d) < 8 {
 		return nil, errAppinfo
 	}
@@ -175,6 +178,9 @@ func parseAppinfo(d []byte, want map[string]bool) (map[string]albumInfo, error) 
 		if want == nil || want[id] {
 			sub := &kvReader{d: d[:next], o: r.o + 8 + 60, strs: r.strs, v29: r.v29}
 			if m, err := sub.section(0); err == nil {
+				if known != nil {
+					known[id] = true
+				}
 				c, _ := kvGet(m, "appinfo", "common").(map[string]any)
 				if c == nil {
 					c, _ = kvGet(m, "common").(map[string]any)
@@ -217,9 +223,10 @@ func itoa(n uint32) string {
 // Steam's record, read again only when it changed (the list is asked for every second or two while sending)
 var aiMu sync.Mutex
 var aiCache struct {
-	mod  time.Time
-	size int64
-	info map[string]albumInfo
+	mod   time.Time
+	size  int64
+	info  map[string]albumInfo
+	known map[string]bool // every app in the record, soundtrack or not
 }
 
 func steamAlbumInfo(appid string) (albumInfo, bool) {
@@ -239,9 +246,20 @@ func steamAlbumInfo(appid string) (albumInfo, bool) {
 		if err != nil {
 			return albumInfo{}, false
 		}
-		info, _ := parseAppinfo(d, nil) // what it read before a problem is still good
-		aiCache.mod, aiCache.size, aiCache.info = fi.ModTime(), fi.Size(), info
+		known := map[string]bool{}
+		info, _ := parseAppinfo(d, nil, known) // what it read before a problem is still good
+		aiCache.mod, aiCache.size, aiCache.info, aiCache.known = fi.ModTime(), fi.Size(), info, known
 	}
 	a, ok := aiCache.info[appid]
 	return a, ok
+}
+
+// steamAppKnown: is appid in Steam's record at all (so steamAlbumInfo's answer that it isn't Music counts)?
+func steamAppKnown(appid string) bool {
+	if _, ok := steamAlbumInfo(appid); ok {
+		return true
+	}
+	aiMu.Lock()
+	defer aiMu.Unlock()
+	return aiCache.known[appid]
 }

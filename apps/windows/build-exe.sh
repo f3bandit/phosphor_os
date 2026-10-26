@@ -1,4 +1,5 @@
 #!/bin/sh
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 # Builds dist/Phosphor.exe the one way it should be: a windowed program (no cmd window), no debug info.
 # Refuses to finish if the result would open a console.
 set -e
@@ -12,6 +13,8 @@ if [ -n "$PHOSPHOR_SS_DEVID" ] && [ -n "$PHOSPHOR_SS_DEVPASSWORD" ]; then
 	python3 -c 'import json,os; open("ss_secret_gen.go","w").write("package main\n\nfunc init() { ssBuiltinID, ssBuiltinPw = %s, %s }\n" % (json.dumps(os.environ["PHOSPHOR_SS_DEVID"]), json.dumps(os.environ["PHOSPHOR_SS_DEVPASSWORD"])))'
 	trap 'rm -f ss_secret_gen.go' EXIT
 fi
+# the open-source licences, served for Settings > About > Open-source licences (the copy isn't kept in git)
+cp ../../THIRD_PARTY_NOTICES.md web/THIRD_PARTY_NOTICES.md
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/Phosphor.exe .
 python3 - <<'PY'
 import struct, sys

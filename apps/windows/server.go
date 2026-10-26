@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // The app's own requests (from its window only: the session key, and 127.0.0.1 as the host so a web
@@ -46,7 +48,9 @@ func readJSON(r *http.Request, v any) error {
 
 func routes(mux *http.ServeMux) {
 	h := func(p string, f http.HandlerFunc) { mux.HandleFunc(p, guard(f)) }
-	h("/api/hello", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]any{"ok": true}) })
+	h("/api/hello", func(w http.ResponseWriter, r *http.Request) { // no SS1 calls: a starting copy asks this
+		writeJSON(w, map[string]any{"ok": true, "app_version": appVersion})
+	})
 	h("/api/state", apiState)
 	h("/api/automatch", apiAutomatch)
 	h("/api/discover", func(w http.ResponseWriter, r *http.Request) {

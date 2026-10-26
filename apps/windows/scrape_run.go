@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Box art looked up on the PC (Settings > Box art > Look up on: This PC). Much faster than the SS1:
@@ -104,6 +106,8 @@ var scrapeSources = []scrapeSource{
 			s.note(m)
 			return false
 		}
+		s.mu.Lock() // ssLookup sets it, in another game's goroutine
+		defer s.mu.Unlock()
 		return s.ss.off == ""
 	}, ssLookup},
 	{"igdb", "IGDB", func(s *scrapeRun) bool {
@@ -460,7 +464,7 @@ func (s *scrapeRun) lookupAll() bool {
 					switch {
 					case rc < 0:
 						s.st.Later++
-					case rc > 0:
+					case rc > 0 && len(r.foundBy) > 0: // 1 alone can be a game that had art already
 						s.st.Found++
 					default:
 						s.st.NotFound++

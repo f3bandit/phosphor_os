@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* The "Circuit board" background's layout (the console's circuit_data.h): made by
    frontend/tools/gen_circuit.py, don't edit. Cells of an 8 px grid on 1280x720 (160 x 90). */
 "use strict";

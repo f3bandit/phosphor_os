@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Box art on the PC: the picture made here, the way the SS1 stores it (longest side 512 px, averaged

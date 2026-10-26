@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Box art on the PC: ArcadeDB (no account) and the sources that need an account or key (TheGamesDB,

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Box art on the PC: the name handling, the same as phosphord's (ident.c title_norm, scraper.c

@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* SS1 Tool's controller layouts and their drawing (its web/index.html: PSH, PTL, ptSVG), reused as they are.
    PTL: each layout's items [type, control, x, y, size, height, label] on a 600 x 345 drawing. */
 "use strict";

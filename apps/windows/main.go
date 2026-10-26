@@ -14,12 +14,13 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
 )
 
-const appVersion = "0.2.40"
+const appVersion = "0.2.42"
 
 //go:embed web
 var webFS embed.FS
@@ -57,6 +58,7 @@ func main() {
 	}
 	url = fmt.Sprintf("http://%s/?k=%s", ln.Addr(), sessionKey)
 	mux := http.NewServeMux()
+	_ = mime.AddExtensionType(".md", "text/plain; charset=utf-8") // the licences: shown as text, not downloaded
 	web, _ := fs.Sub(webFS, "web")
 	mux.Handle("/", http.FileServer(http.FS(web)))
 	routes(mux)

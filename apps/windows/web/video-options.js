@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* MiSTer.ini video settings, explained: SS1 Tool's list (ss1_tool web/index.html, VRISK/VGROUPS/VOPT), from the
    SuperStation wiki and docs and MiSTer's documentation and source. Keep the two in step.
    The SS1's own video hardware (the Sony encoder needs vga_mode=subcarrier) and Taki's settings for

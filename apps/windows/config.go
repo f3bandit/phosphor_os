@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Settings in %APPDATA%\Phosphor\config.json: the SS1's address, the pairing key (protected with

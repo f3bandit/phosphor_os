@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // The SD card write (partition table last, then everything read back and compared) and the read
@@ -80,7 +82,7 @@ func writeImage(f rawDev, image string, sector int) error {
 	const chunk = 4 << 20
 	buf := make([]byte, chunk)
 	var first []byte
-	var off int64
+	var off, got int64 // got: the image's bytes read (off adds padding to whole sectors)
 	hasher := sha256.New()
 	sdSet(func(s *sdState) {
 		s.Phase, s.Done, s.Total, s.Message, s.Image = "write", 0, size, "Writing the image", image
@@ -88,6 +90,7 @@ func writeImage(f rawDev, image string, sector int) error {
 	start := time.Now()
 	for {
 		n, rerr := io.ReadFull(rc, buf)
+		got += int64(n)
 		if n > 0 {
 			data := buf[:n]
 			if rem := n % sector; rem != 0 {
@@ -103,7 +106,10 @@ func writeImage(f rawDev, image string, sector int) error {
 			o := off
 			sdSet(func(s *sdState) { s.Done = o; s.MBps = mbps(o, start) })
 		}
-		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
+		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF { // the last piece, short: the end, if it's all there
+			if got < size {
+				return fmt.Errorf("the image ended early (%d of %d MB): it may be damaged or still downloading", got>>20, size>>20)
+			}
 			break
 		}
 		if rerr != nil {

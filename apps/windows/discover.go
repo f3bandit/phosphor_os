@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Finding the SS1: GET /info on port 8767 of every address on this PC's home networks (/24 around
