@@ -19,6 +19,8 @@ void music_stop(void);                       /* a game is starting */
 int music_playing(void);
 cJSON *music_status(void);
 cJSON *music_queue(void);
+int music_rip(int start, char *err, size_t errn);     /* the CD in the drive to FLAC (0: stop) */
+cJSON *music_rip_status(void);
 void music_tick(const char *drive_key, int audio_cd);   /* from phosphord's loop */
 
 #endif

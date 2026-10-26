@@ -7652,6 +7652,13 @@ static void mu_panel(void)
 	snprintf(t, sizeof(t), "%s%s%s%s%d tracks%s", ar && *ar ? ar : "", ar && *ar ? "  \xC2\xB7  " : "", yr && *yr ? yr : "", yr && *yr ? "  \xC2\xB7  " : "",
 	         (int)api_num(a, "tracks", 0), mu_rows[row] == MR_CD && cJSON_IsTrue(cJSON_GetObjectItem(a, "looking")) ? "\nLooking it up on MusicBrainz..." :
 	         mu_rows[row] == MR_CD && !cJSON_IsTrue(cJSON_GetObjectItem(a, "named")) ? "\nNot in MusicBrainz" : "");
+	cJSON *rp = mu_status ? cJSON_GetObjectItem(mu_status, "rip") : NULL;
+	if (mu_rows[row] == MR_CD && rp && (cJSON_IsTrue(cJSON_GetObjectItem(rp, "busy")) || (api_str(rp, "message") && *api_str(rp, "message")))) {
+		size_t l = strlen(t);
+		if (cJSON_IsTrue(cJSON_GetObjectItem(rp, "busy")))
+			snprintf(t + l, sizeof(t) - l, "\n\n%s\n%d%% done (B stops)", api_str(rp, "message") ? api_str(rp, "message") : "", (int)api_num(rp, "percent", 0));
+		else snprintf(t + l, sizeof(t) - l, "\n\n%s", api_str(rp, "message"));
+	}
 	lv_label_set_text(mu_info, t);
 	char tl[700] = "";
 	cJSON *x;
@@ -7677,7 +7684,7 @@ static void mu_tracks_fill(int i, char *t, size_t n, char *val, size_t vn, int *
 	if (ms > 0) snprintf(val, vn, "%ld:%02ld", ms / 60000, ms / 1000 % 60); else val[0] = 0;
 }
 static const char *const MU_HINTS[] = { "A", "Play", "X", "Shuffle", "Y", "Tracks", "L R", "Show", "B", "Back", NULL };
-static const char *const MU_CD_HINTS[] = { "A", "Play", "Y", "Tracks", "\xE2\x89\xA1", "Eject", "B", "Back", NULL };
+static const char *const MU_CD_HINTS[] = { "A", "Play", "X", "Rip to the NVMe", "Y", "Tracks", "\xE2\x89\xA1", "Eject", "B", "Back", NULL };
 static void mu_footer(void)
 {
 	static const char *const tr_hints[] = { "A", "Play from here", "B", "Back", NULL };
@@ -7783,9 +7790,19 @@ static void music_key(int k)
 	cJSON *a = mu_row_album(row);
 	const char *id = a ? (mu_rows[row] == MR_CD ? "cd" : api_str(a, "id")) : NULL;
 	if (k == K_A && id) { cJSON_Delete(api_call("{\"cmd\":\"music_ctl\",\"do\":\"shuffle\",\"on\":false}")); mu_play(id, 0, 0); }
+	else if (k == K_X && mu_rows[row] == MR_CD) {
+		cJSON *r = api_call("{\"cmd\":\"music_rip\"}");
+		toast_show(api_ok(r) ? "Copying the CD to Music (FLAC, an exact copy)" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start"));
+		cJSON_Delete(r);
+		mu_load(); mu_panel();
+	}
 	else if (k == K_X && id) mu_play(id, 0, 1);
 	else if (k == K_Y && mu_album) { mu_tracks_view = 1; mu_tracks.sel = 0; mu_tracks.top = 0; mu_draw(); }
 	else if (k == K_MENU && mu_rows[row] == MR_CD) { disc_eject_now(); }
+	else if (k == K_B && mu_rows[row] == MR_CD && mu_status && cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(mu_status, "rip"), "busy"))) {
+		cJSON_Delete(api_call("{\"cmd\":\"music_rip\",\"stop\":true}"));
+		toast_show("Stopping: the tracks done are kept");
+	}
 	else if (k == K_B || k == K_MENU) show_home();
 }
 
@@ -7920,7 +7937,12 @@ static void music_tick(void)
 		cJSON *c = api_ok(r) ? cJSON_GetObjectItem(r, "cd") : NULL;
 		int has = c != NULL, named = c && cJSON_IsTrue(cJSON_GetObjectItem(c, "named"));
 		cJSON_Delete(r);
+		cJSON *rp = mu_status ? cJSON_GetObjectItem(mu_status, "rip") : NULL;
+		int ripping = rp && cJSON_IsTrue(cJSON_GetObjectItem(rp, "busy"));
+		static int was_ripping;
 		if (has != had_cd || named != was_named) { mu_load(); mu_draw(); }
+		else if (ripping || was_ripping) { int sel = mu_list.sel; mu_load(); mu_list.sel = sel; mu_panel(); }
+		was_ripping = ripping;
 	}
 }
 
