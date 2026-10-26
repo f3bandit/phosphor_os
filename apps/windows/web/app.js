@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* Phosphor for Windows: the screens. Laid out like the console: a status bar, a screen with a big
    title, lists with an info panel beside them, tabs for a page's parts, button hints at the bottom.
    Mouse, keyboard (arrows, Enter, Esc, Q/E for tabs) or a controller (A B X Y, LB/RB, Start). */

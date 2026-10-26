@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* The console's background textures (frontend/src/texture.c), drawn the same way: one tile, lines
    from distance fields, in the accent colour at the same faint strength, repeated across the window.
    The numbers are the console's, so a texture picked here is the one picked on the TV. */

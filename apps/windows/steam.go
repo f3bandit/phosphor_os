@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Steam soundtracks to the SS1 (Music › Steam soundtracks): the soundtracks Steam has installed on this PC,
@@ -108,6 +110,7 @@ func steamLibraries() []string {
 	if root == "" {
 		return nil
 	}
+	root = filepath.Clean(root) // the registry's is c:/program files (x86)/steam: the same as libraryfolders' once cleaned
 	libs := []string{root}
 	if lf := vdfFile(filepath.Join(root, "steamapps", "libraryfolders.vdf")); lf != nil {
 		if top, ok := lf["libraryfolders"].(map[string]any); ok {
@@ -326,7 +329,8 @@ func steamArtCached(appid string) string {
 	return p
 }
 
-var soundtrackWord = regexp.MustCompile(`(?i)soundtrack|\bost\b|original score|music`)
+// only when Steam's record doesn't know the app: "music" alone named ordinary games too
+var soundtrackWord = regexp.MustCompile(`(?i)soundtrack|\bost\b|original score`)
 
 func findSoundtracks() []*soundtrack {
 	out := []*soundtrack{}
@@ -343,11 +347,13 @@ func findSoundtracks() []*soundtrack {
 			if id == "" || dir == "" || seen[id] {
 				continue
 			}
-			// a soundtrack app: in steamapps/music; an older one: a game folder whose name says so
+			// a soundtrack app: in steamapps/music; an older one, in common: Steam's record says it's
+			// Music, or (an app the record doesn't have) its name says soundtrack
 			cand := filepath.Join(sa, "music", dir)
 			if fi, err := os.Stat(cand); err != nil || !fi.IsDir() {
 				cand = filepath.Join(sa, "common", dir)
-				if !soundtrackWord.MatchString(name) && !soundtrackWord.MatchString(dir) {
+				if _, music := steamAlbumInfo(id); !music &&
+					(steamAppKnown(id) || !soundtrackWord.MatchString(name) && !soundtrackWord.MatchString(dir)) {
 					cand = ""
 				}
 			}
@@ -405,6 +411,7 @@ var stJob struct {
 	Total   int64  `json:"total"`
 	Message string `json:"message"`
 	queue   []string
+	failed  []string // this run's albums that didn't go, all said at the end
 }
 
 func putMusicFile(album, name string, r io.Reader, size int64) error {
@@ -485,6 +492,12 @@ func steamWorker() {
 		stMu.Lock()
 		if len(stJob.queue) == 0 {
 			stJob.Busy = false
+			if len(stJob.failed) > 1 { // one message per album would leave only the last one showing
+				stJob.Message = fmt.Sprintf("%d didn't go: %s", len(stJob.failed), strings.Join(stJob.failed, "; "))
+			} else if len(stJob.failed) == 1 {
+				stJob.Message = stJob.failed[0]
+			}
+			stJob.failed = nil
 			stMu.Unlock()
 			call(json.RawMessage(`{"cmd":"music_albums","rescan":true}`))
 			return
@@ -507,6 +520,7 @@ func steamWorker() {
 		err := sendSoundtrack(s)
 		stMu.Lock()
 		if err != nil {
+			stJob.failed = append(stJob.failed, s.Title+": "+err.Error())
 			stJob.Message = s.Title + ": " + err.Error()
 		} else {
 			stJob.Message = s.Title + " is on the SS1"
@@ -537,6 +551,7 @@ func apiSteam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list := findSoundtracks()
+	keepSoundtracks(list)
 	// on the SS1: its Steam albums, by app id (older sends: by title, Steam's plain name or the English one)
 	type ss1Album struct {
 		Title, Artist, Source, Cover, Folder string
@@ -657,10 +672,36 @@ func sendFixups(list []fixup) {
 	}()
 }
 
+// the last list, for a little while: the page asks for every cover at once, and each scan reads every
+// Steam library
+var stList struct {
+	sync.Mutex
+	list []*soundtrack
+	at   time.Time
+}
+
+func keepSoundtracks(l []*soundtrack) {
+	stList.Lock()
+	stList.list, stList.at = l, time.Now()
+	stList.Unlock()
+}
+
+func soundtracksCached() []*soundtrack {
+	stList.Lock()
+	l, at := stList.list, stList.at
+	stList.Unlock()
+	if l != nil && time.Since(at) < 30*time.Second {
+		return l
+	}
+	l = findSoundtracks()
+	keepSoundtracks(l)
+	return l
+}
+
 // a soundtrack's cover from this PC (the list's pictures)
 func apiSteamCover(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/steam/cover/")
-	for _, s := range findSoundtracks() {
+	for _, s := range soundtracksCached() {
 		if s.AppID == id && s.Cover != "" {
 			http.ServeFile(w, r, s.Cover)
 			return

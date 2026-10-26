@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 //go:build windows
 
 package main
@@ -32,7 +34,7 @@ $remDrv = @(Get-CimInstance Win32_DiskDrive | Where-Object { $_.MediaType -like 
 `
 
 func listRemovable() ([]disk, error) {
-	out, err := powershell(cardDiskPS + `@(Get-Disk | Where-Object { ($sys -notcontains $_.Number) -and ((@('SD','USB','MMC') -contains [string]$_.BusType) -or ($remVol -contains $_.Number) -or ($remDrv -contains $_.Number)) } | Select-Object Number,FriendlyName,Size,@{n='BusType';e={[string]$_.BusType}},LogicalSectorSize,@{n='Letters';e={(@(Get-Partition -DiskNumber $_.Number | Where-Object { $_.DriveLetter } | ForEach-Object { [string]$_.DriveLetter + ':' }) -join ' ')}}) | ConvertTo-Json -Compress`)
+	out, err := powershell(cardDiskPS + `@(Get-Disk | Where-Object { ($sys -notcontains $_.Number) -and ((@('SD','USB','MMC') -contains [string]$_.BusType) -or ($remVol -contains $_.Number) -or ($remDrv -contains $_.Number)) } | Select-Object Number,FriendlyName,Size,@{n='BusType';e={[string]$_.BusType}},LogicalSectorSize,@{n='UniqueId';e={[string]$_.UniqueId}},@{n='Letters';e={(@(Get-Partition -DiskNumber $_.Number | Where-Object { $_.DriveLetter } | ForEach-Object { [string]$_.DriveLetter + ':' }) -join ' ')}}) | ConvertTo-Json -Compress`)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't list the disks: %s", out)
 	}

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // MiSTer & Linux backups (SS1 Tool's): every version of the SS1's system files (Main, the menu core,
@@ -88,9 +90,41 @@ func sbCall(v any, out any) error {
 	return json.Unmarshal(r, out)
 }
 
+// sbSafeID: an id from the SS1 (or the page) that can only name one folder inside sbRoot. The SS1's
+// ids are paths with '/' made '+' (MiSTer.ini, linux+u-boot.txt, a MiSTer_*.ini profile), so: no
+// separators or other characters Windows refuses, no "..", not starting or ending with a dot or space
+func sbSafeID(id string) bool {
+	if id == "" || len(id) > 128 || strings.Contains(id, "..") || strings.ContainsAny(id, `<>:"/\|?*`) ||
+		strings.ContainsAny(id[:1]+id[len(id)-1:], ". ") {
+		return false
+	}
+	for _, c := range id {
+		if c < ' ' || c == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// sbSafeHash: a SHA-256 in lowercase hex, nothing else
+func sbSafeHash(h string) bool {
+	if len(h) != 64 {
+		return false
+	}
+	for _, c := range h {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // the versions kept of one file, newest first
 func sbVersions(id string) []sbInfo {
 	out := []sbInfo{}
+	if !sbSafeID(id) {
+		return out
+	}
 	ds, _ := os.ReadDir(filepath.Join(sbRoot(), id))
 	for _, d := range ds {
 		b, err := os.ReadFile(filepath.Join(sbRoot(), id, d.Name(), "info.json"))
@@ -110,6 +144,9 @@ func sbVersions(id string) []sbInfo {
 func sbFetch(it sbItem, linux string) error {
 	if it.Hash == nil || !it.Exists {
 		return nil
+	}
+	if !sbSafeID(it.ID) || !sbSafeHash(*it.Hash) { // checked before any path is made from them
+		return fmt.Errorf("the SS1 sent a bad name for %s", it.Name)
 	}
 	dir := filepath.Join(sbRoot(), it.ID, *it.Hash)
 	if _, err := os.Stat(filepath.Join(dir, "info.json")); err == nil {
@@ -259,11 +296,14 @@ func apiSysbk(w http.ResponseWriter, r *http.Request) {
 		case "save":
 			go sbSave()
 		case "restore":
-			if strings.ContainsAny(req.ID, `/\`) || strings.Contains(req.ID, "..") || len(req.Hash) != 64 || strings.ContainsAny(req.Hash, `/\.`) {
+			if !sbSafeID(req.ID) || !sbSafeHash(req.Hash) {
 				fail(w, "bad request")
 				return
 			}
-			go sbRestore(req.ID, req.Hash)
+			if err := sbRestore(req.ID, req.Hash); err != nil {
+				fail(w, err.Error())
+				return
+			}
 		default:
 			fail(w, "do: save or restore")
 			return
@@ -298,14 +338,25 @@ func apiSysbk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, st)
 }
 
-func sbRestore(id, hash string) {
+// sbRestore: refused (an error the page shows) while a backup or another put-back runs; otherwise it
+// starts and carries on by itself
+func sbRestore(id, hash string) error {
 	sb.Lock()
 	if sb.busy {
+		job := sb.job
 		sb.Unlock()
-		return
+		if job == "restore" {
+			return errors.New("another file is being put back: try again when it's done")
+		}
+		return errors.New("a backup is running: try again when it's done")
 	}
 	sb.busy, sb.job, sb.err, sb.file = true, "restore", "", id
 	sb.Unlock()
+	go sbPutBack(id, hash)
+	return nil
+}
+
+func sbPutBack(id, hash string) {
 	err := func() error {
 		data, err := os.ReadFile(filepath.Join(sbRoot(), id, hash, "content"))
 		if err != nil {

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Box art on the PC: the LaunchBox Games Database (no account), as phosphord's src_launchbox.c.
@@ -58,9 +60,11 @@ type lbData struct {
 }
 
 var lb struct {
-	mu   sync.Mutex
-	load sync.Mutex
-	d    *lbData
+	mu     sync.Mutex
+	load   sync.Mutex
+	d      *lbData
+	failed context.Context // the run whose download or reading failed: not tried again in it (110 MB each time)
+	failRC int
 }
 
 func lbPath() string { return filepath.Join(scrapeCacheDir(), "launchbox2.gob") } // 2: arcade flyers too
@@ -98,6 +102,9 @@ func lbGet(ctx context.Context, status func(string)) (*lbData, int) {
 	lb.mu.Unlock()
 	lb.load.Lock()
 	defer lb.load.Unlock()
+	if lb.failed != nil && lb.failed == ctx {
+		return nil, lb.failRC
+	}
 	lb.mu.Lock()
 	if lb.d != nil && time.Since(lb.d.Saved) < 30*24*time.Hour {
 		d := lb.d
@@ -126,16 +133,18 @@ func lbGet(ctx context.Context, status func(string)) (*lbData, int) {
 			status(fmt.Sprintf("Getting the LaunchBox games database: %d of %d MB", done>>20, total>>20))
 		}
 	})
-	if rc < 0 {
-		return nil, -1
-	}
 	if rc != 0 {
-		return nil, 1
+		lb.failed, lb.failRC = ctx, 1
+		if rc < 0 {
+			lb.failRC = -1
+		}
+		return nil, lb.failRC
 	}
 	status("Reading the LaunchBox games database (one time)")
 	d, err := lbImport(zipPath)
 	os.Remove(zipPath)
 	if err != nil {
+		lb.failed, lb.failRC = ctx, 1
 		return nil, 1
 	}
 	if f, err := os.Create(lbPath() + ".new"); err == nil {

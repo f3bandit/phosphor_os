@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* Phosphor for Windows: Settings. Laid out like the console's Settings: the sections in a list on the
    left, the highlighted one's tools on the right, with tabs when a section has several (LB/RB or Q/E).
    A (Enter) goes into a section's tools, B (Esc) comes back to the list. Everything advanced lives
@@ -1110,9 +1111,12 @@ class AppSettings {
 			<p class="note">The PC companion for Phosphor on the SuperStation One: the library, box art and details, base games, and the SS1's settings and tools, from your PC.</p>
 			<p class="note">Unofficial. Not made or supported by MiSTer-devel or the makers of the SuperStation One. Free for personal, non-commercial use (PolyForm Noncommercial 1.0.0).</p>
 			<p class="note">Thanks to Taki and Retro Remake for making the SuperStation One, such excellent hardware. Disc support by Anime0t4ku and bonna79. RetroAchievements by odelot (RA Main and cores) and rcheevos by the RetroAchievements team. Music CD names from MusicBrainz and covers from the Cover Art Archive; audio decoding by dr_libs (David Reid) and stb_vorbis (Sean Barrett).</p>
+			<p class="note">Phosphor is licensed under the PolyForm Noncommercial License 1.0.0. Phosphor's Main and menu core are GPL-3.0, with their source at <a href="https://github.com/f3bandit/phosphor-main" target="_blank" rel="noopener">github.com/f3bandit/phosphor-main</a> and <a href="https://github.com/f3bandit/phosphor-menu" target="_blank" rel="noopener">github.com/f3bandit/phosphor-menu</a>. The open-source software Phosphor is built with keeps its own licences:</p>
+			<div class="acts"><button class="btn" id="licences" data-nav>Open-source licences</button></div>
 			<p class="note">Closing the window keeps Phosphor in the tray (bottom right, by the clock), watching for warnings. To stop it completely:</p>
 			<div class="acts"><button class="btn" id="quit" data-nav>Exit Phosphor</button></div></div>`));
 		$("#quit").onclick = async () => { await api("/api/quit", {}); window.close(); };
+		$("#licences").onclick = () => window.open("THIRD_PARTY_NOTICES.md", "_blank"); // copied in by build-exe.sh
 	}
 
 	/* ---------- Devices (view only: pairing and changes are made on the SS1 itself) ---------- */
@@ -1208,7 +1212,7 @@ class AppSettings {
 					: `<div class="empty">None yet: Back up now.</div>`}
 				<p class="note" style="margin-top:1rem">Putting one back keeps the file as it is on the SS1 first (phosphor/backups/sysbk there), so it can be undone.</p>`;
 			p.querySelectorAll("[data-put]").forEach(bt => twice(bt, "Press again to put it back", async () => {
-				try { await api("/api/sysbk", { do: "restore", id: it.id, hash: bt.dataset.put }); toast("Putting it back…"); me.every(1000, load); } catch (e) { toast(e.message); }
+				try { const j = await api("/api/sysbk", { do: "restore", id: it.id, hash: bt.dataset.put }); if (j.ok === false) throw new Error(j.error); toast("Putting it back…"); me.every(1000, load); } catch (e) { toast(e.message); }
 			}));
 		};
 		const load = async () => {

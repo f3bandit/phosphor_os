@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Automatic matching (Library > Match > Matched automatically): the games box art couldn't find,
@@ -739,6 +741,9 @@ func (s *scrapeRun) matchOne(g *sgame, libs map[string][]amLibGame) bool {
 		g2.Title, g2.CRC, g2.Serial, g2.Official, g2.LRSys = t.name, "", "", t.name, ""
 		g2.Sys = look // a port: the original's system
 		rc, r := s.one(&g2)
+		if rc > 0 && len(r.foundBy) == 0 { // one says 1 for a game that had art already, found or not
+			rc = 0
+		}
 		if rc <= 0 {
 			if rc < 0 {
 				s.mu.Lock()

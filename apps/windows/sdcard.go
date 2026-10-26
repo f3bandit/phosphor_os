@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Tools > SD card flash & health: put the official SuperStation One SD card image on a card in this
@@ -447,7 +449,11 @@ func sdRoutes(h func(string, http.HandlerFunc)) {
 			fail(w, err.Error())
 			return
 		}
-		args := []string{"--sdjob", req.Job, "--disk", fmt.Sprint(d.Number)}
+		// the number, and what the helper checks it's still the same disk by (numbers can move when cards come and go)
+		args := []string{"--sdjob", req.Job, "--disk", fmt.Sprint(d.Number), "--size", fmt.Sprint(d.Size)}
+		if d.UniqueId != "" {
+			args = append(args, "--uid", d.UniqueId)
+		}
 		switch req.Job {
 		case "flash":
 			if req.Confirm != fmt.Sprint(req.Disk) {
@@ -513,6 +519,9 @@ func runSDJob(args []string) bool {
 	})
 	var err error
 	d, derr := cardDisk(num) // checked again here: never the PC's own disks
+	if derr == nil && (fmt.Sprint(d.Size) != opt["size"] || d.UniqueId != opt["uid"]) {
+		derr = fmt.Errorf("disk %d isn't the card that was chosen any more (a card was put in or taken out?): nothing was done; choose it again", num)
+	}
 	if derr != nil {
 		err = derr
 	} else if job == "flash" {
@@ -558,6 +567,7 @@ type disk struct {
 	BusType           string `json:"BusType"`
 	LogicalSectorSize int    `json:"LogicalSectorSize"`
 	Letters           string `json:"Letters"`
+	UniqueId          string `json:"UniqueId"` // Windows' id for the disk (serial-based): the same disk after a renumbering
 }
 
 type diskInfo struct {

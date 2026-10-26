@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Fan-made box art (fanart/fanart.json): for games no database has, such as ROM hacks and homebrew. The
@@ -146,7 +148,9 @@ func fanartLookup(ctx context.Context, s *scrapeRun, g *sgame, r *sres) int {
 
 var fanpack struct {
 	sync.Mutex
-	zr *zip.Reader
+	zr      *zip.Reader
+	fetched context.Context // the run that downloaded the pack (or failed to): not again in it
+	rc      int             // how that went: 0 got it, else netRequest's
 }
 
 func fanpackPath() string { return filepath.Join(scrapeCacheDir(), "fanart-pack.zip") }
@@ -179,12 +183,20 @@ func fanpackGet(ctx context.Context, name string) ([]byte, int) {
 			return b, 0
 		}
 	}
+	if fanpack.fetched != nil && fanpack.fetched == ctx { // the latest pack is in hand already, or wouldn't come
+		if fanpack.rc != 0 {
+			return nil, fanpack.rc
+		}
+		return nil, 1
+	}
 	b, rc, _ := netRequest(ctx, "GET", fanpackURL, nil, nil, 64<<20)
+	fanpack.fetched, fanpack.rc = ctx, rc
 	if rc != 0 {
 		return nil, rc
 	}
 	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
+		fanpack.rc = 1
 		return nil, 1
 	}
 	_ = os.MkdirAll(filepath.Dir(fanpackPath()), 0o755)

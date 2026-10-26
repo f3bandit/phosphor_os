@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 //go:build windows
 
 package main
@@ -12,6 +14,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -70,16 +73,18 @@ func openWindow(url string) {
 // so the new one takes over instead of just showing the old window. "" when it went.
 func replaceOlder(url string) string {
 	c := http.Client{Timeout: 2 * time.Second}
-	r, err := c.Get(strings.Replace(url, "/?k=", "/api/state?k=", 1))
+	// /api/hello answers at once (/api/state asks the SS1 first, which can outlast the timeout)
+	r, err := c.Get(strings.Replace(url, "/?k=", "/api/hello?k=", 1))
 	if err != nil {
 		return url
 	}
 	var st struct {
-		V string `json:"app_version"`
+		OK bool   `json:"ok"`
+		V  string `json:"app_version"` // none: a copy from before 0.2.42, so older
 	}
-	_ = json.NewDecoder(r.Body).Decode(&st)
+	err = json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&st)
 	r.Body.Close()
-	if st.V == appVersion {
+	if r.StatusCode != 200 || err != nil || !st.OK || st.V == appVersion {
 		return url
 	}
 	if r, err := c.Post(strings.Replace(url, "/?k=", "/api/quit?k=", 1), "application/json", strings.NewReader("{}")); err == nil {

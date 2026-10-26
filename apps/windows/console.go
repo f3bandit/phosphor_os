@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Talking to the SS1: Phosphor's remote access (docs/remote-api.md). Plain HTTP on the home network,

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // A dry run of the matching rules against a real library (no SS1, no changes): NFJSON=path go test -run TestDryRun -v

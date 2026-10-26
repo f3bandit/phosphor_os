@@ -1,14 +1,23 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+
 package main
 
 // Reconnecting by itself: when the SS1 stops answering at its address (a restart, or the router gave it
 // a new address), Phosphor looks on the home network for it and moves over, without pairing again.
-// Only the SS1 this PC is paired with can answer with this PC's key, so another Phosphor on the same
-// network is never picked up. On by default (Settings > Connection).
+// A host found on the network never gets the key until it proves it already knows it: /info?nonce=
+// answers with proofs (sha256(sha256(key) + ":" + nonce), one per paired device), and only an SS1 whose
+// proofs hold this PC's is adopted. Older SS1s without proofs aren't moved to automatically.
+// On by default (Settings > Connection).
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -32,7 +41,47 @@ func keyWorksAt(addr string) bool {
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, 4096))
 	r.Body.Close()
-	return r.StatusCode == 200 || r.StatusCode == 403 // 403: an older SS1 that knows the key but not "gen" from afar
+	return r.StatusCode == 200
+}
+
+// keyProof: what an SS1 that knows tok answers for nonce
+func keyProof(tok, nonce string) string {
+	h := sha256.Sum256([]byte(tok))
+	p := sha256.Sum256([]byte(hex.EncodeToString(h[:]) + ":" + nonce))
+	return hex.EncodeToString(p[:])
+}
+
+// provesKey: does the Phosphor at addr show it knows this PC's key, without the key being sent?
+func provesKey(addr string) bool {
+	tok := token()
+	if tok == "" {
+		return false
+	}
+	nb := make([]byte, 16)
+	if _, err := rand.Read(nb); err != nil {
+		return false
+	}
+	nonce := hex.EncodeToString(nb)
+	r, err := client(3 * time.Second).Get("http://" + withPort(addr) + "/info?nonce=" + url.QueryEscape(nonce))
+	if err != nil {
+		return false
+	}
+	defer r.Body.Close()
+	var in struct {
+		OK     bool     `json:"ok"`
+		Name   string   `json:"name"`
+		Proofs []string `json:"proofs"`
+	}
+	if r.StatusCode != 200 || json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&in) != nil || !in.OK || in.Name != "Phosphor" {
+		return false
+	}
+	want := keyProof(tok, nonce)
+	for _, p := range in.Proofs { // none (an older SS1): not adopted
+		if p == want {
+			return true
+		}
+	}
+	return false
 }
 
 func autoReconnect() bool {
@@ -56,7 +105,7 @@ func relocate() (string, bool) {
 		if a == withPort(cur) {
 			continue
 		}
-		if keyWorksAt(a) {
+		if provesKey(a) && keyWorksAt(a) { // the key goes only to a host that proved it has it
 			cfgMu.Lock()
 			cfg.Address = a
 			cfgMu.Unlock()
