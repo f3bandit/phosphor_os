@@ -2,8 +2,9 @@
 
 package main
 
-// Settings in %APPDATA%\Phosphor\config.json: the SS1's address, the pairing key (protected with
-// Windows' own encryption for this user, see secret_windows.go), and the app's look.
+// Settings in %APPDATA%\Phosphor\config.json: the SS1's address, the pairing key and the box-art
+// passwords and keys (protected with Windows' own encryption for this user, see secret_windows.go),
+// and the app's look.
 
 import (
 	"encoding/json"
@@ -22,6 +23,10 @@ type config struct {
 	QuietPC  bool   `json:"quiet_pc,omitempty"` // no Windows notifications (still listed in the app)
 	// don't look for the SS1 on the network when it stops answering (reconnect.go; on by default)
 	NoReconnect bool `json:"no_reconnect,omitempty"`
+	// box-art logins for lookups on this PC (accounts.go): user names and IDs as they are,
+	// passwords and keys protected like the pairing key
+	Accounts    map[string]map[string]string `json:"accounts,omitempty"`
+	AccountsEnc map[string]map[string]string `json:"accounts_protected,omitempty"`
 }
 
 var (

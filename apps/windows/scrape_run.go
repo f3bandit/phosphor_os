@@ -100,9 +100,12 @@ var scrapeSources = []scrapeSource{
 	{"libretro", "libretro", func(*scrapeRun) bool { return true }, lrLookup},
 	{"arcadedb", "ArcadeDB", func(*scrapeRun) bool { return true }, adbLookup},
 	{"launchbox", "LaunchBox", func(*scrapeRun) bool { return true }, lbLookup},
-	{"thegamesdb", "TheGamesDB", func(s *scrapeRun) bool { return s.acct("thegamesdb", "apikey") != "" }, tgdbLookup},
+	{"thegamesdb", "TheGamesDB", func(s *scrapeRun) bool { return s.pcReady("thegamesdb", s.acct("thegamesdb", "apikey") != "") }, tgdbLookup},
 	{"screenscraper", "ScreenScraper", func(s *scrapeRun) bool {
 		if m := ssMissing(s.acct); m != "" {
+			if ss1Only(s.ss1Set, "screenscraper", false) != "" {
+				return s.pcReady("screenscraper", false) // set up on the SS1 only
+			}
 			s.note(m)
 			return false
 		}
@@ -111,7 +114,7 @@ var scrapeSources = []scrapeSource{
 		return s.ss.off == ""
 	}, ssLookup},
 	{"igdb", "IGDB", func(s *scrapeRun) bool {
-		return s.acct("igdb", "client_id") != "" && s.acct("igdb", "client_secret") != ""
+		return s.pcReady("igdb", s.acct("igdb", "client_id") != "" && s.acct("igdb", "client_secret") != "")
 	}, igdbLookup},
 }
 
@@ -128,7 +131,8 @@ func scrapeCacheDir() string {
 type scrapeRun struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
-	accounts map[string]map[string]string
+	accounts map[string]map[string]string // this PC's own copy of the logins (accounts.go)
+	ss1Set   map[string]map[string]bool   // which logins the SS1 has
 	order    []*scrapeSource
 	mu       sync.Mutex
 	st       scrapeState
@@ -159,6 +163,14 @@ var (
 )
 
 func (s *scrapeRun) acct(sec, key string) string { return s.accounts[sec][key] }
+
+// pcReady: ready, as this PC's logins go; when not, and the SS1 has the login, say so (once)
+func (s *scrapeRun) pcReady(sec string, ready bool) bool {
+	if m := ss1Only(s.ss1Set, sec, ready); m != "" {
+		s.note(m)
+	}
+	return ready
+}
 
 func (s *scrapeRun) status(t string) {
 	s.mu.Lock()
@@ -372,18 +384,29 @@ func (s *scrapeRun) run() {
 	}
 }
 
-// the sources' order and logins, as the SS1 has them
+// todoConfig: scrape_todo's "config": the sources' order, the SS1's user names / IDs and which of
+// its logins are set (no passwords or keys: those are this PC's own, accounts.go)
+type todoConfig struct {
+	Order    []string                     `json:"order"`
+	Accounts map[string]map[string]string `json:"accounts"`
+	Set      map[string]map[string]bool   `json:"set"`
+}
+
+// useLogins: this PC's own logins for the run, and which ones the SS1 has
+func (s *scrapeRun) useLogins(c todoConfig) {
+	s.accounts = pcAccounts()
+	s.ss1Set = ss1SetFrom(c.Set, c.Accounts)
+}
+
+// the sources' order as the SS1 has them, and this PC's logins
 func (s *scrapeRun) loadConfig() {
 	var raw struct {
-		Config struct {
-			Order    []string                     `json:"order"`
-			Accounts map[string]map[string]string `json:"accounts"`
-		} `json:"config"`
+		Config todoConfig `json:"config"`
 	}
 	if ss1Call(map[string]any{"cmd": "scrape_todo", "miss": true, "limit": 1}, &raw) != nil {
 		return
 	}
-	s.accounts = raw.Config.Accounts
+	s.useLogins(raw.Config)
 	s.order = []*scrapeSource{}
 	for _, id := range raw.Config.Order {
 		for i := range scrapeSources {
@@ -401,19 +424,16 @@ func (s *scrapeRun) lookupAll() bool {
 	seen := map[int64]bool{}
 	for s.ctx.Err() == nil {
 		var todo struct {
-			Total  int     `json:"total"`
-			Games  []sgame `json:"games"`
-			Config struct {
-				Order    []string                     `json:"order"`
-				Accounts map[string]map[string]string `json:"accounts"`
-			} `json:"config"`
+			Total  int        `json:"total"`
+			Games  []sgame    `json:"games"`
+			Config todoConfig `json:"config"`
 		}
 		if err := ss1Call(map[string]any{"cmd": "scrape_todo", "start": first, "limit": 400}, &todo); err != nil {
 			s.status("The SS1 didn't answer: " + err.Error())
 			return false
 		}
 		if first {
-			s.accounts = todo.Config.Accounts
+			s.useLogins(todo.Config)
 			for _, id := range todo.Config.Order {
 				for i := range scrapeSources {
 					if scrapeSources[i].id == id {

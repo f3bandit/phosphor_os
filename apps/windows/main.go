@@ -20,7 +20,7 @@ import (
 	"os"
 )
 
-const appVersion = "0.2.42"
+const appVersion = "0.2.43"
 
 //go:embed web
 var webFS embed.FS

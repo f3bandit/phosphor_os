@@ -226,8 +226,8 @@ class AppSettings {
 		$("#runart").onclick = async () => { try { await ss1({ cmd: "scrape", on: true }); toast("Looking up box art on the SS1 (slower)"); } catch (e) { toast(e.message); } };
 		scrPoll();
 		try {
-			const [src, acc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" })]);
-			this.srcs = src.sources; this.acc = acc.accounts;
+			const [src, acc, pc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" }), api("/api/accounts")]);
+			this.srcs = src.sources; this.acc = acc.accounts; this.pc = pc.pc || [];
 		} catch (e) { if (!alive()) return false; $("#srcs").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
 		if (!alive()) return;
 		this.extra = [["X", "Move up"], ["Y", "Move down"]];
@@ -240,7 +240,10 @@ class AppSettings {
 		box.innerHTML = "";
 		this.srcs.forEach((x, i) => {
 			const a = k => (this.acc.find(q => q.sec === x.id && q.key === k) || {}).set;
-			const st = !x.on ? "Off" : x.ready ? "On" : x.id === "screenscraper" ? (!a("user") ? "Needs your login" : !a("password") ? "Needs the password" : "Needs a developer ID") : "Needs a login";
+			/* lookups on this PC use the PC's own copy of the login (passwords and keys never come from the SS1) */
+			const p = k => (this.pc.find(q => q.sec === x.id && q.key === k) || {}).set;
+			const pcOk = { screenscraper: p("user") && p("password"), thegamesdb: p("apikey"), igdb: p("client_id") && p("client_secret") }[x.id] ?? true;
+			const st = !x.on ? "Off" : x.ready ? (pcOk ? "On" : "On (SS1 only)") : x.id === "screenscraper" ? (!a("user") ? "Needs your login" : !a("password") ? "Needs the password" : "Needs a developer ID") : "Needs a login";
 			const el = h(`<div class="row src" data-nav><span class="n"><b>${i + 1}. ${esc(x.name)}</b></span><span class="v">${st}</span></div>`).firstChild;
 			el.onclick = () => { this.srcs[i].on = !this.srcs[i].on; this.saveSources(i); };
 			el._onfocus = () => { this.sx = i; this.drawAccount(x); };
@@ -283,11 +286,12 @@ class AppSettings {
 		if (F) {
 			for (const [k, label, type] of F) {
 				const a = this.acc.find(q => q.sec === x.id && q.key === k) || {};
-				const val = type === "password" ? "" : a.value || "";
-				const ph = type === "password" ? (a.set ? "Saved (type to change)" : "Not set") : "Not set";
+				const pc = this.pc.find(q => q.sec === x.id && q.key === k) || {};
+				const val = type === "password" ? "" : pc.value || a.value || "";
+				const ph = type === "password" ? (pc.set ? "Saved (type to change)" : a.set ? "Saved on the SS1: type it again for this PC" : "Not set") : "Not set";
 				html += `<div class="field"><label for="ac_${k}">${esc(label)}</label><input id="ac_${k}" type="${type}" data-nav autocomplete="off" placeholder="${esc(ph)}" value="${esc(val)}"></div>`;
 			}
-			html += `<div class="acts"><button class="btn primary" id="acsave" data-nav>Save</button>${x.id === "screenscraper" ? `<button class="btn" id="accheck" data-nav>Check login</button>` : ""}</div>${x.id === "screenscraper" ? `<p class="note" id="acst"></p>` : ""}<p class="note">Saved on the SS1 (phosphor/config/scraper.ini), sent over your home network only.</p>`;
+			html += `<div class="acts"><button class="btn primary" id="acsave" data-nav>Save</button>${x.id === "screenscraper" ? `<button class="btn" id="accheck" data-nav>Check login</button>` : ""}</div>${x.id === "screenscraper" ? `<p class="note" id="acst"></p>` : ""}<p class="note">Saved on this PC (passwords and keys protected for your Windows user) and on the SS1 (phosphor/config/scraper.ini). Lookups on this PC use this PC's copy: the SS1 doesn't send passwords and keys.</p>`;
 		}
 		p.innerHTML = html;
 		if (!F) return;
@@ -305,11 +309,13 @@ class AppSettings {
 				for (const [k, , type] of F) {
 					const v = $("#ac_" + k).value;
 					if (type === "password" && !v) continue;        /* empty: keep what's saved */
-					const j = await ss1({ cmd: "scrape_accounts", set: { sec: x.id, key: k, value: v } });
+					const j = await api("/api/accounts", { sec: x.id, key: k, value: v });   /* this PC, then the SS1 */
+					if (j.pc) this.pc = j.pc;
+					if (!j.ok) throw new Error(j.error || "the SS1 didn't answer");
 					this.acc = j.accounts;
 				}
 				this.srcs = (await ss1({ cmd: "scrape_sources" })).sources;
-				toast("Saved on the SS1");
+				toast("Saved on this PC and the SS1");
 				this.drawSources(this.sx);
 			} catch (e) { toast(e.message); }
 		};
