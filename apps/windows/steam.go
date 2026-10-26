@@ -139,7 +139,8 @@ type stTrack struct {
 }
 type soundtrack struct {
 	AppID    string    `json:"appid"`
-	Title    string    `json:"title"`
+	Title    string    `json:"title"`  // English when Steam has it
+	Artist   string    `json:"artist"` // the album's artist, from Steam's record
 	Format   string    `json:"format"` // FLAC, MP3, ...
 	Tracks   int       `json:"tracks"`
 	Size     int64     `json:"size"`
@@ -149,6 +150,8 @@ type soundtrack struct {
 	OnSS1    bool      `json:"on_ss1"`
 	files    []stTrack // the tracks (one format) and the cover
 	dir      string
+	name     string // Steam's plain name (can be in the original language): how older sends were titled
+	info     albumInfo
 }
 
 var audioExt = map[string]bool{".flac": true, ".mp3": true, ".ogg": true, ".wav": true}
@@ -228,7 +231,7 @@ func hasEmbeddedArt(path string) bool {
 }
 
 // Steam's own picture of the soundtrack (what its library shows), kept by Steam on this PC; newer Steam
-// keeps them in a folder per app, older Steam beside each other. Else its public store picture.
+// keeps them in a folder per app, older Steam beside each other. Only Steam's own files: nothing online.
 func steamArt(appid string) string {
 	sp := steamPath()
 	if sp == "" || appid == "" {
@@ -265,25 +268,7 @@ func steamArt(appid string) string {
 			return found[x]
 		}
 	}
-	// the store's picture, saved once beside the app's other files
-	dst := filepath.Join(configDir(), "steamart", appid+".jpg")
-	if fi, err := os.Stat(dst); err == nil && fi.Size() > 0 {
-		return dst
-	}
-	resp, err := webClient.Get("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/" + url.PathEscape(appid) + "/header.jpg")
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return ""
-	}
-	os.MkdirAll(filepath.Dir(dst), 0o755)
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil || len(b) < 100 || os.WriteFile(dst, b, 0o644) != nil {
-		return ""
-	}
-	return dst
+	return ""
 }
 
 // the biggest square picture (at least 300 px) in dir and below
@@ -373,11 +358,22 @@ func findSoundtracks() []*soundtrack {
 			if len(tr) == 0 {
 				continue
 			}
+			// Steam's own record: the English title, the artist, and its album cover (in Steam's
+			// library cache), which comes first; then a picture in the folder, the art inside the
+			// tracks (the SS1 takes it from there), the biggest square picture Steam keeps for it
+			info, _ := steamAlbumInfo(id)
+			title := strings.TrimSpace(info.Title)
+			if title == "" {
+				title = name
+			}
+			if sc := steamCoverFile(id, info.CoverID); sc != "" {
+				cv = sc
+			}
 			emb := cv == "" && hasEmbeddedArt(tr[0].Path)
 			if cv == "" && !emb {
 				cv = steamArtCached(id)
 			}
-			s := &soundtrack{AppID: id, Title: name, Format: f, Tracks: len(tr), Cover: cv, HasArt: cv != "", Embedded: emb, files: tr, dir: cand}
+			s := &soundtrack{AppID: id, Title: title, Artist: strings.TrimSpace(info.Artist), Format: f, Tracks: len(tr), Cover: cv, HasArt: cv != "", Embedded: emb, files: tr, dir: cand, name: name, info: info}
 			for _, t := range tr {
 				s.Size += t.Size
 			}
@@ -481,8 +477,7 @@ func sendSoundtrack(s *soundtrack) error {
 			f.Close()
 		}
 	}
-	meta, _ := json.Marshal(map[string]string{"title": s.Title, "source": "steam", "steam_appid": s.AppID})
-	return putMusicFile(album, "album.json", strings.NewReader(string(meta)), int64(len(meta)))
+	return putAlbumJSON(album, s)
 }
 
 func steamWorker() {
@@ -542,46 +537,103 @@ func apiSteam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list := findSoundtracks()
-	// on the SS1: its Steam albums, by title (and whether it has their cover)
-	on, hasCover := map[string]bool{}, map[string]bool{}
+	// on the SS1: its Steam albums, by app id (older sends: by title, Steam's plain name or the English one)
+	type ss1Album struct {
+		Title, Artist, Source, Cover, Folder string
+		AppID                                string `json:"steam_appid"`
+	}
+	byID, byTitle := map[string]ss1Album{}, map[string]ss1Album{}
 	if b, _, err := call(json.RawMessage(`{"cmd":"music_albums"}`)); err == nil {
 		var j struct {
-			Albums []struct{ Title, Source, Cover string } `json:"albums"`
+			Albums []ss1Album `json:"albums"`
 		}
 		json.Unmarshal(b, &j)
 		for _, a := range j.Albums {
-			if a.Source == "steam" {
-				on[strings.ToLower(a.Title)] = true
-				if a.Cover != "" {
-					hasCover[strings.ToLower(a.Title)] = true
-				}
+			if a.Source != "steam" {
+				continue
 			}
+			if a.AppID != "" {
+				byID[a.AppID] = a
+			}
+			byTitle[strings.ToLower(a.Title)] = a
 		}
 	}
-	var needCover []*soundtrack
+	var fixes []fixup
 	for _, s := range list {
-		s.OnSS1 = on[strings.ToLower(s.Title)]
-		if s.OnSS1 && !hasCover[strings.ToLower(s.Title)] && s.Cover != "" && !s.Embedded {
-			needCover = append(needCover, s)
+		a, ok := byID[s.AppID]
+		if !ok {
+			a, ok = byTitle[strings.ToLower(s.Title)]
+		}
+		if !ok {
+			a, ok = byTitle[strings.ToLower(s.name)]
+		}
+		s.OnSS1 = ok
+		if !ok || a.Folder == "" {
+			continue
+		}
+		f := fixup{s: s, folder: a.Folder}
+		f.cover = a.Cover == "" && s.Cover != "" && !s.Embedded
+		f.meta = a.Title != s.Title || a.Artist != s.Artist || a.AppID != s.AppID
+		if f.cover || f.meta {
+			fixes = append(fixes, f)
 		}
 	}
-	sendCovers(needCover)
+	sendFixups(fixes)
 	stMu.Lock()
 	job := map[string]any{"busy": stJob.Busy, "title": stJob.Title, "done": stJob.Done, "total": stJob.Total, "message": stJob.Message, "waiting": len(stJob.queue)}
 	stMu.Unlock()
 	writeJSON(w, map[string]any{"ok": true, "steam": steamPath() != "", "libraries": len(steamLibraries()), "soundtracks": list, "job": job})
 }
 
-// albums sent before their cover could be found: just the cover, once per album while the app runs
-var coversSent = map[string]bool{}
+// album.json: what the SS1 shows for the album
+func albumJSON(s *soundtrack) []byte {
+	m := map[string]string{"title": s.Title, "source": "steam", "steam_appid": s.AppID}
+	for k, v := range map[string]string{"artist": s.Artist, "composer": strings.TrimSpace(s.info.Composer), "label": strings.TrimSpace(s.info.Label)} {
+		if v != "" {
+			m[k] = v
+		}
+	}
+	b, _ := json.Marshal(m)
+	return b
+}
 
-func sendCovers(list []*soundtrack) {
+func putAlbumJSON(folder string, s *soundtrack) error {
+	b := albumJSON(s)
+	return putMusicFile(folder, "album.json", strings.NewReader(string(b)), int64(len(b)))
+}
+
+// the soundtrack's album cover in Steam's library cache, named in Steam's record
+func steamCoverFile(appid, coverID string) string {
+	sp := steamPath()
+	if sp == "" || coverID == "" || strings.ContainsAny(coverID, `/\.`) {
+		return ""
+	}
+	for _, e := range []string{".jpg", ".png"} {
+		p := filepath.Join(sp, "appcache", "librarycache", appid, coverID+e)
+		if fi, err := os.Stat(p); err == nil && fi.Size() > 0 {
+			return p
+		}
+	}
+	return ""
+}
+
+// albums sent before Phosphor read Steam's record: their English title, artist and cover, sent on
+// their own (not the music again), once per album while the app runs
+type fixup struct {
+	s           *soundtrack
+	folder      string
+	cover, meta bool
+}
+
+var fixed = map[string]bool{}
+
+func sendFixups(list []fixup) {
 	stMu.Lock()
-	var todo []*soundtrack
-	for _, s := range list {
-		if !coversSent[s.AppID] && !stJob.Busy {
-			coversSent[s.AppID] = true
-			todo = append(todo, s)
+	var todo []fixup
+	for _, f := range list {
+		if !fixed[f.s.AppID] && !stJob.Busy {
+			fixed[f.s.AppID] = true
+			todo = append(todo, f)
 		}
 	}
 	stMu.Unlock()
@@ -589,11 +641,16 @@ func sendCovers(list []*soundtrack) {
 		return
 	}
 	go func() {
-		for _, s := range todo {
-			if f, err := os.Open(s.Cover); err == nil {
-				fi, _ := f.Stat()
-				putMusicFile(albumFolder(s.Title), "cover"+strings.ToLower(filepath.Ext(s.Cover)), f, fi.Size())
-				f.Close()
+		for _, f := range todo {
+			if f.cover {
+				if fh, err := os.Open(f.s.Cover); err == nil {
+					fi, _ := fh.Stat()
+					putMusicFile(f.folder, "cover"+strings.ToLower(filepath.Ext(f.s.Cover)), fh, fi.Size())
+					fh.Close()
+				}
+			}
+			if f.meta {
+				putAlbumJSON(f.folder, f.s)
 			}
 		}
 		call(json.RawMessage(`{"cmd":"music_albums","rescan":true}`))
