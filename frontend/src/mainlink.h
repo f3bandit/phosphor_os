@@ -43,4 +43,7 @@ int mainlink_can_map(void);
 int mainlink_map(const char *what);
 int mainlink_map_state(int *step, int *done, int *saved, char *dev, size_t dn, char *err, size_t en);
 
+int mainlink_has_ra(void);                  /* Main has RetroAchievements (API 6) */
+char *mainlink_query(const char *cmd);      /* a reply line on its own connection, malloc'd; NULL: no answer */
+
 #endif

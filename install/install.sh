@@ -52,6 +52,10 @@ if [ -f "$ROOT/bin/phos-ssh.sh" ]; then
 	rm -f "$ROOT/bin/phos-ssh.sh"
 	rm -rf "$ROOT/config/ssh"
 fi
+# RetroAchievements' unlock sound, where Main plays it from; left alone when it's there or turned off
+if [ -f "$HERE/achievement.wav" ] && [ ! -f "$FAT/achievement.wav" ] && [ ! -f "$FAT/achievement.wav.off" ]; then
+	cp "$HERE/achievement.wav" "$FAT/achievement.wav"
+fi
 # phosphor-main (Phosphor's Main fork): only copied; nothing starts it or replaces MiSTer's Main
 if [ -f "$HERE/bin/MiSTer_phosphor" ]; then
 	cp "$HERE/bin/MiSTer_phosphor" "$ROOT/bin/MiSTer_phosphor.new" && chmod 755 "$ROOT/bin/MiSTer_phosphor.new" && mv -f "$ROOT/bin/MiSTer_phosphor.new" "$ROOT/bin/MiSTer_phosphor"
