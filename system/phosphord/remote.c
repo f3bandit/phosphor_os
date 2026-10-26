@@ -21,6 +21,7 @@
  * phosphord's own socket like any local client, so they run one at a time in the main loop. */
 #include "remote.h"
 #include "music.h"
+#include "shot.h"
 #include "cJSON.h"
 #include "log.h"
 #include "paths.h"
@@ -63,7 +64,8 @@ static const char *ALLOWED[] = {
 	"disc", "disc_play", "disc_eject", "disc_enable",
 	/* RetroAchievements: looking and the Web API key; logging in (a password) only on the MiSTer itself */
 	"ra", "ra_set", "ra_key", "ra_cores", "ra_match", "ra_profile", "ra_game",
-	"music", "music_albums", "music_album", "music_play", "music_ctl", "music_queue", "music_rip", NULL,
+	"music", "music_albums", "music_album", "music_play", "music_ctl", "music_queue", "music_rip",
+	"shot", "shots", "shot_delete", NULL,
 };
 
 typedef struct {
@@ -748,6 +750,25 @@ static void do_music_cover(req_t *r)
 	free(buf);
 }
 
+/* GET /shots/thumb/<core>/<file> and /shots/file/<core>/<file>: a screenshot, small or whole */
+static void do_shot_get(req_t *r)
+{
+	int thumb = !strncmp(r->path, "/shots/thumb/", 13);
+	char id[400], p[1100];
+	if (url_decode(r->path + (thumb ? 13 : 12), id, sizeof(id)) ||
+	    (thumb ? shot_thumb(id, p, sizeof(p)) : shot_path(id, p, sizeof(p)))) { respond_error(r->fd, 404, "no such screenshot"); return; }
+	FILE *f = fopen(p, "rb");
+	if (!f) { respond_error(r->fd, 404, "no such screenshot"); return; }
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *buf = n > 0 && n < ART_BODY_MAX ? malloc((size_t)n) : NULL;
+	if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n) { fclose(f); free(buf); respond_error(r->fd, 500, "couldn't read it"); return; }
+	fclose(f);
+	respond(r->fd, 200, n > 4 && !memcmp(buf, "\x89PNG", 4) ? "image/png" : n > 2 && buf[0] == 'B' && buf[1] == 'M' ? "image/bmp" : "image/jpeg", buf, (size_t)n);
+	free(buf);
+}
+
 static void handle(int fd)
 {
 	req_t *r = calloc(1, sizeof(*r));
@@ -771,7 +792,9 @@ static void handle(int fd)
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
 	int is_upd = !strncmp(r->path, "/update/", 8);
 	int is_mcover = !strncmp(r->path, "/music/cover/", 13), is_music = !is_mcover && !strncmp(r->path, "/music/", 7);
-	if (!is_api && !is_pair && !is_art && !is_upd && !is_music && !is_mcover) { respond_error(fd, 404, "no such path"); goto done; }
+	int is_shot = !strncmp(r->path, "/shots/thumb/", 13) || !strncmp(r->path, "/shots/file/", 12);
+	if (!is_api && !is_pair && !is_art && !is_upd && !is_music && !is_mcover && !is_shot) { respond_error(fd, 404, "no such path"); goto done; }
+	if (is_shot && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if (is_music && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
 	if (is_mcover && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if (is_upd && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
@@ -790,6 +813,7 @@ static void handle(int fd)
 		goto done;
 	}
 	if (is_mcover) { do_music_cover(r); goto done; }
+	if (is_shot) { do_shot_get(r); goto done; }
 	if (is_upd) {
 		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
 		else do_update_put(r);

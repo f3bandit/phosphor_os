@@ -91,6 +91,7 @@
 #include "disc.h"
 #include "ra.h"
 #include "music.h"
+#include "shot.h"
 #include "art.h"
 #include "cJSON.h"
 #include "db.h"
@@ -1355,6 +1356,23 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "categories")) out = cmd_categories(db);
 	else if (!strcmp(c->valuestring, "systems")) out = cmd_systems(db, req);
 	else if (!strcmp(c->valuestring, "games")) out = cmd_games(db, req);
+	else if (!strcmp(c->valuestring, "shot")) {                /* take a screenshot: of the game, or of Phosphor's screen */
+		char where[16], file[1200], err[200];
+		if (shot_take(where, sizeof(where), file, sizeof(file), err, sizeof(err))) out = fail(err);
+		else { cJSON *o = ok(); cJSON_AddStringToObject(o, "where", where); if (file[0]) cJSON_AddStringToObject(o, "file", file); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "shots")) {
+		cJSON *o = shot_list();
+		cJSON_AddBoolToObject(o, "ok", 1);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "shot_img")) {        /* the TV: a small (thumb) or TV-sized (view) JPEG of one */
+		char p[800];
+		int view = cJSON_IsTrue(cJSON_GetObjectItem(req, "view"));
+		if (shot_image(cJSON_GetStringValue(cJSON_GetObjectItem(req, "id")), view ? 1280 : 360, p, sizeof(p))) out = fail("No such screenshot");
+		else { cJSON *o = ok(); cJSON_AddStringToObject(o, "path", p); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "shot_delete")) {
+		char err[200];
+		out = shot_delete(cJSON_GetStringValue(cJSON_GetObjectItem(req, "id")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	}
 	else if (!strcmp(c->valuestring, "game_at")) {          /* the game a file belongs to (the in-game menu: what's running) */
 		const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(req, "path"));
 		long long gid = -1;

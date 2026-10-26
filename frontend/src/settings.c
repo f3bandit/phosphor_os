@@ -36,6 +36,7 @@ void settings_load(void)
 		else if (!strcmp(k, "texture")) { SETTINGS.texture = atoi(v); if (!texture_valid(SETTINGS.texture)) SETTINGS.texture = 0; }   /* (8-bit tiles and circles are gone) */
 		else if (!strcmp(k, "setup_done")) SETTINGS.setup_done = atoi(v);
 		else if (!strcmp(k, "saver_min")) SETTINGS.saver_min = atoi(v);
+		else if (!strcmp(k, "shot_off")) SETTINGS.shot_off = atoi(v);
 	}
 	fclose(f);
 }
@@ -57,8 +58,8 @@ void settings_save(void)
 	snprintf(tmp, sizeof(tmp), "%s.tmp", p);
 	FILE *f = fopen(tmp, "w");
 	if (!f) { plog("can't write %s", p); return; }
-	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\nsaver_min=%d\n", SETTINGS.accent, SETTINGS.clock24,
-		SETTINGS.texture, SETTINGS.setup_done, SETTINGS.saver_min);
+	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\nsaver_min=%d\nshot_off=%d\n", SETTINGS.accent, SETTINGS.clock24,
+		SETTINGS.texture, SETTINGS.setup_done, SETTINGS.saver_min, SETTINGS.shot_off);
 	fclose(f);
 	rename(tmp, p);
 }

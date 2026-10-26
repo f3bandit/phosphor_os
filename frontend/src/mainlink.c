@@ -20,7 +20,7 @@
 
 static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
 /* API 5: the dock's drive (disc events) and Phosphor's in-game menu (ingame) */
-static int ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1;
+static int ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1, shot_want = 1;
 /* a controller mapping Main runs for the shell (its steps come as events) */
 static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
@@ -85,6 +85,7 @@ static int take(void)
 	in_game = ask("status", r, sizeof(r)) == 0 && strstr(r, "\"menu\":false") != NULL;
 	if (ingame_api) ask("sheet on", r, sizeof(r));
 	if (disc_api) ask(disc_want ? "disc on" : "disc off", r, sizeof(r));
+	if (ingame_api) ask(shot_want ? "shot on" : "shot off", r, sizeof(r));     /* the screenshot combo in games */
 	disc_changed = 1;
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 	plog("phosphor-main: the shell has the screen");
@@ -156,6 +157,7 @@ static int say(const char *line)
 }
 /* replies to these come back as {"ok":...} lines among the events; nothing waits for them */
 int mainlink_disc_enable(int on) { disc_want = on; return disc_api ? say(on ? "disc on" : "disc off") : -1; }
+int mainlink_shot_combo(int on) { shot_want = on; return ingame_api ? say(on ? "shot on" : "shot off") : -1; }
 int mainlink_ingame(int on) { return ingame_api ? say(on ? "ingame on" : "ingame off") : -1; }
 int mainlink_ingame_osd(void) { return ingame_api ? say("ingame osd") : -1; }
 /* from the in-game menu back to Phosphor: the menu core again (Phosphor's, where it's installed) */
