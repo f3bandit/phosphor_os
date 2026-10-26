@@ -10,8 +10,8 @@ Credit them wherever disc support is mentioned (Settings › Discs on the TV and
 ## What it plays
 
 PlayStation, Saturn, Mega-CD / Sega CD, PC Engine CD / TurboGrafx-CD, Neo Geo CD, CD-i, 3DO, and
-MSU-1 (SNES) / MD+ (Mega Drive) discs, read raw from the drive while the game runs. Music CDs and DVDs
-are recognised but not played yet (Phosphor's own music player comes later, with Steam music too).
+MSU-1 (SNES) / MD+ (Mega Drive) discs, read raw from the drive while the game runs. Music CDs play in
+Phosphor's music player ([music.md](music.md)); DVDs are recognised but not played.
 
 ## How it fits together
 
@@ -71,4 +71,3 @@ before. Not much longer: 8BitDo controllers turn themselves off when the home bu
 - Real game disc tests (only a music CD has been in the drive so far).
 - Multi-disc games: Change disc ejects; the core's disc code mounts the next disc when the tray closes.
 - A ripper (disc to an image in the library).
-- Phosphor's own music player.

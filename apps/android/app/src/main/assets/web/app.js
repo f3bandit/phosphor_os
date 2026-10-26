@@ -1425,6 +1425,7 @@ PAGES.about = { async show(c) {
 	setBar("About");
 	c.draw(flat(row("Phosphor for Android", { value: ST.appVersion }) + row("Works with", { value: "Phosphor 0.27.25 or later" }))
 		+ note("The app only talks to your MiSTer, on your home network. Box art lookups on the phone go to the services you turned on (libretro, ArcadeDB, LaunchBox, and with your logins TheGamesDB, ScreenScraper, IGDB). It collects nothing and sends nothing anywhere else. Passwords, WiFi and Bluetooth pairings stay on the MiSTer.")
+		+ note("Thanks to Taki and Retro Remake for making the SuperStation One, such excellent hardware. Disc support by Anime0t4ku and bonna79. RetroAchievements by odelot (RA Main and cores) and rcheevos by the RetroAchievements team. Music CD names from MusicBrainz and covers from the Cover Art Archive; audio decoding by dr_libs (David Reid) and stb_vorbis (Sean Barrett).")
 		+ note("PolyForm Noncommercial 1.0.0, like the rest of Phosphor. Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence)."));
 } };
 

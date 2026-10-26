@@ -1109,6 +1109,7 @@ class AppSettings {
 		b.append(h(`<div class="panel" style="max-width:46rem"><h2>Phosphor for Windows ${esc(S.appVersion || "")}</h2>
 			<p class="note">The PC companion for Phosphor on the SuperStation One: the library, box art and details, base games, and the SS1's settings and tools, from your PC.</p>
 			<p class="note">Unofficial. Not made or supported by MiSTer-devel or the makers of the SuperStation One. Free for personal, non-commercial use (PolyForm Noncommercial 1.0.0).</p>
+			<p class="note">Thanks to Taki and Retro Remake for making the SuperStation One, such excellent hardware. Disc support by Anime0t4ku and bonna79. RetroAchievements by odelot (RA Main and cores) and rcheevos by the RetroAchievements team. Music CD names from MusicBrainz and covers from the Cover Art Archive; audio decoding by dr_libs (David Reid) and stb_vorbis (Sean Barrett).</p>
 			<p class="note">Closing the window keeps Phosphor in the tray (bottom right, by the clock), watching for warnings. To stop it completely:</p>
 			<div class="acts"><button class="btn" id="quit" data-nav>Exit Phosphor</button></div></div>`));
 		$("#quit").onclick = async () => { await api("/api/quit", {}); window.close(); };
