@@ -6,6 +6,7 @@
  * running core goes back to MENU, the time since the launch is added to the game's play time. */
 #include "play.h"
 #include "ra.h"
+#include "music.h"
 #include "db.h"
 #include "log.h"
 #include "paths.h"
@@ -119,6 +120,7 @@ int play_launch(sqlite3 *db, long long id, char *err, size_t errn)
 		fclose(f);
 		snprintf(cmd, sizeof(cmd), "load_core %s\n", mgl);
 	}
+	music_stop();                            /* music only plays while no game runs */
 	if (mister_cmd(cmd, err, errn) != 0) return -1;
 
 	if (sqlite3_prepare_v2(db, "UPDATE games SET play_count=play_count+1, last_played=? WHERE id=?", -1, &st, NULL) == SQLITE_OK) {

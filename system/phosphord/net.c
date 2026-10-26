@@ -7,6 +7,7 @@
 #include "net.h"
 #include "log.h"
 #include "paths.h"
+#include "version.h"
 #include <ctype.h>
 #include <fcntl.h>
 #include <spawn.h>
@@ -49,7 +50,7 @@ static int run_curl(const char *const *args, const char *body, char **out, size_
 	argv[a++] = "-sSL";
 	argv[a++] = "--max-time"; argv[a++] = "300";
 	argv[a++] = "--connect-timeout"; argv[a++] = "15";
-	argv[a++] = "-A"; argv[a++] = "Phosphor/0.4 (MiSTer frontend)";
+	argv[a++] = "-A"; argv[a++] = "Phosphor/" PHOSD_VERSION " (MiSTer; https://phosphor-os.github.io)";
 	if (ca) { argv[a++] = "--cacert"; argv[a++] = ca; }
 	for (int i = 0; args[i] && a < 62; i++) argv[a++] = args[i];
 	argv[a] = NULL;

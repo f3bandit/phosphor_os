@@ -17,4 +17,6 @@ int disc_set_enabled(sqlite3 *db, int on);     /* also tells Main; -1 Main didn'
    it's still in the drive (adds "disc" to o and returns 1), else 0 (the storage game, as before) */
 int disc_last(sqlite3 *db, cJSON *o, long long last_game_played);
 
+void disc_brief(char *key, size_t n, int *audio);   /* for the music player */
+
 #endif
