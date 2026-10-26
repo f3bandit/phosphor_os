@@ -22,6 +22,7 @@
 #include "rc_hash.h"
 #include "rc_consoles.h"
 #include <ctype.h>
+#include <dirent.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -166,7 +167,7 @@ static cJSON *get_json(const char *url, int *res)
 	char *out = NULL;
 	int http = 0;
 	int r = net_request("GET", url, h, NULL, &out, NULL, &http);
-	if (res) *res = r;
+	if (res) *res = http >= 400 ? http : r;          /* 401: the Web API key wasn't accepted */
 	cJSON *j = (r == 0 && out) ? cJSON_Parse(out) : NULL;
 	free(out);
 	return j;
@@ -259,7 +260,7 @@ int ra_set_key(const char *key, char *err, size_t errn)
 	key_path(p, sizeof(p));
 	if (!key || !*key) { unlink(p); return 0; }
 	for (const char *c = key; *c; c++) if (!isalnum((unsigned char)*c)) { snprintf(err, errn, "That doesn't look like a Web API key (letters and numbers only)"); return -1; }
-	if (strlen(key) < 16 || strlen(key) > 64) { snprintf(err, errn, "That doesn't look like a Web API key"); return -1; }
+	if (strlen(key) != 32) { snprintf(err, errn, "A Web API key is 32 letters and numbers: that's %d", (int)strlen(key)); return -1; }
 	FILE *f = fopen(p, "w");
 	if (!f) { snprintf(err, errn, "Couldn't save it on the SD card"); return -1; }
 	fprintf(f, "%s\n", key);
@@ -400,8 +401,9 @@ static int rc_hash_file(int console, const char *path, char hash[33])
 }
 
 /* RetroAchievements' game list for a console, with every hash: hash -> (id, title, achievements) */
-static cJSON *console_list(int console, const char *key)
+static cJSON *console_list(int console, const char *key, int *http)
 {
+	*http = 0;
 	char p[700];
 	snprintf(p, sizeof(p), "%s/ra", p_data());
 	ra_mkdirs(p);
@@ -418,8 +420,7 @@ static cJSON *console_list(int console, const char *key)
 	}
 	char url[400];
 	snprintf(url, sizeof(url), RA_SITE "/API/API_GetGameList.php?i=%d&h=1&f=1&y=%s", console, key);
-	int r = 0;
-	cJSON *j = get_json(url, &r);
+	cJSON *j = get_json(url, http);
 	if (!cJSON_IsArray(j)) { cJSON_Delete(j); return NULL; }
 	char *s = cJSON_PrintUnformatted(j);
 	FILE *f = s ? fopen(p, "w") : NULL;
@@ -456,15 +457,34 @@ static void *match_all(void *arg)
 		}
 		sqlite3_finalize(st);
 	}
+	/* lookups an earlier version recorded as "no achievements" when the list couldn't be had (no list was
+	 * ever saved): asked again */
+	{
+		char dir[700];
+		snprintf(dir, sizeof(dir), "%s/ra", p_data());
+		DIR *d = opendir(dir);
+		struct dirent *e;
+		int lists_saved = 0;
+		while (d && (e = readdir(d))) if (!strncmp(e->d_name, "games_", 6)) lists_saved++;
+		if (d) closedir(d);
+		if (!lists_saved) sqlite3_exec(db, "DELETE FROM ra_games WHERE ra_id=0", NULL, NULL, NULL);
+	}
 	cJSON *lists[128] = { 0 };
-	int found = 0;
+	int tried[128] = { 0 };
+	int found = 0, bad_key = 0, no_list = 0;
 	for (int i = 0; i < n; i++) {
 		pthread_mutex_lock(&lk);
 		snprintf(match.msg, sizeof(match.msg), "Matching your library: %d of %d", i + 1, n);
 		pthread_mutex_unlock(&lk);
 		int c = sys_console(items[i].sys, items[i].path);
 		if (c <= 0 || c >= 128) continue;
-		if (!lists[c]) lists[c] = console_list(c, key);
+		if (!lists[c] && !tried[c]) {
+			int http = 0;
+			tried[c] = 1;
+			lists[c] = console_list(c, key, &http);
+			if (http == 401 || http == 403) { bad_key = 1; break; }
+		}
+		if (!lists[c]) { no_list++; continue; }   /* not recorded: asked again next time */
 		char h[33];
 		long long ra_id = 0;
 		int tot = 0;
@@ -493,11 +513,13 @@ static void *match_all(void *arg)
 	for (int c = 0; c < 128; c++) cJSON_Delete(lists[c]);
 	free(items);
 	sqlite3_close(db);
-	plog("retroachievements: %d of %d games matched", found, n);
+	plog("retroachievements: %d of %d games matched%s%s", found, n, bad_key ? " (the Web API key wasn't accepted)" : "", no_list ? " (some lists couldn't be had)" : "");
 	pthread_mutex_lock(&lk);
 	match.busy = 0;
 	match.at = time(NULL);
-	snprintf(match.msg, sizeof(match.msg), n ? "%d more game%s matched" : "Your library is matched", found, found == 1 ? "" : "s");
+	if (bad_key) snprintf(match.msg, sizeof(match.msg), "RetroAchievements didn't accept your Web API key: check it on retroachievements.org (Settings, Keys) and enter it again");
+	else if (no_list) snprintf(match.msg, sizeof(match.msg), "%d game%s matched; RetroAchievements couldn't be reached for the rest, try again later", found, found == 1 ? "" : "s");
+	else snprintf(match.msg, sizeof(match.msg), n ? "%d more game%s matched" : "Your library is matched", found, found == 1 ? "" : "s");
 	pthread_mutex_unlock(&lk);
 	return NULL;
 }
