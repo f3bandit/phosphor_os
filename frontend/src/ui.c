@@ -8490,26 +8490,72 @@ static void rv_draw(void)
 		footer_set(RV_ACH_HINTS);
 	}
 }
+/* phosphord answers at once with what it last got from RetroAchievements and asks again in the
+   background ("updating"): asked again every 1.5 s while it does, for up to 2 minutes, and redrawn */
+static int rv_want_profile;
+static long long rv_want_game;
+static uint32_t rv_poll_since;
+static lv_timer_t *rv_timer;
+static int rv_fetch_profile(void)       /* 1: still updating */
+{
+	cJSON *r = api_call("{\"cmd\":\"ra_profile\"}");
+	int upd = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "updating"));
+	if (api_ok(r)) {
+		cJSON_Delete(rv);
+		rv = cJSON_DetachItemFromObject(r, "profile");
+		int sel = rv_list.sel, top = rv_list.top;
+		if (rv_mode == 0) { rv_draw(); rv_list.sel = sel; rv_list.top = top; vlist_refresh(&rv_list); }
+	} else if (!upd) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAchievements didn't answer");
+	cJSON_Delete(r);
+	return upd;
+}
+static int rv_fetch_game(long long gid)
+{
+	cJSON *r = api_call("{\"cmd\":\"ra_game\",\"id\":%lld}", gid);
+	int upd = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "updating"));
+	if (api_ok(r)) {
+		int first = rv_mode != 1;
+		int sel = rv_ach.sel, top = rv_ach.top;
+		cJSON_Delete(rv_game);
+		rv_game = cJSON_DetachItemFromObject(r, "ra");
+		rv_mode = 1;
+		rv_draw();
+		if (!first) { rv_ach.sel = sel; rv_ach.top = top; vlist_refresh(&rv_ach); }
+	} else if (!upd) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAchievements didn't answer");
+	cJSON_Delete(r);
+	return upd;
+}
+static void rv_tick(lv_timer_t *t)
+{
+	(void)t;
+	if (cur != SCR_RAVIEW || lv_tick_get() - rv_poll_since > 120000) rv_want_profile = 0, rv_want_game = 0;
+	if (rv_want_profile) rv_want_profile = rv_fetch_profile();
+	if (rv_want_game) { if (!rv_fetch_game(rv_want_game)) rv_want_game = 0; }
+	if (!rv_want_profile && !rv_want_game) { lv_timer_delete(rv_timer); rv_timer = NULL; }
+}
+static void rv_poll(void)
+{
+	rv_poll_since = lv_tick_get();
+	if (!rv_timer && (rv_want_profile || rv_want_game)) rv_timer = lv_timer_create(rv_tick, 1500, NULL);
+}
 static void show_raview(void)
 {
 	cur = SCR_RAVIEW;
 	rv_mode = 0;
-	toast_show("Asking RetroAchievements...");
-	lv_refr_now(NULL);
-	cJSON *r = api_call_slow(30000, "{\"cmd\":\"ra_profile\"}");
+	rv_want_game = 0;
 	cJSON_Delete(rv);
-	rv = api_ok(r) ? cJSON_DetachItemFromObject(r, "profile") : NULL;
-	if (!rv) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAchievements didn't answer");
-	cJSON_Delete(r);
+	rv = NULL;
 	rv_list.sel = 0;
 	rv_list.top = 0;
-	rv_draw();
+	rv_want_profile = rv_fetch_profile();
+	if (!rv) { toast_show("Asking RetroAchievements..."); rv_draw(); }
+	rv_poll();
 }
 static void raview_key(int k)
 {
 	if (rv_mode == 1) {
 		if (vlist_key(&rv_ach, k)) return;
-		if (k == K_B || k == K_MENU) { rv_mode = 0; rv_draw(); }
+		if (k == K_B || k == K_MENU) { rv_mode = 0; rv_want_game = 0; rv_draw(); }
 		return;
 	}
 	if (vlist_key(&rv_list, k)) return;
@@ -8517,14 +8563,10 @@ static void raview_key(int k)
 	long long gid = g ? (long long)api_num(g, "game_id", 0) : 0;
 	if (k == K_A && g) {
 		if (gid <= 0) { toast_show("Not in your library (or not matched yet), so its list isn't here"); return; }
-		toast_show("Asking RetroAchievements...");
-		lv_refr_now(NULL);
-		cJSON *r = api_call_slow(30000, "{\"cmd\":\"ra_game\",\"id\":%lld}", gid);
-		cJSON_Delete(rv_game);
-		rv_game = api_ok(r) ? cJSON_DetachItemFromObject(r, "ra") : NULL;
-		if (!rv_game) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAchievements didn't answer");
-		cJSON_Delete(r);
-		if (rv_game) { rv_mode = 1; rv_ach.sel = 0; rv_ach.top = 0; rv_draw(); }
+		rv_ach.sel = 0; rv_ach.top = 0;
+		rv_want_game = rv_fetch_game(gid) ? gid : 0;
+		if (rv_mode != 1) toast_show("Asking RetroAchievements...");
+		rv_poll();
 	} else if (k == K_X && gid > 0) {
 		cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", gid);
 		toast_show(api_ok(r) ? "Starting..." : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it"));

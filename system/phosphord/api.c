@@ -10,7 +10,8 @@
  *                                           filter: missing_art|missing_details|not_found|linked|unidentified|favorites|recent
  *   game       id                           details, art (absolute path), play history, files
  *   last                                    the last game played (same shape as game), or null
- *   launch     id                           start it
+ *   launch     id [core]                    start it (core: an index from "cores"; none: the usual one)
+ *   cores      id                           the cores it can start on: [{index, name, core}]
  *   favorite   id on                        mark or unmark
  *   rescan [stop:true]                      look for games (list them, then identify them); only ever on request.
  *                                           stop: stop it (what's done stays)
@@ -1834,19 +1835,32 @@ char *api_handle(sqlite3 *db, const char *request)
 		char err[300];
 		out = ra_match(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	} else if (!strcmp(c->valuestring, "ra_profile")) {
+		/* at once, from the last result: "updating" while a fresh one is fetched */
 		char err[300];
-		cJSON *p = ra_profile(db, err, sizeof(err));
-		if (!p) out = fail(err);
-		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "profile", p); out = reply(o); }
+		int upd = 0;
+		cJSON *p = ra_profile(err, sizeof(err), &upd), *o = p ? ok() : cJSON_CreateObject();
+		if (p) cJSON_AddItemToObject(o, "profile", p);
+		else { cJSON_AddBoolToObject(o, "ok", 0); cJSON_AddStringToObject(o, "error", err); }
+		cJSON_AddBoolToObject(o, "updating", upd);
+		out = reply(o);
 	} else if (!strcmp(c->valuestring, "ra_game")) {
 		char err[300];
-		cJSON *g = ra_game(db, req_id(req), err, sizeof(err));
-		if (!g) out = fail(err);
-		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "ra", g); out = reply(o); }
+		int upd = 0;
+		cJSON *g = ra_game(db, req_id(req), err, sizeof(err), &upd), *o = g ? ok() : cJSON_CreateObject();
+		if (g) cJSON_AddItemToObject(o, "ra", g);
+		else { cJSON_AddBoolToObject(o, "ok", 0); cJSON_AddStringToObject(o, "error", err); }
+		cJSON_AddBoolToObject(o, "updating", upd);
+		out = reply(o);
 	}
 	else if (!strcmp(c->valuestring, "launch")) {
 		char err[300];
-		out = play_launch(db, req_id(req), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+		cJSON *core = cJSON_GetObjectItem(req, "core");   /* (an index from "cores"; none: the usual one) */
+		out = play_launch_core(db, req_id(req), cJSON_IsNumber(core) ? core->valueint : -1, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "cores")) {     /* the cores a game can start on (the in-game menu) */
+		char err[300];
+		cJSON *a = play_cores(db, req_id(req), err, sizeof(err));
+		if (!a) out = fail(err);
+		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "cores", a); out = reply(o); }
 	} else if (!strcmp(c->valuestring, "favorite")) {
 		sqlite3_stmt *st;
 		int on = cJSON_IsTrue(cJSON_GetObjectItem(req, "on"));
