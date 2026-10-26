@@ -6566,6 +6566,9 @@ static void show_about(void)
 	ab_add("RetroAchievements", "odelot (RA Main and cores); rcheevos by the RA team");
 	ab_add("Music CD names", "MusicBrainz and the Cover Art Archive");
 	ab_add("Music decoding", "dr_libs by David Reid, stb_vorbis by Sean Barrett");
+	ab_add("Licence", "PolyForm Noncommercial 1.0.0: phosphor/LICENSE.md");
+	ab_add("Open-source software", "LVGL, SQLite, musl and more: phosphor/THIRD_PARTY_NOTICES.md");
+	ab_add("Main and menu core", "GPL-3.0; their source: phosphor/SOURCE.md");
 
 	vlist_create(&ab_list, body, S(56), S(176), S(900), S(460));
 	ab_list.fill = ab_fill;
