@@ -252,6 +252,38 @@ static char *slurp(const char *path)
 	return b;
 }
 
+/* a field "key=" at the start of a line (after tabs or spaces), not inside a value or a longer key
+   (bssid=, scan_ssid=); NULL when there's none */
+static char *field(char *text, const char *key)
+{
+	size_t kl = strlen(key);
+	for (char *l = text; l && *l; ) {
+		char *q = l;
+		while (*q == ' ' || *q == '\t') q++;
+		if (!strncmp(q, key, kl)) return q;
+		l = strchr(l, '\n');
+		if (l) l++;
+	}
+	return NULL;
+}
+
+/* the end of a network={ block: the line that's just "}" (a "}" in a quoted SSID or a #psk="..."
+   comment doesn't end it); NULL when the block isn't closed */
+static char *block_end(char *p)
+{
+	for (char *l = strchr(p, '\n'); l; l = strchr(l, '\n')) {
+		l++;
+		char *q = l;
+		while (*q == ' ' || *q == '\t') q++;
+		if (*q == '}') {
+			q++;
+			while (*q == ' ' || *q == '\t' || *q == '\r') q++;
+			if (*q == '\n' || !*q) return q;      /* just past the "}" (the caller takes its newline) */
+		}
+	}
+	return NULL;
+}
+
 static int conf_read(conf_t *c)
 {
 	memset(c, 0, sizeof(*c));
@@ -260,14 +292,12 @@ static int conf_read(conf_t *c)
 	char *p = strstr(all, "network={");
 	c->head = strndup(all, p ? (size_t)(p - all) : strlen(all));
 	while (p && c->n < WIFI_SAVED_MAX) {
-		char *e = strchr(p, '}');
+		char *e = block_end(p);
 		if (!e) break;
-		e++;
 		if (*e == '\n') e++;
 		block_t *b = &c->b[c->n++];
 		b->text = strndup(p, (size_t)(e - p));
-		char *s = strstr(b->text, "ssid=");
-		while (s && s > b->text && isalnum((unsigned char)s[-1])) s = strstr(s + 1, "ssid=");   /* not bssid= */
+		char *s = field(b->text, "ssid=");               /* not bssid= or scan_ssid= */
 		if (s) {
 			s += 5;
 			if (*s == '"') { s++; size_t k = 0; while (s[k] && s[k] != '"' && k + 1 < sizeof(b->ssid)) { b->ssid[k] = s[k]; k++; } b->ssid[k] = 0; }
@@ -277,7 +307,7 @@ static int conf_read(conf_t *c)
 				b->ssid[k] = 0;
 			}
 		}
-		char *pr = strstr(b->text, "priority=");
+		char *pr = field(b->text, "priority=");
 		b->priority = pr ? atoi(pr + 9) : 0;
 		p = strstr(e, "network={");
 	}
@@ -362,7 +392,8 @@ static void quote_ssid(const char *ssid, char *out, size_t n)
 {
 	/* plain text in quotes unless it has a quote or control character: then hex */
 	int plain = 1;
-	for (const unsigned char *p = (const unsigned char *)ssid; *p; p++) if (*p == '"' || *p < 32) plain = 0;
+	for (const unsigned char *p = (const unsigned char *)ssid; *p; p++)
+		if (*p == '"' || *p < 32 || *p == '{' || *p == '}' || *p == '#' || *p == '\\') plain = 0;
 	if (plain) { snprintf(out, n, "\"%s\"", ssid); return; }
 	size_t j = 0;
 	for (const unsigned char *p = (const unsigned char *)ssid; *p && j + 3 < n; p++) j += (size_t)snprintf(out + j, n - j, "%02x", *p);

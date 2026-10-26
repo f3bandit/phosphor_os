@@ -395,12 +395,15 @@ static int copy_file(const char *from, const char *to)
 	size_t r;
 	int ok = 1;
 	while ((r = fread(buf, 1, sizeof(buf), a)) > 0) if (fwrite(buf, 1, r, b) != r) ok = 0;
+	if (ferror(a)) ok = 0;
 	fclose(a);
 	if (fclose(b)) ok = 0;
+	if (!ok) unlink(to);                             /* no half copy left behind (a full card) */
 	return ok ? 0 : -1;
 }
 
-/* every mapping file and the user's controller profiles, into a new backup; returns files copied */
+/* every mapping file and the user's controller profiles, into a new backup; returns files copied, or
+   -1 when any of them couldn't be copied (a full card): nothing may be deleted on the strength of it */
 static int backup_now(const char *label, char *made, size_t mn)
 {
 	char in[PATH_MAX], root[PATH_MAX], dir[PATH_MAX], a[PATH_MAX], b[PATH_MAX], stamp[32], clean[48];
@@ -414,7 +417,7 @@ static int backup_now(const char *label, char *made, size_t mn)
 	clean[k] = 0;
 	snprintf(dir, sizeof(dir), "%s/%s%s%s", root, stamp, k ? "_" : "", clean);
 	if (mkdirs(dir)) return -1;
-	int n = 0;
+	int n = 0, failed = 0;
 	DIR *d = opendir(in);
 	if (d) {
 		struct dirent *e;
@@ -423,13 +426,15 @@ static int backup_now(const char *label, char *made, size_t mn)
 			snprintf(a, sizeof(a), "%s/%s", in, e->d_name);
 			snprintf(b, sizeof(b), "%s/%s", dir, e->d_name);
 			if (copy_file(a, b) == 0) n++;
+			else failed++;
 		}
 		closedir(d);
 	}
 	fat_path(a, sizeof(a), "linux/gamecontrollerdb/gamecontrollerdb_user.txt");
 	snprintf(b, sizeof(b), "%s/gamecontrollerdb_user.txt", dir);
-	if (file_exists(a) && copy_file(a, b) == 0) n++;
+	if (file_exists(a)) { if (copy_file(a, b) == 0) n++; else failed++; }
 	sync();
+	if (failed) { plog("controllers: backup failed (%d file%s not copied): nothing changed", failed, failed == 1 ? "" : "s"); return -1; }
 	snprintf(made, mn, "%s", strrchr(dir, '/') + 1);
 	return n;
 }
