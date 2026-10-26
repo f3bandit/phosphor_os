@@ -59,6 +59,7 @@ extern char **environ;
 typedef struct { char path[1024], title[200]; int no; } track_t;
 typedef struct {
 	char id[17], dir[1024], title[200], artist[200], year[16], source[16], cover[1100];
+	char appid[16];            /* a Steam soundtrack's app id (album.json "steam_appid") */
 	char src[1100];            /* where the cover comes from: an image file, or a track with art in it (emb) */
 	int ntracks, emb;
 } album_t;
@@ -141,7 +142,7 @@ static void album_meta(album_t *a)
 	cJSON *j = cJSON_Parse(buf);
 	const char *v;
 #define M(k, f) if ((v = cJSON_GetStringValue(cJSON_GetObjectItem(j, k))) && *v) snprintf(a->f, sizeof(a->f), "%s", v)
-	M("title", title); M("artist", artist); M("year", year); M("source", source);
+	M("title", title); M("artist", artist); M("year", year); M("source", source); M("steam_appid", appid);
 #undef M
 	cJSON_Delete(j);
 }
@@ -1126,6 +1127,11 @@ cJSON *music_albums(void)
 		cJSON_AddStringToObject(a, "source", albums[i].source);
 		cJSON_AddNumberToObject(a, "tracks", albums[i].ntracks);
 		if (albums[i].cover[0]) cJSON_AddStringToObject(a, "cover", albums[i].cover);
+		if (albums[i].appid[0]) cJSON_AddStringToObject(a, "steam_appid", albums[i].appid);
+		if (!strcmp(albums[i].source, "steam")) {                    /* its folder, for Phosphor for Windows' updates */
+			const char *b = strrchr(albums[i].dir, '/');
+			cJSON_AddStringToObject(a, "folder", b ? b + 1 : albums[i].dir);
+		}
 		cJSON_AddItemToArray(arr, a);
 	}
 	pthread_mutex_unlock(&lk);
