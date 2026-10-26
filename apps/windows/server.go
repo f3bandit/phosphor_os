@@ -136,6 +136,7 @@ func routes(mux *http.ServeMux) {
 	h("/api/art/", apiArt)
 	h("/api/steam", apiSteam)             // Steam soundtracks on this PC, sent to the SS1's Music
 	h("/api/steam/cover/", apiSteamCover)
+	h("/api/mcover/", apiMusicCover)      // an album's cover from the SS1
 }
 
 func apiState(w http.ResponseWriter, r *http.Request) {
@@ -333,4 +334,26 @@ func openShare() bool {
 	}
 	openFolder(`\\` + host)
 	return true
+}
+
+// apiMusicCover: an album's cover from the SS1 (its Music)
+func apiMusicCover(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/mcover/")
+	if id == "" || strings.ContainsAny(id, "/?#") {
+		http.NotFound(w, r)
+		return
+	}
+	resp, err := authed("GET", "/music/cover/"+id, nil, 20*time.Second)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 16<<20))
 }
