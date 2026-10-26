@@ -216,15 +216,17 @@ static void footer_set(const char *const *hints)
 /* ---------- toast ---------- */
 
 static lv_obj_t *toast;
-static void toast_hide(lv_timer_t *t) { (void)t; lv_obj_set_hidden(toast, true); }
+static lv_timer_t *toast_timer;
+static void toast_hide(lv_timer_t *t) { (void)t; toast_timer = NULL; lv_obj_set_hidden(toast, true); }
 
 static void toast_show(const char *msg)
 {
 	lv_label_set_text(lv_obj_get_child(toast, 0), msg);
 	lv_obj_set_hidden(toast, false);
 	lv_obj_move_foreground(toast);
-	lv_timer_t *t = lv_timer_create(toast_hide, 3500, NULL);
-	lv_timer_set_repeat_count(t, 1);
+	if (toast_timer) lv_timer_delete(toast_timer);   /* the new one's full time, not what's left of the last */
+	toast_timer = lv_timer_create(toast_hide, 3500, NULL);
+	lv_timer_set_repeat_count(toast_timer, 1);
 	plog("toast: %s", msg);
 }
 
@@ -268,6 +270,8 @@ static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int 
 static void vlist_refresh(vlist_t *v)
 {
 	if (v->sel >= v->count) v->sel = v->count ? v->count - 1 : 0;
+	if (v->sel < 0) v->sel = 0;
+	if (v->top < 0) v->top = 0;
 	if (v->sel < v->top) v->top = v->sel;
 	if (v->sel >= v->top + v->vis) v->top = v->sel - v->vis + 1;
 	for (int r = 0; r < v->vis; r++) {
@@ -311,7 +315,7 @@ static int vlist_key(vlist_t *v, pkey_t k)
 	else if (k == K_UP && v->wrap && v->count > 1) v->sel = v->count - 1;
 	else if (k == K_DOWN && v->wrap && v->count > 1) v->sel = 0;
 	else if (k == K_L) v->sel = LV_MAX(0, v->sel - v->vis);
-	else if (k == K_R) v->sel = LV_MIN(v->count - 1, v->sel + v->vis);
+	else if (k == K_R) v->sel = LV_MAX(0, LV_MIN(v->count - 1, v->sel + v->vis));   /* (an empty list: stays 0) */
 	else return 0;
 	if (v->sel != old) vlist_refresh(v);
 	return 1;
@@ -1979,8 +1983,8 @@ static void vd_load(void)
 	else snprintf(req, sizeof(req), "{\"cmd\":\"vset\"}");
 	cJSON *r = api_call("%s", req);
 	if (!api_ok(r)) {
-		cJSON_Delete(r);
 		toast_show(api_str(r, "error") ? "Video settings need phosphord 0.27.25 or later" : "phosphord isn't answering");
+		cJSON_Delete(r);
 		return;
 	}
 	cJSON_Delete(vd.st);
@@ -2369,11 +2373,6 @@ static void settings_change(int dir)
 		texture_apply(root, (texture_t)SETTINGS.texture);
 		vlist_refresh(&set_list);
 		si_update();                          /* (the swatch holds the old tile until then) */
-	} else if (set_list.sel == SET_SCRAPE) {    /* A: start, or stop it while it works */
-		int on = scrape_state && cJSON_IsTrue(cJSON_GetObjectItem(scrape_state, "on"));
-		cJSON_Delete(scrape_state);
-		scrape_state = api_call("{\"cmd\":\"scrape\",\"on\":%s}", on ? "false" : "true");
-		vlist_refresh(&set_list);
 	} else if (set_list.sel == SET_SAVER) {
 		static const int opts[] = { 0, 5, 10, 20, 30 };
 		int i = 0;
@@ -2816,6 +2815,7 @@ static void sources_save(void)
 	for (int i = 0; i < nsrcs; i++) if (!srcs[i].on) j += snprintf(body + j, sizeof(body) - (size_t)j, "%s\"%s\"", k++ ? "," : "", srcs[i].id);
 	snprintf(body + j, sizeof(body) - (size_t)j, "]}");
 	sources_load(api_call("%s", body));
+	src_list.count = nsrcs;
 	vlist_refresh(&src_list);
 }
 
@@ -8041,7 +8041,7 @@ static void music_key(int k)
 	cJSON *a = mu_row_album(row);
 	const char *id = a ? (mu_rows[row] == MR_CD ? "cd" : api_str(a, "id")) : NULL;
 	if (k == K_A && id) { cJSON_Delete(api_call("{\"cmd\":\"music_ctl\",\"do\":\"shuffle\",\"on\":false}")); mu_play(id, 0, 0); }
-	else if (k == K_X && mu_rows[row] == MR_CD) {
+	else if (k == K_X && row < mu_n && mu_rows[row] == MR_CD) {
 		cJSON *r = api_call("{\"cmd\":\"music_rip\"}");
 		toast_show(api_ok(r) ? "Copying the CD to Music (FLAC, an exact copy)" : (r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start"));
 		cJSON_Delete(r);
@@ -8049,8 +8049,8 @@ static void music_key(int k)
 	}
 	else if (k == K_X && id) mu_play(id, 0, 1);
 	else if (k == K_Y && mu_album) { mu_tracks_view = 1; mu_tracks.sel = 0; mu_tracks.top = 0; mu_draw(); }
-	else if (k == K_MENU && mu_rows[row] == MR_CD) { disc_eject_now(); }
-	else if (k == K_B && mu_rows[row] == MR_CD && mu_status && cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(mu_status, "rip"), "busy"))) {
+	else if (k == K_MENU && row < mu_n && mu_rows[row] == MR_CD) { disc_eject_now(); }
+	else if (k == K_B && row < mu_n && mu_rows[row] == MR_CD && mu_status && cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(mu_status, "rip"), "busy"))) {
 		cJSON_Delete(api_call("{\"cmd\":\"music_rip\",\"stop\":true}"));
 		toast_show("Stopping: the tracks done are kept");
 	}
@@ -8643,6 +8643,11 @@ static void ig_left_ach(void)
 static void ingame_open(void)
 {
 	if (cur == SCR_INGAME || !mainlink_has_ingame()) return;
+	/* anything open over the screen it leaves goes (the menu takes every key) */
+	if (osk.open) osk_close(NULL);
+	if (pick_panel) picker_close();
+	if (ms.menu_box) ms_menu_close();
+	if (sg.menu_box) sg_menu_close();
 	cur = SCR_INGAME;
 	/* RetroAchievements: the game being played has a set (a RetroAchievements core, logged in) */
 	memset(&igra, 0, sizeof(igra));
@@ -8711,9 +8716,10 @@ static void ingame_open(void)
 			snprintf(ig_title, sizeof(ig_title), "%s", core);
 			ig_file[0] = 0;
 		}
-		if (core && *core) snprintf(ig_core, sizeof(ig_core), "%s", core);
+		int have_core = core && *core;              /* (core is st's: read before st goes) */
+		if (have_core) snprintf(ig_core, sizeof(ig_core), "%s", core);
 		if (st) cJSON_Delete(st);
-		if (core && *core && !ig_game && ig_title[0]) goto ig_known;   /* known to be no library game */
+		if (have_core && !ig_game && ig_title[0]) goto ig_known;   /* known to be no library game */
 	}
 	/* the game on the left: its box art and what it's about (as on its page in the library). Started
 	   some other way (the phone, Phosphor for Windows) or the shell restarted: the last game launched */
@@ -8889,6 +8895,7 @@ void ui_init(int w, int h)
 	lv_obj_set_style_pad_column(footer, S(28), 0);
 	lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, S(56), 0);
 
+	if (toast_timer) { lv_timer_delete(toast_timer); toast_timer = NULL; }   /* (a rebuild: the old toast's) */
 	toast = mk_box(root, LV_SIZE_CONTENT, S(44), lv_color_hex(0x1f1f25), S(12));
 	lv_obj_set_style_border_width(toast, 1, 0);
 	lv_obj_set_style_border_color(toast, PAL.acc, 0);
@@ -8899,6 +8906,8 @@ void ui_init(int w, int h)
 	lv_obj_set_hidden(toast, true);
 
 	status_update();
+	alert_refresh();                          /* a rebuild (new accent): the pill and the disc as they were */
+	if (sb_disc) lv_obj_set_hidden(sb_disc, !dk.in);
 	if (SETTINGS.setup_done) show_home();
 	else show_welcome();
 }
