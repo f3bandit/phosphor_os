@@ -42,7 +42,7 @@ target_compile_options(rhash PRIVATE -w -O2)
 
 file(GLOB PHOSD_SOURCES CONFIGURE_DEPENDS phosphord/*.c)
 add_executable(phosphord ${PHOSD_SOURCES})
-target_include_directories(phosphord PRIVATE phosphord third_party/stb)
+target_include_directories(phosphord PRIVATE phosphord third_party/stb third_party/audio)
 target_link_libraries(phosphord PRIVATE sqlite3 cjson chdr rhash pthread m)
 # Phosphor's own ScreenScraper developer login: a build secret from the environment (PHOSPHOR_SS_DEVID,
 # PHOSPHOR_SS_DEVPASSWORD), written to a header in the build folder, never in the repo
@@ -58,6 +58,7 @@ if(DEFINED ENV{PHOSPHOR_SS_DEVID} AND DEFINED ENV{PHOSPHOR_SS_DEVPASSWORD})
   target_include_directories(phosphord PRIVATE ${CMAKE_BINARY_DIR})
 endif()
 target_compile_options(phosphord PRIVATE -Wall -Wextra -Wno-unused-parameter)
+set_source_files_properties(phosphord/music.c PROPERTIES COMPILE_OPTIONS "-w;-O2")
 set_source_files_properties(phosphord/art.c PROPERTIES COMPILE_OPTIONS "-Wno-sign-compare;-Wno-unused-function")
 set_source_files_properties(phosphord/ctrl.c phosphord/vtry.c phosphord/sysbk.c PROPERTIES COMPILE_OPTIONS "-Wno-format-truncation")
 

@@ -90,6 +90,7 @@
 #include "api.h"
 #include "disc.h"
 #include "ra.h"
+#include "music.h"
 #include "art.h"
 #include "cJSON.h"
 #include "db.h"
@@ -1729,6 +1730,37 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "disc_eject")) {
 		char err[300];
 		out = disc_eject(err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	}
+	/* the music player (music.c) */
+	else if (!strcmp(c->valuestring, "music")) {
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "music", music_status());
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "music_albums")) {
+		if (cJSON_IsTrue(cJSON_GetObjectItem(req, "rescan"))) music_scan();
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "albums", music_albums());
+		cJSON *cdj = music_cd();
+		if (cdj) cJSON_AddItemToObject(o, "cd", cdj);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "music_album")) {
+		const char *id = cJSON_GetStringValue(cJSON_GetObjectItem(req, "id"));
+		cJSON *a = id ? music_album(id) : NULL;
+		if (!a) out = fail("no such album");
+		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "album", a); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "music_play")) {
+		char err[300];
+		const char *id = cJSON_GetStringValue(cJSON_GetObjectItem(req, "album"));
+		int tr = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "track"));
+		out = music_play(id ? id : "", tr, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "music_ctl")) {
+		char err[300];
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+		out = music_control(d ? d : "", req, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "music_queue")) {
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "queue", music_queue());
+		out = reply(o);
 	}
 	/* RetroAchievements (ra.c) */
 	else if (!strcmp(c->valuestring, "ra")) {

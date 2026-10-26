@@ -18,6 +18,7 @@
 #include "net.h"
 #include "paths.h"
 #include "play.h"
+#include "music.h"
 #include "systems.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -284,6 +285,7 @@ cJSON *disc_json(sqlite3 *db)
 
 int disc_play(sqlite3 *db, char *err, size_t errn)
 {
+	music_stop();                            /* music only plays while no game runs */
 	char *r = main_req("disc", 1500);
 	cJSON *m = r ? cJSON_Parse(r) : NULL;
 	free(r);
@@ -365,4 +367,22 @@ int disc_last(sqlite3 *db, cJSON *o, long long last_game_played)
 	}
 	cJSON_Delete(ld);
 	return used;
+}
+
+/* what's in the drive, briefly, for the music player (music.c): a key that changes when the disc does,
+   and whether it's a music CD */
+void disc_brief(char *key, size_t n, int *audio)
+{
+	*audio = 0;
+	key[0] = 0;
+	char *r = main_req("disc", 500);
+	cJSON *m = r ? cJSON_Parse(r) : NULL;
+	free(r);
+	if (!m) return;
+	const char *st = cJSON_GetStringValue(cJSON_GetObjectItem(m, "state"));
+	const char *ty = cJSON_GetStringValue(cJSON_GetObjectItem(m, "type"));
+	int tracks = (int)cJSON_GetNumberValue(cJSON_GetObjectItem(m, "tracks"));
+	snprintf(key, n, "%s|%s|%d", st ? st : "", ty ? ty : "", tracks);
+	*audio = st && ty && !strcmp(st, "ready") && !strcmp(ty, "audio");
+	cJSON_Delete(m);
 }

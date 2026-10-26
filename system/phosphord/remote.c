@@ -57,7 +57,8 @@ static const char *ALLOWED[] = {
 	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
 	"disc", "disc_play", "disc_eject", "disc_enable",
 	/* RetroAchievements: looking and the Web API key; logging in (a password) only on the MiSTer itself */
-	"ra", "ra_set", "ra_key", "ra_cores", "ra_match", "ra_profile", "ra_game", NULL,
+	"ra", "ra_set", "ra_key", "ra_cores", "ra_match", "ra_profile", "ra_game",
+	"music", "music_albums", "music_album", "music_play", "music_ctl", "music_queue", NULL,
 };
 
 typedef struct {

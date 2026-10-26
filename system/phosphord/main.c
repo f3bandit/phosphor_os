@@ -11,6 +11,8 @@
 #include "vtry.h"
 #include "remote.h"
 #include "ra.h"
+#include "music.h"
+#include "disc.h"
 #include "phantom.h"
 #include "storage.h"
 #include "memcard.h"
@@ -132,6 +134,7 @@ int main(int argc, char **argv)
 	indexer_start();
 	scraper_start();
 	ra_init();
+	music_init();
 	remote_start();
 	storage_prime();                          /* the drive list, in the background */
 	memcard_start();
@@ -151,6 +154,16 @@ int main(int argc, char **argv)
 			if (cl[i].fd >= 0) { idx[n - 1] = i; p[n++] = (struct pollfd){ cl[i].fd, POLLIN, 0 }; }
 		int r = poll(p, (nfds_t)n, 2000);   /* wakes every 2 s only to keep play time */
 		play_tick(db);
+		{   /* the music player: a game started (it stops), a music CD in or out */
+			static time_t mt;
+			if (time(NULL) - mt >= 2) {
+				mt = time(NULL);
+				char key[96];
+				int audio;
+				disc_brief(key, sizeof(key), &audio);
+				music_tick(key, audio);
+			}
+		}
 		phantom_tick();
 		if (r <= 0) continue;
 		if (p[0].revents & POLLIN) {
