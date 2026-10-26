@@ -8701,9 +8701,9 @@ static void ig_left_ach(void)
 }
 /* ---------- the in-game menu: another game, another core ----------
  * Load another game: the games of the system being played (first row: another system), search with Y.
- * Change core: the cores this game can run on (phosphord's "cores": its system's, the RetroAchievements
- * one, other systems' that take the same files); the one running is marked. A asks first ("Press A
- * again"), since the game running stops; then it starts straight from here, no stop at Home. */
+ * Change core: every installed core (phosphord's "system_cores"), as in MiSTer's own core list; the one
+ * running is marked; it starts with no game (its own menu loads one, or Load another game here).
+ * A asks first ("Press A again"), since the game running stops; then it starts straight from here. */
 enum { IGP_NONE, IGP_GAMES, IGP_SYSTEMS, IGP_CORES };
 static struct {
 	int view;
@@ -8755,7 +8755,7 @@ static void igp_load(void)
 		free(b);
 	} else if (igp.view == IGP_GAMES) r = api_call("{\"cmd\":\"games\",\"system\":\"%s\"}", igp.sys);
 	else if (igp.view == IGP_SYSTEMS) r = api_call("{\"cmd\":\"systems\"}");
-	else r = api_call("{\"cmd\":\"game_cores\",\"id\":%lld}", ig_game ? (long long)api_num(ig_game, "id", -1) : -1LL);
+	else r = api_call("{\"cmd\":\"system_cores\"}");
 	const char *key = igp.view == IGP_GAMES ? "games" : igp.view == IGP_SYSTEMS ? "systems" : "cores";
 	if (api_ok(r)) igp.items = cJSON_DetachItemFromObject(r, key);
 	else if (r && api_str(r, "error")) toast_show(api_str(r, "error"));
@@ -8772,8 +8772,8 @@ static void igp_open(int view)
 		else igp.view = view = IGP_SYSTEMS;          /* the game isn't in the library: pick a system first */
 	}
 	igp_load();
-	if (view == IGP_CORES && cJSON_GetArraySize(igp.items) < 2) {
-		toast_show(cJSON_GetArraySize(igp.items) ? "This game runs on one core only" : "No core for this game is installed");
+	if (view == IGP_CORES && !cJSON_GetArraySize(igp.items)) {
+		toast_show("No cores are installed");
 		igp.view = IGP_NONE;
 		return;
 	}
@@ -8800,7 +8800,7 @@ static void ig_left_pick(void)
 	if (igp.view == IGP_GAMES && igp.q[0]) snprintf(head, sizeof(head), "\"%s\"", igp.q);
 	else if (igp.view == IGP_GAMES) snprintf(head, sizeof(head), "%s", system_name(igp.sys));
 	else if (igp.view == IGP_SYSTEMS) snprintf(head, sizeof(head), "Pick a system");
-	else snprintf(head, sizeof(head), "%s", ig_title[0] ? ig_title : "This game");
+	else snprintf(head, sizeof(head), "Pick a core");
 	lv_obj_t *e = mk_label(ig_left, FONT_LABEL, PAL.dim, igp.view == IGP_CORES ? "CHANGE CORE" : "LOAD ANOTHER GAME");
 	lv_obj_set_style_text_letter_space(e, S(3), 0);
 	lv_obj_set_pos(e, S(56), S(96));
@@ -8863,6 +8863,26 @@ static void igp_start(long long id, int core)
 	show_home();
 }
 
+/* a core on its own: the game stops, the core starts with nothing loaded */
+static void igp_core(const char *sys)
+{
+	mainlink_ingame(0);
+	cJSON *r = api_call("{\"cmd\":\"load_core\",\"system\":\"%s\"}", sys ? sys : "");
+	int ok_ = api_ok(r);
+	toast_show(ok_ ? "Starting..." : r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
+	cJSON_Delete(r);
+	if (!ok_) return;
+	igp.view = IGP_NONE;
+	cJSON_Delete(igp.items);
+	igp.items = NULL;
+	igp.q[0] = igp.sys[0] = 0;
+	ig_title[0] = ig_file[0] = ig_core[0] = 0;
+	cJSON_Delete(ig_game);
+	ig_game = NULL;
+	ig_from_disc = 0;
+	show_home();
+}
+
 static void igp_key(int k)
 {
 	if (vlist_key(&igp.list, k)) { igp.asked_row = -1; return; }
@@ -8892,8 +8912,7 @@ static void igp_key(int k)
 	} else {
 		const char *core = api_str(x, "core");
 		if (core && ig_core[0] && !strcasecmp(core, ig_core)) { toast_show("It's running on that core now"); return; }
-		if (igp_confirmed(api_str(x, "name") ? api_str(x, "name") : "it"))
-			igp_start(ig_game ? (long long)api_num(ig_game, "id", -1) : -1, (int)api_num(x, "index", 0));
+		if (igp_confirmed(api_str(x, "name") ? api_str(x, "name") : "it")) igp_core(api_str(x, "id"));
 	}
 }
 
@@ -8925,7 +8944,7 @@ static void ingame_open(void)
 	if (igra.on) ig_rows[ig_n++] = IG_ACH;
 	if (ig_from_disc && dk.enabled) ig_rows[ig_n++] = IG_DISC;
 	ig_rows[ig_n++] = IG_LOAD;
-	if (ig_game && !ig_from_disc) ig_rows[ig_n++] = IG_CORE;   /* (a library game: its cores are known) */
+	ig_rows[ig_n++] = IG_CORE;
 	ig_rows[ig_n++] = IG_OSD;
 	ig_rows[ig_n++] = IG_QUIT;
 	lv_obj_clean(body);

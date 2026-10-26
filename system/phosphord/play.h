@@ -13,6 +13,8 @@ int play_launch(sqlite3 *db, long long game_id, char *err, size_t errn);
 int play_launch_core(sqlite3 *db, long long game_id, int core, char *err, size_t errn);
 /* the cores this game can start on: [{index, name, core}], the first the usual one; NULL (err) when it can't start */
 cJSON *play_cores(sqlite3 *db, long long game_id, char *err, size_t errn);
+cJSON *play_system_cores(void);                  /* every installed system core: [{id, name, core}] */
+int play_load_core(sqlite3 *db, const char *system_id, char *err, size_t errn);   /* that core, no game */
 /* a game started some other way (a disc in the dock's drive, disc.c): count it and its play time on
    this library game (game_id > 0), without making it the "last game" (that stays the last one from storage) */
 void play_track(sqlite3 *db, long long game_id);

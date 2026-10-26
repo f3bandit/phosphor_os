@@ -28,6 +28,7 @@ const gsys_t *system_by_id(const char *id);
 const char *category_name(category_t c);
 int system_dirs(const gsys_t *s, char out[][512], int max);   /* existing games folders */
 int system_core(const gsys_t *s, char *rbf, size_t n);        /* installed core, 1 if found */
+int system_core_file(const char *rbf, char *out, size_t n);    /* its newest .rbf file, full path; 0 if none */
 int has_ext(const char *name, const char *exts);
 
 #endif
