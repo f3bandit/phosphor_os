@@ -45,6 +45,16 @@ cifs-helper, backup-agent, health-watch, diag, cloud-sync, update-guard.
 
 See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
 
+## Credits
+
+- **Taki and Retro Remake**, for making the SuperStation One, such excellent hardware.
+- **MiSTer-devel** and the MiSTer community: MiSTer's Linux, Main, the menu core and the cores.
+- **Disc support:** Main_MiSTer_Physical_Disc by **Anime0t4ku and bonna79** (GPL-3.0), in phosphor-main.
+- **RetroAchievements:** **odelot**'s MiSTer RetroAchievements Main and cores (GPL-3.0), and
+  **rcheevos** by the RetroAchievements team (MIT); achievements and badges from retroachievements.org.
+- **Music:** MusicBrainz and the Cover Art Archive (CD names and covers); dr_flac, dr_mp3 and dr_wav by
+  **David Reid** (public domain or MIT-0); stb_vorbis by **Sean Barrett** (public domain or MIT).
+
 ## Licence
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md): use, modify and share for any non-commercial purpose;

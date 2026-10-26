@@ -6440,13 +6440,13 @@ static void update_check(void)
  * addresses and uptime: what support needs, on one page. */
 
 static vlist_t ab_list;
-static char ab_t[24][64], ab_v[24][96];
+static char ab_t[32][64], ab_v[32][96];
 static int ab_n;
 
 static void ab_add(const char *t, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 static void ab_add(const char *t, const char *fmt, ...)
 {
-	if (ab_n >= 24) return;
+	if (ab_n >= 32) return;
 	snprintf(ab_t[ab_n], sizeof(ab_t[0]), "%s", t);
 	va_list ap;
 	va_start(ap, fmt);
@@ -6532,6 +6532,12 @@ static void show_about(void)
 	long m = (long)up / 60;
 	if (m >= 60 * 24) ab_add("Up for", "%ld d %ld h", m / 1440, m / 60 % 24);
 	else ab_add("Up for", "%ld h %ld m", m / 60, m % 60);
+	/* thanks: the hardware and the work Phosphor is built on */
+	ab_add("The SuperStation One", "Taki and Retro Remake: thank you for such excellent hardware");
+	ab_add("Disc support", "Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)");
+	ab_add("RetroAchievements", "odelot (RA Main and cores); rcheevos by the RA team");
+	ab_add("Music CD names", "MusicBrainz and the Cover Art Archive");
+	ab_add("Music decoding", "dr_libs by David Reid, stb_vorbis by Sean Barrett");
 
 	vlist_create(&ab_list, body, S(56), S(176), S(900), S(460));
 	ab_list.fill = ab_fill;

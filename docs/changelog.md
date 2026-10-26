@@ -5,6 +5,22 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
 ## Next (0.27.38)
 
+### Added
+- **Music.** Phosphor's own music player, with its own tile on the home screen and a Now playing card:
+  albums from a `Music` folder on the SD card or a USB drive, a music CD in the dock's drive (names and
+  year from MusicBrainz, the cover from the Cover Art Archive), and Steam soundtracks sent from Phosphor
+  for Windows (it reads Steam's own records on the PC; nothing signs in to Steam). Plays only while no
+  game is running. Copy a music CD to FLAC from the TV (Music › the CD › X). Control it from the TV,
+  the remote, Phosphor for Android (More › Music) and Phosphor for Windows (Tools › Music).
+  See [docs/music.md](music.md).
+- **RetroAchievements.** odelot's RetroAchievements Main and cores, with rcheevos: achievements while
+  you play NES, SNES, Game Boy, GBA, N64, PlayStation, Mega Drive, Mega-CD, Master System, Game Gear,
+  PC Engine and Atari 7800 games. Settings › RetroAchievements on the TV: log in (only a token is
+  kept, never the password), hardcore, pop-ups, unlock sound, get the cores, match the library, your
+  progress. The in-game menu lists the game's achievements; game pages show "Achievements N / M".
+  Phosphor for Windows and Android: the same settings and progress, and a game's achievements.
+  See [docs/retroachievements.md](retroachievements.md).
+
 ### Removed
 - **Phosphor's own SSH settings.** Pairing with the code is all remote access needs, and the apps
   reconnect by themselves. Gone: SSH Off / Password / Keys only, the SSH password and SSH keys in
