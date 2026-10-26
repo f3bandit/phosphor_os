@@ -11,6 +11,8 @@
  *   GET  /art/<game id>              the game's box art (JPEG)
  *   GET  /art/disc                   the box art of the disc in the dock's drive (JPEG or PNG)
  *   PUT  /art/<game id>   <image>    new box art (PNG/JPEG/..., up to 16 MB), scaled and stored
+ *   PUT  /music/<album>/<file>       a soundtrack's file from Phosphor for Windows, into <drive>/Music/Steam
+ *   GET  /music/cover/<album id>     an album's cover
  *   PUT  /update/phosphor-<version>-armhf.tar.gz   a Phosphor package (up to 64 MB), into
  *                                    phosphor/updates; then {"cmd":"update","do":"install",...} installs it
  *
@@ -18,12 +20,14 @@
  * token is kept (config/remote.ini). This thread doesn't touch the database: commands go through
  * phosphord's own socket like any local client, so they run one at a time in the main loop. */
 #include "remote.h"
+#include "music.h"
 #include "cJSON.h"
 #include "log.h"
 #include "paths.h"
 #include "sha256.h"
 #include "version.h"
 #include <arpa/inet.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -46,6 +50,7 @@
 #define HEAD_MAX (16 * 1024)
 #define API_BODY_MAX (1024 * 1024)
 #define ART_BODY_MAX (16 * 1024 * 1024)
+#define MUSIC_BODY_MAX (1024LL * 1024 * 1024)
 #define PAIR_SECONDS 120
 #define PAIR_TRIES 5
 
@@ -671,6 +676,78 @@ static void do_update_put(req_t *r)
 	respond_json(r->fd, 200, out);
 }
 
+/* ---------- music: soundtracks sent from Phosphor for Windows, and album covers for the apps ----------
+ *   PUT /music/<album>/<file>   a file of an album (audio, cover, album.json) into <drive>/Music/Steam/<album>
+ *   GET /music/cover/<album id> an album's cover (music_albums gives the ids; "cd": the CD in the drive) */
+static int url_decode(const char *in, char *out, size_t n)
+{
+	size_t j = 0;
+	for (; *in && j + 1 < n; in++) {
+		if (*in == '%' && isxdigit((unsigned char)in[1]) && isxdigit((unsigned char)in[2])) {
+			char h[3] = { in[1], in[2], 0 };
+			out[j++] = (char)strtol(h, NULL, 16);
+			in += 2;
+		} else out[j++] = *in;
+	}
+	out[j] = 0;
+	return *in ? -1 : 0;
+}
+static int music_name_ok(const char *s, int file)
+{
+	if (!*s || *s == '.' || strlen(s) > 180 || strstr(s, "..")) return 0;
+	for (const unsigned char *c = (const unsigned char *)s; *c; c++) if (*c < 32 || strchr("/\\:*?\"<>|", *c)) return 0;
+	if (!file) return 1;
+	const char *d = strrchr(s, '.');
+	static const char *const EXT[] = { ".flac", ".mp3", ".ogg", ".wav", ".jpg", ".jpeg", ".png", ".json", NULL };
+	for (int i = 0; d && EXT[i]; i++) if (!strcasecmp(d, EXT[i])) return 1;
+	return 0;
+}
+static void do_music_put(req_t *r)
+{
+	const char *rest = r->path + 7;                 /* after "/music/" */
+	const char *sl = strchr(rest, '/');
+	char album[400], file[400], a1[200];
+	if (!sl || (size_t)(sl - rest) >= sizeof(album)) { respond_error(r->fd, 400, "PUT /music/<album>/<file>"); return; }
+	snprintf(album, sizeof(album), "%.*s", (int)(sl - rest), rest);
+	if (url_decode(album, a1, sizeof(a1)) || url_decode(sl + 1, file, sizeof(file)) || !music_name_ok(a1, 0) || !music_name_ok(file, 1)) {
+		respond_error(r->fd, 400, "an album folder and a music, picture or album.json file");
+		return;
+	}
+	if (r->clen > MUSIC_BODY_MAX) { respond_error(r->fd, 413, "file too big (1 GB at most)"); return; }
+	r->deadline_ms = now_ms() + 30000 + r->clen / 50;
+	char home[600], dir[PATH_MAX], tmp[PATH_MAX], dst[PATH_MAX];
+	music_home(home, sizeof(home));
+	snprintf(dir, sizeof(dir), "%s/Steam/%s", home, a1);
+	mkdirs(dir);
+	snprintf(tmp, sizeof(tmp), "%s/.upload.XXXXXX", dir);
+	int fd = mkstemp(tmp);
+	if (fd < 0) { respond_error(r->fd, 500, "no room for the file"); return; }
+	int bad = read_body(r, NULL, fd);
+	if (!bad && fsync(fd)) bad = 1;
+	close(fd);
+	snprintf(dst, sizeof(dst), "%s/%s", dir, file);
+	if (bad || rename(tmp, dst)) { unlink(tmp); if (!bad) respond_error(r->fd, 500, "couldn't save the file"); return; }
+	respond_json(r->fd, 200, "{\"ok\":true}");
+}
+static void do_music_cover(req_t *r)
+{
+	char id[64];
+	snprintf(id, sizeof(id), "%s", r->path + 13);   /* after "/music/cover/" */
+	cJSON *a = music_album(id);
+	const char *cv = a ? cJSON_GetStringValue(cJSON_GetObjectItem(a, "cover")) : NULL;
+	FILE *f = cv ? fopen(cv, "rb") : NULL;
+	cJSON_Delete(a);
+	if (!f) { respond_error(r->fd, 404, "no cover"); return; }
+	fseek(f, 0, SEEK_END);
+	long n = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	char *buf = n > 0 && n < ART_BODY_MAX ? malloc((size_t)n) : NULL;
+	if (!buf || fread(buf, 1, (size_t)n, f) != (size_t)n) { fclose(f); free(buf); respond_error(r->fd, 500, "couldn't read the cover"); return; }
+	fclose(f);
+	respond(r->fd, 200, n > 4 && !memcmp(buf, "\x89PNG", 4) ? "image/png" : "image/jpeg", buf, (size_t)n);
+	free(buf);
+}
+
 static void handle(int fd)
 {
 	req_t *r = calloc(1, sizeof(*r));
@@ -693,7 +770,10 @@ static void handle(int fd)
 	}
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
 	int is_upd = !strncmp(r->path, "/update/", 8);
-	if (!is_api && !is_pair && !is_art && !is_upd) { respond_error(fd, 404, "no such path"); goto done; }
+	int is_mcover = !strncmp(r->path, "/music/cover/", 13), is_music = !is_mcover && !strncmp(r->path, "/music/", 7);
+	if (!is_api && !is_pair && !is_art && !is_upd && !is_music && !is_mcover) { respond_error(fd, 404, "no such path"); goto done; }
+	if (is_music && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
+	if (is_mcover && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if (is_upd && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
@@ -704,6 +784,12 @@ static void handle(int fd)
 		respond_error(fd, 401, "pair this device first (Settings > Remote access on the MiSTer)");
 		goto done;
 	}
+	if (is_music) {
+		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
+		else do_music_put(r);
+		goto done;
+	}
+	if (is_mcover) { do_music_cover(r); goto done; }
 	if (is_upd) {
 		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
 		else do_update_put(r);

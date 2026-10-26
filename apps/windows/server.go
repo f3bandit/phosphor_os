@@ -134,6 +134,8 @@ func routes(mux *http.ServeMux) {
 	h("/api/scrape", apiScrape)   // box art looked up on this PC
 	h("/api/sscheck", apiSSCheck) // ScreenScraper's Check login
 	h("/api/art/", apiArt)
+	h("/api/steam", apiSteam)             // Steam soundtracks on this PC, sent to the SS1's Music
+	h("/api/steam/cover/", apiSteamCover)
 }
 
 func apiState(w http.ResponseWriter, r *http.Request) {
