@@ -3,6 +3,29 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.39, Phosphor for Windows 0.2.38, Phosphor for Android 0.9.7
+
+### Added
+- **Screenshots.** Press both sticks in (L3 + R3) to save a picture of the screen. In a game it's
+  MiSTer's own screenshot of the game, with its "Screenshot saved" note; on Phosphor's screens, and with
+  the in-game menu up, Phosphor saves what's shown. They're on the SD card in `screenshots/<system>/`.
+  The presses still reach the game. Settings › Screenshots: turn the combo off, see them in a grid,
+  one full screen, delete. Phosphor for Windows (Tools › Screenshots) and Android (More › Screenshots):
+  take one of the TV, see them, save them to the PC or the phone's photos, share, delete.
+
+### Changed
+- **Album covers** are made TV-sized from the album's picture, or from the art inside its tracks (FLAC
+  and MP3), so big covers show and albums with art only in their files get one.
+- **Steam soundtracks** come with Steam's own details: the English title, the artist (and composer and
+  label) and Steam's album cover. Albums sent before get them too, without sending the music again.
+- **The in-game menu** shows the game that's really running, also one loaded from MiSTer's own menu
+  (its box art and details when it's in the library, else its file name, or the core's name).
+
+### Fixed
+- RetroAchievements: a Web API key RetroAchievements doesn't accept says so, instead of matching 0
+  games; games that couldn't be looked up are looked up again; a key has to be 32 letters and numbers.
+- Library › Disc: a music CD says it plays in Music.
+
 ## 0.27.38, Phosphor for Windows 0.2.31, Phosphor for Android 0.9.6
 
 ### Added
