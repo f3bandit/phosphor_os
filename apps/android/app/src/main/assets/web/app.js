@@ -1404,6 +1404,16 @@ PAGES.shots = { async show(c, p) {
 	draw();
 	await load();
 	draw();
+	/* new ones taken on the SS1 (L3 + R3) show up while the list is open */
+	const key = l => (l || []).map(s => s.id).join("|");
+	await c.every(async () => {
+		if (open < 0) {
+			const was = key(list);
+			await load();
+			if (key(list) !== was && c.alive()) draw();
+		}
+		return 3000;
+	});
 } };
 
 const DIAG_ORDER = ["fail", "warn", "info", "ok"];
