@@ -88,6 +88,9 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 		if (!busy) break;
 		usleep(100000);
 	}
+	/* a test Main (PHOSPHOR_MAIN_SOCK): connect, so screens that need it (the disc in the drive) show */
+	const char *ms = getenv("PHOSPHOR_MAIN_SOCK");
+	if (ms && *ms) { mainlink_start(); for (int i = 0; i < 5; i++) { mainlink_poll(); usleep(100000); } }
 	ui_init(w, h);
 	advance(300);
 	ui_tick();
@@ -99,6 +102,7 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 			if (!strcmp(k, "saver")) { ui_screensaver_now(); advance(1000); ui_tick(); continue; }
 			if (!strcmp(k, "wait")) {                 /* let background work (phosphord jobs) finish: 1 s */
 				usleep(1000000);
+				if (ms && *ms) mainlink_poll();
 				advance(1000);
 				ui_tick();
 				continue;

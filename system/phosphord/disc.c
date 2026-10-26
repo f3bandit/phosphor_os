@@ -205,7 +205,7 @@ static const char *reason(const char *state, const char *type, const char *mgl, 
 {
 	if (!strcmp(state, "unreadable")) return "can't be read: clean it and try again";
 	if (strcmp(state, "ready")) return "";
-	if (!strcmp(type, "audio")) return "music CD: not supported yet";
+	if (!strcmp(type, "audio")) return "music CD: it plays in Music";
 	if (!strcmp(type, "dvd")) return "DVD: not supported";
 	if (!*mgl) return "not a disc the SuperStation plays";
 	if (!core_ok) return "its core isn't installed";
