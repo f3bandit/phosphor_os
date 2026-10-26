@@ -17,8 +17,10 @@
  *                                    phosphor/updates; then {"cmd":"update","do":"install",...} installs it
  *
  * Every request but /info and /pair needs "Authorization: Bearer <token>". Only a hash of each
- * token is kept (config/remote.ini). This thread doesn't touch the database: commands go through
- * phosphord's own socket like any local client, so they run one at a time in the main loop. */
+ * token is kept (config/remote.ini). Each connection gets its own thread (8 at once, 6 from one
+ * address; more get 503), so a slow client only holds its own. These threads don't touch the
+ * database: commands go through phosphord's own socket like any local client, so they run one at
+ * a time in the main loop. Wrong keys or codes from one address: 5, then it waits 30 s. */
 #include "remote.h"
 #include "music.h"
 #include "shot.h"
@@ -55,6 +57,15 @@
 #define MUSIC_BODY_MAX (1024LL * 1024 * 1024)
 #define PAIR_SECONDS 120
 #define PAIR_TRIES 5
+#define PAIR_BODY_MAX 1024
+#define HEAD_MS 3000            /* request line and headers, from anyone */
+#define PAIR_BODY_MS 3000       /* a /pair body, after the headers */
+#define CONN_MAX 8              /* connections served at once */
+#define CONN_PER_IP 6           /* of those, from one address */
+#define FAIL_LIMIT 5            /* wrong keys (or codes) from one address ... */
+#define LOCK_SECONDS 30         /* ... and it waits this long */
+#define FAIL_FORGET 600         /* failures older than this don't count */
+#define NPEERS 32
 
 /* commands a paired device may send: nothing that changes the network, pairing or remote access */
 static const char *ALLOWED[] = {
@@ -247,7 +258,8 @@ int remote_forget(const char *id)
 
 typedef struct {
 	int fd;
-	long long deadline_ms;     /* the whole request must arrive by then: a slow client can't hold the server */
+	uint32_t ip;               /* the client's address (network order) */
+	long long deadline_ms;    /* the whole request must arrive by then: a slow client can't hold the server */
 	char head[HEAD_MAX + 1];
 	size_t hlen, body_off;     /* body bytes already read start at head + body_off */
 	char method[8], path[256];
@@ -261,6 +273,96 @@ static long long now_ms(void)
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* ---------- who's connected, and who keeps getting it wrong ---------- */
+
+enum { F_KEY, F_CODE };         /* wrong keys and wrong pairing codes are counted apart */
+typedef struct {
+	uint32_t ip;                /* 0: a free entry */
+	int conns;
+	int fails[2];
+	long last[2], until[2];     /* last failure, locked out until (monotonic seconds) */
+	long seen;
+} peer_t;
+
+static pthread_mutex_t pmu = PTHREAD_MUTEX_INITIALIZER;
+static peer_t peers[NPEERS];
+static int nconns;
+
+static long mono_s(void) { return (long)(now_ms() / 1000); }
+
+/* call with pmu held: this address's entry, made if need be over a free one or the one idle longest
+   (there are always some: far fewer connections than entries) */
+static peer_t *peer_get(uint32_t ip)
+{
+	peer_t *pick = NULL;
+	for (int i = 0; i < NPEERS; i++) if (peers[i].ip == ip) return &peers[i];
+	for (int i = 0; i < NPEERS; i++) {
+		peer_t *p = &peers[i];
+		if (p->conns) continue;
+		if (!pick || (pick->ip && (!p->ip || p->seen < pick->seen))) pick = p;
+	}
+	memset(pick, 0, sizeof(*pick));
+	pick->ip = ip;
+	return pick;
+}
+
+/* a slot for a new connection: 0 when too many are open */
+static int conn_take(uint32_t ip)
+{
+	pthread_mutex_lock(&pmu);
+	int ok = 0;
+	if (nconns < CONN_MAX) {
+		peer_t *p = peer_get(ip);
+		p->seen = mono_s();
+		if (p->conns < CONN_PER_IP) { p->conns++; nconns++; ok = 1; }
+	}
+	pthread_mutex_unlock(&pmu);
+	return ok;
+}
+
+static void conn_drop(uint32_t ip)
+{
+	pthread_mutex_lock(&pmu);
+	peer_t *p = peer_get(ip);
+	if (p->conns > 0) p->conns--;
+	nconns--;
+	pthread_mutex_unlock(&pmu);
+}
+
+/* seconds this address still has to wait, or 0 */
+static int locked_for(uint32_t ip, int kind)
+{
+	pthread_mutex_lock(&pmu);
+	long left = peer_get(ip)->until[kind] - mono_s();
+	pthread_mutex_unlock(&pmu);
+	return left > 0 ? (int)left : 0;
+}
+
+static void failed(uint32_t ip, int kind)
+{
+	long now = mono_s();
+	int lock = 0;
+	pthread_mutex_lock(&pmu);
+	peer_t *p = peer_get(ip);
+	if (now - p->last[kind] > FAIL_FORGET) p->fails[kind] = 0;
+	p->last[kind] = now;
+	if (++p->fails[kind] >= FAIL_LIMIT) { p->fails[kind] = 0; p->until[kind] = now + LOCK_SECONDS; lock = 1; }
+	pthread_mutex_unlock(&pmu);
+	if (lock) {
+		struct in_addr a = { ip };
+		char s[32];
+		inet_ntop(AF_INET, &a, s, sizeof(s));
+		plog("remote access: %s waits %d s (too many wrong %s)", s, LOCK_SECONDS, kind == F_KEY ? "keys" : "codes");
+	}
+}
+
+static void succeeded(uint32_t ip, int kind)
+{
+	pthread_mutex_lock(&pmu);
+	peer_get(ip)->fails[kind] = 0;
+	pthread_mutex_unlock(&pmu);
 }
 
 /* recv, but never past the request's deadline */
@@ -508,7 +610,9 @@ static void do_pair(req_t *r, const char *body)
 	}
 	pthread_mutex_unlock(&mu);
 	cJSON_Delete(j);
+	if (st == 401) failed(r->ip, F_CODE);     /* this address waits after a few: no sleeping here */
 	if (st == 200) {
+		succeeded(r->ip, F_CODE);
 		plog("remote access: paired %s", name);
 		cJSON *o = cJSON_CreateObject();
 		cJSON_AddBoolToObject(o, "ok", 1);
@@ -519,7 +623,6 @@ static void do_pair(req_t *r, const char *body)
 		respond_json(r->fd, 200, s);
 		free(s);
 	} else {
-		sleep(1);   /* slows down guessing */
 		respond_error(r->fd, st, st == 403 ? "pairing isn't open: choose Pair a device on the MiSTer" :
 		                         st == 401 ? "wrong code" : st == 429 ? "too many devices: forget one in Settings" :
 		                         st == 400 ? "code and name needed" : "couldn't save the device");
@@ -754,10 +857,17 @@ static void do_music_cover(req_t *r)
 /* GET /shots/thumb/<core>/<file> and /shots/file/<core>/<file>: a screenshot, small or whole */
 static void do_shot_get(req_t *r)
 {
+	/* one thumbnail made at a time: two connections asking for the same one would write the same file */
+	static pthread_mutex_t thumb_mu = PTHREAD_MUTEX_INITIALIZER;
 	int thumb = !strncmp(r->path, "/shots/thumb/", 13);
 	char id[400], p[1100];
-	if (url_decode(r->path + (thumb ? 13 : 12), id, sizeof(id)) ||
-	    (thumb ? shot_thumb(id, p, sizeof(p)) : shot_path(id, p, sizeof(p)))) { respond_error(r->fd, 404, "no such screenshot"); return; }
+	int bad = url_decode(r->path + (thumb ? 13 : 12), id, sizeof(id));
+	if (!bad && thumb) {
+		pthread_mutex_lock(&thumb_mu);
+		bad = shot_thumb(id, p, sizeof(p));
+		pthread_mutex_unlock(&thumb_mu);
+	} else if (!bad) bad = shot_path(id, p, sizeof(p));
+	if (bad) { respond_error(r->fd, 404, "no such screenshot"); return; }
 	FILE *f = fopen(p, "rb");
 	if (!f) { respond_error(r->fd, 404, "no such screenshot"); return; }
 	fseek(f, 0, SEEK_END);
@@ -770,12 +880,13 @@ static void do_shot_get(req_t *r)
 	free(buf);
 }
 
-static void handle(int fd)
+static void handle(int fd, uint32_t ip)
 {
 	req_t *r = calloc(1, sizeof(*r));
 	if (!r) { close(fd); return; }
 	r->fd = fd;
-	r->deadline_ms = now_ms() + 10000;                   /* headers: 10 s */
+	r->ip = ip;
+	r->deadline_ms = now_ms() + HEAD_MS;                 /* headers: 3 s, before anyone is known */
 	struct timeval tv = { 15, 0 };
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -829,11 +940,22 @@ static void handle(int fd)
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
 
-	char who[64] = "";
-	if (!is_pair && authorize(r, who, sizeof(who)) < 0) {
-		sleep(1);
-		respond_error(fd, 401, "pair this device first (Settings > Remote access on the MiSTer)");
+	/* too many wrong keys (or codes) from this address lately: it waits, nobody else does */
+	int kind = is_pair ? F_CODE : F_KEY, wait = locked_for(ip, kind);
+	if (wait) {
+		char m[96];
+		snprintf(m, sizeof(m), "too many wrong %s: try again in %d s", is_pair ? "codes" : "keys", wait);
+		respond_error(fd, 429, m);
 		goto done;
+	}
+	char who[64] = "";
+	if (!is_pair) {
+		if (authorize(r, who, sizeof(who)) < 0) {
+			if (r->auth[0]) failed(ip, F_KEY);           /* no key at all isn't a guess */
+			respond_error(fd, 401, "pair this device first (Settings > Remote access on the MiSTer)");
+			goto done;
+		}
+		succeeded(ip, F_KEY);
 	}
 	if (is_music) {
 		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
@@ -857,8 +979,8 @@ static void handle(int fd)
 		goto done;
 	}
 	if (r->clen < 0) { respond_error(fd, 411, "send Content-Length"); goto done; }
-	if (r->clen > API_BODY_MAX) { respond_error(fd, 413, "request too big"); goto done; }
-	r->deadline_ms = now_ms() + 30000;                   /* body: 30 s */
+	if (r->clen > (is_pair ? PAIR_BODY_MAX : API_BODY_MAX)) { respond_error(fd, 413, "request too big"); goto done; }
+	r->deadline_ms = now_ms() + (is_pair ? PAIR_BODY_MS : 30000);   /* body: 3 s unpaired, 30 s paired */
 	char *body = malloc((size_t)r->clen + 1);
 	if (!body || read_body(r, body, -1)) { free(body); goto done; }
 	if (is_pair) do_pair(r, body);
@@ -888,9 +1010,37 @@ static int open_listener(int p)
 	return s;
 }
 
+/* too many connections open: say so straight away, without waiting for the request */
+static void busy(int fd)
+{
+	static const char msg[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 39\r\n"
+	                          "Retry-After: 1\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+	                          "{\"ok\":false,\"error\":\"busy: try again\"}\n";
+	if (send(fd, msg, sizeof(msg) - 1, MSG_DONTWAIT | MSG_NOSIGNAL) < 0) { close(fd); return; }
+	shutdown(fd, SHUT_WR);
+	char junk[4096];   /* whatever of the request has come: dropping it unread would reset the answer */
+	for (int i = 0; i < 4 && recv(fd, junk, sizeof(junk), MSG_DONTWAIT) > 0; i++) ;
+	close(fd);
+}
+
+typedef struct { int fd; uint32_t ip; } conn_t;
+
+/* one connection, on its own thread */
+static void *conn_run(void *arg)
+{
+	conn_t c = *(conn_t *)arg;
+	free(arg);
+	handle(c.fd, c.ip);
+	conn_drop(c.ip);
+	return NULL;
+}
+
 static void *run(void *arg)
 {
 	(void)arg;
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 	int lfd = -1, lport = 0;
 	long retry_at = 0;
 	for (;;) {
@@ -924,7 +1074,12 @@ static void *run(void *arg)
 			close(fd);
 			continue;
 		}
-		handle(fd);
+		uint32_t ip = peer.sin_addr.s_addr;
+		if (!conn_take(ip)) { busy(fd); continue; }
+		conn_t *c = malloc(sizeof(*c));
+		pthread_t t;
+		if (c) { c->fd = fd; c->ip = ip; }
+		if (!c || pthread_create(&t, &attr, conn_run, c) != 0) { free(c); conn_drop(ip); busy(fd); }
 	}
 	return NULL;
 }
