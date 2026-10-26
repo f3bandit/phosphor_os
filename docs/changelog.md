@@ -3,6 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## Next (0.27.38)
+
+### Removed
+- **Phosphor's own SSH settings.** Pairing with the code is all remote access needs, and the apps
+  reconnect by themselves. Gone: SSH Off / Password / Keys only, the SSH password and SSH keys in
+  Settings › Remote access, keys offered from a paired device (and the TV's "let this key log in?"), and
+  the copy of remote access kept on another drive. Phosphor for Windows: the SSH section in Settings ›
+  Connection. Updating puts MiSTer's own SSH back (its own password and keys) and removes
+  `phos-ssh.sh` and `phosphor/config/ssh`. A copy kept on a drive (`phosphor-keep`) stays there.
+  After reflashing an SD card, pair the phone and PC again with the code.
+
 ## 0.27.37, Phosphor for Windows 0.2.30, Phosphor for Android 0.9.5
 
 ### New

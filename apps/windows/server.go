@@ -133,7 +133,6 @@ func routes(mux *http.ServeMux) {
 	sdRoutes(h)                   // Tools > SD card flash & health
 	h("/api/scrape", apiScrape)   // box art looked up on this PC
 	h("/api/sscheck", apiSSCheck) // ScreenScraper's Check login
-	h("/api/sshkeys", apiSSHKeys) // this PC's SSH keys, to offer to the SS1 (yes on the TV)
 	h("/api/art/", apiArt)
 }
 

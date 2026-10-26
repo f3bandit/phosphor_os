@@ -11,8 +11,6 @@
  *   GET  /art/<game id>              the game's box art (JPEG)
  *   GET  /art/disc                   the box art of the disc in the dock's drive (JPEG or PNG)
  *   PUT  /art/<game id>   <image>    new box art (PNG/JPEG/..., up to 16 MB), scaled and stored
- *   POST /api {"cmd":"remote_ssh"[,"offer":[{"key","name"}]]}   SSH mode and keys (look only); keys
- *                                    offered wait for a yes on the TV
  *   PUT  /update/phosphor-<version>-armhf.tar.gz   a Phosphor package (up to 64 MB), into
  *                                    phosphor/updates; then {"cmd":"update","do":"install",...} installs it
  *
@@ -20,7 +18,6 @@
  * token is kept (config/remote.ini). This thread doesn't touch the database: commands go through
  * phosphord's own socket like any local client, so they run one at a time in the main loop. */
 #include "remote.h"
-#include "sshacc.h"
 #include "cJSON.h"
 #include "log.h"
 #include "paths.h"
@@ -57,7 +54,7 @@ static const char *ALLOWED[] = {
 	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "not_game", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
-	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "remote_ssh", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
+	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
 	"disc", "disc_play", "disc_eject", "disc_enable", NULL,
 };
 
@@ -502,7 +499,6 @@ static void do_pair(req_t *r, const char *body)
 	cJSON_Delete(j);
 	if (st == 200) {
 		plog("remote access: paired %s", name);
-		sshacc_changed();
 		cJSON *o = cJSON_CreateObject();
 		cJSON_AddBoolToObject(o, "ok", 1);
 		cJSON_AddStringToObject(o, "token", token);
@@ -558,9 +554,8 @@ static void do_api(req_t *r, const char *body, const char *who)
 			}
 		}
 	}
-	/* SSH keys offered by this device: named after it (whatever the request says), and they wait for a
-	   yes on the TV */
-	if (!strcmp(cmd, "remote_ssh") || !strcmp(cmd, "scrape_todo") || !strcmp(cmd, "scrape_result")) {
+	/* named after this device, whatever the request says */
+	if (!strcmp(cmd, "scrape_todo") || !strcmp(cmd, "scrape_result")) {
 		while (cJSON_GetObjectItem(j, "from")) cJSON_DeleteItemFromObject(j, "from");
 		cJSON_AddStringToObject(j, "from", who && *who ? who : "a paired device");
 	}
