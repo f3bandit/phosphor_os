@@ -1757,6 +1757,10 @@ char *api_handle(sqlite3 *db, const char *request)
 		char err[300];
 		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 		out = music_control(d ? d : "", req, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "music_rip")) {
+		char err[300];
+		int stop = cJSON_IsTrue(cJSON_GetObjectItem(req, "stop"));
+		out = music_rip(!stop, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	} else if (!strcmp(c->valuestring, "music_queue")) {
 		cJSON *o = ok();
 		cJSON_AddItemToObject(o, "queue", music_queue());

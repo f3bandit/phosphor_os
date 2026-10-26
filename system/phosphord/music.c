@@ -13,6 +13,7 @@
  * Music CDs: the table of contents gives the MusicBrainz disc ID; names come from MusicBrainz and the cover
  * from the Cover Art Archive, kept in data/music_cd so the same CD is named at once next time. */
 #include "music.h"
+#include "flacenc.h"
 #include "log.h"
 #include "net.h"
 #include "paths.h"
@@ -749,6 +750,182 @@ static void start_thread(void)
 	if (pthread_create(&t, NULL, player, NULL) == 0) { pthread_detach(t); thread_up = 1; }
 }
 
+
+/* ---------------------------------------------------------------- ripping a CD (FLAC, on the drive) */
+
+static struct { int busy, stop, track, of; long done_sectors, all_sectors; int rereads; char msg[200], dest[700]; } rip;
+
+static void clean_name(const char *in, char *out, size_t n)
+{
+	size_t j = 0;
+	for (; *in && j + 1 < n; in++) {
+		unsigned char c = (unsigned char)*in;
+		out[j++] = (c < 32 || strchr("/\\:*?\"<>|", c)) ? '_' : (char)c;
+	}
+	while (j && (out[j - 1] == ' ' || out[j - 1] == '.')) j--;
+	out[j] = 0;
+	if (!out[0]) snprintf(out, n, "Untitled");
+}
+
+/* sectors read twice and compared; when they differ, read again until two reads agree */
+static int read_sure(int fd, int lba, int n, uint8_t *a, uint8_t *b)
+{
+	struct cdrom_read_audio ra = { 0 };
+	ra.addr.lba = lba; ra.addr_format = CDROM_LBA; ra.nframes = n;
+	ra.buf = a;
+	if (ioctl(fd, CDROMREADAUDIO, &ra)) return -1;
+	for (int tries = 0; tries < 8; tries++) {
+		ra.buf = b;
+		if (ioctl(fd, CDROMREADAUDIO, &ra)) return -1;
+		if (!memcmp(a, b, (size_t)n * 2352)) return 0;
+		rip.rereads++;
+		memcpy(a, b, (size_t)n * 2352);
+	}
+	return 1;    /* never agreed: kept the last read */
+}
+
+static void *ripper(void *arg)
+{
+	(void)arg;
+	toc_t t;
+	char title[200], artist[200], year[16], cover[700], tracks[100][160], discid[40];
+	pthread_mutex_lock(&lk);
+	t = cd.toc;
+	snprintf(title, sizeof(title), "%s", cd.named && cd.title[0] ? cd.title : "");
+	snprintf(artist, sizeof(artist), "%s", cd.artist);
+	snprintf(year, sizeof(year), "%s", cd.year);
+	snprintf(cover, sizeof(cover), "%s", cd.cover);
+	snprintf(discid, sizeof(discid), "%s", cd.discid);
+	memcpy(tracks, cd.tracks, sizeof(tracks));
+	pthread_mutex_unlock(&lk);
+	if (!title[0]) snprintf(title, sizeof(title), "Music CD %.8s", discid);
+	char home[600], a1[200], a2[200], dir[700];
+	music_home(home, sizeof(home));
+	clean_name(artist[0] ? artist : "Unknown artist", a1, sizeof(a1));
+	clean_name(title, a2, sizeof(a2));
+	snprintf(dir, sizeof(dir), "%s/%s", home, a1);
+	mkdir(dir, 0755);
+	snprintf(dir, sizeof(dir), "%s/%s/%s", home, a1, a2);
+	mkdir(dir, 0755);
+	pthread_mutex_lock(&lk);
+	snprintf(rip.dest, sizeof(rip.dest), "%s", dir);
+	rip.all_sectors = 0;
+	for (int i = t.first; i <= t.last; i++) if (t.audio[i]) rip.all_sectors += (i < t.last ? t.lba[i + 1] : t.leadout) - t.lba[i];
+	pthread_mutex_unlock(&lk);
+	int fd = open(CD_DEV, O_RDONLY | O_NONBLOCK);
+	int failed = fd < 0;
+	if (fd >= 0) ioctl(fd, CDROM_SELECT_SPEED, 0);       /* as fast as the drive goes */
+	uint8_t *a = malloc(24 * 2352), *b = malloc(24 * 2352);
+	int n_audio = 0;
+	for (int i = t.first; i <= t.last; i++) n_audio += t.audio[i];
+	int k = 0;
+	for (int i = t.first; !failed && i <= t.last && a && b; i++) {
+		if (!t.audio[i]) continue;
+		k++;
+		if (rip.stop) break;
+		int lba0 = t.lba[i], lba1 = i < t.last ? t.lba[i + 1] : t.leadout;
+		if (i < t.last && !t.audio[i + 1]) lba1 -= 11400;
+		char nm[200], file[1000], tt[220], ta[220], tal[220], tn[32], td[40];
+		snprintf(nm, sizeof(nm), "%s", tracks[i][0] ? tracks[i] : "");
+		if (!nm[0]) snprintf(nm, sizeof(nm), "Track %d", i);
+		char cn[200];
+		clean_name(nm, cn, sizeof(cn));
+		snprintf(file, sizeof(file), "%s/%02d - %s.flac", dir, k, cn);
+		snprintf(tt, sizeof(tt), "TITLE=%s", nm);
+		snprintf(ta, sizeof(ta), "ARTIST=%s", artist);
+		snprintf(tal, sizeof(tal), "ALBUM=%s", title);
+		snprintf(tn, sizeof(tn), "TRACKNUMBER=%d", k);
+		snprintf(td, sizeof(td), "DATE=%s", year);
+		const char *tags[6] = { tt, tal, tn, NULL, NULL, NULL };
+		int ti = 3;
+		if (artist[0]) tags[ti++] = ta;
+		if (year[0]) tags[ti++] = td;
+		pthread_mutex_lock(&lk);
+		rip.track = k; rip.of = n_audio;
+		snprintf(rip.msg, sizeof(rip.msg), "Copying track %d of %d \xC2\xB7 %s", k, n_audio, nm);
+		pthread_mutex_unlock(&lk);
+		char part[1010];
+		snprintf(part, sizeof(part), "%s.part", file);
+		flacenc_t *e = flacenc_open(part, tags);
+		if (!e) { failed = 1; break; }
+		for (int lba = lba0; lba < lba1 && !rip.stop; lba += 24) {
+			int n = lba1 - lba < 24 ? lba1 - lba : 24;
+			if (read_sure(fd, lba, n, a, b) < 0) { failed = 1; break; }
+			if (flacenc_write(e, (const int16_t *)a, n * 588)) { failed = 1; break; }
+			pthread_mutex_lock(&lk);
+			rip.done_sectors += n;
+			pthread_mutex_unlock(&lk);
+		}
+		if (flacenc_close(e) || failed || rip.stop) { unlink(part); break; }
+		rename(part, file);
+	}
+	free(a); free(b);
+	if (fd >= 0) { ioctl(fd, CDROM_SELECT_SPEED, 4); close(fd); }
+	/* album.json and the cover beside the tracks */
+	char p2[800];
+	snprintf(p2, sizeof(p2), "%s/album.json", dir);
+	cJSON *aj = cJSON_CreateObject();
+	cJSON_AddStringToObject(aj, "title", title);
+	cJSON_AddStringToObject(aj, "artist", artist);
+	cJSON_AddStringToObject(aj, "year", year);
+	cJSON_AddStringToObject(aj, "source", "cd");
+	cJSON_AddStringToObject(aj, "discid", discid);
+	char *js = cJSON_Print(aj);
+	FILE *f = js ? fopen(p2, "w") : NULL;
+	if (f) { fputs(js, f); fclose(f); }
+	free(js);
+	cJSON_Delete(aj);
+	if (cover[0]) {
+		snprintf(p2, sizeof(p2), "%s/cover.jpg", dir);
+		FILE *in = fopen(cover, "rb"), *out = in ? fopen(p2, "wb") : NULL;
+		char cb[8192];
+		size_t r;
+		while (in && out && (r = fread(cb, 1, sizeof(cb), in)) > 0) fwrite(cb, 1, r, out);
+		if (in) fclose(in);
+		if (out) fclose(out);
+	}
+	music_scan();
+	pthread_mutex_lock(&lk);
+	snprintf(rip.msg, sizeof(rip.msg), rip.stop ? "Stopped: the tracks done are kept" : failed ? "The drive couldn't read the CD: the tracks done are kept" :
+	         rip.rereads ? "Done: copied to the NVMe (a few spots needed reading again)" : "Done: an exact copy is in Music");
+	rip.busy = 0;
+	pthread_mutex_unlock(&lk);
+	plog("music: rip of %s %s (%d re-reads) into %s", discid, failed ? "failed" : rip.stop ? "stopped" : "done", rip.rereads, dir);
+	return NULL;
+}
+
+int music_rip(int start, char *err, size_t errn)
+{
+	pthread_mutex_lock(&lk);
+	if (!start) { rip.stop = 1; pthread_mutex_unlock(&lk); return 0; }
+	if (rip.busy) { pthread_mutex_unlock(&lk); return 0; }
+	if (!cd.present) { pthread_mutex_unlock(&lk); snprintf(err, errn, "No music CD in the drive"); return -1; }
+	int playing_cd = pl.state && pl.cur >= 0 && pl.cur < pl.n && pl.q[pl.cur].cd_track;
+	memset(&rip, 0, sizeof(rip));
+	rip.busy = 1;
+	snprintf(rip.msg, sizeof(rip.msg), "Starting...");
+	pthread_mutex_unlock(&lk);
+	if (playing_cd) music_stop();             /* the drive does one thing at a time */
+	pthread_t t;
+	if (pthread_create(&t, NULL, ripper, NULL)) { rip.busy = 0; snprintf(err, errn, "couldn't start"); return -1; }
+	pthread_detach(t);
+	return 0;
+}
+
+cJSON *music_rip_status(void)
+{
+	cJSON *o = cJSON_CreateObject();
+	pthread_mutex_lock(&lk);
+	cJSON_AddBoolToObject(o, "busy", rip.busy);
+	cJSON_AddStringToObject(o, "message", rip.msg);
+	cJSON_AddNumberToObject(o, "track", rip.track);
+	cJSON_AddNumberToObject(o, "of", rip.of);
+	cJSON_AddNumberToObject(o, "percent", rip.all_sectors ? (double)rip.done_sectors * 100 / rip.all_sectors : 0);
+	if (rip.dest[0]) cJSON_AddStringToObject(o, "dest", rip.dest);
+	pthread_mutex_unlock(&lk);
+	return o;
+}
+
 /* ---------------------------------------------------------------- what the API calls */
 
 static const album_t *album_by_id(const char *id)
@@ -853,6 +1030,7 @@ int music_play(const char *album, int track, char *err, size_t errn)
 	int n = 0, start = 0;
 	if (!strcmp(album, "cd")) {
 		pthread_mutex_lock(&lk);
+		if (rip.busy) { pthread_mutex_unlock(&lk); snprintf(err, errn, "The CD is being copied: play it from Music when that's done"); return -1; }
 		if (!cd.present) { pthread_mutex_unlock(&lk); snprintf(err, errn, "No music CD in the drive"); return -1; }
 		q = calloc(100, sizeof(*q));
 		for (int i = cd.toc.first; q && i <= cd.toc.last; i++) {
@@ -961,6 +1139,7 @@ cJSON *music_status(void)
 	cJSON *c = cd_json_locked();
 	if (c) cJSON_AddItemToObject(o, "cd", c);
 	pthread_mutex_unlock(&lk);
+	cJSON_AddItemToObject(o, "rip", music_rip_status());
 	return o;
 }
 
