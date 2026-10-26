@@ -2,6 +2,7 @@
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 #include "paths.h"
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,26 +19,21 @@ const char *p_tmp(void) { return env_or("PHOS_TMP", "/tmp/phosphor"); }
 const char *p_mister_cmd(void) { return env_or("PHOS_MISTER_CMD", "/dev/MiSTer_cmd"); }
 const char *p_corename(void) { return env_or("PHOS_CORENAME", "/tmp/CORENAME"); }
 
-const char *p_data(void)
+/* built once (the env is read at the first call): many threads ask, and rewriting a shared buffer
+   on every call let one of them see it half written */
+static char data_b[512], config_b[512], socket_b[512];
+static pthread_once_t built = PTHREAD_ONCE_INIT;
+
+static void build(void)
 {
-	static char b[512];
-	snprintf(b, sizeof(b), "%s/phosphor/data", p_fat());
-	return b;
+	snprintf(data_b, sizeof(data_b), "%s/phosphor/data", p_fat());
+	snprintf(config_b, sizeof(config_b), "%s/phosphor/config", p_fat());
+	snprintf(socket_b, sizeof(socket_b), "%s/phosphord.sock", p_tmp());
 }
 
-const char *p_config(void)
-{
-	static char b[512];
-	snprintf(b, sizeof(b), "%s/phosphor/config", p_fat());
-	return b;
-}
-
-const char *p_socket(void)
-{
-	static char b[512];
-	snprintf(b, sizeof(b), "%s/phosphord.sock", p_tmp());
-	return b;
-}
+const char *p_data(void) { pthread_once(&built, build); return data_b; }
+const char *p_config(void) { pthread_once(&built, build); return config_b; }
+const char *p_socket(void) { pthread_once(&built, build); return socket_b; }
 
 int p_roots(char out[][256], int max)
 {

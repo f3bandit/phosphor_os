@@ -61,7 +61,7 @@ static char *run(const char *const *args, int limit)
 	(void)env_fat;
 
 	int po[2];
-	if (pipe(po)) return NULL;
+	if (pipe2(po, O_CLOEXEC)) return NULL;   /* no copies leak into other threads' children */
 	fcntl(po[0], F_SETFL, O_NONBLOCK);
 	posix_spawn_file_actions_t fa;
 	posix_spawn_file_actions_init(&fa);

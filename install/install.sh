@@ -78,12 +78,16 @@ if [ -f "$HERE/wallpaper/phosphor-wallpaper.png" ]; then
 	fi
 fi
 # the updater (Settings > Update Phosphor), when the package has one
-[ -f "$HERE/update.sh" ] && cp "$HERE/update.sh" "$ROOT/update.sh" && chmod 755 "$ROOT/update.sh"
+# (renamed into place: during an update, bash is still reading the running copy)
+[ -f "$HERE/update.sh" ] && cp "$HERE/update.sh" "$ROOT/update.sh.new" && chmod 755 "$ROOT/update.sh.new" && mv -f "$ROOT/update.sh.new" "$ROOT/update.sh"
 # MiSTer's updaters as Phosphor starts them (a restore point first, then the updater)
 if [ -d "$HERE/scripts" ]; then
 	mkdir -p "$ROOT/scripts" && cp "$HERE"/scripts/*.sh "$ROOT/scripts/" && chmod 755 "$ROOT"/scripts/*.sh
 fi
 cp "$HERE/VERSION" "$ROOT/VERSION"
+# the licences: Phosphor's, the notices of the libraries in it, and the GPL programs' licence and source
+for f in LICENSE.md THIRD_PARTY_NOTICES.md SOURCE.md; do [ -f "$HERE/$f" ] && cp "$HERE/$f" "$ROOT/$f"; done
+if [ -d "$HERE/licenses" ]; then mkdir -p "$ROOT/licenses" && cp "$HERE"/licenses/* "$ROOT/licenses/" 2> /dev/null; fi
 # example settings: only when there isn't one already
 for f in "$HERE"/config/*.ini; do
 	[ -e "$f" ] || continue
@@ -145,8 +149,17 @@ put_menu_core() {
 	[ -s "$ours" ] || return 0
 	cmp -s "$ours" "$m" 2>/dev/null && return 0
 	mkdir -p "$ROOT/backup"
-	[ -f "$m" ] && cp "$m" "$ROOT/backup/menu.rbf.mister"
-	cp "$ours" "$m.new" && mv -f "$m.new" "$m" && echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
+	# only MiSTer's is kept: an older Phosphor core (an update brought a new one) never takes its place
+	known="$ROOT/backup/menu.rbf.phosphor"   # the Phosphor cores put in before, one md5 a line
+	if [ -f "$m" ]; then
+		h="$(md5sum "$m" | cut -c1-32)"; phos=0
+		grep -qxF "$h" "$known" 2>/dev/null && phos=1
+		for c in "$ROOT"/backup/versions/*/cores/menu_phosphor.rbf; do cmp -s "$c" "$m" && phos=1; done
+		[ "$phos" = 1 ] || cp "$m" "$ROOT/backup/menu.rbf.mister"
+	fi
+	cp "$ours" "$m.new" && mv -f "$m.new" "$m" || return 1
+	h="$(md5sum "$m" | cut -c1-32)"; grep -qxF "$h" "$known" 2>/dev/null || echo "$h" >> "$known"
+	echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
 }
 
 # Phosphor's Main as the system's Main: MiSTer's Main hands over to whatever main= names, at once

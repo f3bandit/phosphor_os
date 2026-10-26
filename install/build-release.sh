@@ -38,8 +38,11 @@ if [ -f "$D/bin/MiSTer_phosphor" ] || [ -d "$D/cores" ]; then
 	src_line() {   # repo dir, repo name[, file naming the commit it was built from]: the commit, on GitHub already
 		c="$(git -C "$1" rev-parse HEAD)"
 		if [ -n "${3:-}" ] && [ -f "$3" ]; then c="$(head -1 "$3")"; fi
-		git -C "$1" fetch -q origin 2> /dev/null || true
-		[ -n "$(git -C "$1" branch -r --contains "$c" 2> /dev/null)" ] || { echo "$2 $c isn't pushed: push it first (its source has to be public)" >&2; exit 1; }
+		on_gh=""
+		for h in $(git -C "$1" ls-remote origin 'refs/heads/*' | cut -f1); do
+			if git -C "$1" merge-base --is-ancestor "$c" "$h" 2> /dev/null; then on_gh=1; break; fi
+		done
+		[ -n "$on_gh" ] || { echo "$2 $c isn't on GitHub: push it first (its source has to be public)" >&2; exit 1; }
 		printf 'https://github.com/f3bandit/%s/tree/%s' "$2" "$c"
 	}
 	main_src="" menu_src=""

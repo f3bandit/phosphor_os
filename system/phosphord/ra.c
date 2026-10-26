@@ -488,7 +488,9 @@ static void *match_all(void *arg)
 		char h[33];
 		long long ra_id = 0;
 		int tot = 0;
-		if (lists[c] && rc_hash_file(c, items[i].path, h) == 0) {
+		/* couldn't hash it (unreadable, a format rcheevos can't read): not recorded, tried again next time */
+		if (rc_hash_file(c, items[i].path, h) != 0) continue;
+		{
 			cJSON *g;
 			cJSON_ArrayForEach(g, lists[c]) {
 				cJSON *hs = cJSON_GetObjectItem(g, "Hashes"), *x;
@@ -498,7 +500,7 @@ static void *match_all(void *arg)
 				}
 				if (ra_id) break;
 			}
-		} else h[0] = 0;
+		}
 		if (ra_id) found++;
 		if (sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO ra_games(game_id, hash, ra_id, total, unlocked, hc, checked) VALUES(?,?,?,?,0,0,?)", -1, &st, NULL) == SQLITE_OK) {
 			sqlite3_bind_int64(st, 1, items[i].id);

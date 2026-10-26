@@ -201,12 +201,15 @@ static unsigned char *flac_art(FILE *f, size_t *len)
 		if (type != 6 || bl > ART_MAX_BYTES + 4096) { if (fseek(f, bl, SEEK_CUR)) break; continue; }
 		unsigned char *b = malloc(bl);
 		if (!b || fread(b, 1, bl, f) != bl) { free(b); break; }
-		uint32_t o = 0, ptype = be32(b);
-		o = 4; if (o + 4 > bl) { free(b); break; }
-		uint32_t ml = be32(b + o); o += 4 + ml; if (o + 4 > bl) { free(b); break; }
-		uint32_t dl = be32(b + o); o += 4 + dl + 16; if (o + 4 > bl) { free(b); break; }
+		/* each length is checked against what's left before it's added (a huge one would wrap) */
+		if (bl < 8) { free(b); break; }
+		uint32_t ptype = be32(b), o = 8;
+		uint32_t ml = be32(b + 4); if (ml > bl - o || bl - o - ml < 4) { free(b); break; }
+		o += ml;
+		uint32_t dl = be32(b + o); o += 4; if (dl > bl - o || bl - o - dl < 16 + 4) { free(b); break; }
+		o += dl + 16;
 		uint32_t pl = be32(b + o); o += 4;
-		if (pl == 0 || o + pl > bl) { free(b); continue; }
+		if (pl == 0 || pl > bl - o) { free(b); continue; }
 		if (!best || ptype == 3) {
 			free(best);
 			best = malloc(pl);
@@ -230,7 +233,11 @@ static unsigned char *id3_art(FILE *f, size_t *len)
 	if (!tag || fread(tag, 1, size, f) != size) { free(tag); return NULL; }
 	uint32_t o = 0;
 	if (h[5] & 0x40) {                                  /* an extended header first */
-		uint32_t xl = h[3] == 4 ? ((uint32_t)(tag[0] & 0x7f) << 21 | (uint32_t)(tag[1] & 0x7f) << 14 | (uint32_t)(tag[2] & 0x7f) << 7 | (tag[3] & 0x7f)) : be32(tag) + 4;
+		if (size < 4) { free(tag); return NULL; }
+		uint32_t xl = h[3] == 4 ? ((uint32_t)(tag[0] & 0x7f) << 21 | (uint32_t)(tag[1] & 0x7f) << 14 | (uint32_t)(tag[2] & 0x7f) << 7 | (tag[3] & 0x7f)) : be32(tag);
+		if (h[3] == 3 && xl > size - 4) { free(tag); return NULL; }   /* v2.3's size leaves out its own 4 bytes */
+		if (h[3] == 3) xl += 4;
+		if (xl > size) { free(tag); return NULL; }      /* past the tag (and o + 10 below can't wrap) */
 		o = xl;
 	}
 	unsigned char *best = NULL;
@@ -451,7 +458,7 @@ static struct {
 
 static int read_toc(toc_t *t)
 {
-	int fd = open(CD_DEV, O_RDONLY | O_NONBLOCK);
+	int fd = open(CD_DEV, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 	if (fd < 0) return -1;
 	int ok = -1;
 	if (ioctl(fd, CDROM_DRIVE_STATUS, CDSL_CURRENT) == CDS_DISC_OK) {
@@ -717,7 +724,7 @@ static int out_open(int rate)
 	if (out_fd >= 0 && out_rate == rate) return 0;
 	out_close();
 	int p[2];
-	if (pipe(p)) return -1;
+	if (pipe2(p, O_CLOEXEC)) return -1;   /* no copies leak into other threads' children (curl etc.) */
 	char r[16];
 	snprintf(r, sizeof(r), "%d", rate);
 	const char *argv[] = { "aplay", "-q", "-t", "raw", "-f", "S16_LE", "-c", "2", "-r", r, "-B", "200000", NULL };
@@ -725,7 +732,7 @@ static int out_open(int rate)
 	posix_spawn_file_actions_init(&fa);
 	posix_spawn_file_actions_adddup2(&fa, p[0], 0);
 	posix_spawn_file_actions_addclose(&fa, p[1]);
-	int devnull = open("/dev/null", O_WRONLY);
+	int devnull = open("/dev/null", O_WRONLY | O_CLOEXEC);
 	if (devnull >= 0) posix_spawn_file_actions_adddup2(&fa, devnull, 2);
 	int rc = posix_spawnp(&out_pid, "aplay", &fa, NULL, (char *const *)argv, environ);
 	posix_spawn_file_actions_destroy(&fa);
@@ -733,7 +740,6 @@ static int out_open(int rate)
 	close(p[0]);
 	if (rc) { close(p[1]); out_pid = -1; return -1; }
 	out_fd = p[1];
-	fcntl(out_fd, F_SETFD, FD_CLOEXEC);
 	out_rate = rate;
 	out_ch = 2;
 	return 0;
@@ -773,7 +779,7 @@ static int dec_open(dec_t *d, const qitem_t *it)
 		pthread_mutex_unlock(&lk);
 		if (!ok) return -1;
 		if (it->cd_track < cd.toc.last && !cd.toc.audio[it->cd_track + 1]) d->cd_lba1 -= 11400;   /* before a data track (CD-Extra) */
-		d->cdfd = open(CD_DEV, O_RDONLY | O_NONBLOCK);
+		d->cdfd = open(CD_DEV, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 		if (d->cdfd < 0) return -1;
 		ioctl(d->cdfd, CDROM_SELECT_SPEED, 4);       /* quiet */
 		d->kind = 5; d->rate = 44100; d->ch = 2;
@@ -991,7 +997,7 @@ static void *ripper(void *arg)
 	rip.all_sectors = 0;
 	for (int i = t.first; i <= t.last; i++) if (t.audio[i]) rip.all_sectors += (i < t.last ? t.lba[i + 1] : t.leadout) - t.lba[i];
 	pthread_mutex_unlock(&lk);
-	int fd = open(CD_DEV, O_RDONLY | O_NONBLOCK);
+	int fd = open(CD_DEV, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 	int failed = fd < 0;
 	if (fd >= 0) ioctl(fd, CDROM_SELECT_SPEED, 0);       /* as fast as the drive goes */
 	uint8_t *a = malloc(24 * 2352), *b = malloc(24 * 2352);
