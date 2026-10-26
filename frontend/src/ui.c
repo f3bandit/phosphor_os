@@ -436,6 +436,19 @@ static int ig_from_disc;           /* ... and whether it plays from the dock's d
 static cJSON *ig_game;             /* ... its details: box art and description beside the in-game menu */
 static char ig_file[1024];         /* the file Phosphor's Main last said was loaded (status "file") */
 static char ig_core[64];           /* the core the in-game menu last opened over */
+/* after a launch: what's running now (the in-game menu's title and details) */
+static void play_id_quiet(long long id)
+{
+	toast_show("Starting...");
+	cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", id);
+	cJSON *gg = api_ok(g) ? cJSON_DetachItemFromObject(g, "game") : NULL;
+	snprintf(ig_title, sizeof(ig_title), "%s", gg && api_str(gg, "title") ? api_str(gg, "title") : "");
+	ig_from_disc = 0;
+	ig_file[0] = ig_core[0] = 0;
+	cJSON_Delete(ig_game);
+	ig_game = cJSON_IsObject(gg) ? gg : (cJSON_Delete(gg), NULL);
+	cJSON_Delete(g);
+}
 static void play_id(long long id)
 {
 	cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
@@ -8524,15 +8537,16 @@ static void raview_key(int k)
  * screen over the running game (Main's "ingame"; the game keeps running behind it) and the controller
  * here, until Back. Needs Phosphor's Main with API 5. */
 static vlist_t ig_list;
-enum { IG_BACK, IG_ACH, IG_DISC, IG_OSD, IG_QUIT };
-static int ig_rows[5], ig_n;
+enum { IG_BACK, IG_ACH, IG_DISC, IG_OSD, IG_QUIT, IG_LOAD, IG_CORE };
+static int ig_rows[8], ig_n;
 /* RetroAchievements in the game being played (Main's "ra"): the Achievements row and its list */
 static struct { int on, total, unlocked, points, points_unlocked, hardcore, view; cJSON *list; } igra;
 static lv_obj_t *ig_left, *ig_ach_desc;
 static vlist_t ig_ach_list;
 static void ig_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	static const char *const NAME[] = { "Back to the game", "Achievements", "Change disc", "MiSTer menu", "Quit to Phosphor" };
+	static const char *const NAME[] = { "Back to the game", "Achievements", "Change disc", "MiSTer menu", "Quit to Phosphor",
+	                                    "Load another game", "Change core" };
 	*dim = 0;
 	snprintf(t, n, "%s", NAME[ig_rows[i]]);
 	if (ig_rows[i] == IG_ACH) snprintf(val, vn, "%d / %d", igra.unlocked, igra.total);
@@ -8643,6 +8657,204 @@ static void ig_left_ach(void)
 	static const char *const hints[] = { "\xE2\x86\x95", "Look", "B", "Back", NULL };
 	footer_set(hints);
 }
+/* ---------- the in-game menu: another game, another core ----------
+ * Load another game: the games of the system being played (first row: another system), search with Y.
+ * Change core: the cores this game can run on (phosphord's "cores": its system's, the RetroAchievements
+ * one, other systems' that take the same files); the one running is marked. A asks first ("Press A
+ * again"), since the game running stops; then it starts straight from here, no stop at Home. */
+enum { IGP_NONE, IGP_GAMES, IGP_SYSTEMS, IGP_CORES };
+static struct {
+	int view;
+	char sys[24], q[64];
+	cJSON *items;                     /* games, systems or cores */
+	vlist_t list;
+	int asked_row;                    /* the row A was pressed on once (-1: none) */
+	uint32_t asked_at;
+} igp = { .asked_row = -1 };
+static void ig_left_game(void);
+static void ig_left_pick(void);
+
+static int igp_extra(void) { return igp.view == IGP_GAMES && !igp.q[0] ? 1 : 0; }   /* the "another system" row */
+static cJSON *igp_item(int i) { return cJSON_GetArrayItem(igp.items, i - igp_extra()); }
+
+static void igp_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	if (i < igp_extra()) { snprintf(t, n, "Another system"); snprintf(val, vn, ">"); return; }
+	cJSON *x = igp_item(i);
+	if (igp.view == IGP_GAMES) {
+		snprintf(t, n, "%s", x && api_str(x, "title") ? api_str(x, "title") : "");
+		if (igp.q[0] && x && api_str(x, "system")) snprintf(val, vn, "%s", system_name(api_str(x, "system")));
+	} else if (igp.view == IGP_SYSTEMS) {
+		snprintf(t, n, "%s", x && api_str(x, "name") ? api_str(x, "name") : "");
+		snprintf(val, vn, "%d", x ? (int)api_num(x, "games", 0) : 0);
+	} else {
+		const char *core = x ? api_str(x, "core") : NULL;
+		int on = core && ig_core[0] && !strcasecmp(core, ig_core);
+		snprintf(t, n, "%s", x && api_str(x, "name") ? api_str(x, "name") : "");
+		snprintf(val, vn, "%s", on ? "Running now" : "");
+		*dim = on;
+	}
+}
+
+static void igp_load(void)
+{
+	cJSON_Delete(igp.items);
+	igp.items = NULL;
+	cJSON *r = NULL;
+	if (igp.view == IGP_GAMES && igp.q[0]) {
+		cJSON *q = cJSON_CreateObject();
+		cJSON_AddStringToObject(q, "cmd", "games");
+		cJSON_AddStringToObject(q, "q", igp.q);
+		cJSON_AddNumberToObject(q, "limit", 500);
+		char *b = cJSON_PrintUnformatted(q);
+		cJSON_Delete(q);
+		r = api_call("%s", b);
+		free(b);
+	} else if (igp.view == IGP_GAMES) r = api_call("{\"cmd\":\"games\",\"system\":\"%s\"}", igp.sys);
+	else if (igp.view == IGP_SYSTEMS) r = api_call("{\"cmd\":\"systems\"}");
+	else r = api_call("{\"cmd\":\"cores\",\"id\":%lld}", ig_game ? (long long)api_num(ig_game, "id", -1) : -1LL);
+	const char *key = igp.view == IGP_GAMES ? "games" : igp.view == IGP_SYSTEMS ? "systems" : "cores";
+	if (api_ok(r)) igp.items = cJSON_DetachItemFromObject(r, key);
+	else if (r && api_str(r, "error")) toast_show(api_str(r, "error"));
+	cJSON_Delete(r);
+}
+
+static void igp_open(int view)
+{
+	igp.view = view;
+	igp.asked_row = -1;
+	if (view == IGP_GAMES && !igp.sys[0]) {
+		const char *s = ig_game ? api_str(ig_game, "system") : NULL;
+		if (s && *s) snprintf(igp.sys, sizeof(igp.sys), "%s", s);
+		else igp.view = view = IGP_SYSTEMS;          /* the game isn't in the library: pick a system first */
+	}
+	igp_load();
+	if (view == IGP_CORES && cJSON_GetArraySize(igp.items) < 2) {
+		toast_show(cJSON_GetArraySize(igp.items) ? "This game runs on one core only" : "No core for this game is installed");
+		igp.view = IGP_NONE;
+		return;
+	}
+	ig_left_pick();
+}
+
+static void igp_close(void)
+{
+	igp.view = IGP_NONE;
+	igp.q[0] = 0;
+	igp.asked_row = -1;
+	cJSON_Delete(igp.items);
+	igp.items = NULL;
+	ig_left_game();
+	static const char *const hints[] = { "A", "Select", "B", "Back to the game", NULL };
+	footer_set(hints);
+}
+
+static void ig_left_pick(void)
+{
+	lv_obj_clean(ig_left);
+	ig_ach_desc = NULL;
+	char head[120];
+	if (igp.view == IGP_GAMES && igp.q[0]) snprintf(head, sizeof(head), "\"%s\"", igp.q);
+	else if (igp.view == IGP_GAMES) snprintf(head, sizeof(head), "%s", system_name(igp.sys));
+	else if (igp.view == IGP_SYSTEMS) snprintf(head, sizeof(head), "Pick a system");
+	else snprintf(head, sizeof(head), "%s", ig_title[0] ? ig_title : "This game");
+	lv_obj_t *e = mk_label(ig_left, FONT_LABEL, PAL.dim, igp.view == IGP_CORES ? "CHANGE CORE" : "LOAD ANOTHER GAME");
+	lv_obj_set_style_text_letter_space(e, S(3), 0);
+	lv_obj_set_pos(e, S(56), S(96));
+	lv_obj_t *hl = mk_label(ig_left, FONT_TITLE, PAL.text, head);
+	lv_label_set_long_mode(hl, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(hl, W - S(460) - S(112));
+	lv_obj_set_pos(hl, S(56), S(120));
+	vlist_create(&igp.list, ig_left, S(48), S(170), W - S(460) - S(96), S(460));
+	igp.list.fill = igp_fill;
+	igp.list.count = cJSON_GetArraySize(igp.items) + igp_extra();
+	igp.list.sel = igp.list.top = 0;
+	vlist_refresh(&igp.list);
+	if (!cJSON_GetArraySize(igp.items)) {
+		lv_obj_t *m = mk_label(ig_left, FONT_BODY, PAL.dim, igp.view == IGP_GAMES ? (igp.q[0] ? "Nothing found." : "No games here.") : "Nothing here.");
+		lv_obj_set_pos(m, S(56), S(240));
+	}
+	static const char *const gh[] = { "A", "Load", "Y", "Search", "B", "Back", NULL };
+	static const char *const ch[] = { "A", "Start on it", "B", "Back", NULL };
+	static const char *const sh[] = { "A", "Open", "B", "Back", NULL };
+	footer_set(igp.view == IGP_GAMES ? gh : igp.view == IGP_CORES ? ch : sh);
+}
+
+static void igp_search_done(const char *text)
+{
+	if (cur != SCR_INGAME || igp.view != IGP_GAMES) return;
+	if (!text) { ig_left_pick(); return; }          /* (left the keyboard) */
+	snprintf(igp.q, sizeof(igp.q), "%s", text);
+	igp_load();
+	ig_left_pick();
+}
+
+/* A twice on the same row within 4 s: the game running stops, this one starts */
+static int igp_confirmed(const char *what)
+{
+	uint32_t now = lv_tick_get();
+	if (igp.asked_row == igp.list.sel && now - igp.asked_at <= 4000) { igp.asked_row = -1; return 1; }
+	igp.asked_row = igp.list.sel;
+	igp.asked_at = now;
+	char m[200];
+	snprintf(m, sizeof(m), "Press A again to start %.120s: unsaved progress is lost", what);
+	toast_show(m);
+	return 0;
+}
+
+static void igp_start(long long id, int core)
+{
+	mainlink_ingame(0);                               /* the game's own picture back, then the new one */
+	cJSON *r = core >= 0 ? api_call("{\"cmd\":\"launch\",\"id\":%lld,\"core\":%d}", id, core)
+	                     : api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
+	int ok_ = api_ok(r);
+	if (!ok_) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
+	cJSON_Delete(r);
+	if (!ok_) return;
+	igp.view = IGP_NONE;
+	cJSON_Delete(igp.items);
+	igp.items = NULL;
+	igp.q[0] = 0;
+	igp.sys[0] = 0;
+	play_id_quiet(id);
+	show_home();
+}
+
+static void igp_key(int k)
+{
+	if (vlist_key(&igp.list, k)) { igp.asked_row = -1; return; }
+	if (k == K_B || k == K_MENU) {
+		if (igp.view == IGP_GAMES && igp.q[0]) { igp.q[0] = 0; igp_load(); ig_left_pick(); return; }
+		if (igp.view == IGP_SYSTEMS && igp.sys[0]) { igp.view = IGP_GAMES; igp_load(); ig_left_pick(); return; }
+		igp_close();
+		return;
+	}
+	if (k == K_Y && igp.view == IGP_GAMES) {
+		static const char *const back[] = { "A", "Load", "Y", "Search", "B", "Back", NULL };
+		osk_open("Search", "Part of a game's name, then Done.", 0, 60, igp_search_done, back);
+		return;
+	}
+	if (k != K_A) return;
+	int i = igp.list.sel;
+	if (i < igp_extra()) { igp.view = IGP_SYSTEMS; igp_load(); ig_left_pick(); return; }
+	cJSON *x = igp_item(i);
+	if (!x) return;
+	if (igp.view == IGP_SYSTEMS) {
+		snprintf(igp.sys, sizeof(igp.sys), "%s", api_str(x, "id") ? api_str(x, "id") : "");
+		igp.view = IGP_GAMES;
+		igp_load();
+		ig_left_pick();
+	} else if (igp.view == IGP_GAMES) {
+		if (igp_confirmed(api_str(x, "title") ? api_str(x, "title") : "it")) igp_start((long long)api_num(x, "id", -1), -1);
+	} else {
+		const char *core = api_str(x, "core");
+		if (core && ig_core[0] && !strcasecmp(core, ig_core)) { toast_show("It's running on that core now"); return; }
+		if (igp_confirmed(api_str(x, "name") ? api_str(x, "name") : "it"))
+			igp_start(ig_game ? (long long)api_num(ig_game, "id", -1) : -1, (int)api_num(x, "index", 0));
+	}
+}
+
 static void ingame_open(void)
 {
 	if (cur == SCR_INGAME || !mainlink_has_ingame()) return;
@@ -8670,6 +8882,8 @@ static void ingame_open(void)
 	ig_rows[ig_n++] = IG_BACK;
 	if (igra.on) ig_rows[ig_n++] = IG_ACH;
 	if (ig_from_disc && dk.enabled) ig_rows[ig_n++] = IG_DISC;
+	ig_rows[ig_n++] = IG_LOAD;
+	if (ig_game && !ig_from_disc) ig_rows[ig_n++] = IG_CORE;   /* (a library game: its cores are known) */
 	ig_rows[ig_n++] = IG_OSD;
 	ig_rows[ig_n++] = IG_QUIT;
 	lv_obj_clean(body);
@@ -8768,6 +8982,7 @@ static void ingame_close(int to_game)
 }
 static void ingame_key(int k)
 {
+	if (igp.view) { igp_key(k); return; }
 	if (igra.view) {                         /* the achievements on the left */
 		if (vlist_key(&ig_ach_list, k)) return;     /* (filling the rows sets the highlighted one's description) */
 		if (k == K_B || k == K_MENU) {
@@ -8790,6 +9005,8 @@ static void ingame_key(int k)
 		toast_show("Put the next disc in and close the tray");
 		break;
 	case IG_OSD: mainlink_ingame_osd(); show_home(); break;
+	case IG_LOAD: igp_open(IGP_GAMES); break;
+	case IG_CORE: igp_open(IGP_CORES); break;
 	case IG_QUIT: mainlink_quit_game(); show_home(); break;
 	}
 }
