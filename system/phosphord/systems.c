@@ -149,6 +149,28 @@ int system_dirs(const gsys_t *s, char out[][512], int max)
 	return n;
 }
 
+/* the newest installed file of a core ("_Console/SNES" -> /media/fat/_Console/SNES_20250101.rbf):
+   the dated name sorts by date; 0 when there's none */
+int system_core_file(const char *rbf, char *out, size_t n)
+{
+	char dir[600], base[128], best[256] = "";
+	const char *slash = strrchr(rbf, '/');
+	snprintf(dir, sizeof(dir), "%s/%.*s", p_fat(), slash ? (int)(slash - rbf) : 0, rbf);
+	snprintf(base, sizeof(base), "%s", slash ? slash + 1 : rbf);
+	DIR *d = opendir(dir);
+	if (!d) return 0;
+	struct dirent *e;
+	size_t bl = strlen(base);
+	while ((e = readdir(d)))
+		if (!strncasecmp(e->d_name, base, bl) && (e->d_name[bl] == '_' || e->d_name[bl] == '.') && has_ext(e->d_name, "rbf")
+		    && strcmp(e->d_name, best) > 0)
+			snprintf(best, sizeof(best), "%s", e->d_name);
+	closedir(d);
+	if (!best[0]) return 0;
+	snprintf(out, n, "%s/%s", dir, best);
+	return 1;
+}
+
 int system_core(const gsys_t *s, char *rbf, size_t rn)
 {
 	if (!strcmp(s->id, "Arcade")) { if (rn) rbf[0] = 0; return 1; }

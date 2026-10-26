@@ -12,6 +12,8 @@
  *   last                                    the last game played (same shape as game), or null
  *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
  *   game_cores id                           the cores it can start on: [{index, name, core}]
+ *   system_cores                            every installed core: [{id, name, core}]
+ *   load_core  system                       that system's core, no game
  *   favorite   id on                        mark or unmark
  *   rescan [stop:true]                      look for games (list them, then identify them); only ever on request.
  *                                           stop: stop it (what's done stays)
@@ -1856,6 +1858,13 @@ char *api_handle(sqlite3 *db, const char *request)
 		char err[300];
 		cJSON *core = cJSON_GetObjectItem(req, "core");   /* (an index from "cores"; none: the usual one) */
 		out = play_launch_core(db, req_id(req), cJSON_IsNumber(core) ? core->valueint : -1, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "system_cores")) {   /* every installed core (the in-game menu's Change core) */
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "cores", play_system_cores());
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "load_core")) {      /* a system's core, no game */
+		char err[300];
+		out = play_load_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "system")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	} else if (!strcmp(c->valuestring, "game_cores")) {     /* the cores a game can start on (the in-game menu) */
 		char err[300];
 		cJSON *a = play_cores(db, req_id(req), err, sizeof(err));

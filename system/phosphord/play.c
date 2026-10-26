@@ -253,6 +253,40 @@ int play_launch_core(sqlite3 *db, long long id, int core, char *err, size_t errn
 
 int play_launch(sqlite3 *db, long long id, char *err, size_t errn) { return play_launch_core(db, id, -1, err, errn); }
 
+/* every system whose core is installed (not arcade: its games are its cores), for the in-game menu's
+   Change core: [{id, name, core}] */
+cJSON *play_system_cores(void)
+{
+	cJSON *a = cJSON_CreateArray();
+	for (int i = 0; i < NSYS; i++) {
+		char rbf[96], b[96];
+		if (!strcmp(SYS[i].id, "Arcade") || !system_core(&SYS[i], rbf, sizeof(rbf))) continue;
+		base_name(rbf, b, sizeof(b));
+		cJSON *x = cJSON_CreateObject();
+		cJSON_AddStringToObject(x, "id", SYS[i].id);
+		cJSON_AddStringToObject(x, "name", SYS[i].name);
+		cJSON_AddStringToObject(x, "core", b);
+		cJSON_AddItemToArray(a, x);
+	}
+	return a;
+}
+
+/* a system's core on its own, no game (its own menu loads one, as when it's picked in MiSTer's menu) */
+int play_load_core(sqlite3 *db, const char *sys_id, char *err, size_t errn)
+{
+	const gsys_t *s = sys_id ? system_by_id(sys_id) : NULL;
+	char rbf[96], file[800], cmd[900];
+	if (!s || !strcmp(s->id, "Arcade")) { snprintf(err, errn, "Unknown system"); return -1; }
+	if (!system_core(s, rbf, sizeof(rbf)) || !system_core_file(rbf, file, sizeof(file))) {
+		snprintf(err, errn, "The %s core isn't installed", s->name);
+		return -1;
+	}
+	music_stop();
+	add_play_time(db);                       /* (the game left: its time) */
+	snprintf(cmd, sizeof(cmd), "load_core %s\n", file);
+	return mister_cmd(cmd, err, errn);
+}
+
 void play_track(sqlite3 *db, long long id)
 {
 	if (id > 0) {
