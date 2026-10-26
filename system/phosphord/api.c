@@ -1354,6 +1354,17 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "categories")) out = cmd_categories(db);
 	else if (!strcmp(c->valuestring, "systems")) out = cmd_systems(db, req);
 	else if (!strcmp(c->valuestring, "games")) out = cmd_games(db, req);
+	else if (!strcmp(c->valuestring, "game_at")) {          /* the game a file belongs to (the in-game menu: what's running) */
+		const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(req, "path"));
+		long long gid = -1;
+		sqlite3_stmt *st;
+		if (path && *path && sqlite3_prepare_v2(db, "SELECT game_id FROM files WHERE path=? ORDER BY online DESC LIMIT 1", -1, &st, NULL) == SQLITE_OK) {
+			sqlite3_bind_text(st, 1, path, -1, SQLITE_STATIC);
+			if (sqlite3_step(st) == SQLITE_ROW) gid = sqlite3_column_int64(st, 0);
+			sqlite3_finalize(st);
+		}
+		out = gid >= 0 ? cmd_game(db, gid) : fail("not in the library");
+	}
 	else if (!strcmp(c->valuestring, "game")) out = cmd_game(db, req_id(req));
 	else if (!strcmp(c->valuestring, "last")) out = cmd_last(db);
 	else if (!strcmp(c->valuestring, "link")) out = cmd_link(db, req);

@@ -430,6 +430,8 @@ static void load_home_data(void)
 static char ig_title[160];         /* the game just started (the in-game menu's title) */
 static int ig_from_disc;           /* ... and whether it plays from the dock's drive */
 static cJSON *ig_game;             /* ... its details: box art and description beside the in-game menu */
+static char ig_file[1024];         /* the file Phosphor's Main last said was loaded (status "file") */
+static char ig_core[64];           /* the core the in-game menu last opened over */
 static void play_id(long long id)
 {
 	cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
@@ -441,6 +443,7 @@ static void play_id(long long id)
 		cJSON *gg = api_ok(g) ? cJSON_DetachItemFromObject(g, "game") : NULL;
 		snprintf(ig_title, sizeof(ig_title), "%s", gg && api_str(gg, "title") ? api_str(gg, "title") : "");
 		ig_from_disc = 0;
+		ig_file[0] = ig_core[0] = 0;
 		cJSON_Delete(ig_game);
 		ig_game = cJSON_IsObject(gg) ? gg : (cJSON_Delete(gg), NULL);
 		cJSON_Delete(g);
@@ -512,6 +515,7 @@ static void disc_play_now(void)
 	else {
 		toast_show("Starting...");
 		snprintf(ig_title, sizeof(ig_title), "%.159s", dk.title);
+		ig_file[0] = ig_core[0] = 0;
 		ig_from_disc = 1;
 		/* the in-game menu's details: the library game with the same disc code, else what the drive says */
 		cJSON_Delete(ig_game);
@@ -8430,6 +8434,46 @@ static void ingame_open(void)
 	lv_obj_set_style_border_side(sheet, LV_BORDER_SIDE_LEFT, 0);
 	lv_obj_set_style_border_width(sheet, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(sheet, PAL.line, 0);
+	/* what's running: Phosphor's Main says which file was loaded into this core (also one chosen in
+	   MiSTer's own menu, or another core loaded there), so the menu never shows the game from before */
+	{
+		char *q = mainlink_query("status");
+		cJSON *st = q ? cJSON_Parse(q) : NULL;
+		free(q);
+		const char *file = api_ok(st) ? api_str(st, "file") : NULL, *core = api_ok(st) ? api_str(st, "core") : NULL;
+		if (file && *file) {
+			if (strcmp(file, ig_file)) {             /* another file than the one shown before: look it up */
+				cJSON *q2 = cJSON_CreateObject();
+				cJSON_AddStringToObject(q2, "cmd", "game_at");
+				cJSON_AddStringToObject(q2, "path", file);
+				char *b2 = cJSON_PrintUnformatted(q2);
+				cJSON_Delete(q2);
+				cJSON *r = b2 ? api_call("%s", b2) : NULL;
+				free(b2);
+				cJSON *gg = api_ok(r) ? cJSON_DetachItemFromObject(r, "game") : NULL;
+				cJSON_Delete(r);
+				cJSON_Delete(ig_game);
+				ig_game = cJSON_IsObject(gg) ? gg : (cJSON_Delete(gg), NULL);
+				ig_from_disc = 0;
+				if (ig_game && api_str(ig_game, "title")) snprintf(ig_title, sizeof(ig_title), "%s", api_str(ig_game, "title"));
+				else {                                   /* not in the library: its file name */
+					const char *b = strrchr(file, '/');
+					snprintf(ig_title, sizeof(ig_title), "%.159s", b ? b + 1 : file);
+					char *dot = strrchr(ig_title, '.');
+					if (dot && dot != ig_title) *dot = 0;
+				}
+				snprintf(ig_file, sizeof(ig_file), "%s", file);
+			}
+		} else if (core && *core && ig_core[0] && strcmp(core, ig_core) && !ig_from_disc) {
+			cJSON_Delete(ig_game);                       /* another core, no file: just its name */
+			ig_game = NULL;
+			snprintf(ig_title, sizeof(ig_title), "%s", core);
+			ig_file[0] = 0;
+		}
+		if (core && *core) snprintf(ig_core, sizeof(ig_core), "%s", core);
+		if (st) cJSON_Delete(st);
+		if (core && *core && !ig_game && ig_title[0]) goto ig_known;   /* known to be no library game */
+	}
 	/* the game on the left: its box art and what it's about (as on its page in the library). Started
 	   some other way (the phone, Phosphor for Windows) or the shell restarted: the last game launched */
 	if (!ig_game) {
@@ -8439,6 +8483,7 @@ static void ingame_open(void)
 		else cJSON_Delete(gg);
 		cJSON_Delete(r);
 	}
+ig_known:
 	ig_left_game();
 	char eb[200];
 	snprintf(eb, sizeof(eb), "%s%s%s", ig_title[0] ? ig_title : "In game", ig_from_disc ? "  \xC2\xB7  from the disc" : "",
