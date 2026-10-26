@@ -9,6 +9,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -232,6 +235,11 @@ func steamArt(appid string) string {
 		return ""
 	}
 	lc := filepath.Join(sp, "appcache", "librarycache")
+	// the soundtrack's album cover: Steam keeps it square (1000 x 1000) under a hashed name in the
+	// app's folder, beside header.jpg (a 460 x 215 banner) and a small icon
+	if sq := squareArt(filepath.Join(lc, appid)); sq != "" {
+		return sq
+	}
 	prefs := []string{"library_600x900", "library_capsule", "header", "capsule"}
 	for _, p := range prefs {
 		for _, f := range []string{appid + "_" + p + ".jpg", filepath.Join(appid, p+".jpg")} {
@@ -276,6 +284,35 @@ func steamArt(appid string) string {
 		return ""
 	}
 	return dst
+}
+
+// the biggest square picture (at least 300 px) in dir and below
+func squareArt(dir string) string {
+	best, bestW := "", 0
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(p))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			return nil
+		}
+		f, e := os.Open(p)
+		if e != nil {
+			return nil
+		}
+		c, _, e := image.DecodeConfig(f)
+		f.Close()
+		if e != nil || c.Width < 300 || c.Width <= bestW {
+			return nil
+		}
+		if diff := c.Width - c.Height; diff*20 > c.Width || -diff*20 > c.Width { // more than 5% off square
+			return nil
+		}
+		best, bestW = p, c.Width
+		return nil
+	})
+	return best
 }
 
 var artMu sync.Mutex
