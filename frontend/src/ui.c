@@ -35,7 +35,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -320,10 +320,10 @@ static int vlist_key(vlist_t *v, pkey_t k)
 /* ---------- Home: category shelf ---------- */
 
 static const icon_t CAT_ICON[CAT_COUNT] = { ICON_DISC, ICON_CARTRIDGE, ICON_HANDHELD, ICON_ARCADE, ICON_COMPUTER };
-/* the shelf: the categories, then Favorites and Recently played */
-enum { SH_FAV = CAT_COUNT, SH_RECENT, SHELF_COUNT };
-static icon_t shelf_icon(int i) { return i == SH_FAV ? ICON_STAR : i == SH_RECENT ? ICON_CLOCK : CAT_ICON[i]; }
-static const char *shelf_name(int i) { return i == SH_FAV ? "Favorites" : i == SH_RECENT ? "Recently played" : category_name((category_t)i); }
+/* the shelf: the categories, Music, then Favorites and Recently played */
+enum { SH_MUSIC = CAT_COUNT, SH_FAV, SH_RECENT, SHELF_COUNT };
+static icon_t shelf_icon(int i) { return i == SH_MUSIC ? ICON_MUSIC : i == SH_FAV ? ICON_STAR : i == SH_RECENT ? ICON_CLOCK : CAT_ICON[i]; }
+static const char *shelf_name(int i) { return i == SH_MUSIC ? "Music" : i == SH_FAV ? "Favorites" : i == SH_RECENT ? "Recently played" : category_name((category_t)i); }
 
 static struct {
 	lv_obj_t *card[SHELF_COUNT], *ic[SHELF_COUNT], *nm[SHELF_COUNT], *ct[SHELF_COUNT];
@@ -396,6 +396,9 @@ static void load_home_data(void)
 	r = api_call("{\"cmd\":\"games\",\"filter\":\"recent\",\"limit\":0}");
 	if (api_ok(r)) cat_count[SH_RECENT] = (int)api_num(r, "total", 0);
 	cJSON_Delete(r);
+	r = api_call("{\"cmd\":\"music_albums\"}");
+	if (api_ok(r)) cat_count[SH_MUSIC] = cJSON_GetArraySize(cJSON_GetObjectItem(r, "albums")) + (cJSON_GetObjectItem(r, "cd") ? 1 : 0);
+	cJSON_Delete(r);
 	r = api_call("{\"cmd\":\"categories\"}");
 	if (api_ok(r)) {
 		cJSON *it;
@@ -459,6 +462,11 @@ static void systems_disc_update(void);
 static void discs_screen_update(void);
 static void show_discs(void);
 static void show_ra(void);
+static void show_music(void);
+static void music_key(int k);
+static void nowplay_key(int k);
+static void music_tick(void);
+static void show_nowplay(void);
 static void ra_key(int k);
 static void raview_key(int k);
 static void ra_tick(void);
@@ -542,6 +550,7 @@ static void home_counts(void)
 		int n = cat_count[c];
 		char t[48];
 		if (n < 0) snprintf(t, sizeof(t), "Looking...");
+		else if (c == SH_MUSIC) snprintf(t, sizeof(t), "%d album%s", n, n == 1 ? "" : "s");
 		else snprintf(t, sizeof(t), "%d game%s", n, n == 1 ? "" : "s");
 		lv_label_set_text(home.ct[c], t);
 	}
@@ -597,7 +606,10 @@ static void show_home(void)
 	lv_obj_set_style_border_color(art, lv_color_hex(0x3a3530), 0);
 	lv_obj_set_style_clip_corner(art, true, 0);
 	lv_obj_align(art, LV_ALIGN_LEFT_MID, S(28), 0);
-	const char *last_art = last_game ? api_str(last_game, "art") : NULL;
+	/* music playing: the bar shows it (Music › Now playing) instead of the last game */
+	cJSON *mr = api_call("{\"cmd\":\"music\"}");
+	cJSON *mtrack = api_ok(mr) ? cJSON_GetObjectItem(cJSON_GetObjectItem(mr, "music"), "track") : NULL;
+	const char *last_art = mtrack ? api_str(mtrack, "cover") : last_game ? api_str(last_game, "art") : NULL;
 	if (last_art) {
 		static char src[1100];
 		snprintf(src, sizeof(src), "A:%s", last_art);
@@ -608,11 +620,11 @@ static void show_home(void)
 		lv_obj_center(img);
 	} else {
 		int cat = last_game ? (int)api_num(last_game, "category", 0) : 0;
-		lv_obj_t *aic = icon_create(art, CAT_ICON[cat >= 0 && cat < CAT_COUNT ? cat : 0], S(34));
+		lv_obj_t *aic = icon_create(art, mtrack ? ICON_MUSIC : CAT_ICON[cat >= 0 && cat < CAT_COUNT ? cat : 0], S(34));
 		lv_obj_set_style_text_color(aic, PAL.acc, 0);
 		lv_obj_center(aic);
 	}
-	lv_obj_t *l1 = mk_label(cont, FONT_LABEL, PAL.dim, "PICK UP WHERE YOU LEFT OFF");
+	lv_obj_t *l1 = mk_label(cont, FONT_LABEL, PAL.dim, mtrack ? "NOW PLAYING" : "PICK UP WHERE YOU LEFT OFF");
 	lv_obj_set_style_text_letter_space(l1, S(3), 0);
 	lv_obj_set_pos(l1, S(124), S(28));
 	home.cont_title = mk_label(cont, FONT_TITLE, PAL.text, "");
@@ -630,6 +642,14 @@ static void show_home(void)
 		lv_obj_align(pill, LV_ALIGN_RIGHT_MID, -S(28), 0);
 	}
 	home_continue();
+	if (mtrack) {
+		lv_label_set_text(home.cont_title, api_str(mtrack, "title") ? api_str(mtrack, "title") : "");
+		char sub[300];
+		snprintf(sub, sizeof(sub), "%s%s%s", api_str(mtrack, "album") ? api_str(mtrack, "album") : "",
+		         api_str(mtrack, "artist") && *api_str(mtrack, "artist") ? "  \xC2\xB7  " : "", api_str(mtrack, "artist") ? api_str(mtrack, "artist") : "");
+		lv_label_set_text(home.cont_sub, sub);
+	}
+	cJSON_Delete(mr);
 
 	static const char *const hints_last[] = { "A", "Open", "X", "Play last", "Y", "Search", "\xE2\x89\xA1", "Settings", NULL };
 	static const char *const hints[] = { "A", "Open", "Y", "Search", "\xE2\x89\xA1", "Settings", NULL };
@@ -7304,6 +7324,7 @@ void ui_key(pkey_t k)
 	case SCR_HOME:
 		if (k == K_LEFT) shelf_go(home.sel - 1);
 		else if (k == K_RIGHT) shelf_go(home.sel + 1);
+		else if (k == K_A && home.sel == SH_MUSIC) show_music();
 		else if (k == K_A && home.sel == SH_FAV) show_list(GL_FAV);
 		else if (k == K_A && home.sel == SH_RECENT) show_list(GL_RECENT);
 		else if (k == K_A) show_systems((category_t)home.sel);
@@ -7317,6 +7338,12 @@ void ui_key(pkey_t k)
 		break;
 	case SCR_RA:
 		ra_key(k);
+		break;
+	case SCR_MUSIC:
+		music_key(k);
+		break;
+	case SCR_NOWPLAY:
+		nowplay_key(k);
 		break;
 	case SCR_RAVIEW:
 		raview_key(k);
@@ -7527,6 +7554,375 @@ static void discs_key(int k)
 	else if (k == K_B || k == K_MENU) back_to_settings(SET_DISCS);
 }
 
+
+
+/* ---------- Music (phosphord music.c): albums, a music CD in the drive, Now playing ----------
+ * Plays only while no game runs. L / R pick what's shown: All, Steam, Ripped CDs, In the drive. */
+static vlist_t mu_list, mu_tracks;
+static cJSON *mu_albums, *mu_cd, *mu_status, *mu_album;   /* lists; the playing state; the album in the panel */
+static int mu_show, mu_rows[2100], mu_n, mu_tracks_view;
+static lv_obj_t *mu_cover, *mu_title, *mu_info, *mu_tl;
+static char mu_cover_src[1200];
+static const char *const MU_SHOW[] = { "All", "Steam", "Ripped CDs", "In the drive" };
+enum { MR_NOW = -2, MR_CD = -1 };       /* the rows before the albums */
+static int mu_playing(void)
+{
+	cJSON *st = mu_status ? cJSON_GetObjectItem(mu_status, "track") : NULL;
+	return st != NULL;
+}
+static void mu_load(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"music_albums\"}");
+	cJSON_Delete(mu_albums); mu_albums = NULL;
+	cJSON_Delete(mu_cd); mu_cd = NULL;
+	if (api_ok(r)) { mu_albums = cJSON_DetachItemFromObject(r, "albums"); mu_cd = cJSON_DetachItemFromObject(r, "cd"); }
+	cJSON_Delete(r);
+	r = api_call("{\"cmd\":\"music\"}");
+	cJSON_Delete(mu_status);
+	mu_status = api_ok(r) ? cJSON_DetachItemFromObject(r, "music") : NULL;
+	cJSON_Delete(r);
+	/* the rows: Now playing, the CD, then the albums this view shows */
+	mu_n = 0;
+	if (mu_playing() && mu_show == 0) mu_rows[mu_n++] = MR_NOW;
+	if (mu_cd && (mu_show == 0 || mu_show == 3)) mu_rows[mu_n++] = MR_CD;
+	cJSON *a;
+	int i = 0;
+	cJSON_ArrayForEach(a, mu_albums) {
+		const char *src = api_str(a, "source") ? api_str(a, "source") : "";
+		int keep = mu_show == 0 || (mu_show == 1 && !strcmp(src, "steam")) || (mu_show == 2 && !strcmp(src, "cd"));
+		if (keep && mu_n < 2100) mu_rows[mu_n++] = i;
+		i++;
+	}
+}
+static cJSON *mu_row_album(int row)
+{
+	if (row < 0 || row >= mu_n) return NULL;
+	return mu_rows[row] == MR_CD ? mu_cd : mu_rows[row] >= 0 ? cJSON_GetArrayItem(mu_albums, mu_rows[row]) : NULL;
+}
+static void mu_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	if (i < 0 || i >= mu_n) { t[0] = 0; val[0] = 0; return; }
+	if (mu_rows[i] == MR_NOW) {
+		cJSON *tr = cJSON_GetObjectItem(mu_status, "track");
+		snprintf(t, n, "\xE2\x99\xAA  Now playing \xC2\xB7 %s", api_str(tr, "title") ? api_str(tr, "title") : "");
+		snprintf(val, vn, "%s", !strcmp(api_str(mu_status, "state") ? api_str(mu_status, "state") : "", "paused") ? "paused" : ">");
+		return;
+	}
+	cJSON *a = mu_row_album(i);
+	if (mu_rows[i] == MR_CD) {
+		snprintf(t, n, "In the drive \xC2\xB7 %s", a && api_str(a, "title") ? api_str(a, "title") : "Music CD");
+		snprintf(val, vn, "music CD \xC2\xB7 %d tracks", a ? (int)api_num(a, "tracks", 0) : 0);
+		return;
+	}
+	snprintf(t, n, "%s", a && api_str(a, "title") ? api_str(a, "title") : "");
+	const char *src = a ? api_str(a, "source") : "";
+	snprintf(val, vn, "%s \xC2\xB7 %d", src && !strcmp(src, "steam") ? "Steam" : src && !strcmp(src, "cd") ? "ripped CD" : "album", a ? (int)api_num(a, "tracks", 0) : 0);
+}
+/* the panel: the album's cover, name, and its first tracks */
+static void mu_panel(void)
+{
+	if (!mu_title) return;
+	int row = mu_list.sel;
+	if (row < mu_n && mu_rows[row] == MR_NOW) {
+		cJSON *tr = cJSON_GetObjectItem(mu_status, "track");
+		lv_label_set_text(mu_title, api_str(tr, "album") ? api_str(tr, "album") : "");
+		char t[300];
+		snprintf(t, sizeof(t), "%s\nTrack %d of %d", api_str(tr, "artist") ? api_str(tr, "artist") : "", (int)api_num(tr, "index", 0) + 1, (int)api_num(tr, "count", 0));
+		lv_label_set_text(mu_info, t);
+		lv_label_set_text(mu_tl, "A opens Now playing");
+		const char *cv = api_str(tr, "cover");
+		lv_obj_set_hidden(mu_cover, !cv);
+		if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
+		return;
+	}
+	cJSON *a = mu_row_album(row);
+	if (!a) { lv_label_set_text(mu_title, mu_n ? "" : "No music yet"); lv_label_set_text(mu_info, mu_n ? "" : "Put albums in a Music folder on the SD card or a drive, rip a CD, or send soundtracks from Phosphor for Windows."); lv_label_set_text(mu_tl, ""); lv_obj_set_hidden(mu_cover, true); return; }
+	cJSON_Delete(mu_album);
+	mu_album = NULL;
+	if (mu_rows[row] == MR_CD) mu_album = cJSON_Duplicate(a, 1);
+	else {
+		cJSON *r = api_call("{\"cmd\":\"music_album\",\"id\":\"%s\"}", api_str(a, "id") ? api_str(a, "id") : "");
+		mu_album = api_ok(r) ? cJSON_DetachItemFromObject(r, "album") : NULL;
+		cJSON_Delete(r);
+	}
+	lv_label_set_text(mu_title, api_str(a, "title") ? api_str(a, "title") : "");
+	char t[300];
+	const char *ar = api_str(a, "artist"), *yr = api_str(a, "year");
+	snprintf(t, sizeof(t), "%s%s%s%s%d tracks%s", ar && *ar ? ar : "", ar && *ar ? "  \xC2\xB7  " : "", yr && *yr ? yr : "", yr && *yr ? "  \xC2\xB7  " : "",
+	         (int)api_num(a, "tracks", 0), mu_rows[row] == MR_CD && cJSON_IsTrue(cJSON_GetObjectItem(a, "looking")) ? "\nLooking it up on MusicBrainz..." :
+	         mu_rows[row] == MR_CD && !cJSON_IsTrue(cJSON_GetObjectItem(a, "named")) ? "\nNot in MusicBrainz" : "");
+	lv_label_set_text(mu_info, t);
+	char tl[700] = "";
+	cJSON *x;
+	int k = 0;
+	cJSON_ArrayForEach(x, cJSON_GetObjectItem(mu_album, "track_list")) {
+		if (k == 6) { strncat(tl, "...", sizeof(tl) - strlen(tl) - 1); break; }
+		char line[200];
+		snprintf(line, sizeof(line), "%d  %s\n", (int)api_num(x, "no", k + 1), api_str(x, "title") ? api_str(x, "title") : "");
+		strncat(tl, line, sizeof(tl) - strlen(tl) - 1);
+		k++;
+	}
+	lv_label_set_text(mu_tl, tl);
+	const char *cv = api_str(a, "cover");
+	lv_obj_set_hidden(mu_cover, !cv);
+	if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
+}
+static void mu_tracks_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	cJSON *x = cJSON_GetArrayItem(cJSON_GetObjectItem(mu_album, "track_list"), i);
+	*dim = 0;
+	snprintf(t, n, "%d  %s", x ? (int)api_num(x, "no", i + 1) : i + 1, x && api_str(x, "title") ? api_str(x, "title") : "");
+	long ms = x ? (long)api_num(x, "ms", 0) : 0;
+	if (ms > 0) snprintf(val, vn, "%ld:%02ld", ms / 60000, ms / 1000 % 60); else val[0] = 0;
+}
+static const char *const MU_HINTS[] = { "A", "Play", "X", "Shuffle", "Y", "Tracks", "L R", "Show", "B", "Back", NULL };
+static const char *const MU_CD_HINTS[] = { "A", "Play", "Y", "Tracks", "\xE2\x89\xA1", "Eject", "B", "Back", NULL };
+static void mu_footer(void)
+{
+	static const char *const tr_hints[] = { "A", "Play from here", "B", "Back", NULL };
+	if (mu_tracks_view) footer_set(tr_hints);
+	else footer_set(mu_list.sel < mu_n && mu_rows[mu_list.sel] == MR_CD ? MU_CD_HINTS : MU_HINTS);
+}
+static void mu_mk_chips(void)
+{
+	char b[160] = "";
+	for (int i = 0; i < 4; i++) {
+		size_t l = strlen(b);
+		snprintf(b + l, sizeof(b) - l, i == mu_show ? "%s[ %s ]" : "%s%s", i ? "     " : "", MU_SHOW[i]);
+	}
+	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.acc, b);
+	lv_obj_set_pos(c, S(56), S(170));
+}
+static void mu_draw(void)
+{
+	lv_obj_clean(body);
+	screen_title("LIBRARY", "Music");
+	mu_mk_chips();
+	lv_obj_t *panel = mk_box(body, S(480), S(420), PAL.panel, S(16));
+	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(panel, PAL.line, 0);
+	lv_obj_set_pos(panel, W - S(56) - S(480), S(204));
+	lv_obj_t *ph = mk_box(panel, S(180), S(180), lv_color_hex(0x2a2119), S(10));   /* no cover: a note */
+	lv_obj_set_pos(ph, S(24), S(24));
+	lv_obj_t *phi = icon_create(ph, ICON_MUSIC, S(64));
+	lv_obj_set_style_text_color(phi, PAL.acc, 0);
+	lv_obj_center(phi);
+	mu_cover = lv_image_create(panel);
+	lv_obj_set_size(mu_cover, S(180), S(180));
+	lv_image_set_inner_align(mu_cover, LV_IMAGE_ALIGN_CONTAIN);
+	lv_obj_set_pos(mu_cover, S(24), S(24));
+	lv_obj_set_hidden(mu_cover, true);
+	mu_title = mk_label(panel, FONT_TITLE, PAL.text, "");
+	lv_label_set_long_mode(mu_title, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(mu_title, S(220));
+	lv_obj_set_pos(mu_title, S(228), S(24));
+	mu_info = mk_label(panel, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(mu_info, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(mu_info, S(220));
+	lv_obj_set_pos(mu_info, S(228), S(110));
+	mu_tl = mk_label(panel, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(mu_tl, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(mu_tl, S(432));
+	lv_obj_set_pos(mu_tl, S(24), S(224));
+	if (mu_tracks_view) {
+		vlist_create(&mu_tracks, body, S(56), S(204), S(620), S(420));
+		mu_tracks.fill = mu_tracks_fill;
+		mu_tracks.count = cJSON_GetArraySize(cJSON_GetObjectItem(mu_album, "track_list"));
+		vlist_refresh(&mu_tracks);
+		lv_label_set_text(mu_title, api_str(mu_album, "title") ? api_str(mu_album, "title") : "");
+		const char *cv = api_str(mu_album, "cover");
+		lv_obj_set_hidden(mu_cover, !cv);
+		if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
+	} else {
+		vlist_create(&mu_list, body, S(56), S(204), S(620), S(420));
+		mu_list.fill = mu_fill;
+		mu_list.count = mu_n;
+		if (mu_list.sel >= mu_n) mu_list.sel = mu_n ? mu_n - 1 : 0;
+		vlist_refresh(&mu_list);
+		mu_panel();
+	}
+	mu_footer();
+}
+static void show_music(void)
+{
+	cur = SCR_MUSIC;
+	mu_tracks_view = 0;
+	mu_load();
+	mu_list.sel = 0;
+	mu_list.top = 0;
+	mu_draw();
+}
+static void mu_play(const char *album, int track, int shuffle)
+{
+	if (shuffle) cJSON_Delete(api_call("{\"cmd\":\"music_ctl\",\"do\":\"shuffle\",\"on\":true}"));
+	cJSON *r = api_call("{\"cmd\":\"music_play\",\"album\":\"%s\",\"track\":%d}", album, track);
+	if (!api_ok(r)) toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't play it");
+	cJSON_Delete(r);
+	show_nowplay();
+}
+static void music_key(int k)
+{
+	if (mu_tracks_view) {
+		if (vlist_key(&mu_tracks, k)) return;
+		if (k == K_A) {
+			cJSON *x = cJSON_GetArrayItem(cJSON_GetObjectItem(mu_album, "track_list"), mu_tracks.sel);
+			cJSON_Delete(api_call("{\"cmd\":\"music_ctl\",\"do\":\"shuffle\",\"on\":false}"));
+			mu_play(api_str(mu_album, "id") ? api_str(mu_album, "id") : "cd", x ? (int)api_num(x, "no", mu_tracks.sel + 1) : 1, 0);
+		} else if (k == K_B || k == K_MENU) { mu_tracks_view = 0; mu_draw(); }
+		return;
+	}
+	if (vlist_key(&mu_list, k)) { mu_panel(); mu_footer(); return; }
+	if (k == K_L || k == K_R) {             /* (vlist takes L/R for paging only when it has more than a page) */
+		mu_show = (mu_show + (k == K_L ? 3 : 1)) % 4;
+		mu_load(); mu_list.sel = 0; mu_list.top = 0; mu_draw();
+		return;
+	}
+	int row = mu_list.sel;
+	if (row < mu_n && mu_rows[row] == MR_NOW) { if (k == K_A) show_nowplay(); else if (k == K_B || k == K_MENU) show_home(); return; }
+	cJSON *a = mu_row_album(row);
+	const char *id = a ? (mu_rows[row] == MR_CD ? "cd" : api_str(a, "id")) : NULL;
+	if (k == K_A && id) { cJSON_Delete(api_call("{\"cmd\":\"music_ctl\",\"do\":\"shuffle\",\"on\":false}")); mu_play(id, 0, 0); }
+	else if (k == K_X && id) mu_play(id, 0, 1);
+	else if (k == K_Y && mu_album) { mu_tracks_view = 1; mu_tracks.sel = 0; mu_tracks.top = 0; mu_draw(); }
+	else if (k == K_MENU && mu_rows[row] == MR_CD) { disc_eject_now(); }
+	else if (k == K_B || k == K_MENU) show_home();
+}
+
+/* Now playing: the cover, the track, where it's at; follows the player once a second */
+static lv_obj_t *np_cover, *np_eyebrow, *np_title, *np_sub, *np_bar, *np_fill, *np_pos, *np_len, *np_idx, *np_next;
+static char np_src[1200];
+static void np_update(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"music\"}");
+	cJSON *m = api_ok(r) ? cJSON_GetObjectItem(r, "music") : NULL;
+	cJSON *t = m ? cJSON_GetObjectItem(m, "track") : NULL;
+	if (!t) {
+		lv_label_set_text(np_eyebrow, "MUSIC");
+		lv_label_set_text(np_title, "Nothing playing");
+		lv_label_set_text(np_sub, "Pick an album in Music");
+		lv_obj_set_hidden(np_cover, true);
+		lv_obj_set_width(np_fill, 0);
+		cJSON_Delete(r);
+		return;
+	}
+	char e[120];
+	snprintf(e, sizeof(e), "%s%s%s", !strcmp(api_str(m, "state"), "paused") ? "PAUSED" : "NOW PLAYING",
+	         cJSON_IsTrue(cJSON_GetObjectItem(t, "cd")) ? "  \xC2\xB7  MUSIC CD" : "",
+	         cJSON_IsTrue(cJSON_GetObjectItem(m, "shuffle")) ? "  \xC2\xB7  SHUFFLE" : "");
+	lv_label_set_text(np_eyebrow, e);
+	lv_label_set_text(np_title, api_str(t, "title") ? api_str(t, "title") : "");
+	char sub[400];
+	const char *ar = api_str(t, "artist");
+	snprintf(sub, sizeof(sub), "%s%s%s", ar && *ar ? ar : "", ar && *ar ? "  \xC2\xB7  " : "", api_str(t, "album") ? api_str(t, "album") : "");
+	lv_label_set_text(np_sub, sub);
+	long pos = (long)api_num(t, "pos_ms", 0), len = (long)api_num(t, "len_ms", 0);
+	char b[32];
+	snprintf(b, sizeof(b), "%ld:%02ld", pos / 60000, pos / 1000 % 60); lv_label_set_text(np_pos, b);
+	snprintf(b, sizeof(b), "%ld:%02ld", len / 60000, len / 1000 % 60); lv_label_set_text(np_len, b);
+	snprintf(b, sizeof(b), "track %d of %d", (int)api_num(t, "index", 0) + 1, (int)api_num(t, "count", 0)); lv_label_set_text(np_idx, b);
+	int bw = lv_obj_get_width(np_bar);
+	lv_obj_set_width(np_fill, len > 0 ? (int)((long long)bw * pos / len) : 0);
+	char nx[300];
+	snprintf(nx, sizeof(nx), "%s%s", api_str(t, "next") ? "Next: " : "", api_str(t, "next") ? api_str(t, "next") : "");
+	lv_label_set_text(np_next, nx);
+	const char *cv = api_str(t, "cover");
+	lv_obj_set_hidden(np_cover, !cv);
+	if (cv && strcmp(np_src + 2, cv)) { snprintf(np_src, sizeof(np_src), "A:%s", cv); lv_image_set_src(np_cover, np_src); }
+	cJSON_Delete(r);
+}
+static void show_nowplay(void)
+{
+	cur = SCR_NOWPLAY;
+	lv_obj_clean(body);
+	np_src[0] = 0;
+	lv_obj_t *cb = mk_box(body, S(380), S(380), lv_color_hex(0x2a2119), S(12));
+	lv_obj_set_style_clip_corner(cb, true, 0);
+	lv_obj_set_pos(cb, S(56), S(140));
+	lv_obj_t *ic = icon_create(cb, ICON_MUSIC, S(96));
+	lv_obj_set_style_text_color(ic, PAL.acc, 0);
+	lv_obj_center(ic);
+	np_cover = lv_image_create(cb);
+	lv_obj_set_size(np_cover, S(380), S(380));
+	lv_image_set_inner_align(np_cover, LV_IMAGE_ALIGN_COVER);
+	lv_obj_center(np_cover);
+	int x = S(480), w = W - x - S(56);
+	np_eyebrow = mk_label(body, FONT_LABEL, PAL.dim, "");
+	lv_obj_set_style_text_letter_space(np_eyebrow, S(3), 0);
+	lv_obj_set_pos(np_eyebrow, x, S(176));
+	np_title = mk_label(body, FONT_HEADING, PAL.text, "");
+	lv_label_set_long_mode(np_title, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(np_title, w);
+	lv_obj_set_pos(np_title, x, S(204));
+	np_sub = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_label_set_long_mode(np_sub, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(np_sub, w);
+	lv_obj_set_pos(np_sub, x, S(260));
+	np_bar = mk_box(body, w, S(6), PAL.line, S(3));
+	lv_obj_set_pos(np_bar, x, S(330));
+	np_fill = mk_box(np_bar, 0, S(6), PAL.acc, S(3));
+	lv_obj_set_pos(np_fill, 0, 0);
+	np_pos = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_pos(np_pos, x, S(346));
+	np_idx = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_pos(np_idx, x + w / 2 - S(50), S(346));
+	np_len = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_obj_align_to(np_len, np_bar, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, S(10));
+	np_next = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_pos(np_next, x, S(420));
+	static const char *const hints[] = { "A", "Pause", "\xE2\x86\x94", "Track", "L R", "Seek", "X", "Shuffle", "Y", "Repeat", "B", "Back (keeps playing)", NULL };
+	footer_set(hints);
+	np_update();
+}
+static void nowplay_key(int k)
+{
+	const char *d = NULL;
+	char extra[80] = "";
+	if (k == K_A) d = "toggle";
+	else if (k == K_LEFT) d = "previous";
+	else if (k == K_RIGHT) d = "next";
+	else if (k == K_L || k == K_R) {
+		cJSON *r = api_call("{\"cmd\":\"music\"}");
+		cJSON *t = api_ok(r) ? cJSON_GetObjectItem(cJSON_GetObjectItem(r, "music"), "track") : NULL;
+		long pos = t ? (long)api_num(t, "pos_ms", 0) : 0;
+		cJSON_Delete(r);
+		pos += k == K_R ? 10000 : -10000;
+		if (pos < 0) pos = 0;
+		d = "seek";
+		snprintf(extra, sizeof(extra), ",\"ms\":%ld", pos);
+	} else if (k == K_X) {
+		cJSON *r = api_call("{\"cmd\":\"music\"}");
+		int on = !(api_ok(r) && cJSON_IsTrue(cJSON_GetObjectItem(cJSON_GetObjectItem(r, "music"), "shuffle")));
+		cJSON_Delete(r);
+		d = "shuffle";
+		snprintf(extra, sizeof(extra), ",\"on\":%s", on ? "true" : "false");
+		toast_show(on ? "Shuffle on" : "Shuffle off");
+	} else if (k == K_Y) {
+		cJSON *r = api_call("{\"cmd\":\"music\"}");
+		const char *rp = api_ok(r) ? api_str(cJSON_GetObjectItem(r, "music"), "repeat") : NULL;
+		const char *nx = rp && !strcmp(rp, "off") ? "all" : rp && !strcmp(rp, "all") ? "one" : "off";
+		d = "repeat";
+		snprintf(extra, sizeof(extra), ",\"mode\":\"%s\"", nx);
+		toast_show(!strcmp(nx, "all") ? "Repeat the album" : !strcmp(nx, "one") ? "Repeat this track" : "Repeat off");
+		cJSON_Delete(r);
+	} else if (k == K_B || k == K_MENU) { show_music(); return; }
+	if (d) { cJSON_Delete(api_call("{\"cmd\":\"music_ctl\",\"do\":\"%s\"%s}", d, extra)); np_update(); }
+}
+static void music_tick(void)
+{
+	if (cur == SCR_NOWPLAY) np_update();
+	else if (cur == SCR_MUSIC && !mu_tracks_view) {
+		/* a CD named after the lookup, or put in / taken out */
+		static int tick;
+		if (++tick % 3) return;
+		int had_cd = mu_cd != NULL, was_named = mu_cd && cJSON_IsTrue(cJSON_GetObjectItem(mu_cd, "named"));
+		cJSON *r = api_call("{\"cmd\":\"music_albums\"}");
+		cJSON *c = api_ok(r) ? cJSON_GetObjectItem(r, "cd") : NULL;
+		int has = c != NULL, named = c && cJSON_IsTrue(cJSON_GetObjectItem(c, "named"));
+		cJSON_Delete(r);
+		if (has != had_cd || named != was_named) { mu_load(); mu_draw(); }
+	}
+}
 
 /* ---------- Settings › RetroAchievements (phosphord ra.c; achievements run in Phosphor's Main) ----------
  * Log in once (only the token RetroAchievements gives back is kept), Hardcore, the pop-up corner and the
@@ -8146,6 +8542,7 @@ void ui_tick(void)
 		{ static int pt_tick; if (cur == SCR_PORTS && !pt.busy && ++pt_tick % 2 == 0) pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
 		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
 		if (cur == SCR_RA && !osk.open) ra_tick();
+		if (cur == SCR_NOWPLAY || cur == SCR_MUSIC) music_tick();
 		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
