@@ -8442,7 +8442,7 @@ static void ingame_open(void)
 		free(q);
 		const char *file = api_ok(st) ? api_str(st, "file") : NULL, *core = api_ok(st) ? api_str(st, "core") : NULL;
 		if (file && *file) {
-			if (strcmp(file, ig_file)) {             /* another file than the one shown before: look it up */
+			if (strcmp(file, ig_file) || !ig_game) {  /* another file than the one shown (or not found yet): look it up */
 				cJSON *q2 = cJSON_CreateObject();
 				cJSON_AddStringToObject(q2, "cmd", "game_at");
 				cJSON_AddStringToObject(q2, "path", file);
