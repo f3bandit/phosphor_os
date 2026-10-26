@@ -135,16 +135,17 @@ type stTrack struct {
 	Size int64  `json:"size"`
 }
 type soundtrack struct {
-	AppID  string    `json:"appid"`
-	Title  string    `json:"title"`
-	Format string    `json:"format"` // FLAC, MP3, ...
-	Tracks int       `json:"tracks"`
-	Size   int64     `json:"size"`
-	Cover  string    `json:"-"`
-	HasArt bool      `json:"cover"`
-	OnSS1  bool      `json:"on_ss1"`
-	files  []stTrack // the tracks (one format) and the cover
-	dir    string
+	AppID    string    `json:"appid"`
+	Title    string    `json:"title"`
+	Format   string    `json:"format"` // FLAC, MP3, ...
+	Tracks   int       `json:"tracks"`
+	Size     int64     `json:"size"`
+	Cover    string    `json:"-"`
+	HasArt   bool      `json:"cover"`
+	Embedded bool      `json:"-"` // the art is inside the tracks: the SS1 takes it from there
+	OnSS1    bool      `json:"on_ss1"`
+	files    []stTrack // the tracks (one format) and the cover
+	dir      string
 }
 
 var audioExt = map[string]bool{".flac": true, ".mp3": true, ".ogg": true, ".wav": true}
@@ -152,6 +153,7 @@ var audioExt = map[string]bool{".flac": true, ".mp3": true, ".ogg": true, ".wav"
 // the tracks under dir: FLAC when Steam has the lossless version, else the rest
 func soundtrackFiles(dir string) (tracks []stTrack, format, cover string) {
 	byExt := map[string][]stTrack{}
+	var imgs []img
 	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -161,11 +163,14 @@ func soundtrackFiles(dir string) (tracks []stTrack, format, cover string) {
 			if fi, e := d.Info(); e == nil {
 				byExt[ext] = append(byExt[ext], stTrack{Path: p, Name: filepath.Base(p), Size: fi.Size()})
 			}
-		} else if (ext == ".jpg" || ext == ".jpeg" || ext == ".png") && cover == "" {
-			cover = p
+		} else if ext == ".jpg" || ext == ".jpeg" || ext == ".png" {
+			if fi, e := d.Info(); e == nil {
+				imgs = append(imgs, img{p, fi.Size()})
+			}
 		}
 		return nil
 	})
+	cover = pickCover(imgs)
 	for _, e := range []string{".flac", ".mp3", ".ogg", ".wav"} {
 		if len(byExt[e]) > 0 {
 			tracks = byExt[e]
@@ -175,6 +180,128 @@ func soundtrackFiles(dir string) (tracks []stTrack, format, cover string) {
 	}
 	sort.Slice(tracks, func(i, j int) bool { return strings.ToLower(tracks[i].Path) < strings.ToLower(tracks[j].Path) })
 	return
+}
+
+type img struct {
+	path string
+	size int64
+}
+
+var coverName = regexp.MustCompile(`(?i)cover|folder|front|album|jacket|artwork`)
+
+// the album's picture: one named like a cover, else the biggest (a booklet page is usually smaller)
+func pickCover(imgs []img) string {
+	best, bestNamed := img{}, false
+	for _, m := range imgs {
+		named := coverName.MatchString(filepath.Base(m.path))
+		if best.path == "" || (named && !bestNamed) || (named == bestNamed && m.size > best.size) {
+			best, bestNamed = m, named
+		}
+	}
+	return best.path
+}
+
+// art inside a track: a FLAC picture block or an MP3's ID3 picture (the SS1 makes the cover from it)
+func hasEmbeddedArt(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	b := make([]byte, 1<<20)
+	n, _ := io.ReadFull(f, b)
+	b = b[:n]
+	if len(b) >= 4 && string(b[:4]) == "fLaC" {
+		for o, last := 4, false; !last && o+4 <= len(b); {
+			last = b[o]&0x80 != 0
+			if b[o]&0x7f == 6 {
+				return true
+			}
+			o += 4 + (int(b[o+1])<<16 | int(b[o+2])<<8 | int(b[o+3]))
+		}
+		return false
+	}
+	return len(b) >= 10 && string(b[:3]) == "ID3" && strings.Contains(string(b), "APIC")
+}
+
+// Steam's own picture of the soundtrack (what its library shows), kept by Steam on this PC; newer Steam
+// keeps them in a folder per app, older Steam beside each other. Else its public store picture.
+func steamArt(appid string) string {
+	sp := steamPath()
+	if sp == "" || appid == "" {
+		return ""
+	}
+	lc := filepath.Join(sp, "appcache", "librarycache")
+	prefs := []string{"library_600x900", "library_capsule", "header", "capsule"}
+	for _, p := range prefs {
+		for _, f := range []string{appid + "_" + p + ".jpg", filepath.Join(appid, p+".jpg")} {
+			if fi, err := os.Stat(filepath.Join(lc, f)); err == nil && fi.Size() > 0 {
+				return filepath.Join(lc, f)
+			}
+		}
+	}
+	found := map[string]string{}
+	filepath.WalkDir(filepath.Join(lc, appid), func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			n := strings.ToLower(d.Name())
+			for _, x := range prefs {
+				if strings.HasPrefix(n, x) && found[x] == "" {
+					found[x] = p
+				}
+			}
+		}
+		return nil
+	})
+	for _, x := range prefs {
+		if found[x] != "" {
+			return found[x]
+		}
+	}
+	// the store's picture, saved once beside the app's other files
+	dst := filepath.Join(configDir(), "steamart", appid+".jpg")
+	if fi, err := os.Stat(dst); err == nil && fi.Size() > 0 {
+		return dst
+	}
+	resp, err := webClient.Get("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/" + url.PathEscape(appid) + "/header.jpg")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return ""
+	}
+	os.MkdirAll(filepath.Dir(dst), 0o755)
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil || len(b) < 100 || os.WriteFile(dst, b, 0o644) != nil {
+		return ""
+	}
+	return dst
+}
+
+var artMu sync.Mutex
+var artCache = map[string]string{}
+var artTried = map[string]time.Time{}
+
+// steamArt, remembered: the list is asked for every second or two while sending
+func steamArtCached(appid string) string {
+	artMu.Lock()
+	if p, ok := artCache[appid]; ok {
+		artMu.Unlock()
+		return p
+	}
+	if t, ok := artTried[appid]; ok && time.Since(t) < 10*time.Minute {
+		artMu.Unlock()
+		return ""
+	}
+	artTried[appid] = time.Now()
+	artMu.Unlock()
+	p := steamArt(appid)
+	artMu.Lock()
+	if p != "" {
+		artCache[appid] = p
+	}
+	artMu.Unlock()
+	return p
 }
 
 var soundtrackWord = regexp.MustCompile(`(?i)soundtrack|\bost\b|original score|music`)
@@ -209,7 +336,11 @@ func findSoundtracks() []*soundtrack {
 			if len(tr) == 0 {
 				continue
 			}
-			s := &soundtrack{AppID: id, Title: name, Format: f, Tracks: len(tr), Cover: cv, HasArt: cv != "", files: tr, dir: cand}
+			emb := cv == "" && hasEmbeddedArt(tr[0].Path)
+			if cv == "" && !emb {
+				cv = steamArtCached(id)
+			}
+			s := &soundtrack{AppID: id, Title: name, Format: f, Tracks: len(tr), Cover: cv, HasArt: cv != "", Embedded: emb, files: tr, dir: cand}
 			for _, t := range tr {
 				s.Size += t.Size
 			}
@@ -374,26 +505,62 @@ func apiSteam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list := findSoundtracks()
-	// on the SS1: its Steam albums, by title
-	on := map[string]bool{}
+	// on the SS1: its Steam albums, by title (and whether it has their cover)
+	on, hasCover := map[string]bool{}, map[string]bool{}
 	if b, _, err := call(json.RawMessage(`{"cmd":"music_albums"}`)); err == nil {
 		var j struct {
-			Albums []struct{ Title, Source string } `json:"albums"`
+			Albums []struct{ Title, Source, Cover string } `json:"albums"`
 		}
 		json.Unmarshal(b, &j)
 		for _, a := range j.Albums {
 			if a.Source == "steam" {
 				on[strings.ToLower(a.Title)] = true
+				if a.Cover != "" {
+					hasCover[strings.ToLower(a.Title)] = true
+				}
 			}
 		}
 	}
+	var needCover []*soundtrack
 	for _, s := range list {
 		s.OnSS1 = on[strings.ToLower(s.Title)]
+		if s.OnSS1 && !hasCover[strings.ToLower(s.Title)] && s.Cover != "" && !s.Embedded {
+			needCover = append(needCover, s)
+		}
 	}
+	sendCovers(needCover)
 	stMu.Lock()
 	job := map[string]any{"busy": stJob.Busy, "title": stJob.Title, "done": stJob.Done, "total": stJob.Total, "message": stJob.Message, "waiting": len(stJob.queue)}
 	stMu.Unlock()
 	writeJSON(w, map[string]any{"ok": true, "steam": steamPath() != "", "libraries": len(steamLibraries()), "soundtracks": list, "job": job})
+}
+
+// albums sent before their cover could be found: just the cover, once per album while the app runs
+var coversSent = map[string]bool{}
+
+func sendCovers(list []*soundtrack) {
+	stMu.Lock()
+	var todo []*soundtrack
+	for _, s := range list {
+		if !coversSent[s.AppID] && !stJob.Busy {
+			coversSent[s.AppID] = true
+			todo = append(todo, s)
+		}
+	}
+	stMu.Unlock()
+	if len(todo) == 0 {
+		return
+	}
+	go func() {
+		for _, s := range todo {
+			if f, err := os.Open(s.Cover); err == nil {
+				fi, _ := f.Stat()
+				putMusicFile(albumFolder(s.Title), "cover"+strings.ToLower(filepath.Ext(s.Cover)), f, fi.Size())
+				f.Close()
+			}
+		}
+		call(json.RawMessage(`{"cmd":"music_albums","rescan":true}`))
+	}()
 }
 
 // a soundtrack's cover from this PC (the list's pictures)

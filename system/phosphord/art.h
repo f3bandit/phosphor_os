@@ -13,5 +13,8 @@ int art_store_box(const char *system_id, const char *game_key, const char *src_i
 
 /* absolute path of a stored image */
 void art_path(const char *rel, char *out, size_t n);
+/* a cover scaled down to max pixels on its longest side, saved as JPEG at out (written beside it, then
+ * renamed): from an image file, or from image bytes in memory (art in a music file). 0 on success. */
+int art_thumb(const char *src_file, const unsigned char *mem, size_t memlen, const char *out, int max);
 
 #endif
