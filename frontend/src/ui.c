@@ -1254,7 +1254,7 @@ static void cores_start(int have_net) { cores_start_job(have_net, 0); }
 
 /* ---------- Restart (A twice) ---------- */
 
-static uint32_t restart_asked;
+static uint32_t restart_asked, shutdown_asked;
 
 static void power_run(int restart);
 static void restart_ask(void)
@@ -1270,10 +1270,23 @@ static void restart_ask(void)
 	power_run(1);                                    /* drives made clean first, like the power window */
 }
 
+static void shutdown_ask(void)
+{
+	uint32_t now = lv_tick_get();
+	if (!shutdown_asked || now - shutdown_asked > 4000) {
+		shutdown_asked = now ? now : 1;
+		toast_show("Press A again to shut down");
+		return;
+	}
+	shutdown_asked = 0;
+	plog("shut down from Settings");
+	power_run(0);                                    /* the power window's safe stop, then "safe to switch off" */
+}
+
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1395,6 +1408,7 @@ static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_DIAG: snprintf(t, n, "Diagnostics"); snprintf(val, vn, ">"); break;
 	case SET_MISTER: snprintf(t, n, "MiSTer menu (OSD)"); snprintf(val, vn, ">"); break;
 	case SET_RESTART: snprintf(t, n, "Restart"); break;
+	case SET_SHUTDOWN: snprintf(t, n, "Shut down safely"); break;
 	case SET_ABOUT: snprintf(t, n, "About this system"); snprintf(val, vn, "Phosphor %s  >", PHOS_VERSION); break;
 	}
 }
@@ -2455,6 +2469,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_CTRL] = { "Your USB and Bluetooth controllers: map their buttons for MiSTer's menu and every core, see them work live, or put them back to automatic.",
 	               "Every change is backed up first, and can be put back from Backups there." },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
+	[SET_SHUTDOWN] = { "Turns the MiSTer off safely: every drive is finished with first, so the SD card and USB drives come out clean. When the screen says it's safe, switch the power off.",
+	                   "Also: Select + Start together, anywhere in Phosphor." },
 	[SET_ABOUT] = { "Versions, licences and credits for Phosphor and the parts it's built on.", NULL },
 };
 
@@ -7512,6 +7528,7 @@ void ui_key(pkey_t k)
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
 			}
 			else if (set_list.sel == SET_RESTART && k == K_A) restart_ask();
+			else if (set_list.sel == SET_SHUTDOWN && k == K_A) shutdown_ask();
 			else settings_change(1);
 		}
 		else if (k == K_B || k == K_MENU) show_home();
