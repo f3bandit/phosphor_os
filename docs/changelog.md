@@ -3,6 +3,19 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.40
+
+### Fixed
+- **The dock's NVMe drive is found on a cold start.** A drive that took more than 15 seconds to come
+  up after switching on was removed as the dock's empty-slot "phantom" drive by a rule in the SS1's own
+  Linux image, and stayed missing until a restart. Now:
+  - that rule is turned off (put back by uninstalling Phosphor), and Phosphor waits a minute for a
+    drive before it treats the slot as empty;
+  - if the drive goes missing anyway, Phosphor asks the dock to look again, and it comes back and
+    mounts without a restart (once; an empty slot's phantom is still removed);
+  - the kernel's log of each boot is kept in `phosphor/logs/boot-kernel.log` (and the boot before in
+    `boot-kernel.prev.log`), so a drive that doesn't show up can be looked into afterwards.
+
 ## 0.27.39, Phosphor for Windows 0.2.38, Phosphor for Android 0.9.7
 
 ### Added

@@ -31,6 +31,14 @@ fi
 if [ -f "$ROOT/backup/menu.rbf.mister" ] && [ -f "$ROOT/cores/menu_phosphor.rbf" ] && cmp -s "$ROOT/cores/menu_phosphor.rbf" "$FAT/menu.rbf"; then
 	cp "$ROOT/backup/menu.rbf.mister" "$FAT/menu.rbf.new" && mv -f "$FAT/menu.rbf.new" "$FAT/menu.rbf" && echo "menu.rbf: MiSTer's put back"
 fi
+# the SS1's own dock rule (60-jms583-phantom.rules), which phosphord turned off: back on
+RULES="${PHOS_UDEV_RULES:-/etc/udev/rules.d}"
+if [ -f "$RULES/60-jms583-phantom.rules.off" ] && [ ! -e "$RULES/60-jms583-phantom.rules" ]; then
+	ro=0
+	[ -z "${PHOS_UDEV_RULES:-}" ] && grep -q " / [^ ]* ro[, ]" /proc/mounts && ro=1 && mount -o remount,rw / 2>/dev/null
+	mv "$RULES/60-jms583-phantom.rules.off" "$RULES/60-jms583-phantom.rules" && echo "the SS1's dock rule put back"
+	[ "$ro" = 1 ] && mount -o remount,ro / 2>/dev/null
+fi
 ENTRY="$FAT/Scripts/phosphor.sh"
 if [ -f "$ENTRY" ] && grep -q "^# phosphor: menu entry" "$ENTRY"; then rm -f "$ENTRY" && echo "menu entry removed"; fi
 if [ -f "$STARTUP" ] && grep -q "^# $TAG: BEGIN" "$STARTUP"; then
