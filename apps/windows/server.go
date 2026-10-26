@@ -8,8 +8,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"io"
+	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -137,6 +139,7 @@ func routes(mux *http.ServeMux) {
 	h("/api/steam", apiSteam)             // Steam soundtracks on this PC, sent to the SS1's Music
 	h("/api/steam/cover/", apiSteamCover)
 	h("/api/mcover/", apiMusicCover)      // an album's cover from the SS1
+	h("/api/shot/", apiShot)              // a screenshot from the SS1: /api/shot/thumb/<core>/<file> or /api/shot/file/... (?dl=1: save it)
 }
 
 func apiState(w http.ResponseWriter, r *http.Request) {
@@ -337,6 +340,32 @@ func openShare() bool {
 }
 
 // apiMusicCover: an album's cover from the SS1 (its Music)
+func apiShot(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/shot/")
+	kind, id, _ := strings.Cut(rest, "/")
+	core, file, ok := strings.Cut(id, "/")
+	if (kind != "thumb" && kind != "file") || !ok || core == "" || file == "" || strings.Contains(id, "..") || strings.ContainsAny(file, "/\\") {
+		http.NotFound(w, r)
+		return
+	}
+	resp, err := authed("GET", "/shots/"+kind+"/"+url.PathEscape(core)+"/"+url.PathEscape(file), nil, 30*time.Second)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	if r.URL.Query().Get("dl") == "1" {
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": core + "-" + file}))
+	}
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 32<<20))
+}
+
 func apiMusicCover(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/mcover/")
 	if id == "" || strings.ContainsAny(id, "/?#") {

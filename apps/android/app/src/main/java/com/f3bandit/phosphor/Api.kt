@@ -435,6 +435,12 @@ class PhosphorApi(val address: String, private val token: String?) {
         try { request("GET", "/art/disc") } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
     }
 
+    /** a screenshot on the SS1 (kind "thumb" or "file"; id "<system>/<file>"), or null */
+    suspend fun shot(kind: String, id: String): ByteArray? = withContext(Dispatchers.IO) {
+        val p = id.split("/").joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        try { request("GET", "/shots/$kind/$p", timeoutMs = 30_000) } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
+    }
+
     /** a music album's cover on the SS1 ("cd": the music CD in the drive), or null */
     suspend fun musicCover(id: String): ByteArray? = withContext(Dispatchers.IO) {
         try { request("GET", "/music/cover/$id") } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
