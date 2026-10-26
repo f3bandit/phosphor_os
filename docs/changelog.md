@@ -3,7 +3,22 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.41, Phosphor for Windows 0.2.42, Phosphor for Android 0.9.8
+## 0.27.41, Phosphor for Windows 0.2.43, Phosphor for Android 0.9.8
+
+### New
+- **In-game menu > Load game:** every installed core, then that core's games (Y searches them); A twice
+  starts one straight from the game you're in. B goes back a step at a time (games, cores, the menu).
+- **In-game menu > MiSTer menu (OSD)** opens MiSTer's menu at once (it needed another press).
+- **RetroAchievements without waiting:** your progress and a game's achievements show at once from what
+  was last fetched, and refresh while RetroAchievements is asked again; a slow or unreachable site no
+  longer holds up the TV or the apps.
+- **.chd discs** (PlayStation, Mega-CD, PC Engine CD...) are matched to RetroAchievements.
+- **Remote access serves several devices at once;** a device that sends wrong keys is locked out for a
+  moment without slowing anyone else.
+- **Box-art logins stay off the network:** the SS1 no longer sends your ScreenScraper, IGDB or
+  TheGamesDB passwords and keys to the PC. Phosphor for Windows keeps its own copy (in Windows'
+  protected store): type each one once in Settings > Box art.
+
 
 ### Licences
 - Every download now carries the licences of what's in it: THIRD_PARTY_NOTICES.md (the libraries and
