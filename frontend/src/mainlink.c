@@ -242,6 +242,7 @@ int mainlink_poll(void)
 					/* the drive changed (phosphord names what's in it); a game started or ended; the menu
 					   button in a game (Phosphor's in-game menu); Main took the in-game screen back */
 					if (strstr(lbuf, "\"event\":\"disc\"")) { disc_changed = 1; continue; }
+					if (strstr(lbuf, "\"event\":\"shot\"")) { input_push(K_SHOT); continue; }      /* both sticks in, on Phosphor's screens */
 					if (strstr(lbuf, "\"event\":\"core\"")) { in_game = strstr(lbuf, "\"menu\":false") != NULL; continue; }
 					if (strstr(lbuf, "\"event\":\"menu_button\"")) { if (in_game) menu_btn = 1; continue; }
 					if (strstr(lbuf, "\"event\":\"ingame\"")) { ingame_ended = 1; continue; }

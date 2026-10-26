@@ -1399,7 +1399,7 @@ PAGES.shots = { async show(c, p) {
 			+ (list.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">${list.map((s, i) => `<div data-act="open" data-arg="${i}" style="cursor:pointer">
 				<img loading="lazy" src="${shotUrl("thumb", s.id)}" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#000;display:block">
 				<span class="small">${esc(s.core)} · ${esc(when(s))}</span></div>`).join("")}</div>`
-			: note("No screenshots yet. On the SS1: hold D-pad Down and press Start, in a game or on Phosphor's screens. Or take one of the TV from here.")));
+			: note("No screenshots yet. On the SS1: press both sticks in (L3 + R3), in a game or on Phosphor's screens. Or take one of the TV from here.")));
 	};
 	draw();
 	await load();

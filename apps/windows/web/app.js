@@ -583,7 +583,7 @@ class Shots {
 		this.list = j.shots || [];
 		if (this.sel >= this.list.length) this.sel = Math.max(0, this.list.length - 1);
 		$("#sh_info").textContent = this.list.length ? `${this.list.length} on the SS1 · ${(j.bytes / 1048576).toFixed(0)} MB` : "";
-		if (!this.list.length) { g.innerHTML = `<div class="empty">No screenshots yet. On the SS1: hold D-pad Down and press Start, in a game or on Phosphor's screens. Or take one of the TV from here.</div>`; return; }
+		if (!this.list.length) { g.innerHTML = `<div class="empty">No screenshots yet. On the SS1: press both sticks in (L3 + R3), in a game or on Phosphor's screens. Or take one of the TV from here.</div>`; return; }
 		g.innerHTML = "";
 		this.list.forEach((s, i) => {
 			const when = new Date(s.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
