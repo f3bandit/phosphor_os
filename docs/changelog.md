@@ -12,6 +12,8 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   The presses still reach the game. Settings › Screenshots: turn the combo off, see them in a grid,
   one full screen, delete. Phosphor for Windows (Tools › Screenshots) and Android (More › Screenshots):
   take one of the TV, see them, save them to the PC or the phone's photos, share, delete.
+- **Settings › Shut down safely**, between Restart and About: the same safe shutdown as Select + Start's
+  power window (drives finished with first, then "Safe to switch off"). Press A twice.
 
 ### Changed
 - **Album covers** are made TV-sized from the album's picture, or from the art inside its tracks (FLAC
