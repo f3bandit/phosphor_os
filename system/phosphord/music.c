@@ -269,7 +269,8 @@ static struct {
 	int present;               /* an audio CD's TOC was read */
 	toc_t toc;
 	char discid[40], title[200], artist[200], year[16], cover[700], tracks[100][160];
-	int named, looking;
+	int named, looking, tries;
+	time_t retry_at;           /* no network at the last try (at boot WiFi comes up later): look again */
 } cd;
 
 static int read_toc(toc_t *t)
@@ -462,6 +463,7 @@ static void *cd_lookup(void *arg)
 	} else plog("music: CD %s isn't in MusicBrainz (HTTP %d)", id, http);
 	cJSON_Delete(res);
 	pthread_mutex_lock(&lk);
+	if (!res && http == 0 && !strcmp(id, cd.discid) && ++cd.tries < 20) cd.retry_at = time(NULL) + 30;
 	cd.looking = 0;
 	pthread_mutex_unlock(&lk);
 	return NULL;
@@ -1171,6 +1173,12 @@ void music_tick(const char *drive_key, int audio_cd)
 	if (f) { if (!fgets(core, sizeof(core), f)) core[0] = 0; fclose(f); }
 	core[strcspn(core, "\r\n")] = 0;
 	if (core[0] && strcmp(core, "MENU") && pl.state) music_stop();
+	/* the CD's names: looked up again while there was no network */
+	pthread_mutex_lock(&lk);
+	int again = cd.present && !cd.named && !cd.looking && cd.retry_at && time(NULL) >= cd.retry_at;
+	if (again) { cd.retry_at = 0; cd.looking = 1; }
+	pthread_mutex_unlock(&lk);
+	if (again) { pthread_t th; if (pthread_create(&th, NULL, cd_lookup, NULL) == 0) pthread_detach(th); else cd.looking = 0; }
 	static char last[128];
 	if (!drive_key || !strcmp(drive_key, last)) return;
 	snprintf(last, sizeof(last), "%s", drive_key);
