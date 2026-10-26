@@ -37,15 +37,15 @@ import com.f3bandit.phosphor.scrape.PhoneScrapeState
 import com.f3bandit.phosphor.scrape.ScrapeService
 import com.f3bandit.phosphor.scrape.AutoMatch
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
-
-const val BuildConfigVersion = "0.9.1"
 
 class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
@@ -59,6 +59,9 @@ class MainActivity : ComponentActivity() {
 
     private var picked: CompletableDeferred<Uri?>? = null
     private val picker = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> picked?.complete(uri) }
+    /** the backups' progress to this page; let go when the activity goes, so an old one isn't kept */
+    private val sysbkChanged: () -> Unit = { event("sysbk", SysBackup.state(applicationContext).toString()) }
+
     private var asked: CompletableDeferred<Boolean>? = null
     private val askNotify = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> asked?.complete(ok) }
 
@@ -70,8 +73,9 @@ class MainActivity : ComponentActivity() {
         Notes.channels(this)
         model = AppModel(KeystorePairingStore(applicationContext))
         model.onChange = { runOnUiThread { event("state", stateJson()) } }
-        SysBackup.onChange = { event("sysbk", SysBackup.state(this).toString()) }
-        pendingGo = intent?.getStringExtra("go")
+        SysBackup.onChange = sysbkChanged
+        // a notification's page: only on a fresh start, not when Android brings the activity back
+        if (savedInstanceState == null) pendingGo = intent?.getStringExtra("go")
 
         // edge to edge: the page sits inside the system bars and the keyboard; the bars show the app bar's colour
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -125,6 +129,11 @@ class MainActivity : ComponentActivity() {
         if (model.pairing != null) startWatching()
     }
 
+    override fun onDestroy() {
+        if (SysBackup.onChange === sysbkChanged) SysBackup.onChange = {}
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra("go")?.let { event("go", JSONObject.quote(it)) }
@@ -147,14 +156,15 @@ class MainActivity : ComponentActivity() {
     private fun reply(id: String, ok: Boolean, payload: String) = js("window.__phos(${JSONObject.quote(id)},$ok,${JSONObject.quote(payload)})")
     private fun event(name: String, json: String) = js("window.__phosEvent && window.__phosEvent(${JSONObject.quote(name)},${JSONObject.quote(json)})")
 
-    private fun stateJson(): String {
+    /** withGo: only when the page asks at its start (a state event can come before the page listens) */
+    private fun stateJson(withGo: Boolean = false): String {
         val p = model.pairing
         return JSONObject()
             .put("paired", p != null).put("address", p?.address ?: "").put("reachable", model.reachable ?: JSONObject.NULL)
-            .put("version", model.version).put("appVersion", BuildConfigVersion)
+            .put("version", model.version).put("appVersion", BuildConfig.VERSION_NAME)
             .put("notesUnseen", Notes.unseen(this))
             .put("look", JSONObject().put("accent", Prefs.accent).put("texture", Prefs.texture))
-            .apply { pendingGo?.let { put("go", it); pendingGo = null } }
+            .apply { if (withGo) pendingGo?.let { put("go", it); pendingGo = null } }
             .toString()
     }
 
@@ -167,7 +177,8 @@ class MainActivity : ComponentActivity() {
 
     private fun artResponse(path: String): WebResourceResponse {
         if (path.substringBefore('?').substringBefore('/') == "shot") {     // a screenshot: shot/thumb|file/<system>/<file>
-            val parts = path.substringBefore('?').split('/').map { Uri.decode(it) }
+            // the loader passes the path already decoded: decoding it again breaks names with a %
+            val parts = path.split('/')
             val api = model.api ?: return notFound()
             if (parts.size != 4 || parts[1] !in setOf("thumb", "file") || parts.any { it.isEmpty() || it == ".." }) return notFound()
             val b = runCatching { runBlocking { api.shot(parts[1], parts[2] + "/" + parts[3]) } }.getOrNull() ?: return notFound()
@@ -195,8 +206,10 @@ class MainActivity : ComponentActivity() {
         val key = "$id"
         art.get(key)?.let { return WebResourceResponse("image/jpeg", null, ByteArrayInputStream(it)) }
         synchronized(noArt) { if (key in noArt) return notFound() }
-        val bytes = runCatching { runBlocking { api.art(id) } }.getOrNull()
-        if (bytes == null) { synchronized(noArt) { noArt.add(key) }; return notFound() }
+        // only a real 404 (art gives null) means it has none; a network hiccup is tried again next time
+        val got = runCatching { runBlocking { api.art(id) } }
+        val bytes = got.getOrNull()
+        if (bytes == null) { if (got.isSuccess) synchronized(noArt) { noArt.add(key) }; return notFound() }
         art.put(key, bytes)
         return WebResourceResponse("image/jpeg", null, ByteArrayInputStream(bytes))
     }
@@ -245,7 +258,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun appAction(action: String, a: JSONObject): String {
         val ctx = this
         return when (action) {
-            "state" -> stateJson()
+            "state" -> stateJson(withGo = true)
             "look" -> { Prefs.seeLook(a.optString("accent"), a.optInt("texture")); "{}" }
             "discover" -> {
                 val ip = localIPv4(ctx) ?: return JSONObject().put("found", JSONArray()).put("error", "Connect the phone to WiFi (the same network as the MiSTer)").toString()
@@ -262,12 +275,12 @@ class MainActivity : ComponentActivity() {
                 val p = model.pairing ?: throw PhosphorError("Not paired")
                 val ip = localIPv4(ctx)
                 val msg = if (ip == null) "Connect the phone to WiFi (the same network as the MiSTer)" else {
-                    // the one that knows this phone's key is ours
+                    // the one that proves it knows this phone's key is ours; the key itself never goes to a host to find it
                     val found = runCatching { PhosphorApi.discover(ip) }.getOrDefault(emptyList())
-                    val mine = found.firstOrNull { f -> runCatching { PhosphorApi(f.address, p.token).cmd(JSONObject().put("cmd", "status")); true }.getOrDefault(false) }
+                    val mine = found.firstOrNull { f -> PhosphorApi.knows(f.address, p.token) }
                     when {
                         mine == null && found.isEmpty() -> "No MiSTer with Remote access found on this WiFi"
-                        mine == null -> "Found ${found.size}, but none knows this phone: pair again"
+                        mine == null -> "Found ${found.size}, but none showed it knows this phone: update Phosphor on the MiSTer, or pair again"
                         mine.address == p.address -> "It's at the same address"
                         else -> { model.moveTo(mine.address); "Found it at ${mine.address}" }
                     }
@@ -281,7 +294,7 @@ class MainActivity : ComponentActivity() {
                 picked = d
                 picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 val uri = d.await() ?: return "{}"
-                val bytes = loadPhotoForUpload(ctx, uri)
+                val bytes = withContext(Dispatchers.IO) { loadPhotoForUpload(ctx, uri) }
                 val r = api.setArtJson(gameId, bytes)
                 forgetArt(gameId)
                 JSONObject().put("game", r.getJSONObject("game")).toString()
@@ -334,8 +347,12 @@ class MainActivity : ComponentActivity() {
                     put(android.provider.MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
                     put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Phosphor")
                 }
-                val uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw PhosphorError("Couldn't save it")
-                contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw PhosphorError("Couldn't save it")
+                val uri = withContext(Dispatchers.IO) {     // the writing off the main thread
+                    val u = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw PhosphorError("Couldn't save it")
+                    try { contentResolver.openOutputStream(u)?.use { it.write(bytes) } ?: throw PhosphorError("Couldn't save it") }
+                    catch (e: Exception) { runCatching { contentResolver.delete(u, null, null) }; throw e }      // no empty picture left behind
+                    u
+                }
                 if (action == "shareShot") {
                     val send = Intent(Intent.ACTION_SEND).setType(if (png) "image/png" else "image/jpeg").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     startActivity(Intent.createChooser(send, "Share the screenshot"))
@@ -347,7 +364,7 @@ class MainActivity : ComponentActivity() {
                 api.notGame(a.optLong("id"), a.optBoolean("on"))
                 "{}"
             }
-            "phoneStorage" -> {
+            "phoneStorage" -> withContext(Dispatchers.IO) {
                 val lists = File(cacheDir, "boxart-lists")
                 JSONObject()
                     .put("art", JSONArray(ArtStore.list().map { JSONObject().put("id", it.id).put("title", it.title).put("system", it.system).put("at", it.at).put("sent", it.sent).put("bytes", it.bytes) }))

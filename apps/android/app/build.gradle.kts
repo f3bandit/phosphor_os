@@ -1,3 +1,4 @@
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -11,8 +12,8 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.9.7"
+        versionCode = 18
+        versionName = "0.9.8"
         // Phosphor's own ScreenScraper developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD
         // in the environment), never in the repo; empty without it
         fun lit(v: String?) = "\"" + (v ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -68,6 +69,8 @@ val webShared by tasks.registering {
     val out = layout.buildDirectory.dir("generated/webshared/web")
     inputs.dir(win)
     inputs.file(rootProject.file("../windows/fanart/fanart.json"))
+    val notices = rootProject.file("../../THIRD_PARTY_NOTICES.md")
+    inputs.file(notices)
     outputs.dir(out)
     doLast {
         val dir = out.get().asFile
@@ -83,6 +86,8 @@ val webShared by tasks.registering {
         File(win, "video-options.js").copyTo(File(dir, "video-options.js"), true)
         // the fan art list (FanArt.kt reads it when GitHub can't be reached)
         File(win, "../fanart/fanart.json").copyTo(File(dir, "fanart.json"), true)
+        // the open-source licences, for About › Open-source licences
+        notices.copyTo(File(dir, "THIRD_PARTY_NOTICES.md"), true)
     }
 }
 tasks.named("preBuild") { dependsOn(webShared) }

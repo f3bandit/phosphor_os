@@ -16,6 +16,8 @@ import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
 
 const val REMOTE_PORT = 8767
 
@@ -490,6 +492,28 @@ class PhosphorApi(val address: String, private val token: String?) {
                 if (r.optString("name") == "Phosphor") Info(normalize(address), r.optString("version")) else null
             } catch (e: Exception) {
                 null
+            }
+        }
+
+        private fun sha256hex(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+
+        /** does the Phosphor at this address know this phone's key? It proves it without the key being sent:
+         *  GET /info?nonce=n lists, per paired device, sha256hex(sha256hex(token) + ":" + n). An older
+         *  phosphord sends no proofs: not ours as far as we can tell, so the key never goes there. */
+        suspend fun knows(address: String, token: String, timeoutMs: Int = 1500): Boolean = withContext(Dispatchers.IO) {
+            try {
+                val nonce = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+                val c = URL("http://${normalize(address)}/info?nonce=$nonce").openConnection() as HttpURLConnection
+                c.connectTimeout = timeoutMs
+                c.readTimeout = timeoutMs
+                c.useCaches = false
+                val r = c.inputStream.use { JSONObject(String(it.readBytes())) }
+                c.disconnect()
+                val proofs = r.optJSONArray("proofs") ?: return@withContext false
+                val want = sha256hex(sha256hex(token) + ":" + nonce)
+                r.optString("name") == "Phosphor" && (0 until proofs.length()).any { proofs.optString(it).lowercase() == want }
+            } catch (e: Exception) {
+                false
             }
         }
 
