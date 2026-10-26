@@ -521,6 +521,7 @@ static struct {
 	int skip;                 /* +1 next, -1 previous: asked of the player thread */
 	int gen;                  /* bumped when the queue changes: the thread starts the new track */
 	char error[200];
+	char album_id[20];        /* the album playing ("cd": the CD in the drive): the apps' cover */
 } pl = { .volume = 100, .seek_ms = -1 };
 static pthread_cond_t wake = PTHREAD_COND_INITIALIZER;
 static int thread_up;
@@ -1073,6 +1074,7 @@ int music_play(const char *album, int track, char *err, size_t errn)
 	free(pl.q);
 	pl.q = q;
 	pl.n = n;
+	snprintf(pl.album_id, sizeof(pl.album_id), "%s", album);
 	pl.cur = pl.shuffle && track <= 0 ? rand() % n : start;
 	pl.state = 1;
 	pl.skip = 0;
@@ -1132,6 +1134,7 @@ cJSON *music_status(void)
 		cJSON_AddStringToObject(t, "artist", it->artist);
 		if (it->cover[0]) cJSON_AddStringToObject(t, "cover", it->cover);
 		cJSON_AddBoolToObject(t, "cd", it->cd_track > 0);
+		cJSON_AddStringToObject(t, "album_id", pl.album_id);
 		cJSON_AddNumberToObject(t, "index", pl.cur);
 		cJSON_AddNumberToObject(t, "count", pl.n);
 		cJSON_AddNumberToObject(t, "pos_ms", (double)pl.pos_ms);

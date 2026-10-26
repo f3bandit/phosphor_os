@@ -14,6 +14,7 @@ const SET_SECTIONS = [
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
 	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"]] },
 	{ id: "discs", name: "Discs", tabs: [["Discs", "tDiscs"]] },
+	{ id: "ra", name: "RetroAchievements", tabs: [["Account & options", "tRa"], ["Your progress", "tRaProg"]] },
 	{ id: "network", name: "Network", tabs: [["Network", "tNet"]] },
 	{ id: "video", name: "Video", tabs: [["Video settings", "tVideo"]] },
 	{ id: "remote", name: "Remote control", tabs: [["Remote control", "tRemote"]] },
@@ -476,6 +477,64 @@ class AppSettings {
 			return true;
 		};
 		if (await draw()) this.every(2000, async () => { await draw(); return true; });
+	}
+
+	/* ---------- RetroAchievements: odelot's RA Main and cores; the login is on the TV ---------- */
+	async tRa(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="rac"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>RetroAchievements</h2><p class="note">Earn achievements while you play: NES, SNES, Game Boy, GBA, N64, PlayStation, Mega Drive, Mega-CD, Master System, Game Gear, PC Engine and Atari 7800. They run inside a game, through RetroAchievements-enabled cores.</p>
+			<p class="note">Log in on the TV (Settings › RetroAchievements). Only a login token is kept on the SS1, never your password.</p>
+			<p class="note" style="color:var(--faint)">RetroAchievements support: odelot's MiSTer RA Main and cores, and the RetroAchievements rcheevos library. Achievements and badges from retroachievements.org.</p></div></div>`));
+		const yes = v => (v ? "On" : "Off");
+		const draw = async () => {
+			let r;
+			try { r = (await ss1({ cmd: "ra" })).ra; } catch (e) { if (!alive()) return false; $("#rac").innerHTML = `<div class="empty">${esc(/unknown|no such/i.test(e.message) ? "This SS1's Phosphor doesn't have RetroAchievements yet: update Phosphor." : e.message)}</div>`; return false; }
+			if (!alive()) return false;
+			const box = $("#rac"), had = cur && box.contains(cur) ? cur.id : "";
+			const busy = r.job.busy || r.match.busy;
+			box.innerHTML = `<dl class="kv"><dt>Account</dt><dd>${r.logged_in ? esc(r.user) : r.user ? `${esc(r.user)} <span class="warn">(not logged in)</span>` : "Not logged in: log in on the TV"}</dd>
+				<dt>Cores</dt><dd>${r.cores_installed} of ${r.cores.length} installed</dd>
+				<dt>Web API key</dt><dd>${r.web_key ? "Set" : "Not set (needed for Your progress and the library's badges)"}</dd></dl>
+				<div class="acts"><button class="btn" id="ra_hc" data-nav>Hardcore: ${yes(r.hardcore)}</button><button class="btn" id="ra_pp" data-nav>Pop-ups: ${esc(r.popups)}</button><button class="btn" id="ra_sd" data-nav>Unlock sound: ${yes(r.sound)}</button></div>
+				<div class="acts"><button class="btn primary" id="ra_gc" data-nav${busy ? " disabled" : ""}>${r.cores_installed ? "Update the cores" : "Get the cores"}</button><button class="btn" id="ra_mt" data-nav${busy || !r.web_key ? " disabled" : ""}>Match the library</button><button class="btn" id="ra_key" data-nav>${r.web_key ? "Change the Web API key" : "Set the Web API key"}</button></div>
+				${r.job.message || r.match.message ? `<p class="note">${busy ? `<span class="spin"></span>` : ""}${esc([r.job.message, r.match.message].filter(Boolean).join(" · "))}</p>` : ""}
+				<p class="note">Hardcore: no save states, rewind or cheats, and the achievements count double on your profile. Your Web API key is on retroachievements.org › Settings › Keys.</p>`;
+			const set = async o => { try { await ss1(Object.assign({ cmd: "ra_set" }, o)); } catch (e) { toast(e.message); } draw(); };
+			$("#ra_hc").onclick = () => set({ hardcore: !r.hardcore });
+			$("#ra_pp").onclick = () => set({ popups: { left: "center", center: "right", right: "left" }[r.popups] || "left" });
+			$("#ra_sd").onclick = () => set({ sound: !r.sound });
+			$("#ra_gc").onclick = async () => { try { await ss1({ cmd: "ra_cores" }); toast("Getting the cores from GitHub"); } catch (e) { toast(e.message); } draw(); };
+			$("#ra_mt").onclick = async () => { try { await ss1({ cmd: "ra_match" }); toast("Looking up the library on RetroAchievements"); } catch (e) { toast(e.message); } draw(); };
+			$("#ra_key").onclick = async () => {
+				const k = await askText("Your RetroAchievements Web API key (empty: remove it)", "");
+				if (k === null && !r.web_key) return;
+				try { await ss1({ cmd: "ra_key", key: k || "" }); toast(k ? "Web API key saved on the SS1" : "Web API key removed"); } catch (e) { toast(e.message); }
+				draw();
+			};
+			if (had && $("#" + had)) focus($("#" + had));
+			return true;
+		};
+		if (await draw()) this.every(2000, async () => { await draw(); return true; });
+	}
+	async tRaProg(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="list grow" id="rap"><div class="empty"><span class="spin"></span>Asking RetroAchievements…</div></div>`));
+		let p;
+		try { p = (await ss1({ cmd: "ra_profile" })).profile; } catch (e) { if (alive()) $("#rap").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!alive()) return;
+		const box = $("#rap");
+		box.innerHTML = `<div style="display:flex;gap:1rem;align-items:center;margin-bottom:.8rem">${p.picture ? `<img src="${esc(p.picture)}" alt="" style="width:3.5rem;height:3.5rem;border-radius:6px">` : ""}
+			<div><h2 style="margin:0">${esc(p.user)}</h2><p class="note" style="margin:.2rem 0 0">${n(p.points)} points${p.softcore_points ? ` · ${n(p.softcore_points)} softcore` : ""}${p.rank ? ` · rank ${n(p.rank)}` : ""} · ${n(p.achievements)} achievements · ${n(p.mastered)} mastered</p></div></div>`;
+		if (!(p.games || []).length) { box.append(h(`<div class="empty">No games played with achievements yet.</div>`)); return; }
+		p.games.forEach(g => {
+			const pct = g.total ? Math.round(g.unlocked * 100 / g.total) : 0;
+			const el = h(`<div class="row" data-nav style="gap:.8rem">${g.icon ? `<img src="${esc(g.icon)}" alt="" style="width:2.2rem;height:2.2rem;border-radius:4px;flex:none">` : ""}
+				<span class="n">${esc(g.title)}<small class="note" style="display:block">${esc(g.console)}${g.award ? ` · ${esc(g.award)}` : ""}${g.game_id ? "" : " · not in your library"}</small></span>
+				<span class="v">${g.unlocked} / ${g.total} · ${pct}%</span></div>`).firstChild;
+			if (g.game_id) el.onclick = () => push(Game, g.game_id);
+			box.appendChild(el);
+		});
 	}
 
 	/* ---------- Storage: SD card, NVMe / USB (sd_integrity checks), backups ---------- */

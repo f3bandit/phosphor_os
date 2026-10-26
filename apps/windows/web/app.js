@@ -346,6 +346,7 @@ class Home {
 		const t = [
 			{ id: "match", b: "Match to base games", s: "…" },
 			{ id: "search", b: "Search", s: "every system" },
+			{ id: "music", b: "Music", s: "the player, Steam soundtracks" },
 			{ id: "art", b: "Box art", s: "sources and logins" },
 			{ id: "settings", b: "Settings", s: "power, storage, look…" },
 		];
@@ -363,6 +364,7 @@ class Home {
 			const id = el.dataset.id;
 			if (id === "match") push(Match);
 			else if (id === "search") push(Search);
+			else if (id === "music") push(Music);
 			else if (id === "settings") push(AppSettings);
 			else if (id === "art") push(AppSettings, "boxart");
 			else if (id === "notes") push(AppSettings, "notifications");
@@ -393,6 +395,157 @@ class Home {
 
 async function launch(g) {
 	try { await ss1({ cmd: "launch", id: g.id }); toast(`Starting ${g.title} on the TV`); } catch (e) { toast(e.message); }
+}
+
+/* ---------- Music: the SS1's player (it plays on the TV), its albums, Steam soundtracks from this PC ---------- */
+const mcoverURL = id => `/api/mcover/${encodeURIComponent(id)}?k=${encodeURIComponent(KEY)}`;
+const msTime = ms => { ms = Math.max(0, ms || 0); return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`; };
+async function mctl(d, extra) { try { await ss1(Object.assign({ cmd: "music_ctl", do: d }, extra || {})); } catch (e) { toast(e.message); } }
+class Music {
+	constructor() { this.t = 0; this.hints = [["A", "Choose"], ["LB/RB", "Tabs"], ["B", "Back"]]; }
+	render(root) {
+		root.append(h(`<div class="sub">${spaced("Tools")}</div><h1>Music</h1>`));
+		tabs(root, ["Now playing", "Albums", "Steam soundtracks"], this.t, i => { this.t = i; show(this); });
+		root.append(h(`<div id="mbody" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>`));
+		clearTimeout(this.timer);
+		[this.now, this.albums, this.steam][this.t].call(this, $("#mbody"));
+	}
+	tab(d) { this.t = (this.t + d + 3) % 3; show(this); }
+	back() { clearTimeout(this.timer); return false; }
+	mine(b) { return topScr() === this && document.body.contains(b); }
+	/* the player on the TV, followed once a second */
+	now(b) {
+		b.innerHTML = `<div class="split" style="grid-template-columns:3fr 2fr"><div class="panel" id="np" style="overflow:auto"></div><div class="list" id="nq"></div></div>`;
+		let qkey = "", built = "";
+		const draw = async () => {
+			if (!this.mine(b)) return;
+			let m;
+			try { m = (await ss1({ cmd: "music" })).music; } catch (e) { $("#np").innerHTML = `<div class="empty">${esc(e.message)}</div>`; this.timer = setTimeout(draw, 3000); return; }
+			if (!this.mine(b)) return;
+			const t = m.track, np = $("#np");
+			const key = t ? `${t.album_id}|${t.index}|${t.title}` : "none";
+			if (key !== built) {                    /* a new track: build the panel; else just the moving parts */
+				built = key;
+				const had = cur && np.contains(cur) ? cur.id : "";
+				np.innerHTML = !t ? `<div class="empty">Nothing is playing.${m.error ? ` ${esc(m.error)}` : ""} Pick an album in Albums, or put a music CD in the dock's drive.</div>`
+					: `<div style="display:flex;gap:1.2rem;align-items:center">${t.cover ? `<div style="width:9rem;height:9rem;flex:none;border-radius:8px;background:center/cover url('${mcoverURL(t.album_id || "cd")}')"></div>` : ""}
+					<div style="min-width:0"><div class="sub" id="mp_state"></div><h2 style="margin:.3rem 0">${esc(t.title)}</h2>
+					<p class="note" style="margin:0">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</p></div></div>
+					<div style="height:6px;background:rgba(255,255,255,.12);border-radius:3px;margin:1rem 0 .4rem"><div id="mp_bar" style="height:100%;width:0;background:var(--acc);border-radius:3px"></div></div>
+					<p class="note" id="mp_time"></p>
+					<div class="acts"><button class="btn" id="mp_prev" data-nav>Previous</button><button class="btn primary" id="mp_play" data-nav>Pause</button><button class="btn" id="mp_next" data-nav>Next</button><button class="btn" id="mp_stop" data-nav>Stop</button></div>
+					<div class="acts"><button class="btn" id="mp_shuf" data-nav></button><button class="btn" id="mp_rep" data-nav></button><button class="btn" id="mp_vd" data-nav>Volume −</button><button class="btn" id="mp_vu" data-nav>Volume +</button></div>`;
+				if (t) {
+					$("#mp_prev").onclick = () => mctl("previous").then(draw);
+					$("#mp_next").onclick = () => mctl("next").then(draw);
+					$("#mp_play").onclick = () => mctl("toggle").then(draw);
+					$("#mp_stop").onclick = () => mctl("stop").then(draw);
+					$("#mp_shuf").onclick = () => mctl("shuffle", { on: !this.m.shuffle }).then(draw);
+					$("#mp_rep").onclick = () => mctl("repeat", { mode: { off: "all", all: "one", one: "off" }[this.m.repeat] || "off" }).then(draw);
+					$("#mp_vd").onclick = () => mctl("volume", { value: Math.max(0, this.m.volume - 10) }).then(draw);
+					$("#mp_vu").onclick = () => mctl("volume", { value: Math.min(100, this.m.volume + 10) }).then(draw);
+				}
+				if (had && $("#" + had)) focus($("#" + had), true);
+				else if (!touched && t) focus($("#mp_play"), true);
+			}
+			this.m = m;
+			if (t) {
+				$("#mp_state").textContent = `${m.state === "paused" ? "Paused" : "Now playing"}${t.cd ? " · music CD" : ""} · on the TV`;
+				$("#mp_bar").style.width = `${t.len_ms ? Math.min(100, t.pos_ms * 100 / t.len_ms) : 0}%`;
+				$("#mp_time").textContent = `${msTime(t.pos_ms)} / ${msTime(t.len_ms)} · track ${t.index + 1} of ${t.count}${t.next ? ` · next: ${t.next}` : ""} · volume ${m.volume}`;
+				$("#mp_play").textContent = m.state === "paused" ? "Play" : "Pause";
+				$("#mp_shuf").textContent = `Shuffle: ${m.shuffle ? "on" : "off"}`;
+				$("#mp_rep").textContent = `Repeat: ${m.repeat}`;
+			}
+			/* the queue, when it changed */
+			try {
+				const q = t ? (await ss1({ cmd: "music_queue" })).queue || [] : [];
+				const k = q.map(x => x.title + (x.current ? "*" : "")).join("\n");
+				if (k !== qkey && this.mine(b)) {
+					qkey = k;
+					const box = $("#nq"), had = cur && box.contains(cur) ? +cur.dataset.i : -1;
+					box.innerHTML = q.length ? q.map((x, i) => `<div class="row${x.current ? " on" : ""}" data-nav data-i="${i}"><span class="n">${x.current ? "♪ " : ""}${esc(x.title)}</span><span class="v">${i + 1}</span></div>`).join("") : `<div class="empty">The queue is empty.</div>`;
+					box.querySelectorAll(".row").forEach(r => (r.onclick = () => mctl("jump", { index: +r.dataset.i }).then(draw)));
+					if (had >= 0 && box.children[had]) focus(box.children[had], true);
+				}
+			} catch (e) {}
+			if (this.mine(b)) this.timer = setTimeout(draw, 1000);
+		};
+		draw();
+	}
+	/* the SS1's albums (and a music CD in the drive): play one on the TV */
+	async albums(b) {
+		b.innerHTML = `<div class="split"><div class="list" id="ml"><div class="empty"><span class="spin"></span>Asking the SS1…</div></div><div class="panel" id="mi"></div></div>`;
+		let j;
+		try { j = await ss1({ cmd: "music_albums" }); } catch (e) { $("#ml").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		if (!this.mine(b)) return;
+		const list = (j.cd ? [j.cd] : []).concat(j.albums || []);
+		const box = $("#ml");
+		if (!list.length) { box.innerHTML = `<div class="empty">No music on the SS1 yet. Send soundtracks from Steam soundtracks, copy a CD on the TV (Music › the CD › X), or put albums in a Music folder on its SD card or a USB drive.</div>`; return; }
+		box.innerHTML = "";
+		const src = a => a.id === "cd" ? "in the drive" : a.source === "steam" ? "Steam" : a.source === "cd" ? "from a CD" : "";
+		list.forEach(a => {
+			const el = h(`<div class="row" data-nav><span class="n">${a.id === "cd" ? "◉ " : ""}${esc(a.title)}</span><span class="v">${esc(src(a))}</span></div>`).firstChild;
+			el._onfocus = async () => {
+				let d = a;
+				if (a.id !== "cd") try { d = (await ss1({ cmd: "music_album", id: a.id })).album; } catch (e) {}
+				if (cur !== el) return;
+				$("#mi").innerHTML = `<div style="display:flex;gap:1rem;align-items:center">${a.cover ? `<div style="width:7rem;height:7rem;flex:none;border-radius:6px;background:center/cover url('${mcoverURL(a.id)}')"></div>` : ""}<div style="min-width:0"><h2 style="margin:0 0 .3rem">${esc(a.title)}</h2>
+					<p class="note" style="margin:0">${esc([a.artist, a.year, `${a.tracks} track${a.tracks === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}${a.id === "cd" && a.looking ? " · looking up the names…" : ""}</p></div></div>
+					<div class="acts"><button class="btn primary" id="ma_play" data-nav>Play on the TV</button><button class="btn" id="ma_shuf" data-nav>Shuffle</button></div>
+					<ol class="note" style="margin:.8rem 0 0 1.2rem;padding:0;overflow:auto;max-height:22rem">${(d.track_list || []).map(t => `<li>${esc(t.title)}</li>`).join("")}</ol>`;
+				const play = async shuffle => {
+					await mctl("shuffle", { on: shuffle });
+					try { await ss1({ cmd: "music_play", album: a.id }); toast(`Playing ${a.title} on the TV`); this.t = 0; show(this); } catch (e) { toast(e.message); }
+				};
+				$("#ma_play").onclick = () => play(false);
+				$("#ma_shuf").onclick = () => play(true);
+			};
+			el.onclick = () => { if ($("#ma_play")) $("#ma_play").click(); };
+			box.appendChild(el);
+		});
+		focus(box.firstElementChild);
+	}
+	/* Steam soundtracks installed on this PC: tick some, send them */
+	steam(b) {
+		b.innerHTML = `<p class="note">Soundtracks Steam has installed on this PC, read from Steam's own records. Phosphor doesn't sign in to Steam or change anything there. A soundtrack you own but haven't downloaded shows up after you install it in Steam.</p>
+			<div class="list" id="sl" style="flex:1"><div class="empty"><span class="spin"></span>Looking…</div></div>
+			<div class="acts"><button class="btn primary" id="st_send" data-nav>Send the ticked ones to the SS1</button><span class="note" id="st_job"></span></div>`;
+		const picked = new Set();
+		const draw = async first => {
+			if (!this.mine(b)) return;
+			let j;
+			try { j = await api("/api/steam"); } catch (e) { $("#sl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+			if (!this.mine(b)) return;
+			const box = $("#sl");
+			if (first) {
+				if (!j.steam) box.innerHTML = `<div class="empty">Steam isn't installed on this PC.</div>`;
+				else if (!j.soundtracks.length) box.innerHTML = `<div class="empty">No soundtracks are installed in Steam (looked in ${j.libraries} Steam librar${j.libraries === 1 ? "y" : "ies"}).</div>`;
+				else {
+					box.innerHTML = "";
+					j.soundtracks.forEach(s => {
+						const el = h(`<div class="row" data-nav style="gap:.8rem"><span class="ck" style="width:1rem;height:1rem;border:2px solid currentColor;border-radius:3px;flex:none;opacity:.7"></span>
+							${s.cover ? `<span style="width:2.4rem;height:2.4rem;flex:none;border-radius:4px;background:center/cover url('/api/steam/cover/${encodeURIComponent(s.appid)}?k=${encodeURIComponent(KEY)}')"></span>` : ""}
+							<span class="n">${esc(s.title)}<small class="note" style="display:block">${s.tracks} tracks · ${esc(s.format)} · ${Math.round(s.size / 1048576)} MB</small></span><span class="v" data-on="${esc(s.appid)}">${s.on_ss1 ? "On the SS1" : ""}</span></div>`).firstChild;
+						el.onclick = () => {
+							if (picked.has(s.appid)) picked.delete(s.appid); else picked.add(s.appid);
+							const ck = el.querySelector(".ck"); ck.style.background = picked.has(s.appid) ? "var(--acc)" : ""; ck.style.opacity = picked.has(s.appid) ? 1 : .7;
+						};
+						box.appendChild(el);
+					});
+				}
+			} else (j.soundtracks || []).forEach(s => { const v = box.querySelector(`[data-on="${CSS.escape(s.appid)}"]`); if (v) v.textContent = s.on_ss1 ? "On the SS1" : ""; });
+			const jb = j.job || {};
+			$("#st_job").textContent = jb.busy ? `Sending ${jb.title || "…"}${jb.total ? `: ${Math.floor(jb.done * 100 / jb.total)}%` : ""}${jb.waiting ? ` (${jb.waiting} more after it)` : ""}` : (jb.message || "");
+			if (jb.busy) this.timer = setTimeout(() => draw(false), 1500);
+		};
+		$("#st_send").onclick = async () => {
+			if (!picked.size) { toast("Tick a soundtrack first"); return; }
+			try { await api("/api/steam", { send: [...picked] }); toast("Sending to the SS1's Music"); } catch (e) { toast(e.message); }
+			clearTimeout(this.timer); draw(false);
+		};
+		draw(true);
+	}
 }
 
 /* ---------- Systems in a category ---------- */
@@ -485,7 +638,8 @@ async function getGame(id, fresh) {
 	return gameCache.get(id);
 }
 function gamePanel(g) {
-	const kv = DETAIL_KEYS.filter(([k]) => g[k]).map(([k, l]) => `<dt>${l}</dt><dd>${esc(g[k])}</dd>`).join("");
+	let kv = DETAIL_KEYS.filter(([k]) => g[k]).map(([k, l]) => `<dt>${l}</dt><dd>${esc(g[k])}</dd>`).join("");
+	if (g.ra && g.ra.total) kv += `<dt>Achievements</dt><dd>${g.ra.unlocked} / ${g.ra.total}</dd>`;      /* RetroAchievements */
 	return `<div class="boxart" style="background-image:url('${artURL(g.id)}')"></div>
 		<h2>${esc(g.title)}</h2>
 		${kv ? `<dl class="kv">${kv}</dl>` : `<p class="note">No details yet.</p>`}
@@ -558,7 +712,8 @@ class Game {
 		root.append(h(`<div class="sub">${spaced("Game")}</div><h1 id="gt">…</h1><div id="tb" style="flex:none"></div><div id="body"></div>`));
 		this.load();
 	}
-	tab(d) { this.t = (this.t + d + 3) % 3; this.draw(); }
+	tabNames() { return ["Details", "Based on", "Files"].concat(this.g && this.g.ra && this.g.ra.total ? ["Achievements"] : []); }
+	tab(d) { const k = this.tabNames().length; this.t = (this.t + d + k) % k; this.draw(); }
 	async load() {
 		try { this.g = await getGame(this.id, true); this.draw(); } catch (e) { $("#body").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 	}
@@ -566,11 +721,12 @@ class Game {
 		const g = this.g;
 		$("#gt").textContent = g.title;
 		$("#tb").innerHTML = "";
-		tabs($("#tb"), ["Details", "Based on", "Files"], this.t, i => { this.t = i; this.draw(); });
+		if (this.t >= this.tabNames().length) this.t = 0;
+		tabs($("#tb"), this.tabNames(), this.t, i => { this.t = i; this.draw(); });
 		const body = $("#body");
 		body.innerHTML = "";
 		cur = null;
-		if (this.t === 0) this.details(body); else if (this.t === 1) this.basedOn(body); else this.files(body);
+		if (this.t === 0) this.details(body); else if (this.t === 1) this.basedOn(body); else if (this.t === 2) this.files(body); else this.achievements(body);
 		focus($(".tab.on"), true);
 	}
 	details(body) {
@@ -590,6 +746,18 @@ class Game {
 		$("#again").onclick = async () => { try { await ss1({ cmd: "rescrape", id: g.id }); toast("It'll be looked up again the next time box art runs"); } catch (e) { toast(e.message); } };
 		$("#setart").onclick = () => $("#artfile").click();
 		$("#artfile").onchange = e => this.putArt(e.target.files[0]);
+	}
+	/* RetroAchievements: this game's set and what's unlocked (needs the Web API key on the SS1) */
+	async achievements(body) {
+		body.append(h(`<div class="list grow" id="ach"><div class="empty"><span class="spin"></span>Asking RetroAchievements…</div></div>`));
+		let r;
+		try { r = (await ss1({ cmd: "ra_game", id: this.id })).ra; } catch (e) { if ($("#ach")) $("#ach").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+		const box = $("#ach");
+		if (!box) return;
+		if (!r.supported) { box.innerHTML = `<div class="empty">RetroAchievements has no achievements for this version of the game.</div>`; return; }
+		box.innerHTML = `<p class="note">${r.unlocked} of ${r.total} unlocked${r.hardcore ? ` (${r.hardcore} in hardcore)` : ""} · ${n(r.points_unlocked)} of ${n(r.points)} points</p>`;
+		(r.achievements || []).forEach(a => box.append(h(`<div class="row" data-nav style="gap:.8rem;${a.unlocked ? "" : "opacity:.6"}">${a.badge ? `<img src="${esc(a.badge)}" alt="" style="width:2.4rem;height:2.4rem;border-radius:4px;flex:none">` : ""}
+			<span class="n">${esc(a.title)}<small class="note" style="display:block">${esc(a.description)}</small></span><span class="v">${a.points} pts${a.unlocked ? (a.hardcore ? " · ✓ hardcore" : " · ✓") : ""}</span></div>`)));
 	}
 	async save() {
 		const set = {};
