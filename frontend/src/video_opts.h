@@ -1,4 +1,5 @@
 /* MiSTer's video settings, explained: made by tools/gen_video_opts.js from apps/windows/web/video-options.js.
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  * Don't edit: change video-options.js and run it again. */
 #ifndef PHOS_VIDEO_OPTS_H
 #define PHOS_VIDEO_OPTS_H

@@ -119,7 +119,7 @@ cmake -B build && cmake --build build -j
 cmake -B build-arm -DCMAKE_TOOLCHAIN_FILE=../frontend/cmake/armhf.cmake && cmake --build build-arm -j
 ```
 
-Static ARM binaries: `phosphord` about 1.5 MB with SQLite built in, `phos` about 340 KB.
+Static ARM binaries, linked against musl (`tools/musl/build-toolchain.sh` first; see frontend/README.md): `phosphord` about 1.8 MB with SQLite built in, `phos` about 30 KB.
 
 Paths can be redirected for tests: `PHOS_FAT`, `PHOS_TMP`, `PHOS_GAMES_ROOTS`, `PHOS_MISTER_CMD`,
 `PHOS_CORENAME`, and for downloads `PHOS_CURL`, `PHOS_CACERT`. Tested on a sandbox library and on a

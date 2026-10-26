@@ -114,8 +114,9 @@ cmake -B build-arm -DCMAKE_TOOLCHAIN_FILE=cmake/armhf.cmake && cmake --build bui
                                                               # MiSTer: build-arm/phosphor
 ```
 
-Needs `gcc`, `cmake` and, for the MiSTer build, `arm-linux-gnueabihf-gcc`. The MiSTer binary is
-linked statically because MiSTer's Linux has glibc 2.31. Fonts are pre-converted in `fonts/`;
+Needs `gcc`, `cmake` and, for the MiSTer build, `arm-linux-gnueabihf-gcc` plus musl, built once with
+`tools/musl/build-toolchain.sh` (into `/opt/musl-armhf`). The MiSTer binary is linked statically
+against musl (MIT), so it doesn't depend on MiSTer's own libraries and carries no LGPL code. Fonts are pre-converted in `fonts/`;
 `tools/make_fonts.sh` regenerates them (Inter, SIL OFL; DejaVu Sans Mono).
 
 ## Screenshots without a screen

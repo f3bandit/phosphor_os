@@ -1,6 +1,7 @@
 #!/bin/bash
 # Regenerate the LVGL bitmap fonts in fonts/ (needs: cd tools && npm install lv_font_conv@1.5.2).
 # Inter: SIL Open Font License 1.1. DejaVu Sans Mono: Bitstream Vera / DejaVu licence.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 set -e
 cd "$(dirname "$0")/.."
 C=tools/node_modules/.bin/lv_font_conv
