@@ -567,7 +567,15 @@ class Shots {
 			this.load();
 		});
 		this.load();
+		/* new ones taken on the SS1 (L3 + R3) show up while this is open */
+		clearInterval(this.poll);
+		this.poll = setInterval(async () => {
+			if (topScr() !== this || !$("#sh_grid")) { clearInterval(this.poll); return; }
+			if (lockwin) return;
+			try { const j = await ss1({ cmd: "shots" }); if (this.key(j.shots) !== this.key(this.list)) this.load(); } catch (e) {}
+		}, 3000);
 	}
+	key(l) { return (l || []).map(s => s.id).join("|"); }
 	cur() { return (this.list || [])[this.sel]; }
 	x() { this.take(); }
 	async take() {
