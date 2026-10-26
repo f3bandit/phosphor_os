@@ -320,7 +320,8 @@ static int name_ok(const char *n)
 {
 	size_t l = strlen(n);
 	if (!strcmp(n, "MiSTer.ini")) return 1;
-	return l > 11 && l < 64 && !strncasecmp(n, "MiSTer_", 7) && !strcasecmp(n + l - 4, ".ini") && !strchr(n, '/');
+	return l > 11 && l < 64 && !strncasecmp(n, "MiSTer_", 7) && !strcasecmp(n + l - 4, ".ini") && !strchr(n, '/')
+	       && !strpbrk(n, "'\"\\$`");                 /* (the name goes into a shell command) */
 }
 
 static int ci_cmp(const void *a, const void *b) { return strcasecmp((const char *)a, (const char *)b); }

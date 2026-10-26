@@ -37,7 +37,7 @@ static const char *ifname(void) { return env_or("PHOS_WIFI_IF", "wlan0"); }
 static char *capture(const char *const *argv, int limit)
 {
 	int po[2];
-	if (pipe(po)) return NULL;
+	if (pipe2(po, O_CLOEXEC)) return NULL;          /* (not inherited by what other threads start) */
 	fcntl(po[0], F_SETFL, O_NONBLOCK);
 	posix_spawn_file_actions_t fa;
 	posix_spawn_file_actions_init(&fa);
@@ -359,7 +359,15 @@ static int conf_write(conf_t *c)
 }
 
 /* tell wpa_supplicant to read the file again; start it the way MiSTer does if it isn't running */
+static pthread_mutex_t reload_lk = PTHREAD_MUTEX_INITIALIZER;   /* one reload at a time (saving, and the keep-up thread) */
+static void reload_locked(void);
 static void reload(void)
+{
+	pthread_mutex_lock(&reload_lk);
+	reload_locked();
+	pthread_mutex_unlock(&reload_lk);
+}
+static void reload_locked(void)
 {
 	FILE *f = fopen(pid_path(), "r");
 	int pid = 0;

@@ -246,11 +246,20 @@ static void cfg_load(void)
 	pthread_mutex_unlock(&cfg_lk);
 }
 
+/* a copy, made under the lock: the settings are reloaded by the API thread while the scraper's threads
+   read them. The copies are the calling thread's own, eight in turn (one call may use several). */
 const char *scfg(const char *section, const char *key)
 {
+	static __thread char ring[8][sizeof(cfg[0].val)];
+	static __thread int next;
+	char *out = ring[next];
+	next = (next + 1) % 8;
+	out[0] = 0;
+	pthread_mutex_lock(&cfg_lk);
 	for (int i = 0; i < ncfg; i++)
-		if (!strcasecmp(cfg[i].sec, section) && !strcasecmp(cfg[i].key, key)) return cfg[i].val;
-	return "";
+		if (!strcasecmp(cfg[i].sec, section) && !strcasecmp(cfg[i].key, key)) { memcpy(out, cfg[i].val, sizeof(cfg[0].val)); break; }
+	pthread_mutex_unlock(&cfg_lk);
+	return out;
 }
 
 static int in_list(const char *list, const char *id)
@@ -997,11 +1006,22 @@ const char *scraper_undo(sqlite3 *db, cJSON *req)
 		if (sqlite3_prepare_v2(db, "SELECT art_box FROM games WHERE id=?", -1, &st, NULL) == SQLITE_OK) {
 			sqlite3_bind_int64(st, 1, id);
 			if (sqlite3_step(st) == SQLITE_ROW && sqlite3_column_text(st, 0)) {
-				char path[1024];
-				art_path((const char *)sqlite3_column_text(st, 0), path, sizeof(path));
-				unlink(path);
-				char *sl = strrchr(path, '/');
-				if (sl) { *sl = 0; rmdir(path); }        /* the game's art folder, when nothing else is in it */
+				/* other discs of the game, or games merged into it, can show the same picture: then it stays */
+				int others = 0;
+				sqlite3_stmt *o;
+				if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM games WHERE art_box=? AND id<>?", -1, &o, NULL) == SQLITE_OK) {
+					sqlite3_bind_text(o, 1, (const char *)sqlite3_column_text(st, 0), -1, SQLITE_TRANSIENT);
+					sqlite3_bind_int64(o, 2, id);
+					if (sqlite3_step(o) == SQLITE_ROW) others = sqlite3_column_int(o, 0);
+					sqlite3_finalize(o);
+				}
+				if (!others) {
+					char path[1024];
+					art_path((const char *)sqlite3_column_text(st, 0), path, sizeof(path));
+					unlink(path);
+					char *sl = strrchr(path, '/');
+					if (sl) { *sl = 0; rmdir(path); }    /* the game's art folder, when nothing else is in it */
+				}
 			}
 			sqlite3_finalize(st);
 		}
