@@ -194,6 +194,11 @@ static void draw_cb(lv_event_t *e)
 	case ICON_CHECK:
 		{ const float k[] = { 20, 38, 31, 49, 53, 25 }; poly(&p, k, 3, 0); }
 		break;
+	case ICON_MUSIC:                                     /* two beamed notes */
+		circle(&p, 22, 52, 8, 0); circle(&p, 50, 46, 8, 0);
+		line(&p, 30, 52, 30, 16); line(&p, 58, 46, 58, 10);
+		line(&p, 30, 16, 58, 10); line(&p, 30, 24, 58, 18);
+		break;
 	default:
 		break;
 	}
