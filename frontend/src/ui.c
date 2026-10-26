@@ -8026,7 +8026,7 @@ static void show_ra(void)
 	ra_note = mk_label(panel, FONT_BODY, PAL.dim,
 		"Log in once: your password goes to RetroAchievements and only the login it gives back is kept. Games on the "
 		"RetroAchievements cores get achievements; unlocks pop up in the game.\n\nHardcore: no save states, cheats or slow motion. "
-		"Your progress needs your Web API key, from your settings on retroachievements.org (or paste it from the phone or PC app).");
+		"Your progress needs your Web API key, from your settings on retroachievements.org (or paste it from Phosphor for Windows).");
 	lv_label_set_long_mode(ra_note, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_width(ra_note, S(396));
 	lv_obj_set_pos(ra_note, S(24), S(64));
