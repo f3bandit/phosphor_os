@@ -7601,6 +7601,7 @@ static char shotv_src[840];
 static void take_shot(void)
 {
 	cJSON *r = api_call_slow(8000, "{\"cmd\":\"shot\"}");
+	input_flush();          /* Down was held while the picture was saved: its repeats would scroll the screen */
 	if (api_ok(r)) toast_show(!strcmp(api_str(r, "where") ? api_str(r, "where") : "", "game") ? "Screenshot saved" : "Screenshot saved: Settings › Screenshots");
 	else toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't take the screenshot");
 	cJSON_Delete(r);

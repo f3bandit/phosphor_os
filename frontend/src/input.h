@@ -27,6 +27,8 @@ pkey_t input_poll(unsigned now_ms);
 int input_from_app(void);
 /* inject keys for tests and screenshots */
 void input_push(pkey_t k);
+/* drop the presses waiting (after something slow, e.g. a screenshot, held directions piled up) */
+void input_flush(void);
 /* a controller button from MiSTer Main ("up", "a", "start"...; p 1 pressed, 2 held/repeat, 0 released).
  * From the first one on, controllers are only taken from Main, like MiSTer's own menu */
 void input_main_pad(const char *button, int p);

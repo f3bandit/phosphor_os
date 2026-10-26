@@ -79,6 +79,8 @@ enum { CB_SELECT, CB_START };
 #define SRC_LOCAL (1u << 30)                /* keyboards and controllers read here (holders[] already merges them) */
 static unsigned cb_down[2];             /* which sources hold each one */
 static int main_down;                   /* MiSTer's Main says D-pad Down is held (the screenshot combo) */
+static long long mute_dirs_until;       /* after a screenshot: held directions' late repeats are dropped */
+static long long mono_now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000; }
 static int down_held(void);
 static int cb_combo;                    /* this press of the pair opened the power window */
 static void centre_press(int which, unsigned src)
@@ -193,6 +195,13 @@ void input_main_pad(const char *b, int p)
 
 static int down_held(void) { return holders[K_DOWN] != 0 || main_down; }
 
+void input_flush(void)
+{
+	qh = qt;
+	held = KEY_NONE_;
+	mute_dirs_until = mono_now_ms() + 500;        /* repeats Main sent meanwhile are still on their way */
+}
+
 static int have_pad(void)
 {
 	for (int i = 0; i < ndev; i++) if (devs[i].pad && !devs[i].virt) return 1;
@@ -208,8 +217,10 @@ static int have_virt(void)
 /* Main's virtual input carries the controllers' buttons only when Main doesn't send them as events */
 static int virt_feeds(void) { return have_virt() && !mainlink_pads(); }
 
+
 void input_push(pkey_t k)
 {
+	if (k >= K_UP && k <= K_RIGHT && mono_now_ms() < mute_dirs_until) return;
 	int n = (qt + 1) % 32;
 	if (n != qh) { queue[qt] = k; queue_app[qt] = (unsigned char)push_app; qt = n; }
 }
