@@ -101,7 +101,8 @@ int shot_take(char *where, size_t wn, char *file, size_t fn, char *err, size_t e
 	file[0] = 0;
 	/* a game running: MiSTer's own (the game's picture, as it does it) */
 	char *st = main_req("status", 800);
-	int in_game = st && strstr(st, "\"menu\":false");
+	/* the game's own picture on the screen (not Phosphor's in-game menu over it, "fb":true) */
+	int in_game = st && strstr(st, "\"menu\":false") && !strstr(st, "\"fb\":true");
 	free(st);
 	if (in_game) {
 		char *r = main_req("screenshot", 800);
