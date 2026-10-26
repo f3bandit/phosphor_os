@@ -347,6 +347,7 @@ class Home {
 			{ id: "match", b: "Match to base games", s: "…" },
 			{ id: "search", b: "Search", s: "every system" },
 			{ id: "music", b: "Music", s: "the player, Steam soundtracks" },
+			{ id: "shots", b: "Screenshots", s: "take one, see and save them" },
 			{ id: "art", b: "Box art", s: "sources and logins" },
 			{ id: "settings", b: "Settings", s: "power, storage, look…" },
 		];
@@ -365,6 +366,7 @@ class Home {
 			if (id === "match") push(Match);
 			else if (id === "search") push(Search);
 			else if (id === "music") push(Music);
+			else if (id === "shots") push(Shots);
 			else if (id === "settings") push(AppSettings);
 			else if (id === "art") push(AppSettings, "boxart");
 			else if (id === "notes") push(AppSettings, "notifications");
@@ -545,6 +547,74 @@ class Music {
 			clearTimeout(this.timer); draw(false);
 		};
 		draw(true);
+	}
+}
+
+/* ---------- Screenshots: the SS1's (screenshots/<system>/ on its SD card); take one of the TV ---------- */
+const shotURL = (kind, id, dl) => `/api/shot/${kind}/${id.split("/").map(encodeURIComponent).join("/")}?k=${encodeURIComponent(KEY)}${dl ? "&dl=1" : ""}`;
+class Shots {
+	constructor() { this.sel = 0; this.hints = [["A", "View"], ["X", "Take one"], ["B", "Back"]]; }
+	render(root) {
+		root.append(h(`<div class="sub">${spaced("Tools")}</div><h1>Screenshots</h1>
+			<div class="acts" style="flex:none"><button class="btn primary" id="sh_take" data-nav>Take a screenshot of the TV</button><button class="btn" id="sh_save" data-nav>Save to this PC</button><button class="btn" id="sh_del" data-nav>Delete</button><span class="note" id="sh_info"></span></div>
+			<div id="sh_grid" style="flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-content:start;margin-top:12px"><div class="empty"><span class="spin"></span></div></div>`));
+		$("#sh_take").onclick = () => this.x();
+		$("#sh_save").onclick = () => { const s = this.cur(); if (s) location.href = shotURL("file", s.id, true); };
+		twice($("#sh_del"), "Press again to delete", async () => {
+			const s = this.cur();
+			if (!s) return;
+			try { await ss1({ cmd: "shot_delete", id: s.id }); toast("Deleted"); } catch (e) { toast(e.message); }
+			this.load();
+		});
+		this.load();
+	}
+	cur() { return (this.list || [])[this.sel]; }
+	x() { this.take(); }
+	async take() {
+		toast("Taking a screenshot of the TV…");
+		try { const r = await ss1({ cmd: "shot" }); toast(r.where === "game" ? "Saved by MiSTer: it shows up here in a moment" : "Screenshot saved"); } catch (e) { toast(e.message); }
+		setTimeout(() => this.load(), 1500);
+	}
+	async load() {
+		let j;
+		try { j = await ss1({ cmd: "shots" }); } catch (e) { const g = $("#sh_grid"); if (g) g.innerHTML = `<div class="empty">${esc(/unknown/i.test(e.message) ? "This SS1's Phosphor doesn't have screenshots yet: update Phosphor." : e.message)}</div>`; return; }
+		const g = $("#sh_grid");
+		if (!g || topScr() !== this) return;
+		this.list = j.shots || [];
+		if (this.sel >= this.list.length) this.sel = Math.max(0, this.list.length - 1);
+		$("#sh_info").textContent = this.list.length ? `${this.list.length} on the SS1 · ${(j.bytes / 1048576).toFixed(0)} MB` : "";
+		if (!this.list.length) { g.innerHTML = `<div class="empty">No screenshots yet. On the SS1: hold D-pad Down and press Start, in a game or on Phosphor's screens. Or take one of the TV from here.</div>`; return; }
+		g.innerHTML = "";
+		this.list.forEach((s, i) => {
+			const when = new Date(s.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+			const el = h(`<div class="row" data-nav style="display:block;padding:6px;height:auto;border-radius:10px">
+				<div style="aspect-ratio:16/9;border-radius:6px;background:#000 center/cover no-repeat url('${shotURL("thumb", s.id)}')"></div>
+				<small class="note" style="display:block;margin-top:4px">${esc(s.core)} · ${esc(when)}</small></div>`).firstChild;
+			el._onfocus = () => { this.sel = i; };
+			el.onclick = () => { this.sel = i; this.view(); };
+			g.appendChild(el);
+		});
+		focus(g.children[this.sel], true);
+	}
+	/* one full size, over the page: Left / Right through them, Esc closes */
+	view() {
+		const s = this.cur();
+		if (!s) return;
+		const w = h(`<div class="lockwin" style="background:rgba(0,0,0,.92)"><div style="position:absolute;inset:24px 24px 64px;display:flex;align-items:center;justify-content:center">
+			<img id="sv_img" style="max-width:100%;max-height:100%;border-radius:6px" src="${shotURL("file", s.id)}" alt=""></div>
+			<div class="acts" style="position:absolute;left:24px;right:24px;bottom:12px;justify-content:space-between"><span class="note" id="sv_cap"></span>
+			<span><button class="btn" id="sv_prev" data-nav>Previous</button><button class="btn" id="sv_next" data-nav>Next</button><button class="btn primary" id="sv_save" data-nav>Save to this PC</button><button class="btn" id="sv_close" data-nav>Close</button></span></div></div>`).firstChild;
+		document.body.appendChild(w);
+		const prev = lockwin; lockwin = w;
+		const show = () => { const c = this.cur(); $("#sv_img", w).src = shotURL("file", c.id); $("#sv_cap", w).textContent = `${c.core} · ${new Date(c.at * 1000).toLocaleString()} · ${this.sel + 1} of ${this.list.length}`; };
+		const close = () => { lockwin = prev; w.remove(); const g = $("#sh_grid"); if (g && g.children[this.sel]) focus(g.children[this.sel], true); };
+		w._esc = close;
+		$("#sv_close", w).onclick = close;
+		$("#sv_prev", w).onclick = () => { if (this.sel > 0) { this.sel--; show(); } };
+		$("#sv_next", w).onclick = () => { if (this.sel + 1 < this.list.length) { this.sel++; show(); } };
+		$("#sv_save", w).onclick = () => { location.href = shotURL("file", this.cur().id, true); };
+		show();
+		focus($("#sv_next", w), true);
 	}
 }
 

@@ -146,6 +146,7 @@ const MORE = [
 	["discs", "Discs", "The dock's CD/DVD drive"],
 	["music", "Music", "The SS1's music player: albums, Steam soundtracks, the CD in the drive"],
 	["ra", "RetroAchievements", "Hardcore, pop-ups, cores, your progress"],
+	["shots", "Screenshots", "Take one of the TV, see them, save them to the phone"],
 	["diag", "Diagnostics", "The MiSTer's whole-system checks"],
 	["notes", "Notifications", "Warnings and news from the MiSTer"],
 	["connection", "Connection", "The paired MiSTer, find it again, forget it"],
@@ -1356,6 +1357,53 @@ PAGES.ach = { async show(c, p) {
 			pre: a.badge ? `<img class="cover" loading="lazy" src="${attr(a.badge)}" alt="" style="height:auto;aspect-ratio:1">` : "",
 			sub: a.description, value: `${a.points}${a.unlocked ? (a.hardcore ? " ✓✓" : " ✓") : ""}`, accent: a.unlocked, dim: !a.unlocked,
 		})).join("")));
+} };
+
+/* ---------------------------------------------------------------- Screenshots: the SS1's (screenshots/<system>/ on its SD card) */
+const shotUrl = (kind, id) => `art/shot/${kind}/${id.split("/").map(encodeURIComponent).join("/")}`;
+PAGES.shots = { async show(c, p) {
+	setBar("Screenshots");
+	let list = null, err = "", open = p.arg ? Number(p.arg) : -1;
+	const load = async () => {
+		try { const j = await call("shots"); list = j.shots || []; err = ""; }
+		catch (e) { err = /unknown/i.test(e.message) ? "This SS1's Phosphor doesn't have screenshots yet: update Phosphor." : e.message; list = []; }
+	};
+	acts = {
+		take: async () => {
+			toast("Taking a screenshot of the TV…");
+			const r = await call("shot");
+			toast(r.where === "game" ? "Saved by MiSTer" : "Screenshot saved");
+			await sleep(1500); await load(); draw();
+		},
+		open: i => { open = Number(i); draw(); scrollTo(0, 0); },
+		close: () => { open = -1; draw(); },
+		prev: () => { if (open > 0) { open--; draw(); } },
+		next: () => { if (open + 1 < list.length) { open++; draw(); } },
+		save: async () => { await app("saveShot", { id: list[open].id }); toast("Saved to Pictures › Phosphor"); },
+		share: async () => { await app("shareShot", { id: list[open].id }); },
+		del: async () => { await call("shot_delete", { id: list[open].id }); toast("Deleted"); await load(); if (open >= list.length) open = list.length - 1; draw(); },
+	};
+	const when = s => new Date(s.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+	const draw = () => {
+		if (!list) { c.draw(spin()); return; }
+		if (open >= 0 && list[open]) {
+			const s = list[open];
+			c.draw(`<img src="${shotUrl("file", s.id)}" alt="" style="width:100%;border-radius:10px;background:#000;display:block">
+				<p class="small" style="margin:8px 2px">${esc(s.core)} · ${esc(when(s))} · ${open + 1} of ${list.length}</p>
+				<div class="btns">${btn("‹ Previous", "prev", { off: open === 0 })}${btn("Next ›", "next", { off: open + 1 >= list.length })}</div>
+				<div class="btns">${btn("Save to Photos", "save", { p: true })}${btn("Share", "share")}</div>
+				<div class="btns">${btn("Delete", "del", { sure: "Tap again to delete" })}${btn("All screenshots", "close")}</div>`);
+			return;
+		}
+		c.draw(errp(err) + `<div class="btns">${btn("Take a screenshot of the TV", "take", { p: true, wide: true })}</div>`
+			+ (list.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">${list.map((s, i) => `<div data-act="open" data-arg="${i}" style="cursor:pointer">
+				<img loading="lazy" src="${shotUrl("thumb", s.id)}" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:#000;display:block">
+				<span class="small">${esc(s.core)} · ${esc(when(s))}</span></div>`).join("")}</div>`
+			: note("No screenshots yet. On the SS1: hold D-pad Down and press Start, in a game or on Phosphor's screens. Or take one of the TV from here.")));
+	};
+	draw();
+	await load();
+	draw();
 } };
 
 const DIAG_ORDER = ["fail", "warn", "info", "ok"];

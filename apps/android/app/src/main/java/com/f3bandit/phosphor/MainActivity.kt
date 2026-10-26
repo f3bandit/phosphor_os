@@ -166,6 +166,14 @@ class MainActivity : ComponentActivity() {
     // ---------------------------------------------------------------- box art for the page
 
     private fun artResponse(path: String): WebResourceResponse {
+        if (path.substringBefore('?').substringBefore('/') == "shot") {     // a screenshot: shot/thumb|file/<system>/<file>
+            val parts = path.substringBefore('?').split('/').map { Uri.decode(it) }
+            val api = model.api ?: return notFound()
+            if (parts.size != 4 || parts[1] !in setOf("thumb", "file") || parts.any { it.isEmpty() || it == ".." }) return notFound()
+            val b = runCatching { runBlocking { api.shot(parts[1], parts[2] + "/" + parts[3]) } }.getOrNull() ?: return notFound()
+            val type = if (b.size > 4 && b[0] == 0x89.toByte() && b[1] == 'P'.code.toByte()) "image/png" else "image/jpeg"
+            return WebResourceResponse(type, null, ByteArrayInputStream(b))
+        }
         if (path.substringBefore('?').substringBefore('/') == "mcover") {   // a music album's cover (the player follows the album, not kept)
             val id = path.substringBefore('?').substringAfter('/')
             val api = model.api ?: return notFound()
@@ -312,6 +320,27 @@ class MainActivity : ComponentActivity() {
                 val acc = todo.optJSONObject("config")?.optJSONObject("accounts") ?: JSONObject()
                 val (msg, works) = com.f3bandit.phosphor.scrape.ssCheck { sec, key -> acc.optJSONObject(sec)?.optString(key) ?: "" }
                 JSONObject().put("message", msg).put("works", works).toString()
+            }
+            // a screenshot from the SS1 into the phone's photos (Pictures/Phosphor), and shared from there
+            "saveShot", "shareShot" -> {
+                if (Build.VERSION.SDK_INT < 29) throw PhosphorError("Saving needs Android 10 or later")
+                val api = model.api ?: throw PhosphorError("Not paired")
+                val id = a.optString("id")
+                val bytes = api.shot("file", id) ?: throw PhosphorError("That screenshot isn't on the SS1 any more")
+                val name = id.replace('/', '-')
+                val png = bytes.size > 4 && bytes[0] == 0x89.toByte()
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
+                    put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Phosphor")
+                }
+                val uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: throw PhosphorError("Couldn't save it")
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw PhosphorError("Couldn't save it")
+                if (action == "shareShot") {
+                    val send = Intent(Intent.ACTION_SEND).setType(if (png) "image/png" else "image/jpeg").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    startActivity(Intent.createChooser(send, "Share the screenshot"))
+                }
+                "{}"
             }
             "notGame" -> {
                 val api = model.api ?: throw PhosphorError("Not paired")
