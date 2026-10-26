@@ -126,9 +126,20 @@ cJSON *api_call(const char *fmt, ...)
 	req[n] = 0;
 	for (int attempt = 0; attempt < 2; attempt++) {
 		if (ensure() != 0) return NULL;
-		if (send_all(req, (size_t)n) != 0) { hang_up(); continue; }
+		if (send_all(req, (size_t)n) != 0) { hang_up(); continue; }   /* not sent: try once more */
+		struct timespec t0, t1;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
 		char *line = read_line(5000);
-		if (!line) { hang_up(); continue; }
+		if (!line) {
+			hang_up();
+			/* closed at once: an old connection phosphord had already dropped (it restarted), so the
+			   request never reached it: once more on a new one. Sent but no answer: never sent again
+			   (a slow launch would run twice). */
+			clock_gettime(CLOCK_MONOTONIC, &t1);
+			long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+			if (attempt == 0 && ms < 50) continue;
+			return NULL;
+		}
 		cJSON *r = cJSON_Parse(line);
 		free(line);
 		return r;

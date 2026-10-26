@@ -392,7 +392,17 @@ pkey_t input_poll(unsigned now)
 		char buf[1024];
 		if (read(ino_fd, buf, sizeof(buf)) > 0) scan_devs();
 	}
+	int was_main = main_pads;
 	main_pads = mainlink_pads();   /* Phosphor's Main sends the controllers: they aren't read here at all */
+	if (main_pads && !was_main) {
+		/* Main is back: controller releases are ignored from now on, so let go of whatever the
+		   controllers held while it was away (else a held direction repeats forever) */
+		for (int i = 0; i < ndev; i++) {
+			if (!devs[i].virt && !devs[i].pad) continue;
+			release_all(devs[i].slot, now);
+			memset(devs[i].ax_dir, 0, sizeof(devs[i].ax_dir));
+		}
+	}
 	fifo_poll();
 	for (int i = 0; i < ndev; i++) {
 		struct input_event ev;

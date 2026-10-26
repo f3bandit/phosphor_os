@@ -34,6 +34,10 @@ int main(int argc, char **argv)
 	else if (!strcmp(c, "games") && *a) snprintf(req, sizeof(req), "{\"cmd\":\"games\",\"system\":\"%s\"}", a);
 	else if ((!strcmp(c, "game") || !strcmp(c, "launch")) && is_num(a)) snprintf(req, sizeof(req), "{\"cmd\":\"%s\",\"id\":%s}", c, a);
 	else snprintf(req, sizeof(req), "{\"cmd\":\"%s\"}", c);
+	if (strlen(req) + 2 > sizeof(req)) {        /* no room for the "\n" (and it was cut short) */
+		fprintf(stderr, "phos: request too long\n");
+		return 2;
+	}
 
 	const char *tmp = getenv("PHOS_TMP");
 	struct sockaddr_un addr = { .sun_family = AF_UNIX };
