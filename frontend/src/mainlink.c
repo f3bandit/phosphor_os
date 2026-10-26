@@ -41,24 +41,37 @@ static const char *path(void)
 	return p && *p ? p : "/tmp/phosphor-main.sock";
 }
 
-/* one command, one reply line (1 s at most) */
+static int handle_line(const char *l);
+
+/* one command, one reply line (1 s at most). Event lines can come first: they're handled as
+   mainlink_poll would, and the reply is the first line that isn't one */
 static int ask(const char *cmd, char *reply, size_t n)
 {
 	char line[128];
 	snprintf(line, sizeof(line), "%s\n", cmd);
 	if (send(fd, line, strlen(line), MSG_NOSIGNAL) < 0) return -1;
 	size_t len = 0;
+	int full = 0;                    /* a line too long for reply: the rest of it is dropped */
 	long long end = now_ms() + 1000;
-	while (len + 1 < n) {
+	for (;;) {
 		struct pollfd p = { fd, POLLIN, 0 };
 		int left = (int)(end - now_ms());
 		if (left <= 0 || poll(&p, 1, left) <= 0) return -1;
-		ssize_t r = recv(fd, reply + len, 1, 0);
+		char c;
+		ssize_t r = recv(fd, &c, 1, 0);
 		if (r <= 0) return -1;
-		if (reply[len] == '\n') { reply[len] = 0; return 0; }
-		len++;
+		if (c != '\n') {
+			if (len + 1 < n) reply[len++] = c; else full = 1;
+			continue;
+		}
+		reply[len] = 0;
+		int event = !strncmp(reply, "{\"event\":", 9);
+		if (event && !full) handle_line(reply);
+		if (!event && !full) return 0;
+		if (!event) return -1;          /* the reply didn't fit */
+		len = 0;                         /* an event: keep reading for the reply */
+		full = 0;
 	}
-	return -1;
 }
 
 static int take(void)
@@ -218,6 +231,62 @@ int mainlink_give(void)
 	return 1;
 }
 
+/* one line from Main: an event, or the reply to a command nothing waits for. 1: the shell has the
+   screen again (the caller waits for Main to switch to the framebuffer) */
+static int handle_line(const char *l)
+{
+	/* a controller button, read by Main with MiSTer's mapping (and repeated by it) */
+	if (!hidden && strstr(l, "\"event\":\"pad\"")) {
+		char b[16] = "";
+		int p = 0;
+		if (sscanf(l, "{\"event\":\"pad\",\"b\":\"%15[a-z]\",\"p\":%d", b, &p) == 2) input_main_pad(b, p);
+		else input_watch("main", l);                /* not understood: show it in the watch log */
+		return 0;
+	}
+	/* the drive changed (phosphord names what's in it); a game started or ended; the menu
+	   button in a game (Phosphor's in-game menu); Main took the in-game screen back */
+	if (strstr(l, "\"event\":\"disc\"")) { disc_changed = 1; return 0; }
+	if (strstr(l, "\"event\":\"shot\"")) { input_push(K_SHOT); return 0; }      /* both sticks in, on Phosphor's screens */
+	if (strstr(l, "\"event\":\"core\"")) { in_game = strstr(l, "\"menu\":false") != NULL; return 0; }
+	if (strstr(l, "\"event\":\"menu_button\"")) { if (in_game) menu_btn = 1; return 0; }
+	if (strstr(l, "\"event\":\"ingame\"")) { ingame_ended = 1; return 0; }
+	/* the controller mapping: a step, the end, or a refused command */
+	if (strstr(l, "\"event\":\"map\"")) {
+		const char *q;
+		if (strstr(l, "\"done\":true")) { mp.on = 0; mp.done = 1; mp.saved = strstr(l, "\"saved\":true") != NULL; }
+		else if ((q = strstr(l, "\"step\":"))) mp.step = atoi(q + 7);
+		if ((q = strstr(l, "\"dev\":\"")) && sscanf(q + 7, "%15[0-9a-f:]", mp.dev) != 1) mp.dev[0] = 0;
+		return 0;
+	}
+	if (mp.pending && !strncmp(l, "{\"ok\":", 6)) {
+		mp.pending = 0;
+		if (!strncmp(l, "{\"ok\":false", 12)) {
+			const char *q = strstr(l, "\"error\":\"");
+			snprintf(mp.err, sizeof(mp.err), "%.*s", q ? (int)strcspn(q + 9, "\"") : 0, q ? q + 9 : "");
+			if (mp.on && mp.step == -100) { mp.on = 0; mp.done = 1; mp.saved = 0; }
+		}
+		if (!script_on) return 0;
+	}
+	/* a script ran in MiSTer's terminal; it's over (or Main refused it): the screen again */
+	if (script_on && (strstr(l, "\"event\":\"script_done\"") || (!strncmp(l, "{\"ok\":false", 12)))) {
+		int st = 0;
+		const char *q = strstr(l, "\"status\":");
+		if (q) st = atoi(q + 9);
+		else { st = 1; plog("phosphor-main: script refused: %s", l); }
+		script_on = 0;
+		script_done_status = st;
+		return 1;
+	}
+	if (hidden && strstr(l, "\"event\":\"show\"")) {
+		if (send(fd, "screen phosphor\n", 16, MSG_NOSIGNAL) == 16) {
+			hidden = 0;
+			plog("phosphor-main: the shell has the screen again");
+			return 1;
+		}
+	}
+	return 0;
+}
+
 int mainlink_poll(void)
 {
 	if (fd >= 0) {
@@ -231,56 +300,7 @@ int mainlink_poll(void)
 					if (buf[i] != '\n') { if (llen + 1 < sizeof(lbuf)) lbuf[llen++] = buf[i]; continue; }
 					lbuf[llen] = 0;
 					llen = 0;
-					/* a controller button, read by Main with MiSTer's mapping (and repeated by it) */
-					if (!hidden && strstr(lbuf, "\"event\":\"pad\"")) {
-						char b[16] = "";
-						int p = 0;
-						if (sscanf(lbuf, "{\"event\":\"pad\",\"b\":\"%15[a-z]\",\"p\":%d", b, &p) == 2) input_main_pad(b, p);
-						else input_watch("main", lbuf);                /* not understood: show it in the watch log */
-						continue;
-					}
-					/* the drive changed (phosphord names what's in it); a game started or ended; the menu
-					   button in a game (Phosphor's in-game menu); Main took the in-game screen back */
-					if (strstr(lbuf, "\"event\":\"disc\"")) { disc_changed = 1; continue; }
-					if (strstr(lbuf, "\"event\":\"shot\"")) { input_push(K_SHOT); continue; }      /* both sticks in, on Phosphor's screens */
-					if (strstr(lbuf, "\"event\":\"core\"")) { in_game = strstr(lbuf, "\"menu\":false") != NULL; continue; }
-					if (strstr(lbuf, "\"event\":\"menu_button\"")) { if (in_game) menu_btn = 1; continue; }
-					if (strstr(lbuf, "\"event\":\"ingame\"")) { ingame_ended = 1; continue; }
-					/* the controller mapping: a step, the end, or a refused command */
-					if (strstr(lbuf, "\"event\":\"map\"")) {
-						const char *q;
-						if (strstr(lbuf, "\"done\":true")) { mp.on = 0; mp.done = 1; mp.saved = strstr(lbuf, "\"saved\":true") != NULL; }
-						else if ((q = strstr(lbuf, "\"step\":"))) mp.step = atoi(q + 7);
-						if ((q = strstr(lbuf, "\"dev\":\"")) && sscanf(q + 7, "%15[0-9a-f:]", mp.dev) != 1) mp.dev[0] = 0;
-						continue;
-					}
-					if (mp.pending && !strncmp(lbuf, "{\"ok\":", 6)) {
-						mp.pending = 0;
-						if (!strncmp(lbuf, "{\"ok\":false", 12)) {
-							const char *q = strstr(lbuf, "\"error\":\"");
-							snprintf(mp.err, sizeof(mp.err), "%.*s", q ? (int)strcspn(q + 9, "\"") : 0, q ? q + 9 : "");
-							if (mp.on && mp.step == -100) { mp.on = 0; mp.done = 1; mp.saved = 0; }
-						}
-						if (!script_on) continue;
-					}
-					/* a script ran in MiSTer's terminal; it's over (or Main refused it): the screen again */
-					if (script_on && (strstr(lbuf, "\"event\":\"script_done\"") || (!strncmp(lbuf, "{\"ok\":false", 12)))) {
-						int st = 0;
-						const char *q = strstr(lbuf, "\"status\":");
-						if (q) st = atoi(q + 9);
-						else { st = 1; plog("phosphor-main: script refused: %s", lbuf); }
-						script_on = 0;
-						script_done_status = st;
-						retake = 1;
-						continue;
-					}
-					if (hidden && strstr(lbuf, "\"event\":\"show\"")) {
-						if (send(fd, "screen phosphor\n", 16, MSG_NOSIGNAL) == 16) {
-							hidden = 0;
-							retake = 1;
-							plog("phosphor-main: the shell has the screen again");
-						}
-					}
+					if (handle_line(lbuf)) retake = 1;
 				}
 				continue;
 			}

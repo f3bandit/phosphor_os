@@ -821,8 +821,10 @@ static char *cmd_guard(cJSON *req)
 		cJSON_ArrayForEach(it, list) {
 			const char *v = cJSON_GetStringValue(it);
 			if (!v || !arg_ok(v) || n >= 16) return fail("that item isn't allowed");
-			/* settings files are /etc/... or /root/...; points are plain names */
-			if (!strcmp(d, "restore") ? (strncmp(v, "/etc/", 5) && strncmp(v, "/root/", 6)) || strstr(v, "..")
+			/* settings files are /etc/... or /root/..., written plainly (no //, /./ or ..: the remote
+			   check for network files matches on the plain path); points are plain names */
+			if (!strcmp(d, "restore") ? (strncmp(v, "/etc/", 5) && strncmp(v, "/root/", 6)) || strstr(v, "..") || strstr(v, "//")
+			                            || strstr(v, "/./") || (strlen(v) >= 2 && !strcmp(v + strlen(v) - 2, "/."))
 			                          : strchr(v, '/') != NULL) return fail("that item isn't allowed");
 			args[n++] = v;
 		}

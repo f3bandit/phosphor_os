@@ -14,6 +14,7 @@
 #include "paths.h"
 #include "systems.h"
 #include <dirent.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -73,6 +74,7 @@ typedef struct {
 	sqlite3_stmt *find_file, *touch_file, *update_file, *add_game, *find_game, *add_file;
 	const gsys_t *sys;
 	const char *root;
+	int bad;            /* the current root: a folder in it couldn't be read (a failing drive, say) */
 	int gen, added, changed, seen;
 } scan_t;
 
@@ -138,7 +140,7 @@ static void file_found(scan_t *s, const char *path, const char *name, const stru
 static void walk(scan_t *s, const char *dir, int depth)
 {
 	DIR *d = opendir(dir);
-	if (!d) return;
+	if (!d) { if (errno != ENOENT) s->bad = 1; return; }
 	struct dirent *e;
 	char path[1024];
 	while ((e = readdir(d))) {
@@ -192,6 +194,7 @@ static void scan(sqlite3 *db)
 	snprintf(roots[nr++], 256, "%s/_Arcade", p_fat());
 
 	listed = 0;
+	int bad[16] = { 0 };                    /* roots with a folder that couldn't be read */
 	for (int i = 0; i < NSYS && !stop_req; i++) {
 		s.sys = &SYS[i];
 		listing_sys = &SYS[i];
@@ -201,7 +204,8 @@ static void scan(sqlite3 *db)
 			if (arcade != (r == nr - 1)) continue;
 			if (!dir_exists(roots[r])) continue;
 			s.root = roots[r];
-			if (arcade) { walk(&s, roots[r], 0); continue; }
+			s.bad = 0;
+			if (arcade) { walk(&s, roots[r], 0); bad[r] |= s.bad; continue; }
 			char folders[96], *save = NULL;
 			snprintf(folders, sizeof(folders), "%s", SYS[i].folders);
 			for (char *f = strtok_r(folders, "|", &save); f; f = strtok_r(NULL, "|", &save)) {
@@ -209,17 +213,25 @@ static void scan(sqlite3 *db)
 				snprintf(dir, sizeof(dir), "%s/%s", roots[r], f);
 				if (dir_exists(dir)) walk(&s, dir, 0);
 			}
+			bad[r] |= s.bad;
 		}
 		db_exec(db, "COMMIT");
 	}
 
-	/* roots that are present: files not seen are gone. Roots that aren't: offline */
+	/* a scan stopped partway didn't reach every system: nothing is taken as gone (the next full scan
+	   does it), and the generation stays, so this one's marks still count */
+	int stopped = stop_req;
+	if (stopped) plog("scan %d stopped: nothing removed", gen);
+
+	/* roots that are present: files not seen are gone (not on a root that had a folder it couldn't
+	   read: those files may well be there). Roots that aren't: offline */
 	db_exec(db, "BEGIN");
 	sqlite3_stmt *gone, *away;
 	prep(db, &gone, "DELETE FROM files WHERE root=? AND seen<?");
 	prep(db, &away, "UPDATE files SET online=0 WHERE root=?");
 	for (int r = 0; r < nr; r++) {
 		if (dir_exists(roots[r])) {
+			if (stopped || bad[r]) { if (bad[r]) plog("scan: %s had folders that couldn't be read: nothing removed there", roots[r]); continue; }
 			sqlite3_reset(gone);
 			sqlite3_bind_text(gone, 1, roots[r], -1, SQLITE_STATIC);
 			sqlite3_bind_int(gone, 2, gen);
@@ -233,11 +245,11 @@ static void scan(sqlite3 *db)
 	sqlite3_finalize(gone);
 	sqlite3_finalize(away);
 	/* games with no files left and nothing worth keeping */
-	db_exec(db, "DELETE FROM games WHERE id NOT IN (SELECT game_id FROM files) AND play_count=0 AND favorite=0 "
+	if (!stopped) db_exec(db, "DELETE FROM games WHERE id NOT IN (SELECT game_id FROM files) AND play_count=0 AND favorite=0 "
 	            "AND art_box IS NULL AND description IS NULL AND based_on IS NULL "
 	            "AND id NOT IN (SELECT based_on FROM games WHERE based_on IS NOT NULL)");
 	snprintf(buf, sizeof(buf), "%d", gen);
-	db_meta_set(db, "scan_gen", buf);
+	if (!stopped) db_meta_set(db, "scan_gen", buf);
 	db_exec(db, "COMMIT");
 
 	sqlite3_finalize(s.find_file); sqlite3_finalize(s.touch_file); sqlite3_finalize(s.update_file);

@@ -42,6 +42,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <time.h>
@@ -782,10 +783,37 @@ static void handle(int fd)
 	if (e) { if (e > 0) respond_error(fd, e, "bad request"); goto done; }
 	if (r->chunked) { respond_error(fd, 411, "send Content-Length"); goto done; }
 
-	if (!strcmp(r->path, "/info")) {
+	if (!strcmp(r->path, "/info") || !strncmp(r->path, "/info?", 6)) {
 		if (strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
-		char s[160];
-		snprintf(s, sizeof(s), "{\"ok\":true,\"name\":\"Phosphor\",\"version\":\"%s\",\"api\":%d}", PHOSD_VERSION, API_VERSION);
+		/* ?nonce=<hex>: proof that this SS1 knows a device's key, without the key being sent (an app
+		   looking for its SS1 on the network checks it before it sends its key anywhere): for each
+		   paired device, sha256hex(<the hash of its key> ":" nonce). Only hashes go into it; the
+		   nonce is the app's, so an answer can't be replayed to another app. */
+		char nonce[65] = "";
+		const char *q = strstr(r->path, "?nonce=");
+		if (!q) q = strstr(r->path, "&nonce=");
+		if (q) {
+			q += 7;
+			size_t n = 0;
+			while (n < 64 && isxdigit((unsigned char)q[n])) { nonce[n] = (char)tolower((unsigned char)q[n]); n++; }
+			nonce[n] = 0;
+			if (n < 16 || (q[n] && q[n] != '&')) nonce[0] = 0;      /* too short, or not hex: no proofs */
+		}
+		char s[160 + REMOTE_MAX_DEVICES * 70];
+		int k = snprintf(s, sizeof(s), "{\"ok\":true,\"name\":\"Phosphor\",\"version\":\"%s\",\"api\":%d", PHOSD_VERSION, API_VERSION);
+		if (nonce[0]) {
+			k += snprintf(s + k, sizeof(s) - (size_t)k, ",\"proofs\":[");
+			pthread_mutex_lock(&mu);
+			for (int i = 0; i < ndevs; i++) {
+				char in[65 + 1 + 64 + 1], h[65];
+				int l = snprintf(in, sizeof(in), "%s:%s", devs[i].hash, nonce);
+				sha256_hex(in, (size_t)l, h);
+				k += snprintf(s + k, sizeof(s) - (size_t)k, "%s\"%s\"", i ? "," : "", h);
+			}
+			pthread_mutex_unlock(&mu);
+			k += snprintf(s + k, sizeof(s) - (size_t)k, "]");
+		}
+		snprintf(s + k, sizeof(s) - (size_t)k, "}");
 		respond_json(fd, 200, s);
 		goto done;
 	}
