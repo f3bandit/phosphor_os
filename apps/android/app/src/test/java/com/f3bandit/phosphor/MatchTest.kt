@@ -1,5 +1,6 @@
 // Matching to base games and fan art (Match.kt, FanArt.kt): the same cases as Phosphor for Windows'
 // automatch_test.go, so both apps decide the same way.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import com.f3bandit.phosphor.scrape.AmLibGame

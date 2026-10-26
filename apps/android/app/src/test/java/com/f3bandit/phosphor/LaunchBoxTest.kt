@@ -1,5 +1,6 @@
 // The LaunchBox source on its own, over the real internet: downloads Metadata.zip (~110 MB), reads it into
 // the cache database, and looks up a few games by official name. Slow: set PHOSPHOR_TEST_LAUNCHBOX=1 to run.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import com.f3bandit.phosphor.scrape.LaunchBox

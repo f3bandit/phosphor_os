@@ -1,5 +1,6 @@
 // The phone's name handling against Phosphor for Windows' (scrape_text.go): PHOSPHOR_TEST_GOTEXT names a JSON
 // file the Go functions wrote for the same inputs (see the comment in it); skipped otherwise.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import com.f3bandit.phosphor.scrape.discNo

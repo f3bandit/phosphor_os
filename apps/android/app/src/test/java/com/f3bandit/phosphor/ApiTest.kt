@@ -1,5 +1,6 @@
 // Against a real phosphord (the sandbox one, or a MiSTer): set PHOSPHOR_TEST_ADDR (host:port),
 // PHOSPHOR_TEST_CODE (a pairing code that's open now) and PHOSPHOR_TEST_PNG (any image file). Skipped otherwise.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import kotlinx.coroutines.runBlocking

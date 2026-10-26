@@ -152,7 +152,7 @@ const MORE = [
 	["connection", "Connection", "The paired MiSTer, find it again, forget it"],
 	["about", "About", "Version, privacy and licences"],
 ];
-const SECTION_OF = { home: "home", library: "library", games: "library", game: "library", edit: "library", based: "library", saves: "saves", video: "video" };
+const SECTION_OF = { home: "home", library: "library", games: "library", game: "library", edit: "library", based: "library", saves: "saves", video: "video", licences: "more" };
 function drawNav() {
 	const n = $("#nav");
 	n.hidden = !ST.paired || R.name === "connect";
@@ -1484,7 +1484,21 @@ PAGES.about = { async show(c) {
 	c.draw(flat(row("Phosphor for Android", { value: ST.appVersion }) + row("Works with", { value: "Phosphor 0.27.25 or later" }))
 		+ note("The app only talks to your MiSTer, on your home network. Box art lookups on the phone go to the services you turned on (libretro, ArcadeDB, LaunchBox, and with your logins TheGamesDB, ScreenScraper, IGDB). It collects nothing and sends nothing anywhere else. Passwords, WiFi and Bluetooth pairings stay on the MiSTer.")
 		+ note("Thanks to Taki and Retro Remake for making the SuperStation One, such excellent hardware. Disc support by Anime0t4ku and bonna79. RetroAchievements by odelot (RA Main and cores) and rcheevos by the RetroAchievements team. Music CD names from MusicBrainz and covers from the Cover Art Archive; audio decoding by dr_libs (David Reid) and stb_vorbis (Sean Barrett).")
-		+ note("PolyForm Noncommercial 1.0.0, like the rest of Phosphor. Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence)."));
+		+ note("PolyForm Noncommercial 1.0.0, like the rest of Phosphor. Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).")
+		+ flat(row("Open-source licences", { go: "licences" })));
+} };
+
+/* Phosphor's licence, Main and the menu core (GPL), and the notices of what it's built with (THIRD_PARTY_NOTICES.md, copied in by the build) */
+PAGES.licences = { async show(c) {
+	setBar("Open-source licences");
+	const head = note("Phosphor is Copyright (C) 2026 f3bandit, under the PolyForm Noncommercial License 1.0.0: free to use, share and change for any noncommercial purpose.")
+		+ note("Phosphor's Main (MiSTer_phosphor) and menu core (menu_phosphor.rbf) are GPL-3.0, built from MiSTer's Main and Menu core. Their source:")
+		+ flat([["Phosphor's Main", "https://github.com/f3bandit/phosphor-main"], ["Phosphor's menu core", "https://github.com/f3bandit/phosphor-menu"]]
+			.map(([t, u]) => `<a href="${attr(u)}" style="display:block;color:inherit;text-decoration:none">${row(t, { sub: u, value: "›" })}</a>`).join(""))   /* opens in the browser */
+		+ lbl("Third-party notices");
+	let text;
+	try { const r = await fetch("THIRD_PARTY_NOTICES.md"); if (!r.ok) throw new Error(); text = await r.text(); } catch (e) { text = null; }
+	c.draw(head + (text == null ? errp("The notices aren't in this build.") : `<pre class="out" style="max-height:none">${esc(text)}</pre>`));
 } };
 
 /* ---------------------------------------------------------------- start */

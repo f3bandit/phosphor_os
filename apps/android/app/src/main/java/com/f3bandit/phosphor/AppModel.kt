@@ -6,6 +6,8 @@ package com.f3bandit.phosphor
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.os.Build
@@ -112,7 +114,8 @@ fun localIPv4(context: Context): String? {
     return lp.linkAddresses.map { it.address }.filterIsInstance<Inet4Address>().firstOrNull { !it.isLoopbackAddress }?.hostAddress
 }
 
-/** a picked photo, made small enough to send quickly: about 1200 px on the long side, JPEG */
+/** a picked photo, made small enough to send quickly: about 1200 px on the long side, JPEG, turned the
+ *  way the camera's EXIF says (the decoder ignores it, and the JPEG sent carries no EXIF) */
 fun loadPhotoForUpload(context: Context, uri: Uri): ByteArray {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -121,7 +124,19 @@ fun loadPhotoForUpload(context: Context, uri: Uri): ByteArray {
     val bmp = context.contentResolver.openInputStream(uri)?.use {
         BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
     } ?: throw PhosphorError("Couldn't read that picture")
+    val m = Matrix()
+    val turn = runCatching { context.contentResolver.openInputStream(uri)?.use { ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) } }.getOrNull()
+    when (turn) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> m.setScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> m.setRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.setScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> { m.setRotate(90f); m.postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_90 -> m.setRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> { m.setRotate(-90f); m.postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_ROTATE_270 -> m.setRotate(-90f)
+    }
+    val upright = if (m.isIdentity) bmp else Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
     val out = ByteArrayOutputStream()
-    bmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
+    upright.compress(Bitmap.CompressFormat.JPEG, 92, out)
     return out.toByteArray()
 }

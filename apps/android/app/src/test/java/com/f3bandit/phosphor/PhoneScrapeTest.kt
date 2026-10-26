@@ -1,6 +1,7 @@
 // Against a real phosphord (the sandbox one): every command 0.8 added, then a whole box art run on the
 // "phone" (libretro, ArcadeDB, LaunchBox over the real internet), checking that the art reached the
 // MiSTer and the phone's copies were deleted. Set PHOSPHOR_TEST_ADDR and PHOSPHOR_TEST_CODE; skipped otherwise.
+// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import org.robolectric.RuntimeEnvironment
