@@ -11,6 +11,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -20,7 +21,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -53,9 +53,13 @@ func openWindow(url string) {
 	if edge := edgePath(); edge != "" {
 		c := exec.Command(edge, "--app="+url, "--window-size=1440,900", "--user-data-dir="+windowProfile(),
 			"--no-first-run", "--disable-features=Translate")
-		c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		if c.Start() == nil {
+		// not started hidden: an Edge starting fresh shows its first window the way it was started,
+		// so a hidden start gave a window that was there but never showed
+		if err := c.Start(); err == nil {
+			winLog("edge started (profile " + filepath.Base(windowProfile()) + ")")
 			return
+		} else {
+			winLog("edge didn't start: " + err.Error())
 		}
 	}
 	openBrowser(url)
@@ -110,6 +114,7 @@ var (
 	pFindWindow       = windows.NewLazySystemDLL("user32.dll").NewProc("FindWindowW")
 	pShowWindow       = windows.NewLazySystemDLL("user32.dll").NewProc("ShowWindow")
 	pIsIconic         = windows.NewLazySystemDLL("user32.dll").NewProc("IsIconic")
+	pIsVisible        = windows.NewLazySystemDLL("user32.dll").NewProc("IsWindowVisible")
 	pSetForegroundWnd = windows.NewLazySystemDLL("user32.dll").NewProc("SetForegroundWindow")
 )
 
@@ -119,11 +124,37 @@ func focusWindow() bool {
 	t, _ := windows.UTF16PtrFromString("Phosphor")
 	h, _, _ := pFindWindow.Call(uintptr(unsafe.Pointer(cls)), uintptr(unsafe.Pointer(t)))
 	if h == 0 {
+		winLog("start: no window open")
 		return false
 	}
-	if ic, _, _ := pIsIconic.Call(h); ic != 0 {
+	vis, _, _ := pIsVisible.Call(h)
+	ic, _, _ := pIsIconic.Call(h)
+	winLog(fmt.Sprintf("start: window found (visible %v, minimised %v)", vis != 0, ic != 0))
+	if vis == 0 {
+		pShowWindow.Call(h, 5) // SW_SHOW: a window that was there but hidden
+	}
+	if ic != 0 {
 		pShowWindow.Call(h, 9) // SW_RESTORE
 	}
 	pSetForegroundWnd.Call(h)
 	return true
+}
+
+// winLog: what happened opening the window, in window.log next to the settings (kept short), so a
+// window that doesn't show can be looked into
+func winLog(msg string) {
+	p := filepath.Join(configDir(), "window.log")
+	if fi, err := os.Stat(p); err == nil && fi.Size() > 64<<10 {
+		_ = os.Rename(p, p+".1")
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	el := ""
+	if windows.GetCurrentProcessToken().IsElevated() {
+		el = " [administrator]"
+	}
+	fmt.Fprintf(f, "%s %s%s %s\n", time.Now().Format("2006-01-02 15:04:05"), appVersion, el, msg)
+	f.Close()
 }
