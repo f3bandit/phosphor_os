@@ -144,6 +144,8 @@ const MORE = [
 	["storage", "Storage", "SD card, NVMe and USB drives, and this phone"],
 	["bluetooth", "Bluetooth", "Controllers paired with the MiSTer"],
 	["discs", "Discs", "The dock's CD/DVD drive"],
+	["music", "Music", "The SS1's music player: albums, Steam soundtracks, the CD in the drive"],
+	["ra", "RetroAchievements", "Hardcore, pop-ups, cores, your progress"],
 	["diag", "Diagnostics", "The MiSTer's whole-system checks"],
 	["notes", "Notifications", "Warnings and news from the MiSTer"],
 	["connection", "Connection", "The paired MiSTer, find it again, forget it"],
@@ -515,6 +517,7 @@ PAGES.game = { async show(c, p) {
 			${lbl("Details")}
 			${flat(d("year", "Year") + d("developer", "Developer") + d("publisher", "Publisher") + d("genre", "Genre") + d("players", "Players") + (g.region ? d("region", "Region") : "") + row("Edit details", { go: "edit/" + id, accent: true }))}
 			<p class="desc${g.description ? "" : " small"}">${esc(g.description || "No description yet.")}</p>
+			${g.ra && g.ra.total ? lbl("RetroAchievements") + flat(row(`${g.ra.unlocked} of ${g.ra.total} unlocked`, { go: "ach/" + id })) : ""}
 			${lbl("Based on")}
 			${flat(row(b && b.title ? b.title : "Not based on another game", { sub: b && b.title ? "Uses its box art and details unless this game has its own" : "For hacks, mods and translations", dim: !(b && b.title), go: "based/" + id }))}
 			${lbl("Box art and details lookup")}
@@ -1226,6 +1229,133 @@ PAGES.discs = { async show(c) {
 		catch (e) { err = /only works|unknown/i.test(e.message) ? "This MiSTer's Phosphor doesn't have disc support yet: update Phosphor." : e.message; d = null; draw(); }
 		return 2500;
 	});
+} };
+
+/* ---------------------------------------------------------------- Music: the SS1's player (it plays on the TV) */
+const mcoverUrl = (id, v) => `art/mcover/${encodeURIComponent(id)}?v=${encodeURIComponent(v || "")}`;
+const msTime = ms => { ms = Math.max(0, ms || 0); return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`; };
+PAGES.music = { async show(c, p) {
+	setBar("Music");
+	const tab = p.arg === "albums" ? "albums" : "now";
+	setChips([["now", "Now playing"], ["albums", "Albums"]], tab, x => go("music/" + x, true));
+	let m = null, q = [], albums = null, open = "", tracks = {}, err = "";
+	const ctl = async (d, extra) => { await call("music_ctl", Object.assign({ do: d }, extra || {})); m = (await call("music")).music; draw(); };
+	acts = {
+		prev: () => ctl("previous"), next: () => ctl("next"), toggle: () => ctl("toggle"), stop: () => ctl("stop"),
+		shuffle: () => ctl("shuffle", { on: !m.shuffle }),
+		repeat: () => ctl("repeat", { mode: { off: "all", all: "one", one: "off" }[m.repeat] || "off" }),
+		vdown: () => ctl("volume", { value: Math.max(0, m.volume - 10) }), vup: () => ctl("volume", { value: Math.min(100, m.volume + 10) }),
+		jump: i => ctl("jump", { index: Number(i) }),
+		open: async id => {
+			open = open === id ? "" : id;
+			if (open && open !== "cd" && !tracks[id]) { draw(); try { tracks[id] = (await call("music_album", { id })).album.track_list || []; } catch (e) { tracks[id] = []; } }
+			draw();
+		},
+		play: async id => { await call("music_ctl", { do: "shuffle", on: false }); await call("music_play", { album: id }); toast("Playing on the TV"); go("music/now", true); },
+		shufflePlay: async id => { await call("music_ctl", { do: "shuffle", on: true }); await call("music_play", { album: id }); toast("Shuffling on the TV"); go("music/now", true); },
+	};
+	const nowHtml = () => {
+		const t = m && m.track;
+		if (!t) return flat(row("Nothing is playing", { sub: (m && m.error) || "Pick an album, or put a music CD in the dock's drive", dim: true })) + `<div class="btns">${btn("Albums", "", { wide: true }).replace('data-act=""', 'data-go="music/albums"')}</div>`;
+		const pct = t.len_ms ? Math.min(100, t.pos_ms * 100 / t.len_ms) : 0;
+		return card(`<div style="display:flex;gap:14px;align-items:center">${t.cover ? `<img src="${mcoverUrl(t.album_id || "cd", t.album)}" alt="" style="width:88px;height:88px;border-radius:8px;object-fit:cover;flex:none">` : ""}
+				<div style="min-width:0"><div class="lbl" style="margin:0">${m.state === "paused" ? "Paused" : "Now playing"}${t.cd ? " · music CD" : ""}</div><b style="display:block;font-size:1.1em">${esc(t.title)}</b><span class="small">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</span></div></div>
+				<div style="height:5px;background:rgba(255,255,255,.12);border-radius:3px;margin:12px 0 6px"><div style="height:100%;width:${pct}%;background:var(--acc);border-radius:3px"></div></div>
+				<p class="small">${msTime(t.pos_ms)} / ${msTime(t.len_ms)} · track ${t.index + 1} of ${t.count} · volume ${m.volume}</p>
+				<div class="btns">${btn("Previous", "prev")}${btn(m.state === "paused" ? "Play" : "Pause", "toggle", { p: true })}${btn("Next", "next")}${btn("Stop", "stop")}</div>
+				<div class="btns">${btn("Shuffle: " + (m.shuffle ? "on" : "off"), "shuffle")}${btn("Repeat: " + m.repeat, "repeat")}${btn("Vol −", "vdown")}${btn("Vol +", "vup")}</div>`)
+			+ (q.length ? lbl("Up next") + flat(q.map((x, i) => row((x.current ? "♪ " : "") + x.title, { accent: x.current, value: String(i + 1) }).replace('<div class="row', `<div data-act="jump" data-arg="${i}" class="row`)).join("")) : "");
+	};
+	const albumsHtml = () => {
+		if (!albums) return spin();
+		if (!albums.length) return flat(row("No music on the SS1 yet", { sub: "Send Steam soundtracks from Phosphor for Windows, copy a CD on the TV, or put albums in a Music folder on its SD card or a USB drive", dim: true }));
+		return flat(albums.map(a => {
+			const src = a.id === "cd" ? "In the drive" : a.source === "steam" ? "Steam" : a.source === "cd" ? "From a CD" : "";
+			const pre = a.cover ? `<img class="cover" loading="lazy" src="${mcoverUrl(a.id, a.title)}" alt="" style="object-fit:cover">` : `<span class="cover" aria-hidden="true"></span>`;
+			let h = row(a.title, { pre, sub: [a.artist, a.year, src, `${a.tracks} tracks`].filter(Boolean).join(" · "), accent: a.id === "cd" }).replace('<div class="row', `<div data-act="open" data-arg="${attr(a.id)}" class="row`);
+			if (open === a.id) {
+				const tl = a.id === "cd" ? a.track_list || [] : tracks[a.id];
+				h += `<div style="padding:4px 14px 12px"><div class="btns">${btn("Play on the TV", "play", { p: true, arg: a.id })}${btn("Shuffle", "shufflePlay", { arg: a.id })}</div>
+					${tl ? `<ol class="small" style="margin:8px 0 0 18px;padding:0">${tl.map(t => `<li>${esc(t.title)}</li>`).join("")}</ol>` : spin()}</div>`;
+			}
+			return h;
+		}).join(""));
+	};
+	const draw = () => c.draw(errp(err) + (tab === "now" ? nowHtml() : albumsHtml()));
+	if (tab === "albums") {
+		try { const j = await call("music_albums"); albums = (j.cd ? [j.cd] : []).concat(j.albums || []); } catch (e) { err = /unknown/i.test(e.message) ? "This SS1's Phosphor doesn't have the music player yet: update Phosphor." : e.message; albums = []; }
+		draw();
+		return;
+	}
+	let qk = "";
+	await c.every(async () => {
+		try {
+			m = (await call("music")).music; err = "";
+			if (m.track) { q = (await call("music_queue")).queue || []; } else q = [];
+		} catch (e) { err = /unknown/i.test(e.message) ? "This SS1's Phosphor doesn't have the music player yet: update Phosphor." : e.message; }
+		const k = JSON.stringify([m && m.state, m && m.track && [m.track.title, m.track.pos_ms], m && [m.shuffle, m.repeat, m.volume], q.length, err]);
+		if (k !== qk) { qk = k; draw(); }
+		return 1000;
+	});
+} };
+
+/* ---------------------------------------------------------------- RetroAchievements: odelot's RA Main and cores; the login is on the TV */
+PAGES.ra = { async show(c, p) {
+	setBar("RetroAchievements");
+	const tab = p.arg === "progress" ? "progress" : "options";
+	setChips([["options", "Options"], ["progress", "Your progress"]], tab, x => go("ra/" + x, true));
+	const noRA = e => /unknown|no such/i.test(e.message) ? "This SS1's Phosphor doesn't have RetroAchievements yet: update Phosphor." : e.message;
+	if (tab === "progress") {
+		let pr;
+		try { pr = (await call("ra_profile")).profile; } catch (e) { c.draw(errp(noRA(e))); return; }
+		c.draw(card(`<div style="display:flex;gap:12px;align-items:center">${pr.picture ? `<img src="${attr(pr.picture)}" alt="" style="width:52px;height:52px;border-radius:8px">` : ""}<div><b style="font-size:1.1em">${esc(pr.user)}</b><br><span class="small">${(pr.points || 0).toLocaleString()} points${pr.rank ? ` · rank ${pr.rank.toLocaleString()}` : ""}</span><br><span class="small">${pr.achievements} achievements · ${pr.mastered} mastered</span></div></div>`)
+			+ ((pr.games || []).length ? lbl("Recently played") + flat(pr.games.map(g => row(g.title, {
+				pre: g.icon ? `<img class="cover" loading="lazy" src="${attr(g.icon)}" alt="" style="height:auto;aspect-ratio:1">` : "",
+				sub: [g.console, g.award, g.game_id ? "" : "not in your library"].filter(Boolean).join(" · "), value: `${g.unlocked} / ${g.total}`, go: g.game_id ? "ach/" + g.game_id : undefined,
+			})).join("")) : note("No games played with achievements yet.")));
+		return;
+	}
+	let r = null, err = "";
+	const set = async o => { await call("ra_set", o); r = (await call("ra")).ra; draw(); };
+	acts = {
+		hc: () => set({ hardcore: !r.hardcore }),
+		pp: () => set({ popups: { left: "center", center: "right", right: "left" }[r.popups] || "left" }),
+		snd: () => set({ sound: !r.sound }),
+		cores: async () => { await call("ra_cores"); toast("Getting the cores from GitHub"); },
+		match: async () => { await call("ra_match"); toast("Looking up the library on RetroAchievements"); },
+	};
+	const sw = (name, sub, on, act) => `<div class="sw"><div class="t"><b>${esc(name)}</b><span>${esc(sub)}</span></div>${tog(on, act)}</div>`;
+	const draw = () => {
+		if (!r) { c.draw(errp(err) || spin()); return; }
+		const busy = r.job.busy || r.match.busy;
+		c.draw(errp(err) + flat(row("Account", { value: r.logged_in ? r.user : "Log in on the TV", accent: r.logged_in }) + row("Cores", { value: `${r.cores_installed} of ${r.cores.length}` }) + row("Web API key", { value: r.web_key ? "Set" : "Set it on the TV", dim: !r.web_key }))
+			+ card(sw("Hardcore", "No save states, rewind or cheats; counts double", r.hardcore, "hc") + sw("Unlock sound", "A chime when you earn one", r.sound, "snd"))
+			+ flat(row("Pop-ups", { value: r.popups, accent: true }).replace('<div class="row', '<div data-act="pp" class="row'))
+			+ `<div class="btns">${btn(r.cores_installed ? "Update the cores" : "Get the cores", "cores", { p: true, off: busy })}${btn("Match the library", "match", { off: busy || !r.web_key })}</div>`
+			+ ([r.job.message, r.match.message].filter(Boolean).length ? `<p class="busy">${esc([r.job.message, r.match.message].filter(Boolean).join(" · "))}</p>` : "")
+			+ note("Earn achievements while you play NES, SNES, Game Boy, GBA, N64, PlayStation, Mega Drive, Mega-CD, Master System, Game Gear, PC Engine and Atari 7800 games. Log in on the TV: only a login token is kept on the SS1, never your password.")
+			+ note("RetroAchievements support: odelot's MiSTer RA Main and cores, and the RetroAchievements rcheevos library. Achievements and badges from retroachievements.org."));
+	};
+	let k = "";
+	await c.every(async () => {
+		try { r = (await call("ra")).ra; err = ""; } catch (e) { err = noRA(e); }
+		const nk = JSON.stringify([r, err]);
+		if (nk !== k) { k = nk; draw(); }
+		return r && (r.job.busy || r.match.busy) ? 1500 : 4000;
+	});
+} };
+/* a game's achievements */
+PAGES.ach = { async show(c, p) {
+	const id = Number(p.arg);
+	setBar("Achievements");
+	let r;
+	try { r = (await call("ra_game", { id })).ra; } catch (e) { c.draw(errp(e.message)); return; }
+	if (!r.supported) { c.draw(flat(row("No achievements for this version", { sub: "RetroAchievements doesn't know this file", dim: true }))); return; }
+	c.draw(note(`${r.unlocked} of ${r.total} unlocked${r.hardcore ? ` (${r.hardcore} in hardcore)` : ""} · ${r.points_unlocked} of ${r.points} points`)
+		+ flat((r.achievements || []).map(a => row(a.title, {
+			pre: a.badge ? `<img class="cover" loading="lazy" src="${attr(a.badge)}" alt="" style="height:auto;aspect-ratio:1">` : "",
+			sub: a.description, value: `${a.points}${a.unlocked ? (a.hardcore ? " ✓✓" : " ✓") : ""}`, accent: a.unlocked, dim: !a.unlocked,
+		})).join("")));
 } };
 
 const DIAG_ORDER = ["fail", "warn", "info", "ok"];

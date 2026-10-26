@@ -435,6 +435,11 @@ class PhosphorApi(val address: String, private val token: String?) {
         try { request("GET", "/art/disc") } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
     }
 
+    /** a music album's cover on the SS1 ("cd": the music CD in the drive), or null */
+    suspend fun musicCover(id: String): ByteArray? = withContext(Dispatchers.IO) {
+        try { request("GET", "/music/cover/$id") } catch (e: PhosphorError) { if (e.code == 404) null else throw e }
+    }
+
     suspend fun setArt(id: Long, image: ByteArray, type: String = "image/jpeg"): Game = parseGame(setArtJson(id, image, type).getJSONObject("game"))
 
     /** the reply as the MiSTer sent it ({ok, game}) */
