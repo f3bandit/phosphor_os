@@ -48,7 +48,7 @@ Phosphor and its associated applications strictly adhere to user-first privacy p
 
 ## 🕹️ Why Phosphor Exists
 
-Phosphor was built because creators like Taki Udon and Retro Remake demonstrated that open hardware can directly compete with commercial manufacturers using FOMO tactics, artificial scarcity, or releasing clone hardware with abandoned software (like the old flashcard "timebomb" era or just move onto the next product, and never update older products they built their company on).
+Phosphor was built because creators like Taki Udon and Retro Remake demonstrated that open hardware can directly compete with commercial manufacturers using FOMO tactics, artificial scarcity, or releasing clone hardware with abandoned software (like the old flashcard "timebomb" era or just move onto the next product, and never update older products they built their brand on).
 
 By bringing the console form factor back to MiSTer with the SS1, Taki Udon and Retro Remake introduced healthy competition to the retro gaming market. Every developer building hardware, software, tools, and cores makes this community stronger and more vibrant.
 
