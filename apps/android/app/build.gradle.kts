@@ -1,4 +1,6 @@
 // Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+import java.security.SecureRandom
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,7 +19,7 @@ android {
         // Phosphor's own ScreenScraper developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD
         // in the environment), never in the repo; empty without it. Scrambled (XOR with a fresh random key each
         // build, stored as hex) so it isn't plain text in the APK; SsLogin.kt unscrambles it.
-        val ssKey = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val ssKey = ByteArray(32).also { SecureRandom().nextBytes(it) }
         fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
         fun scr(v: String?): String {
             val b = (v ?: "").toByteArray(Charsets.UTF_8)
