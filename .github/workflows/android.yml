@@ -34,7 +34,11 @@ jobs:
           KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         if: ${{ env.KS != '' }}
         run: |
-          echo "$KS" | base64 -d > /tmp/release.jks
+          echo "$KS" | tr -d '[:space:]' | base64 -d > /tmp/release.jks
+          # pasted secrets can carry stray spaces or newlines
+          KEY_ALIAS=$(printf '%s' "$KEY_ALIAS" | tr -d '[:space:]')
+          KS_PASS=$(printf '%s' "$KS_PASS" | tr -d '\r\n'); KEY_PASS=$(printf '%s' "$KEY_PASS" | tr -d '\r\n'); export KS_PASS KEY_PASS
+          keytool -list -keystore /tmp/release.jks -storepass:env KS_PASS | grep -i entry || true
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/zipalign" -f 4 app/build/outputs/apk/release/app-release-unsigned.apk /tmp/aligned.apk
           "$BT/apksigner" sign --ks /tmp/release.jks --ks-pass env:KS_PASS --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS \
