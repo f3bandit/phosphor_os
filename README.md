@@ -1,5 +1,3 @@
-# Phosphor
-
 Unofficial custom firmware for the SuperStation One, built on mainline MiSTer and its Linux: a
 console-style home screen with your library and box art, the front-port controllers and memory cards,
 Bluetooth, WiFi, and saves, all with a controller, plus a phone app. Working name;
