@@ -35,6 +35,15 @@ A lot of Phosphor's underlying code is brought over from `ss1-tool` (originally 
 
 ---
 
+## 💻 Platforms & Pricing
+
+- **Phosphor OS (MiSTer / SS1):** Always 100% free.
+- **Companion Apps (Windows / Linux / Mac):** Always 100% free.
+- **Android App:** Paid extra, but completely optional and not a requirement to use Phosphor. The sole reason for the paid Android app is to cover the cost of further hardware and software development in the MiSTer community.
+- **iPhone / iOS:** An App Store version will **never** happen.
+
+---
+
 ## 🔒 Privacy & User Control
 
 Phosphor and its associated applications strictly adhere to user-first privacy principles:
