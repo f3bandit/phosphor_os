@@ -5,36 +5,58 @@ console-style home screen with your library and box art, the front-port controll
 Bluetooth, WiFi, saves and screen filters, all with a controller, plus a phone app. Working name;
 private while in development. Not made or supported by MiSTer-devel or the SuperStation One's makers.
 
-Phosphor is built **with** stock MiSTer, not against it: MiSTer-devel's Linux and kernel as they ship,
-nothing replaced on the card, nothing that polls. Mister's own menu is always one button away. The point
-is to give mister users a choice. classic mister or a console style like an analogue, or any other 
-mainstream console on the market. Mister ecosystem doesn't need to be for just advanced users. That's
-where phosphor comes in, to bridge the gap. Some people just want to play games, and they just want things 
-simple like they were back in the day. Phosphor is built to make things as simple as possible, with 
-everything baked in and ready to go. No need download extra packages to add features that should already
-be there for an average user. phosphor takes care of it for you. This takes alot of the work off users
-and the devs having to troubleshoot issues from incorrect settings. Alot of the code is brought over 
-from my ss1-tool built for retro remakes console mode to make things easier for basic and advanced users.
-neither phosphor or ss1-tool are to be a replacement for console mode or mister companion or to compete
-with them. they are meant to be choices that users can decide is they want to use. I will always work 
-with mister, console mode, retro remake, Taki Udon, animeotaku, or any of the other open source devs 
-creating amazing software cores, software, tools, etc. for the mister community. 
-Phosphor/ss1-tool apps/posphor appswill never track you, collect data, serve ads, serve targeted ads, 
-share your data in anyway, your data is yours, your hardware is yours, and your privacy it yours,
-nothing gets sent anywhere automatically, and anything that gets sent is disclosed and is used for the
-sole basis of phosphor to connect your device to the services and feature supported that you decide to use.
-you are in control at all times of your hardware and software. nothing happens without your control.
-The bottom line is phosphor was built because Taki Udon/Retro Remake made it possible to compete with 
-manufacturers that use shady FOMO tactics and engineered scarcity to sell products. As well as manufacturers
-that churn out aftermarket clone hardware with jank software and scarce software updates or bug fixes.
-I'm sure we remember all the gba, ds, and 3ds "timebomb" days. I know some people have issues with
-console mode and/or Taki Udon/Reto remake but whether not anyone wants to admit it he did bring competition
-to the retro gaming hardware market. and his hardware can compete against analogue just like any other 
-mister device. Taki Udon/Retro Remake brought the console formfactor back to the mister with his ss1.
-And Taki Udon/Retro Remake deserve their dues and respect for everything they have accomplished. 
-Some people may not agree with me but everyone in the mister community developing hardware, software,
-tools, cores, etc. are just making the community better overall. Choices are good for everyone.
-Play your games your way. Games are meant to be fun. Not a pollical debate.
+# Phosphor
+
+> **A simple, streamlined, console-style experience built *with* stock MiSTer FPGA.**
+
+Phosphor bridges the gap between advanced hardware tinkering and a turn-key retro gaming console. It is designed to make MiSTer accessible to everyone—bringing back the simple "plug and play" feel of classic hardware while preserving the full power and openness of the MiSTer ecosystem.
+
+---
+
+## 💡 Core Philosophy
+
+Phosphor is built **with** stock MiSTer, not against it:
+* **Non-destructive:** Uses `MiSTer-devel`'s Linux and kernel exactly as they ship. Nothing on your SD card is overwritten or replaced.
+* **Zero Overhead:** No background polling processes or unnecessary system strain.
+* **Always Accessible:** MiSTer's native menu is always just one button press away.
+* **No Extra Setup:** Everything is baked in and ready out of the box—no downloading additional packages for basic functionality.
+
+Phosphor takes the workload off users and saves developers from troubleshooting issues caused by misconfigured settings.
+
+---
+
+## 🎛️ Choice & Coexistence
+
+The MiSTer ecosystem shouldn't be restricted to advanced power users. Phosphor offers a choice: whether you prefer classic MiSTer, an Analogue-style console interface, or a mainstream console experience, you decide how you play.
+
+> **Note:** Neither Phosphor nor `ss1-tool` are replacements for Console Mode or MiSTer Companion, nor are they intended to compete with them. They are simply options for the community.
+
+A lot of Phosphor's underlying code is brought over from `ss1-tool` (originally built for Retro Remake's console mode) to streamline things for both basic and power users alike. We will always support and collaborate with open-source developers across the MiSTer space—including Console Mode, Retro Remake, Taki Udon, animeotaku, and all core and tool creators.
+
+---
+
+## 🔒 Privacy & User Control
+
+Phosphor and its associated applications strictly adhere to user-first privacy principles:
+
+- 🚫 **Zero Tracking:** No telemetry, data collection, ads, or targeted tracking.
+- 🔐 **100% Privacy:** Your data and hardware belong to you.
+- 📡 **Full Transparency:** Nothing is sent anywhere automatically. Any network traffic is fully disclosed and strictly limited to connecting your device to user-enabled services.
+- ⚙️ **Complete Control:** Nothing happens on your system without your explicit action.
+
+---
+
+## 🕹️ Why Phosphor Exists
+
+Phosphor was built because creators like Taki Udon and Retro Remake demonstrated that open hardware can directly compete with commercial manufacturers using FOMO tactics, artificial scarcity, or releasing clone hardware with abandoned software (like the old flashcard "timebomb" era or just move onto the next product, and never update older products they built their company on).
+
+By bringing the console form factor back to MiSTer with the SS1, Taki Udon and Retro Remake introduced healthy competition to the retro gaming market. Every developer building hardware, software, tools, and cores makes this community stronger and more vibrant.
+
+---
+
+<p align="center">
+  <b>Choices are good for everyone. Play your games your way.<br>Games are meant to be fun—not a political debate.</b>
+</p>
 
 ## What it is
 
