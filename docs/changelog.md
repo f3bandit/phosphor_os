@@ -3,6 +3,31 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.42
+
+### New
+- **Wallpapers:** Settings > Wallpapers turns them on (Background texture waits while they're on), and
+  Choose wallpaper opens a picker: L and R switch between your own (in `wallpapers_user`) and each
+  Update All creator's collection you have (Ranny Snice, Anime0t4ku, PCN Challenge, RGarciaLago), Y
+  shows 16:9, 4:3 or all, and X picks where it goes: both menus, Phosphor's, or MiSTer's menu (OSD).
+- **Online updates:** Phosphor checks GitHub for a newer release (a minute after starting, then every
+  half hour, never in a game). A yellow icon in the top bar says there's one; Settings > Updates
+  downloads it, checks it, and installs it with the usual restore point.
+- **Home > Other and Utility:** the cores in `_Other` and `_Utility` get their own cards. Utility starts
+  with **Register this SuperStation**, which opens Update All so you can sign in and Link your supporter
+  cores (Coin-Op Collection, JOTEGO and others).
+- **Start with...:** SELECT on a game lists every core that can run it (the newest, older versions,
+  unstable builds, another system's core, the RetroAchievements one); X makes your pick the default for
+  that system.
+- **Power menu > MiSTer menu (OSD)** opens MiSTer's own menu and settings.
+- **Box-art scraping uses Phosphor's own ScreenScraper developer ID**, so scraping works with just your
+  ScreenScraper account.
+
+### Changed
+- **The menu button in a game opens Phosphor's in-game menu on every press;** holding it no longer opens
+  MiSTer's menu (use the in-game menu or the power menu for that).
+- RetroAchievements signs in after the game has loaded and been checked, so starting a game is quicker.
+
 ## 0.27.41, Phosphor for Windows 0.2.43, Phosphor for Android 0.9.8
 
 ### New
