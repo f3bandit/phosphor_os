@@ -246,6 +246,7 @@ static void footer_set(const char *const *hints)
 			lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
 			lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 			lv_obj_set_style_pad_column(item, L(3), 0);
+			lv_obj_set_user_data(item, (void *)(intptr_t)i);   /* (the hint it shows: what may go, below) */
 			mk_label(item, (unsigned char)hints[i][0] >= 0x80 ? FONT_WORD : FONT_NAME, PAL.text, hints[i]);   /* (arrows, \xE2\x89\xA1: the mono font has them) */
 			mk_label(item, FONT_SMALL, PAL.dim, hints[i + 1]);
 		}
@@ -255,7 +256,7 @@ static void footer_set(const char *const *hints)
 			lv_obj_t *last = n ? lv_obj_get_child(footer, n - 1) : NULL;
 			if (!last || lv_obj_get_x(last) + lv_obj_get_width(last) <= lv_obj_get_width(footer) || n <= 1) break;
 			int drop = -1;
-			for (int k = n - 1; k >= 1 && drop < 0; k--) if (strcmp(hints[2 * k], "B")) drop = k;
+			for (int k = n - 1; k >= 1 && drop < 0; k--) if (strcmp(hints[(intptr_t)lv_obj_get_user_data(lv_obj_get_child(footer, k))], "B")) drop = k;
 			if (drop < 0) break;
 			lv_obj_delete(lv_obj_get_child(footer, drop));
 			lv_obj_update_layout(footer);
@@ -264,6 +265,7 @@ static void footer_set(const char *const *hints)
 	}
 	for (int i = 0; hints[i]; i += 2) {
 		lv_obj_t *item = mk_box(footer, LV_SIZE_CONTENT, S(28), PAL.bg, 0);
+		lv_obj_set_user_data(item, (void *)(intptr_t)i);
 		lv_obj_set_style_bg_opa(item, LV_OPA_TRANSP, 0);
 		lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
 		lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -290,7 +292,7 @@ static void footer_set(const char *const *hints)
 		if (!last || lv_obj_get_x(last) + lv_obj_get_width(last) <= lv_obj_get_width(footer) || n <= 2) break;
 		int drop = -1;
 		for (int k = n - 1; k >= 1 && drop < 0; k--)
-			if (strcmp(hints[2 * k], "B")) drop = k;
+			if (strcmp(hints[(intptr_t)lv_obj_get_user_data(lv_obj_get_child(footer, k))], "B")) drop = k;
 		if (drop < 0) break;
 		lv_obj_delete(lv_obj_get_child(footer, drop));
 		lv_obj_update_layout(footer);
@@ -2893,7 +2895,7 @@ static void vd_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 static void vd_panel(void)
 {
 	cJSON *pf = vd_shown_profile();
-	int using = pf && cJSON_IsTrue(cJSON_GetObjectItem(pf, "active"));
+	int using = !pf || cJSON_IsTrue(cJSON_GetObjectItem(pf, "active"));
 	char dips[4][64];
 	int nd = 0;
 	lv_obj_set_hidden(vd_list.box, !using);
@@ -3093,7 +3095,7 @@ static void vd_try(const char *what)
 static void video_key(pkey_t k)
 {
 	cJSON *pf = vd_shown_profile();
-	int using = pf && cJSON_IsTrue(cJSON_GetObjectItem(pf, "active"));
+	int using = !pf || cJSON_IsTrue(cJSON_GetObjectItem(pf, "active"));   /* (no profiles known: the list, CRT rows and all) */
 	if (k == K_L || k == K_R) {                      /* the profile shown */
 		int n = vd_profile_count(), at = 0;
 		for (int i = 0; i < n; i++) if (vd_profile(i) == pf) at = i;
@@ -3141,7 +3143,7 @@ static void video_key(pkey_t k)
 			c.on = vd.crt_pick != CRT_OFF;
 			if (c.on) c.mode = vd.crt_pick;
 			setenv("PHOS_REOPEN", "video", 1);
-			if (crt_try(&c)) { toast_show("Couldn't save the CRT setting"); return; }
+			if (crt_try(&c)) { unsetenv("PHOS_REOPEN"); toast_show("Couldn't save the CRT setting"); return; }
 			toast_show("Starting the menu again in the new mode");
 		} else if (cr > 0 && (k == K_LEFT || k == K_RIGHT)) {
 			if (!vd.crt.on) { toast_show("Turn CRT mode on first"); return; }
