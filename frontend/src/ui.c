@@ -1587,6 +1587,20 @@ static void set_fill(int row, char *t, size_t n, char *val, size_t vn, int *dim)
 				if (!strncasecmp(nm, tags[i], l)) { memmove(nm, nm + l, strlen(nm + l) + 1); break; }
 			}
 			for (char *c = nm; *c; c++) if (*c == '_') *c = ' ';
+			/* "MiSTer - Anime0t4ku - Metal Gear": the dashes and the creator's name (as phosphord's wp_name) */
+			static const char *const creators[] = { "Ranny Snice", "Anime0t4ku", "PCN Challenge", "RGarciaLago" };
+			for (int again = 1; again;) {
+				again = 0;
+				size_t l = strspn(nm, " -");
+				if (l) { memmove(nm, nm + l, strlen(nm + l) + 1); again = 1; }
+				for (size_t i = 0; i < sizeof(creators) / sizeof(creators[0]); i++) {
+					size_t cl = strlen(creators[i]);
+					if (!strncasecmp(nm, creators[i], cl) && (nm[cl] == ' ' || nm[cl] == '-')) {
+						memmove(nm, nm + cl, strlen(nm + cl) + 1);
+						again = 1;
+					}
+				}
+			}
 		}
 		snprintf(t, n, "Choose wallpaper...");
 		snprintf(val, vn, "%.40s  >", nm);
@@ -2122,6 +2136,7 @@ static struct {
 	int cat, sel, top, aspect, pending;            /* aspect 0 16:9, 1 4:3, 2 all; pending: thumbs still to come */
 	uint32_t poll_at;
 	int drawn_top;                                 /* the page whose thumbnails are up (-1: none) */
+	int opening;                                   /* the first load since the picker opened */
 	lv_obj_t *tabs, *grid, *cell[WG_COLS * WG_ROWS], *img[WG_COLS * WG_ROWS], *cap[WG_COLS * WG_ROWS], *use, *asp, *empty;
 	char thumbs[WG_COLS * WG_ROWS][720];
 } wg;
@@ -2156,10 +2171,29 @@ static void wg_draw(void);
 static void wg_load(void)
 {
 	cJSON_Delete(wg.cats); cJSON_Delete(wg.items);
-	cJSON *r = api_call_slow(20000, "{\"cmd\":\"wallpapers\",\"aspect\":\"%s\"}", WG_ASP[wg.aspect]);
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "wallpapers");
+	cJSON_AddStringToObject(q, "aspect", WG_ASP[wg.aspect]);
+	cJSON_AddStringToObject(q, "current", SETTINGS.wallpaper);
+	char *qs = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = qs ? api_call_slow(20000, "%s", qs) : NULL;
+	free(qs);
 	wg.cats = r ? cJSON_DetachItemFromObject(r, "categories") : NULL;
-	cJSON_Delete(r);
 	int nc = cJSON_GetArraySize(wg.cats);
+	if (wg.opening) {                                  /* opened: on the picture in use's collection, or */
+		wg.opening = 0;                                /* the first with something in it */
+		const char *cc = r ? api_str(r, "current_category") : NULL;
+		int first = -1;
+		for (int i = 0; i < nc; i++) {
+			cJSON *c = cJSON_GetArrayItem(wg.cats, i);
+			const char *id = api_str(c, "id");
+			if (cc && id && !strcmp(id, cc)) { wg.cat = i; first = -2; break; }
+			if (first == -1 && cJSON_GetNumberValue(cJSON_GetObjectItem(c, "count")) > 0) first = i;
+		}
+		if (first >= 0) wg.cat = first;
+	}
+	cJSON_Delete(r);
 	if (wg.cat >= nc) wg.cat = nc ? nc - 1 : 0;
 	cJSON *c = cJSON_GetArrayItem(wg.cats, wg.cat);
 	r = c ? api_call_slow(20000, "{\"cmd\":\"wallpapers\",\"aspect\":\"%s\",\"category\":\"%s\"}", WG_ASP[wg.aspect], api_str(c, "id")) : NULL;
@@ -2267,6 +2301,7 @@ static void wall_tick(void)
 static void show_wallpapers(void)
 {
 	cur = SCR_WALL;
+	wg.opening = 1;
 	lv_obj_clean(body);
 	screen_title("SETTINGS \xC2\xB7 WALLPAPERS", "Choose a wallpaper");
 	wg.tabs = mk_box(body, S(900), S(40), PAL.bg, 0);

@@ -3,7 +3,8 @@
  * (Scripts/.config/downloader/downloader.json: dbs.<id>.files), so each creator gets a category. The
  * person's own go in /media/fat/wallpapers_user. A picture's aspect comes from its name (4X3, 16X9:
  * Ranny Snice's) or its size.
- *   wallpapers [category] [aspect]   {categories:[{id,name,count}], items:[{file,name,aspect}], osd}
+ *   wallpapers [category] [aspect] [current]   {categories:[{id,name,count}], items:[{file,name,aspect}], osd,
+ *                                    current_category: the one the picture in use is in}
  *   wallpaper_thumb file             a small JPEG of it: {thumb}, or {pending} while the worker makes it
  *   wallpaper_prefetch files         the worker makes these next (the page on screen, then the next one)
  *   wallpaper_screen file w h        the picture made to cover the screen, darkened: {screen}
@@ -19,6 +20,7 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,6 +36,7 @@ static const struct { const char *db, *id, *name; } COLL[] = {
 	{ "RGarciaLago/Wallpaper_Collection", "rgarcialago", "RGarciaLago" },
 };
 #define NCOLL ((int)(sizeof(COLL) / sizeof(COLL[0])))
+#define WP_DIM 150                              /* how far the screen version is darkened (of 255) */
 
 static int is_image(const char *n)
 {
@@ -120,10 +123,25 @@ static void wp_name(const char *fn, char *out, size_t n)
 		if (!strncasecmp(out, tags[i], l)) { memmove(out, out + l, strlen(out + l) + 1); break; }
 	}
 	for (char *c = out; *c; c++) if (*c == '_') *c = ' ';
+	/* "MiSTer - Anime0t4ku - Metal Gear": the leading dash, then the creator's name (it's the tab) */
+	for (int again = 1; again;) {
+		again = 0;
+		size_t l = strspn(out, " -");
+		if (l) { memmove(out, out + l, strlen(out + l) + 1); again = 1; }
+		for (int i = 0; i < NCOLL; i++) {
+			size_t cl = strlen(COLL[i].name);
+			if (!strncasecmp(out, COLL[i].name, cl) && (out[cl] == ' ' || out[cl] == '-')) {
+				memmove(out, out + cl, strlen(out + cl) + 1);
+				again = 1;
+			}
+		}
+	}
+	if (!out[0]) snprintf(out, n, "%s", fn);
 }
 
-cJSON *wallpaper_list(const char *cat, const char *aspect)
+cJSON *wallpaper_list(const char *cat, const char *aspect, const char *current)
 {
+	const char *cur_cat = NULL;
 	cJSON *o = cJSON_CreateObject(), *cats = cJSON_AddArrayToObject(o, "categories"), *items = cJSON_AddArrayToObject(o, "items");
 	cJSON *own = owners();
 	int count[NCOLL + 2] = { 0 };               /* [0] the person's, [1..] collections, [NCOLL+1] other */
@@ -150,6 +168,7 @@ cJSON *wallpaper_list(const char *cat, const char *aspect)
 			}
 			char path[900], nm[300];
 			snprintf(path, sizeof(path), "%s/%s", d, e->d_name);
+			if (current && !strcmp(current, path)) cur_cat = cid;   /* (a static string: "user" or COLL's) */
 			const char *asp = aspect_of(path, e->d_name);
 			if (aspect && *aspect && strcmp(aspect, "all") && strcmp(asp, aspect)) continue;
 			count[ci]++;
@@ -180,6 +199,7 @@ cJSON *wallpaper_list(const char *cat, const char *aspect)
 			if (strcasecmp(cJSON_GetStringValue(cJSON_GetObjectItem(p, "name")), cJSON_GetStringValue(cJSON_GetObjectItem(q, "name"))) <= 0) break;
 			cJSON_InsertItemInArray(items, j - 1, cJSON_DetachItemFromArray(items, j));
 		}
+	if (cur_cat) cJSON_AddStringToObject(o, "current_category", cur_cat);
 	char op[600], osd[900] = "";
 	snprintf(op, sizeof(op), "%s/phosphor/config/osd_wallpaper", p_fat());
 	FILE *f = fopen(op, "r");
@@ -222,19 +242,20 @@ static int thumb_path(const char *real, char *out, size_t n)
 	return 0;
 }
 
-/* the thumbnail worker: a big wallpaper takes about a second to shrink on the SS1, so the picker never
-   waits for one. One thread, at low priority, working through a short queue the picker sets (the page
+/* the thumbnail workers: a big wallpaper takes a second or more to shrink on the SS1 (a JPEG is decoded
+   at 1/8 size, a PNG in full), so the picker never waits for one. Two threads, at low priority, working through a short queue the picker sets (the page
    on screen first); it stops when the queue is empty */
 #define WQ_MAX 32
 static pthread_mutex_t wq_lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t wq_cv = PTHREAD_COND_INITIALIZER;
+#define WQ_THREADS 2                            /* the SS1's two cores: a big PNG still takes a few seconds */
 static char wq[WQ_MAX][PATH_MAX];
 static int wq_n, wq_started;
-static char wq_busy[PATH_MAX];                  /* the one being made */
+static char wq_busy[WQ_THREADS][PATH_MAX];      /* the ones being made */
 
 static void *wq_thread(void *arg)
 {
-	(void)arg;
+	int me = (int)(intptr_t)arg;
 	setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 15);
 	for (;;) {
 		char src[PATH_MAX], out[700];
@@ -242,7 +263,7 @@ static void *wq_thread(void *arg)
 		while (!wq_n) pthread_cond_wait(&wq_cv, &wq_lk);
 		snprintf(src, sizeof(src), "%s", wq[0]);
 		memmove(wq[0], wq[1], sizeof(wq[0]) * (size_t)(--wq_n));
-		snprintf(wq_busy, sizeof(wq_busy), "%s", src);
+		snprintf(wq_busy[me], sizeof(wq_busy[me]), "%s", src);
 		pthread_mutex_unlock(&wq_lk);
 		if (thumb_path(src, out, sizeof(out)) == 0 && !file_exists(out)) {
 			char tmp[720];
@@ -251,7 +272,7 @@ static void *wq_thread(void *arg)
 			else { unlink(tmp); plog("wallpapers: couldn't read %s", src); }
 		}
 		pthread_mutex_lock(&wq_lk);
-		wq_busy[0] = 0;
+		wq_busy[me][0] = 0;
 		pthread_mutex_unlock(&wq_lk);
 	}
 	return NULL;
@@ -260,7 +281,7 @@ static void *wq_thread(void *arg)
 /* adds it to the queue (first: in front); the lock is held */
 static void wq_add(const char *real, int first)
 {
-	if (!strcmp(wq_busy, real)) return;
+	for (int t = 0; t < WQ_THREADS; t++) if (!strcmp(wq_busy[t], real)) return;
 	for (int i = 0; i < wq_n; i++)
 		if (!strcmp(wq[i], real)) {
 			if (!first) return;
@@ -272,9 +293,10 @@ static void wq_add(const char *real, int first)
 	if (first) { memmove(wq[1], wq[0], sizeof(wq[0]) * (size_t)wq_n); snprintf(wq[0], sizeof(wq[0]), "%s", real); }
 	else snprintf(wq[wq_n], sizeof(wq[0]), "%s", real);
 	wq_n++;
-	if (!wq_started) {
+	for (; wq_started < WQ_THREADS; wq_started++) {
 		pthread_t t;
-		if (pthread_create(&t, NULL, wq_thread, NULL) == 0) { pthread_detach(t); wq_started = 1; }
+		if (pthread_create(&t, NULL, wq_thread, (void *)(intptr_t)wq_started) != 0) break;
+		pthread_detach(t);
 	}
 	pthread_cond_signal(&wq_cv);
 }
@@ -312,10 +334,11 @@ int wallpaper_screen(const char *file, int w, int h, char *out, size_t n)
 	struct stat s;
 	if (stat(real, &s)) return -1;
 	char key[PATH_MAX + 60];
-	snprintf(key, sizeof(key), "%s|%lld|%lld|%dx%d|screen", real, (long long)s.st_size, (long long)s.st_mtime, w, h);
+	/* darkened most of the way toward the shell's background, so the menus stay readable over a busy picture */
+	snprintf(key, sizeof(key), "%s|%lld|%lld|%dx%d|screen|d%d", real, (long long)s.st_size, (long long)s.st_mtime, w, h, WP_DIM);
 	snprintf(out, n, "%s/%016llx-screen.jpg", dir, fnv(key));
 	if (file_exists(out)) return 0;
-	return art_cover(real, out, w, h, 110);
+	return art_cover(real, out, w, h, WP_DIM);
 }
 
 int wallpaper_osd(const char *file)
