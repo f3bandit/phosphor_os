@@ -63,6 +63,7 @@ if [ -f "$D/bin/MiSTer_phosphor" ] || [ -d "$D/cores" ]; then
 		echo
 		[ -z "$main_src" ] || echo "- bin/MiSTer_phosphor (Phosphor's Main, a fork of MiSTer's Main with odelot's RetroAchievements): $main_src"
 		[ -z "$menu_src" ] || echo "- cores/menu_phosphor.rbf (Phosphor's menu core, a fork of MiSTer's Menu core, GPL-2.0-or-later, with GPL-3.0 additions): $menu_src"
+		[ -z "$menu_src" ] || echo "  Its CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later)."
 		echo
 		echo "achievement.wav, the RetroAchievements unlock sound, comes with odelot's RetroAchievements Main"
 		echo "(https://github.com/odelot/Main_MiSTer); see THIRD_PARTY_NOTICES.md."

@@ -8,6 +8,8 @@ Not in this list, because they are separate programs with their own source:
 
 - **MiSTer_phosphor** (Phosphor's Main) and **menu_phosphor.rbf** (Phosphor's menu core) are GPL
   builds of MiSTer's Main and Menu core; their source and licence are in SOURCE.md and licenses/.
+  The menu core's CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's
+  menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later).
 - **The SD card image** also holds MiSTer's Linux, kernel, u-boot, Main and Mr. Fusion; see
   LICENSES/SOURCES.txt on the card.
 - **achievement.wav**, the RetroAchievements unlock sound, comes with odelot's RetroAchievements
