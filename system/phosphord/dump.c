@@ -57,7 +57,8 @@ static const struct { const char *type, *sys, *folder, *dat; } KINDS[] = {
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static struct {
-	int busy, stop;
+	int busy;
+	volatile int stop;                  /* (set by dump_stop, read by the copier without the lock) */
 	char state[16];                              /* "" | working | done | failed | stopped */
 	char type[16];                               /* Main's disc type: psx, saturn, megacd, pcecd */
 	char msg[300], title[200], system[48], dest[700], cue[1100];
@@ -110,11 +111,12 @@ static uint32_t edc(const uint8_t *p, size_t n)
 }
 static uint32_t le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 
-/* a raw data sector's own check: 1 good, 0 bad, -1 can't tell (no sync, or Mode 2 Form 2 without EDC) */
+/* a raw data sector's own check: 1 good, 0 bad (a wrong EDC, or no sync: a data track's sectors all have
+   one), -1 can't tell (Mode 2 Form 2 without EDC, Mode 0) */
 static int sector_ok(const uint8_t *s)
 {
 	static const uint8_t sync[12] = { 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0 };
-	if (memcmp(s, sync, 12)) return -1;
+	if (memcmp(s, sync, 12)) return 0;
 	int mode = s[15];
 	if (mode == 1) return edc(s, 2064) == le32(s + 2064);
 	if (mode == 2) {
@@ -147,7 +149,15 @@ static int read_cd(int fd, int lba, int n, uint8_t *buf, int sub)
 	io.mx_sb_len = sizeof(sense);
 	io.timeout = 30000;
 	if (ioctl(fd, SG_IO, &io) < 0) return -1;
-	return (io.status || io.host_status || io.driver_status) ? -1 : 0;
+	if (io.host_status || (io.driver_status & ~0x08)) return -1;      /* (0x08: sense data came back) */
+	if (io.status) {
+		int key = -1;
+		if (io.sb_len_wr >= 3 && (sense[0] & 0x7e) == 0x70) key = sense[2] & 0x0f;      /* fixed format */
+		else if (io.sb_len_wr >= 2 && (sense[0] & 0x7e) == 0x72) key = sense[1] & 0x0f; /* descriptor */
+		if (key == 2 || key == 6) return -2;                 /* not ready / medium changed: the disc is gone */
+		if (key != 1) return -1;                             /* (1: recovered, the data is good) */
+	}
+	return io.resid ? -1 : 0;                                /* a short read: not all of it came */
 }
 
 typedef struct { int first, last, lba[MAX_TRACKS + 2], data[MAX_TRACKS + 2], leadout; } toc_t;
@@ -192,6 +202,9 @@ static int pregap_start(int fd, const toc_t *t, int i, const char *type)
 		if (!seen) start = -1;
 	}
 	free(q);
+	/* a few sectors off Redump's usual 2 s / 3 s gap: the subchannel is often read a little out of step
+	   with the sectors (and the data track's size must be exact to match) */
+	if (start >= 0) for (int g = 150; g <= 225; g += 75) if (abs((idx1 - start) - g) <= 4 && idx1 - g >= t->lba[i - 1]) start = idx1 - g;
 	if (start >= 0) return start;
 	if (t->data[i - 1] && !t->data[i]) return idx1 - 150;
 	if (!t->data[i - 1] && t->data[i] && !strcmp(type, "pcecd")) return idx1 - 225;
@@ -200,14 +213,24 @@ static int pregap_start(int fd, const toc_t *t, int i, const char *type)
 
 /* n sectors, read until they're right: data sectors until their EDC agrees, audio until two reads
    agree. Returns the sectors that never came out clean */
+/* -1: the disc is gone (taken out, the drive not ready): the copy stops */
+static int far_lba = 0;                                     /* (a sector far away: the drive's cache emptied) */
+static void defeat_cache(int fd, int lba)
+{
+	static uint8_t junk[SECTOR];
+	read_cd(fd, lba > 30000 ? lba - 30000 : lba + 30000 < far_lba ? lba + 30000 : 0, 1, junk, 0);
+}
 static int read_good(int fd, int lba, int n, int data, uint8_t *a, uint8_t *b)
 {
-	int bad = 0;
-	if (read_cd(fd, lba, n, a, 0) != 0) {                 /* the batch failed: one sector at a time */
+	int bad = 0, r = read_cd(fd, lba, n, a, 0);
+	if (r == -2) return -1;
+	if (r != 0) {                                           /* the batch failed: one sector at a time */
 		for (int k = 0; k < n; k++) {
 			int ok = 0;
 			for (int tries = 0; tries < 5 && !ok; tries++) {
-				ok = read_cd(fd, lba + k, 1, a + (size_t)k * SECTOR, 0) == 0;
+				int rr = read_cd(fd, lba + k, 1, a + (size_t)k * SECTOR, 0);
+				if (rr == -2) return -1;
+				ok = rr == 0;
 				if (!ok) { pthread_mutex_lock(&lk); cp.rereads++; pthread_mutex_unlock(&lk); }
 			}
 			if (!ok) { memset(a + (size_t)k * SECTOR, 0, SECTOR); bad++; }
@@ -219,14 +242,17 @@ static int read_good(int fd, int lba, int n, int data, uint8_t *a, uint8_t *b)
 			uint8_t *s = a + (size_t)k * SECTOR;
 			for (int tries = 0; tries < 5 && sector_ok(s) == 0; tries++) {
 				pthread_mutex_lock(&lk); cp.rereads++; pthread_mutex_unlock(&lk);
-				read_cd(fd, lba + k, 1, s, 0);
+				if (read_cd(fd, lba + k, 1, s, 0) == -2) return -1;
 			}
 			if (sector_ok(s) == 0) bad++;
 		}
 		return bad;
 	}
-	for (int tries = 0; tries < 8; tries++) {               /* audio: two reads that agree */
-		if (read_cd(fd, lba, n, b, 0) != 0) continue;
+	for (int tries = 0; tries < 8; tries++) {               /* audio: two reads that agree (not the drive's cache) */
+		defeat_cache(fd, lba);
+		int rr = read_cd(fd, lba, n, b, 0);
+		if (rr == -2) return -1;
+		if (rr != 0) continue;
 		if (!memcmp(a, b, (size_t)n * SECTOR)) return bad;
 		pthread_mutex_lock(&lk); cp.rereads++; pthread_mutex_unlock(&lk);
 		memcpy(a, b, (size_t)n * SECTOR);
@@ -243,8 +269,11 @@ static void clean_name(const char *in, char *out, size_t n)
 		unsigned char c = (unsigned char)*in;
 		out[j++] = (c < 32 || strchr("/\\*?\"<>|", c)) ? '_' : c == ':' ? '-' : (char)c;
 	}
+	if (*in) while (j && ((unsigned char)out[j - 1] & 0xC0) == 0x80) j--;        /* cut short: not mid-character */
+	if (*in && j && ((unsigned char)out[j - 1] & 0xC0) == 0xC0) j--;
 	while (j && (out[j - 1] == ' ' || out[j - 1] == '.')) j--;
 	out[j] = 0;
+	if (out[0] == '.') out[0] = '_';                        /* (a hidden name: the clean-up skips those) */
 	if (!out[0]) snprintf(out, n, "Disc");
 }
 
@@ -396,8 +425,12 @@ static void *copier(void *arg)
 			pt[i].idx1_off = t.lba[i] - pt[i].start;
 		}
 		for (int i = t.first; i <= t.last; i++) pt[i].end = i < t.last ? pt[i + 1].start : t.leadout;
-		for (int i = t.first; i <= t.last; i++)
-			if (t.data[i] && read_cd(fd, t.lba[i], 1, a, 0) == 0) mode[i] = a[15];
+		far_lba = t.leadout;
+		for (int i = t.first; i <= t.last; i++) {
+			mode[i] = !strcmp(type, "psx") ? 2 : 1;        /* (unread: what the system's discs are) */
+			for (int tries = 0; t.data[i] && tries < 3; tries++)
+				if (read_cd(fd, t.lba[i], 1, a, 0) == 0 && (a[15] == 1 || a[15] == 2)) { mode[i] = a[15]; break; }
+		}
 		long long need = (long long)(t.leadout - pt[t.first].start) * SECTOR + (64 << 20);
 		clean_name(title, name, sizeof(name));
 		if (pick_root(KINDS[kind].folder, need, root, sizeof(root)))
@@ -408,7 +441,11 @@ static void *copier(void *arg)
 		struct stat st;
 		for (int k = 2; !stat(dir, &st) && k < 100; k++)  /* a copy already there: another name */
 			snprintf(dir, sizeof(dir), "%s/%s/%s (%d)", root, KINDS[kind].folder, name, k);
-		if (mkdirs(dir)) snprintf(err, sizeof(err), "Couldn't make the folder on the drive");
+		char parent[700];
+		snprintf(parent, sizeof(parent), "%s/%s", root, KINDS[kind].folder);
+		mkdirs(parent);
+		/* a folder of its own, new (never one already there: a failed copy removes what's in it) */
+		if (mkdir(dir, 0755)) snprintf(err, sizeof(err), errno == EEXIST ? "Too many copies of it already" : "Couldn't make the folder on the drive");
 		else made = 1;
 	}
 	if (!err[0]) {
@@ -435,6 +472,8 @@ static void *copier(void *arg)
 			for (int lba = pt[i].start; lba < pt[i].end && !cp.stop; lba += BATCH) {
 				int n = pt[i].end - lba < BATCH ? pt[i].end - lba : BATCH;
 				int bad = read_good(fd, lba, n, pt[i].data, a, b);
+				if (bad < 0) { snprintf(err, sizeof(err), "The disc was taken out or the drive stopped answering"); break; }
+				if (cp.bad + bad > 2000) { snprintf(err, sizeof(err), "Too much of the disc can't be read: clean it and try again"); break; }
 				if (fwrite(a, SECTOR, (size_t)n, f) != (size_t)n) { snprintf(err, sizeof(err), "The drive it's copying to is full or failing"); break; }
 				crc = crc32_add(crc, a, (size_t)n * SECTOR);
 				pthread_mutex_lock(&lk);
@@ -464,10 +503,12 @@ static void *copier(void *arg)
 		if (cp.stop) { snprintf(cp.state, sizeof(cp.state), "stopped"); snprintf(cp.msg, sizeof(cp.msg), "Stopped: the unfinished copy was thrown away"); }
 		else { snprintf(cp.state, sizeof(cp.state), "failed"); snprintf(cp.msg, sizeof(cp.msg), "%s: nothing was kept", err[0] ? err : "The copy didn't finish"); }
 		cp.dest[0] = 0;
-		cp.busy = 0;
+		char m2[sizeof(cp.msg)];
+		snprintf(m2, sizeof(m2), "%s", cp.msg);
 		cp.t1 = time(NULL);
+		cp.busy = 0;
 		pthread_mutex_unlock(&lk);
-		plog("disc copy: %s", cp.msg);
+		plog("disc copy: %s", m2);
 		return NULL;
 	}
 
@@ -515,12 +556,14 @@ static void *copier(void *arg)
 	if (verified) snprintf(cp.title, sizeof(cp.title), "%s", rname);
 	cp.t1 = time(NULL);
 	snprintf(cp.msg, sizeof(cp.msg), "%s%s",
-	         verified ? "Copy saved: it matches Redump, an exact copy of the disc" : "Copy saved: Redump doesn't list this disc, so it can't be checked",
+	         verified ? (t.last > t.first ? "Copy saved: its data track matches Redump's" : "Copy saved: it matches Redump, an exact copy of the disc")
+	                  : "Copy saved: Redump doesn't list this disc, so it can't be checked",
 	         cp.bad ? " (some spots never read cleanly: clean the disc and copy it again)" : "");
+	long took = (long)(cp.t1 - cp.t0);
+	int rr = cp.rereads, bd = cp.bad;
 	cp.busy = 0;
 	pthread_mutex_unlock(&lk);
-	plog("disc copy: done in %lds, %s, %d re-reads, %d bad, %s", (long)(cp.t1 - cp.t0), verified ? "matches Redump" : "not in Redump's list",
-	     cp.rereads, cp.bad, cue_path);
+	plog("disc copy: done in %lds, %s, %d re-reads, %d bad, %s", took, verified ? "matches Redump" : "not in Redump's list", rr, bd, cue_path);
 	return NULL;
 }
 

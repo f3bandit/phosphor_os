@@ -1234,6 +1234,8 @@ static void show_dcopy(int start)
 {
 	if (start) {
 		cJSON *r = api_call("{\"cmd\":\"disc_copy\",\"do\":\"start\"}");
+		/* one already running (started from the phone, or this screen was left): that one's screen */
+		if (!api_ok(r) && api_str(r, "error") && strstr(api_str(r, "error"), "already being saved")) { cJSON_Delete(r); r = NULL; show_dcopy(0); return; }
 		if (!api_ok(r)) {
 			toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start the copy");
 			cJSON_Delete(r);
