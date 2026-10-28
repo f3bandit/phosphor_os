@@ -17,6 +17,13 @@ for pair in $pairs; do
 	[ -z "$newer" ] || { echo "$1 is older than $newer: build it first" >&2; exit 1; }
 done
 cp frontend/build-arm/phosphor system/build-arm/phosphord system/build-arm/phos system/build-arm/phos-nvme "$D/bin/"
+# phosphord with Phosphor's ScreenScraper developer login (GitHub Actions "Secret builds", downloaded to
+# PHOS_SECRET_BUILDS): the login is a repo secret, so release builds take that phosphord
+if [ -n "$PHOS_SECRET_BUILDS" ]; then
+	[ -x "$PHOS_SECRET_BUILDS/phosphord" ] || { echo "PHOS_SECRET_BUILDS has no phosphord" >&2; exit 1; }
+	cp "$PHOS_SECRET_BUILDS/phosphord" "$D/bin/phosphord"
+	echo "phosphord: the Secret builds one (Phosphor's ScreenScraper developer ID built in)"
+fi
 # phosphor-main (GPL-3.0, its own repo): copied in when built next to this repo; never started by the installer
 if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/bin/MiSTer_phosphor"; fi
 # RetroAchievements' unlock sound (from odelot's RetroAchievements Main, in phosphor-main)

@@ -49,3 +49,10 @@ tools/texture-maker/texture-maker-last.ptm
 
 # the fan art backup pack is part of the repo (apps/windows/fanart/README.md)
 !apps/windows/fanart/pack.zip
+
+# build secrets, generated for one build only
+ss_secret.h
+ss_secret_gen.go
+*.jks
+*.keystore
+release-keys/

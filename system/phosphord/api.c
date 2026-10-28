@@ -113,6 +113,7 @@
 #include "storage.h"
 #include "extras.h"
 #include "bgcache.h"
+#include "upnet.h"
 #include "ctrl.h"
 #include "dash.h"
 #include "version.h"
@@ -1188,6 +1189,13 @@ static char *cmd_update(cJSON *req)
 	/* the packages (each one opened to read its version) take seconds: kept, refreshed in the background;
 	   an install or roll back looks again first */
 	char *pk = bgcache_get(&c_upd_list, 1), *rb = bgcache_get(&c_upd_rb, 1);
+	int online_check = d && !strcmp(d, "check");
+	if (d && !strcmp(d, "download")) {                /* the newer release from GitHub, into phosphor/updates */
+		const char *e = NULL;
+		if (upnet_download(&e) != 0) { free(pk); free(rb); cJSON_Delete(o); return fail(e); }
+		d = NULL;
+	}
+	if (online_check) d = NULL;
 	if (d && *d) {
 		const char *arg = cJSON_GetStringValue(cJSON_GetObjectItem(req, !strcmp(d, "install") ? "file" : "version"));
 		/* only what update.sh itself listed (the kept list; looked at again only when it isn't there) */
@@ -1218,8 +1226,10 @@ static char *cmd_update(cJSON *req)
 	cJSON_AddBoolToObject(o, "available", 1);
 	snprintf(cmd, sizeof(cmd), "%s/phosphor/VERSION", p_fat());
 	FILE *vf = fopen(cmd, "r");
+	line[0] = 0;
 	if (vf && fgets(line, sizeof(line), vf)) { line[strcspn(line, " \n")] = 0; cJSON_AddStringToObject(o, "version", line); }
 	if (vf) fclose(vf);
+	upnet_status(o, line[0] ? line : NULL, online_check);
 	const char *keys[2] = { "packages", "rollbacks" }, *f1[2] = { "file", "version" }, *f2[2] = { "version", "date" };
 	char *txt[2] = { pk, rb };
 	for (int k = 0; k < 2; k++) {

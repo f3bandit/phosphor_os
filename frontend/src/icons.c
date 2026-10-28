@@ -97,7 +97,7 @@ static void draw_cb(lv_event_t *e)
 	lv_area_t c;
 	lv_obj_get_coords(obj, &c);
 	int size = lv_area_get_width(&c);
-	int grid = id->icon <= ICON_BLUETOOTH ? 24 : 72;
+	int grid = id->icon <= ICON_UPDATE ? 24 : 72;
 	pen_t p = {
 		.layer = lv_event_get_layer(e), .x0 = c.x1, .y0 = c.y1, .k = (float)size / grid,
 		.col = lv_obj_get_style_text_color(obj, 0), .off = PAL.icon_off,
@@ -178,6 +178,10 @@ static void draw_cb(lv_event_t *e)
 	case ICON_SEARCH:
 		circle(&p, 31, 31, 18, 0);
 		line(&p, 44, 44, 58, 58);
+		break;
+	case ICON_UPDATE:                                    /* a down arrow into a tray: an update to get */
+		line(&p, 12, 4, 12, 15); line(&p, 7, 10, 12, 15); line(&p, 17, 10, 12, 15);
+		line(&p, 5, 15, 5, 19); line(&p, 5, 19, 19, 19); line(&p, 19, 19, 19, 15);
 		break;
 	case ICON_POWER:                                     /* the power symbol */
 		arc(&p, 36, 39, 22, 300, 240, p.col);

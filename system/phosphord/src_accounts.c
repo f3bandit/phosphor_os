@@ -111,20 +111,32 @@ const source_t SRC_TGDB = { "thegamesdb", "TheGamesDB", "[thegamesdb] apikey", t
  * person's own from scraper.ini) and the person's screenscraper.fr login (user / password). The
  * person's login is never sent as the developer login: ScreenScraper refuses that. */
 
-/* Phosphor's own developer login: a build secret (cmake -DPHOS_SS_DEVID=... -DPHOS_SS_DEVPASSWORD=...),
-   never in the repo. Empty until ScreenScraper gives one. */
+/* Phosphor's own developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD in the
+   environment at cmake time), scrambled into ss_secret.h by tools/secrets/ss_scramble.py, never in
+   the repo. Without it, people use their own developer ID (scraper.ini). */
 #ifdef PHOS_SS_SECRET
 #include "ss_secret.h"
-#endif
-#ifndef PHOS_SS_DEVID
-#define PHOS_SS_DEVID ""
-#endif
-#ifndef PHOS_SS_DEVPASSWORD
-#define PHOS_SS_DEVPASSWORD ""
+/* read through a volatile pointer: otherwise the compiler works the XOR out at build time and the
+   plain login ends up in the program after all */
+static const unsigned char *volatile ss_key = SS_K;
+static const char *ss_unscramble(const unsigned char *x, size_t n, char *out)
+{
+	const unsigned char *k = ss_key;
+	for (size_t i = 0; i < n; i++) out[i] = (char)(x[i] ^ k[i % sizeof(SS_K)]);
+	out[n] = 0;
+	return out;
+}
+static const char *ss_builtin(int pw)
+{
+	static char id[sizeof(SS_ID_X) + 1], p[sizeof(SS_PW_X) + 1];
+	return pw ? ss_unscramble(SS_PW_X, sizeof(SS_PW_X), p) : ss_unscramble(SS_ID_X, sizeof(SS_ID_X), id);
+}
+#else
+static const char *ss_builtin(int pw) { (void)pw; return ""; }
 #endif
 
-static const char *ss_devid(void) { return *PHOS_SS_DEVID && *PHOS_SS_DEVPASSWORD ? PHOS_SS_DEVID : scfg("screenscraper", "devid"); }
-static const char *ss_devpw(void) { return *PHOS_SS_DEVID && *PHOS_SS_DEVPASSWORD ? PHOS_SS_DEVPASSWORD : scfg("screenscraper", "devpassword"); }
+static const char *ss_devid(void) { return *ss_builtin(0) && *ss_builtin(1) ? ss_builtin(0) : scfg("screenscraper", "devid"); }
+static const char *ss_devpw(void) { return *ss_builtin(0) && *ss_builtin(1) ? ss_builtin(1) : scfg("screenscraper", "devpassword"); }
 
 /* this run: off after a refused login, a used-up day, or 3 failed requests in a row */
 static char ss_off[160];
