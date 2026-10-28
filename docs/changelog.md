@@ -23,9 +23,12 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - **Box-art scraping uses Phosphor's own ScreenScraper developer ID**, so scraping works with just your
   ScreenScraper account.
 - **CRT mode (Settings > Video):** Phosphor's menu on a CRT, out of the analog port at the TV's own
-  timing: 480i or 576i (15 kHz) for a TV, 480p (31 kHz) for a VGA monitor or PVM / BVM. HDMI shows the
-  same picture. A new mode goes back by itself in 20 seconds unless you keep it, and the picture can be
-  moved left, right, up and down. Needs this release's Main and menu core.
+  timing: 240p, 288p, 480i or 576i (15 kHz) for a TV, 480p (31 kHz) for a VGA monitor or PVM / BVM. HDMI
+  shows the same picture. A new mode goes back by itself in 20 seconds unless you keep it, and the picture
+  can be moved left, right, up and down. At 240p and 288p the menu has its own layout with bigger text,
+  in three looks (Text: Smooth, Sharp, Legible); Overscan keeps it inside a TV's visible area. In a game,
+  the in-game menu shows in MiSTer's menu window, so it's on the CRT too. Needs this release's Main and
+  menu core.
 - **4:3 screens:** at 640x480, 1024x768 and other 4:3 resolutions every screen lays itself out for the
   narrower screen, and Phosphor starts again by itself when MiSTer.ini's video mode changes.
 - **Save a copy of a disc:** with a PlayStation, Saturn, Mega-CD or PC Engine CD disc in the drive, X on

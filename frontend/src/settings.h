@@ -14,6 +14,8 @@ typedef struct {
 	int shot_off;     /* the screenshot combo (L3 + R3) turned off */
 	int wallpaper_on; /* Wallpapers on: the picture below instead of the texture (Settings > Wallpapers) */
 	int wall_osd;     /* which screens it's for: 0 both, 1 Phosphor's menu only, 2 MiSTer's menu only */
+	int crt_font;     /* CRT mode at 240p / 288p: 0 Smooth, 1 Sharp, 2 Legible (Settings > Video > Text) */
+	int crt_overscan; /* CRT mode: per cent taken off each edge, for a TV that cuts the picture off */
 	char wallpaper[600];   /* the picture (under wallpapers/ or wallpapers_user/) */
 } settings_t;
 

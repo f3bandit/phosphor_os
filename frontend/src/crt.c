@@ -68,6 +68,8 @@ int crt_save(const crt_cfg_t *c)
 int crt_size(int mode, int *w, int *h)
 {
 	switch (mode) {
+	case CRT_240P: *w = 320; *h = 240; return 0;          /* 15 kHz NTSC, progressive: a console's own picture */
+	case CRT_288P: *w = 352; *h = 288; return 0;          /* 15 kHz PAL, progressive */
 	case CRT_480I: *w = 640; *h = 480; return 0;          /* 15 kHz NTSC, interlaced (the menu core filters flicker) */
 	case CRT_576I: *w = 720; *h = 576; return 0;          /* 15 kHz PAL, interlaced */
 	case CRT_480P: *w = 640; *h = 480; return 0;          /* 31 kHz (VGA, PVM / BVM) */
@@ -78,6 +80,8 @@ int crt_size(int mode, int *w, int *h)
 const char *crt_mode_name(int mode)
 {
 	switch (mode) {
+	case CRT_240P: return "240p (15 kHz)";
+	case CRT_288P: return "288p PAL (15 kHz)";
 	case CRT_480I: return "480i (15 kHz)";
 	case CRT_576I: return "576i PAL (15 kHz)";
 	case CRT_480P: return "480p (31 kHz)";
@@ -94,7 +98,7 @@ static struct {
 	lv_display_flush_cb_t fb_flush;            /* the framebuffer driver's own flush (HDMI) */
 } cr;
 
-int crt_active(void) { return cr.on; }
+int crt_active(void) { return cr.on || getenv("PHOS_CRT_TEXT") != NULL; }   /* (tests: the in-game text menu) */
 static int restart_wanted;
 void crt_request_restart(void) { restart_wanted = 1; }
 int crt_take_restart(void) { int r = restart_wanted; restart_wanted = 0; return r; }

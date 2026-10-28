@@ -40,6 +40,8 @@ void settings_load(void)
 		else if (!strcmp(k, "setup_done")) SETTINGS.setup_done = atoi(v);
 		else if (!strcmp(k, "saver_min")) SETTINGS.saver_min = atoi(v);
 		else if (!strcmp(k, "shot_off")) SETTINGS.shot_off = atoi(v);
+		else if (!strcmp(k, "crt_font")) { SETTINGS.crt_font = atoi(v); if (SETTINGS.crt_font < 0 || SETTINGS.crt_font > 2) SETTINGS.crt_font = 0; }
+		else if (!strcmp(k, "crt_overscan")) { SETTINGS.crt_overscan = atoi(v); if (SETTINGS.crt_overscan < 0 || SETTINGS.crt_overscan > 10) SETTINGS.crt_overscan = 0; }
 	}
 	fclose(f);
 }
@@ -64,6 +66,7 @@ void settings_save(void)
 	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\nsaver_min=%d\nshot_off=%d\n", SETTINGS.accent, SETTINGS.clock24,
 		SETTINGS.texture, SETTINGS.setup_done, SETTINGS.saver_min, SETTINGS.shot_off);
 	fprintf(f, "wallpaper_on=%d\nwall_osd=%d\nwallpaper=%s\n", SETTINGS.wallpaper_on, SETTINGS.wall_osd, SETTINGS.wallpaper);
+	fprintf(f, "crt_font=%d\ncrt_overscan=%d\n", SETTINGS.crt_font, SETTINGS.crt_overscan);
 	fclose(f);
 	rename(tmp, p);
 }

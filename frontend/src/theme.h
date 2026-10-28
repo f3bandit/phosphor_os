@@ -22,7 +22,11 @@ const char *theme_accent_name(accent_t a);
 /* each in three sizes: the 1280x720 design, 1.5 times that for a 1920x1080 screen, and about 0.72
    times for a small one (640x480: a 4:3 CRT). theme_tier picks: 2 big, 1 the design's, 0 small */
 extern int theme_big, theme_tier;
-#define PHOS_F(n)    (theme_tier == 2 ? &n##_l : theme_tier == 0 ? &n##_s : &n)
+/* and a fourth, tier 3, for a CRT at 240 or 288 lines (CRT mode 240p / 288p): text made for that few
+   lines, in the look Settings > Video > Text picks (theme_crt_font: 0 Smooth, 1 Sharp, 2 Legible) */
+extern int theme_crt_font;
+#define PHOS_F(n)    (theme_tier == 3 ? (theme_crt_font == 1 ? &n##_cs : theme_crt_font == 2 ? &n##_cl : &n##_c) \
+                      : theme_tier == 2 ? &n##_l : theme_tier == 0 ? &n##_s : &n)
 #define FONT_SMALL   PHOS_F(phos_inter_14)
 #define FONT_BODY    PHOS_F(phos_inter_16)
 #define FONT_NAME    PHOS_F(phos_inter_med_18)
@@ -44,6 +48,11 @@ void theme_set_scale(int screen_w, int screen_h);
    stay, what's between them is squeezed (at 16:9 these are exactly S()) */
 int SX(int px);
 int SW(int px);
+/* 240 or 288 lines (LR): the main screens have layouts of their own, designed at 320x240 (L(): those
+   units to pixels, 1 at 240p, 1.2 at 288p; LRW: the screen's width in them). Other screens are the
+   design's, scaled down */
+extern int theme_lr, LRW;
+int L(int px);
 
 /* helpers */
 lv_obj_t *mk_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text);

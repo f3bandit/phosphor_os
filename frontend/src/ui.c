@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "mainlink.h"
 #include "crt.h"
+#include "src/misc/lv_text_private.h"
 #include "input.h"
 #include "icons.h"
 #include "api.h"
@@ -88,20 +89,21 @@ static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_al
 
 static void status_bar(void)
 {
-	lv_obj_t *bar = mk_box(root, W, S(72), PAL.bg, 0);
+	int lr = theme_lr;                                  /* 240p / 288p: a thin bar, 20 lines */
+	lv_obj_t *bar = mk_box(root, W, lr ? L(22) : S(72), PAL.bg, 0);
 	lv_obj_set_style_bg_opa(bar, LV_OPA_TRANSP, 0);
 	lv_obj_align(bar, LV_ALIGN_TOP_LEFT, 0, 0);
 
 	lv_obj_t *word = mk_label(bar, FONT_WORD, PAL.acc, "PHOSPHOR");
-	lv_obj_set_style_text_letter_space(word, S(3), 0);
-	lv_obj_align(word, LV_ALIGN_LEFT_MID, S(56), 0);
+	lv_obj_set_style_text_letter_space(word, lr ? 2 : S(3), 0);
+	lv_obj_align(word, LV_ALIGN_LEFT_MID, lr ? L(16) : S(56), lr ? L(2) : 0);
 
-	lv_obj_t *right = mk_box(bar, LV_SIZE_CONTENT, S(30), PAL.bg, 0);
+	lv_obj_t *right = mk_box(bar, LV_SIZE_CONTENT, lr ? L(14) : S(30), PAL.bg, 0);
 	lv_obj_set_style_bg_opa(right, LV_OPA_TRANSP, 0);
 	lv_obj_set_flex_flow(right, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-	lv_obj_set_style_pad_column(right, S(22), 0);
-	lv_obj_align(right, LV_ALIGN_RIGHT_MID, -S(56), 0);
+	lv_obj_set_style_pad_column(right, lr ? L(6) : S(22), 0);
+	lv_obj_align(right, LV_ALIGN_RIGHT_MID, lr ? -L(16) : -S(56), lr ? L(2) : 0);
 
 	/* the notification area: shown only when there's something to look at (Settings > Updates) */
 	sb_alert = mk_box(right, LV_SIZE_CONTENT, S(30), PAL.panel_on, S(15));
@@ -116,7 +118,7 @@ static void status_bar(void)
 	sb_alert_text = mk_label(sb_alert, FONT_SMALL, PAL.text, "");
 	lv_obj_set_hidden(sb_alert, true);
 
-	int is = S(22);
+	int is = lr ? L(10) : S(22);
 	sb_upd = icon_create(right, ICON_UPDATE, is);         /* a newer Phosphor on GitHub (Settings > Update Phosphor) */
 	lv_obj_set_style_text_color(sb_upd, lv_color_hex(0xf5c542), 0);
 	lv_obj_set_hidden(sb_upd, true);
@@ -237,6 +239,29 @@ static void footer_set(const char *const *hints)
 	if (hints == footer_now && lv_obj_get_child_count(footer)) return;     /* the same: nothing to redraw */
 	footer_now = hints;
 	lv_obj_clean(footer);
+	if (theme_lr) {                                     /* 240p / 288p: the button's letter in bold, then what it does */
+		for (int i = 0; hints[i]; i += 2) {
+			lv_obj_t *item = mk_box(footer, LV_SIZE_CONTENT, L(14), PAL.bg, 0);
+			lv_obj_set_style_bg_opa(item, LV_OPA_TRANSP, 0);
+			lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
+			lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+			lv_obj_set_style_pad_column(item, L(3), 0);
+			mk_label(item, (unsigned char)hints[i][0] >= 0x80 ? FONT_WORD : FONT_NAME, PAL.text, hints[i]);   /* (arrows, \xE2\x89\xA1: the mono font has them) */
+			mk_label(item, FONT_SMALL, PAL.dim, hints[i + 1]);
+		}
+		lv_obj_update_layout(footer);
+		for (;;) {                                      /* what doesn't fit goes (never B), as on a narrow screen */
+			int n = (int)lv_obj_get_child_count(footer);
+			lv_obj_t *last = n ? lv_obj_get_child(footer, n - 1) : NULL;
+			if (!last || lv_obj_get_x(last) + lv_obj_get_width(last) <= lv_obj_get_width(footer) || n <= 1) break;
+			int drop = -1;
+			for (int k = n - 1; k >= 1 && drop < 0; k--) if (strcmp(hints[2 * k], "B")) drop = k;
+			if (drop < 0) break;
+			lv_obj_delete(lv_obj_get_child(footer, drop));
+			lv_obj_update_layout(footer);
+		}
+		return;
+	}
 	for (int i = 0; hints[i]; i += 2) {
 		lv_obj_t *item = mk_box(footer, LV_SIZE_CONTENT, S(28), PAL.bg, 0);
 		lv_obj_set_style_bg_opa(item, LV_OPA_TRANSP, 0);
@@ -278,8 +303,12 @@ static lv_obj_t *toast;
 static lv_timer_t *toast_timer;
 static void toast_hide(lv_timer_t *t) { (void)t; toast_timer = NULL; lv_obj_set_hidden(toast, true); }
 
+static char ig_note[120];              /* CRT mode in a game: the last toast, shown in the OSD menu */
+static uint32_t ig_note_at;
 static void toast_show(const char *msg)
 {
+	snprintf(ig_note, sizeof(ig_note), "%s", msg);
+	ig_note_at = lv_tick_get();
 	lv_label_set_text(lv_obj_get_child(toast, 0), msg);
 	lv_obj_set_hidden(toast, false);
 	lv_obj_move_foreground(toast);
@@ -294,36 +323,89 @@ static void toast_show(const char *msg)
 #define VL_MAX_ROWS 24
 typedef struct {
 	lv_obj_t *box, *rows[VL_MAX_ROWS], *lab[VL_MAX_ROWS], *val[VL_MAX_ROWS], *bar[VL_MAX_ROWS], *thumb;
-	int vis, count, sel, top, row_h;
+	int vis, count, sel, top, row_h, row_w;
 	int wrap;                           /* Up on the first row goes to the last, and Down on the last to the first */
 	signed char shown[VL_MAX_ROWS];     /* what each row last looked like: -1 unknown, else on*2+dim */
 	void (*fill)(int i, char *text, size_t n, char *value, size_t vn, int *dim);
 } vlist_t;
 
+/* 240p / 288p: every list takes the screen's width under the title (the design's side panels don't fit
+   there), unless the screen lays itself out for 240p (vlist_lr_own, for the next list made) */
+static int vlist_lr_own, vlist_lr_y;
+/* 240p: a status line and a line under it above the list (Bluetooth, Backups, Cloud saves...) */
+static void lr_head_sub(lv_obj_t *head, lv_obj_t *sub)
+{
+	if (!theme_lr) return;
+	lv_label_set_long_mode(head, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(head, W - L(32), lv_font_get_line_height(FONT_BODY));
+	lv_obj_set_pos(head, L(16), L(58));
+	if (sub) {
+		lv_label_set_long_mode(sub, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_size(sub, W - L(32), lv_font_get_line_height(FONT_SMALL));
+		lv_obj_set_pos(sub, L(16), L(73));
+	}
+	vlist_lr_y = L(88);
+}
+/* 240p: put a thing at x, y (320x240 units); w > 0: that wide, one line, ... at the end */
+static void lr_at(lv_obj_t *o, int x, int y, int w)
+{
+	if (!o) return;
+	lv_obj_set_pos(o, L(x), L(y));
+	if (w > 0) {
+		lv_obj_set_width(o, L(w));
+		if (lv_obj_check_type(o, &lv_label_class)) lv_label_set_long_mode(o, LV_LABEL_LONG_MODE_DOTS);
+	}
+}
+/* 240p: a progress screen's "Everything else waits" box, one line, and the side list hidden */
+static void lr_progress(lv_obj_t *bar, lv_obj_t *eta, lv_obj_t *note, lv_obj_t *nt, lv_obj_t *nb, lv_obj_t *sl, lv_obj_t *list, int bar_y, int note_y)
+{
+	int w = LRW - 32;
+	lv_obj_set_size(bar, L(w), L(5));
+	lv_obj_set_pos(bar, L(16), L(bar_y));
+	lv_obj_set_width(eta, L(150));
+	lv_obj_set_pos(eta, L(16 + w - 150), L(bar_y + 9));
+	lv_obj_set_size(note, L(w), LV_SIZE_CONTENT);
+	lv_obj_set_pos(note, L(16), L(note_y));
+	lv_obj_set_style_pad_bottom(note, L(5), 0);
+	lv_obj_set_style_radius(note, L(4), 0);
+	lr_at(nt, 8, 5, w - 16);
+	lv_obj_set_hidden(nb, true);
+	lv_obj_set_hidden(sl, true);
+	lv_obj_set_hidden(list, true);
+}
+#define LR_HIDE(o) do { if (theme_lr) lv_obj_set_hidden((o), true); } while (0)   /* 240p: a side panel that doesn't fit */
 static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int h)
 {
-	v->row_h = S(46);
+	if (theme_lr && !vlist_lr_own && parent == body) {
+		x = L(12); y = vlist_lr_y ? vlist_lr_y : L(60); w = W - L(24); h = H - y - L(24);
+	}
+	vlist_lr_own = 0;
+	vlist_lr_y = 0;
+	v->row_h = theme_lr ? L(19) : S(46);
+	v->row_w = w - (theme_lr ? L(4) : S(10));
 	v->vis = LV_MIN(h / v->row_h, VL_MAX_ROWS);
 	v->box = mk_box(parent, w, v->vis * v->row_h, PAL.bg, 0);
 	lv_obj_set_style_bg_opa(v->box, LV_OPA_TRANSP, 0);
 	lv_obj_set_pos(v->box, x, y);
 	for (int r = 0; r < v->vis; r++) {
-		lv_obj_t *row = mk_box(v->box, w - S(10), v->row_h - S(4), PAL.panel, S(10));
+		int lr = theme_lr;
+		lv_obj_t *row = mk_box(v->box, w - (lr ? L(4) : S(10)), v->row_h - (lr ? L(1) : S(4)), PAL.panel, lr ? L(3) : S(10));
 		lv_obj_set_pos(row, 0, r * v->row_h);
 		lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-		v->bar[r] = mk_box(row, S(3), v->row_h - S(18), PAL.acc, S(2));
-		lv_obj_align(v->bar[r], LV_ALIGN_LEFT_MID, S(8), 0);
+		v->bar[r] = mk_box(row, lr ? L(2) : S(3), v->row_h - (lr ? L(5) : S(18)), PAL.acc, S(2));
+		lv_obj_align(v->bar[r], LV_ALIGN_LEFT_MID, lr ? 0 : S(8), 0);
 		v->lab[r] = mk_label(row, FONT_BODY, PAL.dim, "");
 		lv_label_set_long_mode(v->lab[r], LV_LABEL_LONG_MODE_DOTS);
-		lv_obj_set_size(v->lab[r], w - S(200), S(26));     /* one line: long text ends in ... */
-		lv_obj_align(v->lab[r], LV_ALIGN_LEFT_MID, S(24), 0);
+		/* one line: long text ends in ... (240p: what the value leaves, the value's own width found when filled) */
+		lv_obj_set_size(v->lab[r], lr ? w - L(60) : w - S(200), lr ? lv_font_get_line_height(FONT_BODY) : S(26));
+		lv_obj_align(v->lab[r], LV_ALIGN_LEFT_MID, lr ? L(7) : S(24), 0);
 		v->val[r] = mk_label(row, FONT_SMALL, PAL.faint, "");
-		lv_obj_align(v->val[r], LV_ALIGN_RIGHT_MID, -S(18), 0);
+		lv_obj_align(v->val[r], LV_ALIGN_RIGHT_MID, lr ? -L(5) : -S(18), 0);
 		v->rows[r] = row;
 		v->shown[r] = -1;
 	}
-	v->thumb = mk_box(v->box, S(3), S(40), PAL.line, S(2));
-	lv_obj_set_x(v->thumb, w - S(4));
+	v->thumb = mk_box(v->box, theme_lr ? L(2) : S(3), S(40), PAL.line, S(2));
+	lv_obj_set_x(v->thumb, w - (theme_lr ? L(2) : S(4)));
 }
 
 static void vlist_refresh(vlist_t *v)
@@ -344,7 +426,15 @@ static void vlist_refresh(vlist_t *v)
 		/* only what changed: every change redraws that part of the screen (a 1080p screen is a lot of
 		   pixels for the MiSTer's ARM, and this runs every second while some screens are open) */
 		if (strcmp(lv_label_get_text(v->lab[r]), t)) lv_label_set_text(v->lab[r], t);
-		if (strcmp(lv_label_get_text(v->val[r]), val)) lv_label_set_text(v->val[r], val);
+		if (strcmp(lv_label_get_text(v->val[r]), val)) {
+			lv_label_set_text(v->val[r], val);
+			if (theme_lr) {                          /* the name gets what the value leaves */
+				lv_text_attributes_t ta;
+				lv_text_attributes_init(&ta);
+				int vw = val[0] ? lv_text_get_width(val, strlen(val), FONT_SMALL, &ta) + L(10) : 0;
+				lv_obj_set_width(v->lab[r], LV_MAX(L(40), v->row_w - L(12) - vw));
+			}
+		}
 		int look = on * 2 + (dim ? 1 : 0);
 		if (v->shown[r] != look) {
 			v->shown[r] = (signed char)look;
@@ -400,12 +490,13 @@ static struct {
  * highlight moving along them, the highlighted card a little bigger. Moving past the fifth, the first
  * one goes and the next one comes in (and back the same way); nothing is ever cut off at the edge.
  * pos is the animated selection (0..SHELF_COUNT-1); home.first the first card shown. */
-#define SHELF_SHOWN 5
+static int on_border(int on) { return on ? L(2) : 0; }       /* 240p: the highlighted card's outline */
+#define SHELF_SHOWN (theme_lr ? 3 : 5)                     /* 240p / 288p: three bigger cards */
 static void shelf_layout(float pos)
 {
 	home.pos = pos;
-	int left = S(56), gap = S(18), vis_w = W - 2 * left;
-	int cw0 = (vis_w - (SHELF_SHOWN - 1) * gap) / SHELF_SHOWN, ch0 = S(250), step = cw0 + gap;
+	int left = theme_lr ? L(16) : S(56), gap = theme_lr ? L(8) : S(18), vis_w = W - 2 * left;
+	int cw0 = (vis_w - (SHELF_SHOWN - 1) * gap) / SHELF_SHOWN, ch0 = theme_lr ? L(88) : S(250), step = cw0 + gap;
 	if (home.sel < home.first) home.first = home.sel;
 	if (home.sel > home.first + SHELF_SHOWN - 1) home.first = home.sel - (SHELF_SHOWN - 1);
 	if (home.first > SHELF_COUNT - SHELF_SHOWN) home.first = LV_MAX(0, SHELF_COUNT - SHELF_SHOWN);
@@ -416,10 +507,11 @@ static void shelf_layout(float pos)
 		if (!shown) continue;
 		float d = i - pos, ad = d < 0 ? -d : d;
 		float grow = ad < 1 ? 1 - ad : 0;                  /* 1 at the highlighted card */
-		int cw = cw0 + (int)(S(22) * grow), ch = ch0 + (int)(S(32) * grow);
+		int cw = cw0 + (theme_lr ? 0 : (int)(S(22) * grow)), ch = ch0 + (theme_lr ? 0 : (int)(S(32) * grow));
 		int cx = left + (i - home.first) * step + cw0 / 2;
 		lv_obj_set_size(home.card[i], cw, ch);
-		lv_obj_set_pos(home.card[i], cx - cw / 2, S(140) + (ch0 - ch) / 2);
+		lv_obj_set_pos(home.card[i], cx - cw / 2, (theme_lr ? L(44) : S(140)) + (ch0 - ch) / 2);
+		if (theme_lr) lv_obj_set_style_border_width(home.card[i], on_border(ad < 0.5f), 0);
 		lv_obj_set_style_opa(home.card[i], LV_OPA_COVER, 0);
 		int on = ad < 0.5f;
 		lv_obj_set_style_border_color(home.card[i], on ? PAL.acc : PAL.line, 0);
@@ -814,19 +906,20 @@ static void show_home(void)
 	cur = SCR_HOME;
 	load_home_data();
 	lv_obj_clean(body);
+	int lr = theme_lr;
 	lv_obj_t *sec = mk_label(body, FONT_LABEL, PAL.dim, "LIBRARY");
-	lv_obj_set_style_text_letter_space(sec, S(3), 0);
-	lv_obj_set_pos(sec, S(56), S(104));
+	lv_obj_set_style_text_letter_space(sec, lr ? 2 : S(3), 0);
+	lv_obj_set_pos(sec, lr ? L(16) : S(56), lr ? L(30) : S(104));
 
 	for (int i = 0; i < SHELF_COUNT; i++) {
-		lv_obj_t *c = mk_box(body, S(200), S(250), PAL.panel, S(18));
-		lv_obj_set_style_border_width(c, LV_MAX(1, S(1)), 0);
+		lv_obj_t *c = mk_box(body, S(200), S(250), PAL.panel, lr ? L(6) : S(18));
+		lv_obj_set_style_border_width(c, lr ? 0 : LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(c, PAL.line, 0);
 		lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
 		lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-		lv_obj_set_style_pad_row(c, S(14), 0);
+		lv_obj_set_style_pad_row(c, lr ? L(3) : S(14), 0);
 		home.card[i] = c;
-		home.ic[i] = icon_create(c, shelf_icon(i), S(72));
+		home.ic[i] = icon_create(c, shelf_icon(i), lr ? L(28) : S(72));
 		home.nm[i] = mk_label(c, FONT_NAME, PAL.dim, shelf_name(i));
 		home.ct[i] = mk_label(c, FONT_SMALL, PAL.faint, "");
 	}
@@ -834,16 +927,16 @@ static void show_home(void)
 	home_counts();
 
 	/* pick up where you left off */
-	lv_obj_t *cont = mk_box(body, W - S(112), S(120), PAL.panel, S(16));
-	lv_obj_set_style_border_width(cont, LV_MAX(1, S(1)), 0);
+	lv_obj_t *cont = mk_box(body, lr ? W - L(32) : W - S(112), lr ? L(52) : S(120), PAL.panel, lr ? L(6) : S(16));
+	lv_obj_set_style_border_width(cont, lr ? 0 : LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(cont, PAL.line, 0);
-	lv_obj_set_pos(cont, S(56), S(470));
-	int aw = S(72), ah = S(88);
+	lv_obj_set_pos(cont, lr ? L(16) : S(56), lr ? LV_MIN(L(142), H - L(24) - L(54)) : S(470));   /* (240p with overscan: above the hints) */
+	int aw = lr ? L(32) : S(72), ah = lr ? L(36) : S(88);
 	lv_obj_t *art = mk_box(cont, aw, ah, lv_color_hex(0x2a2119), S(8));
 	lv_obj_set_style_border_width(art, 1, 0);
 	lv_obj_set_style_border_color(art, lv_color_hex(0x3a3530), 0);
 	lv_obj_set_style_clip_corner(art, true, 0);
-	lv_obj_align(art, LV_ALIGN_LEFT_MID, S(28), 0);
+	lv_obj_align(art, LV_ALIGN_LEFT_MID, lr ? L(9) : S(28), 0);
 	/* music playing: the bar shows it (Music › Now playing) instead of the last game */
 	cJSON *mr = api_call("{\"cmd\":\"music\"}");
 	cJSON *mtrack = api_ok(mr) ? cJSON_GetObjectItem(cJSON_GetObjectItem(mr, "music"), "track") : NULL;
@@ -862,15 +955,21 @@ static void show_home(void)
 		lv_obj_set_style_text_color(aic, PAL.acc, 0);
 		lv_obj_center(aic);
 	}
-	lv_obj_t *l1 = mk_label(cont, FONT_LABEL, PAL.dim, mtrack ? "NOW PLAYING" : "PICK UP WHERE YOU LEFT OFF");
-	lv_obj_set_style_text_letter_space(l1, S(3), 0);
-	lv_obj_set_pos(l1, S(124), S(28));
-	home.cont_title = mk_label(cont, FONT_TITLE, PAL.text, "");
-	lv_obj_set_pos(home.cont_title, S(124), S(48));
+	lv_obj_t *l1 = mk_label(cont, FONT_LABEL, lr ? PAL.acc : PAL.dim, mtrack ? "NOW PLAYING" : lr ? "CONTINUE" : "PICK UP WHERE YOU LEFT OFF");
+	lv_obj_set_style_text_letter_space(l1, lr ? 1 : S(3), 0);
+	lv_obj_set_pos(l1, lr ? L(50) : S(124), lr ? L(7) : S(28));
+	home.cont_title = mk_label(cont, lr ? FONT_NAME : FONT_TITLE, PAL.text, "");
+	lv_obj_set_pos(home.cont_title, lr ? L(50) : S(124), lr ? L(17) : S(48));
 	home.cont_sub = mk_label(cont, FONT_SMALL, PAL.dim, "");
-	lv_obj_set_pos(home.cont_sub, S(124), S(80));
+	lv_obj_set_pos(home.cont_sub, lr ? L(50) : S(124), lr ? L(32) : S(80));
+	if (lr) {                                           /* one line each, ... at the end */
+		lv_label_set_long_mode(home.cont_title, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(home.cont_title, W - L(32) - L(60));
+		lv_label_set_long_mode(home.cont_sub, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(home.cont_sub, W - L(32) - L(60));
+	}
 	home.cont = cont;
-	if (last_game) {
+	if (last_game && !lr) {                             /* (240p: X Play last says it) */
 		lv_obj_t *pill = mk_box(cont, LV_SIZE_CONTENT, S(36), PAL.panel, LV_RADIUS_CIRCLE);
 		lv_obj_set_style_border_width(pill, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(pill, PAL.acc, 0);
@@ -989,10 +1088,14 @@ static void sys_detail(void)
 static void screen_title(const char *label, const char *title)
 {
 	lv_obj_t *sec = mk_label(body, FONT_LABEL, PAL.dim, label);
-	lv_obj_set_style_text_letter_space(sec, S(3), 0);
-	lv_obj_set_pos(sec, S(56), S(96));
+	lv_obj_set_style_text_letter_space(sec, theme_lr ? 2 : S(3), 0);
+	lv_obj_set_pos(sec, theme_lr ? L(16) : S(56), theme_lr ? L(26) : S(96));
 	lv_obj_t *tl = mk_label(body, FONT_HEADING, PAL.text, title);
-	lv_obj_set_pos(tl, S(56), S(118));
+	lv_obj_set_pos(tl, theme_lr ? L(16) : S(56), theme_lr ? L(36) : S(118));
+	if (theme_lr) {                                     /* one line: a long name ends in ... */
+		lv_label_set_long_mode(tl, LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(tl, W - L(32));
+	}
 }
 
 static void show_systems(category_t c)
@@ -1012,6 +1115,7 @@ static void show_systems(category_t c)
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
 	lv_obj_set_pos(panel, W - S(56) - SW(470), S(176));
+	if (theme_lr) lv_obj_set_hidden(panel, true);      /* 240p: the list says it (the counts on the right) */
 	lv_obj_t *ic = icon_create(panel, CAT_ICON[c], S(64));
 	lv_obj_set_style_text_color(ic, PAL.acc, 0);
 	lv_obj_set_pos(ic, S(28), S(28));
@@ -1439,20 +1543,23 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 	char label[96];
 	spaced_caps(label, sizeof(label), games_mode == GL_SYSTEM ? category_name((category_t)cat) : "Library");
 	screen_title(label, sys_name);
-	vlist_create(&game_list, body, S(56), S(176), SW(560), S(440));
+	int lr = theme_lr, lpw = L(84);                     /* 240p: the list, and the box art beside it */
+	if (lr) { vlist_lr_own = 1; vlist_create(&game_list, body, L(12), L(60), W - L(28) - lpw - L(8), H - L(60) - L(24)); }
+	else vlist_create(&game_list, body, S(56), S(176), SW(560), S(440));
 	game_list.count = ngames;
 	game_list.fill = game_fill;
 	game_list.sel = 0;
 	game_list.top = 0;
 
 	/* details: box art on top, then title, details and description */
-	int pw = SW(584), ph = S(456), pad = S(26), iw = pw - 2 * pad;
+	int pw = lr ? lpw : SW(584), ph = lr ? H - L(64) - L(24) : S(456), pad = lr ? 0 : S(26), iw = pw - 2 * pad;
 	lv_obj_t *panel = mk_box(body, pw, ph, PAL.panel, S(16));
-	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_width(panel, lr ? 0 : LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, W - S(56) - pw, S(170));
+	lv_obj_set_pos(panel, lr ? W - L(16) - pw : W - S(56) - pw, lr ? L(64) : S(170));
+	if (lr) { lv_obj_set_style_bg_opa(panel, LV_OPA_TRANSP, 0); lv_obj_set_style_pad_all(panel, 0, 0); }
 
-	int ah = S(196);
+	int ah = lr ? L(108) : S(196);
 	g_art = lv_image_create(panel);
 	lv_obj_set_size(g_art, iw, ah);
 	lv_image_set_inner_align(g_art, LV_IMAGE_ALIGN_CONTAIN);
@@ -1464,15 +1571,16 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 	lv_obj_set_style_text_color(nic, PAL.line, 0);
 	lv_obj_center(nic);
 
-	int y = pad + ah + S(16);
+	int y = pad + ah + (lr ? L(4) : S(16));
 	g_title = mk_label(panel, FONT_TITLE, PAL.text, "");
+	if (lr) lv_obj_set_hidden(g_title, true);           /* (240p: the highlighted row says it) */
 	lv_label_set_long_mode(g_title, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(g_title, iw, S(30));
 	lv_obj_set_pos(g_title, pad, y);
-	y += S(32);
+	if (!lr) y += S(32);
 	g_info = mk_label(panel, FONT_SMALL, PAL.acc, "");
-	lv_label_set_long_mode(g_info, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_size(g_info, iw, S(20));
+	lv_label_set_long_mode(g_info, lr ? LV_LABEL_LONG_MODE_WRAP : LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_size(g_info, iw, lr ? L(28) : S(20));
 	lv_obj_set_pos(g_info, pad, y);
 	info_y = y;
 	y += S(28);
@@ -1487,13 +1595,15 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 	lv_label_set_long_mode(g_where, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_width(g_where, iw);
 	lv_obj_align(g_where, LV_ALIGN_BOTTOM_LEFT, pad, -S(14));
+	if (lr) { lv_obj_set_hidden(g_desc, true); lv_obj_set_hidden(g_where, true); }
 
 	char cnt[48];
 	snprintf(cnt, sizeof(cnt), "%d game%s", ngames, ngames == 1 ? "" : "s");
 
 	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.dim, cnt);
 	lv_obj_update_layout(c);
-	lv_obj_set_pos(c, S(56) + SW(560) - S(10) - lv_obj_get_width(c), S(134));
+	if (lr) lv_obj_set_pos(c, W - L(16) - lv_obj_get_width(c), L(26));
+	else lv_obj_set_pos(c, S(56) + SW(560) - S(10) - lv_obj_get_width(c), S(134));
 
 	vlist_refresh(&game_list);
 	game_detail();
@@ -2106,6 +2216,19 @@ static void show_guard(void)
 	gd.sel[0] = gd.sel[1] = 0;
 	gd.st = NULL;
 	gd_load(api_call("{\"cmd\":\"guard\"}"));
+	if (theme_lr) {                                     /* two columns of explanations: not at 240 lines */
+		lv_obj_set_hidden(div, true);
+		lv_obj_set_hidden(gd.right, true);
+		lv_obj_clean(gd.left);
+		lv_obj_set_pos(gd.left, L(16), L(60));
+		lv_obj_set_size(gd.left, W - L(32), H - L(90));
+		lv_obj_t *m = mk_label(gd.left, FONT_BODY, PAL.dim, "Restore points need more room than 240p or 288p: use CRT mode 480i (Settings > Video), or Phosphor for Windows or Android.");
+		lv_label_set_long_mode(m, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_width(m, W - L(32));
+		static const char *const back[] = { "B", "Back", NULL };
+		footer_set(back);
+		return;
+	}
 	if (!gd.st || !api_ok(gd.st) || !cJSON_IsTrue(cJSON_GetObjectItem(gd.st, "installed"))) {
 		lv_obj_clean(gd.left);
 		mk_label(gd.left, FONT_BODY, PAL.dim, "The update-guard module isn't installed.");
@@ -2158,7 +2281,7 @@ static void gd_tick(void)
 	}
 	if (!strcmp(gd.job_last, "rollback") && okj) toast_show("Rolled back. Restart to start it (Settings > Restart)");
 	else toast_show(first[0] ? first : okj ? "Done" : "That didn't work");
-	if (cur == SCR_GUARD) { gd_load(r); gd_draw(); } else { guard_alert_set(guard_count(r)); cJSON_Delete(r); }
+	if (cur == SCR_GUARD && !theme_lr) { gd_load(r); gd_draw(); } else { guard_alert_set(guard_count(r)); cJSON_Delete(r); }
 }
 
 static int gd_confirm(int btn, const char *msg)
@@ -2173,7 +2296,7 @@ static int gd_confirm(int btn, const char *msg)
 
 static void guard_key(pkey_t k)
 {
-	if (!gd.st || !api_ok(gd.st)) { if (k == K_B || k == K_MENU) back_to_settings(SET_GUARD); return; }
+	if (!gd.st || !api_ok(gd.st) || theme_lr) { if (k == K_B || k == K_MENU) back_to_settings(SET_GUARD); return; }
 	int *sel = &gd.sel[gd.side], n = gd_count(gd.side);
 	switch (k) {
 	case K_UP: if (*sel > 0) (*sel)--; break;
@@ -2278,6 +2401,7 @@ static void show_folder(int util)
 	fo.list.count = n;
 	fo.list.sel = fo.list.top = 0;
 	lv_obj_t *pan = mk_box(body, SW(424), LV_SIZE_CONTENT, PAL.panel, S(16));
+	LR_HIDE(pan);
 	lv_obj_set_style_border_width(pan, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(pan, PAL.line, 0);
 	lv_obj_set_style_pad_all(pan, S(24), 0);
@@ -2645,19 +2769,23 @@ static vlist_t vd_list;
 static void vk_check(int now);
 static struct {
 	cJSON *st;                         /* phosphord's vset reply */
-	int nrows, row2opt[NVOPTS + 3];        /* the list: options in group order */
+	int nrows, row2opt[NVOPTS + 5];        /* the list: options in group order */
 	int edited[NVOPTS];                /* a value picked but not tried yet: its index in vals */
 	char file[64];
 	lv_obj_t *chips, *panel, *pname, *prisk, *ptext, *pwarn, *pdip, *pfoot, *empty;
 	int ncrt;                          /* Phosphor's CRT rows first (row2opt -1, -2, -3) */
 	crt_cfg_t crt;                     /* as saved */
 	int crt_pick;                      /* the mode picked (CRT_OFF: off), not tried yet; -2: none */
+	int crt_dirty;                     /* Text or Overscan changed: the menu starts again on the way out */
 } vd;
 static const char *const VD_HINTS_CRT[] = { "\xE2\x86\x90\xE2\x86\x92", "Change", "A", "Try", "B", "Back", NULL };
+static const char *const VD_HINTS_CRTCH[] = { "\xE2\x86\x90\xE2\x86\x92", "Change", "B", "Back (the menu starts again)", NULL };
 static const char *const VD_HINTS_CRTPOS[] = { "\xE2\x86\x90\xE2\x86\x92", "Move the picture", "B", "Back", NULL };
-static const int CRT_MODES[] = { CRT_OFF, CRT_480I, CRT_576I, CRT_480P };
-#define NCRT_MODES 4
-static int vd_crt_row(int i) { return i < vd.ncrt ? i : -1; }   /* 0 mode, 1 horizontal, 2 vertical */
+static const int CRT_MODES[] = { CRT_OFF, CRT_240P, CRT_288P, CRT_480I, CRT_576I, CRT_480P };
+#define NCRT_MODES 6
+enum { CR_MODE, CR_TEXT, CR_OVER, CR_H, CR_V };
+static int vd_crt_row(int i) { return i < vd.ncrt ? i : -1; }
+static const char *const CRT_FONT_NAMES[] = { "Smooth", "Sharp", "Legible" };
 static int vd_crt_shown(void) { return vd.crt_pick != -2 ? vd.crt_pick : vd.crt.on ? vd.crt.mode : CRT_OFF; }
 static const char *const VD_HINTS[] = { "\xE2\x86\x90\xE2\x86\x92", "Change", "A", "Try", "X", "Earlier settings", "L/R", "Profile", "B", "Back", NULL };
 static const char *const VD_HINTS_PROF[] = { "A", "Try this profile", "L/R", "Profile", "B", "Back", NULL };
@@ -2732,9 +2860,18 @@ static void vd_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 			const char *l = crt_mode_name(vd_crt_shown());
 			if (vd.crt_pick != -2) snprintf(val, vn, "<  %s  >", l);
 			else snprintf(val, vn, "%s", l);
+		} else if (cr == CR_TEXT) {
+			snprintf(t, n, "CRT text (240p, 288p)");
+			snprintf(val, vn, "<  %s  >", CRT_FONT_NAMES[SETTINGS.crt_font]);
+			*dim = !vd.crt.on || (vd.crt.mode != CRT_240P && vd.crt.mode != CRT_288P);
+		} else if (cr == CR_OVER) {
+			snprintf(t, n, "CRT overscan");
+			if (SETTINGS.crt_overscan) snprintf(val, vn, "<  %d%% per edge  >", SETTINGS.crt_overscan);
+			else snprintf(val, vn, "<  Off  >");
+			*dim = !vd.crt.on;
 		} else {
-			int x = cr == 1 ? vd.crt.h : vd.crt.v;
-			snprintf(t, n, cr == 1 ? "CRT picture: left / right" : "CRT picture: up / down");
+			int x = cr == CR_H ? vd.crt.h : vd.crt.v;
+			snprintf(t, n, cr == CR_H ? "CRT picture: left / right" : "CRT picture: up / down");
 			if (!vd.crt.on) { snprintf(val, vn, "%+d", x); *dim = 1; }
 			else snprintf(val, vn, "<  %+d  >", x);
 		}
@@ -2780,18 +2917,21 @@ static void vd_panel(void)
 		footer_set(VD_HINTS_PROF);
 	} else if (vd_crt_row(vd_list.sel) >= 0) {
 		int cr = vd_crt_row(vd_list.sel);
-		lv_label_set_text(vd.pname, cr == 0 ? "CRT mode" : "CRT picture position");
-		lv_label_set_text(vd.prisk, cr == 0 ? "Phosphor's own setting (not MiSTer.ini)" : "Changes right away");
+		lv_label_set_text(vd.pname, cr == 0 ? "CRT mode" : cr == CR_TEXT ? "CRT text" : cr == CR_OVER ? "CRT overscan" : "CRT picture position");
+		lv_label_set_text(vd.prisk, cr == 0 ? "Phosphor's own setting (not MiSTer.ini)" : cr == CR_TEXT || cr == CR_OVER ? "The menu starts again with it" : "Changes right away");
 		lv_obj_set_style_text_color(vd.prisk, PAL.dim, 0);
 		lv_label_set_text(vd.ptext, cr == 0
 			? "Phosphor's menu on a CRT, at the TV's own timing, out of the analog port (VGA, SCART, component). "
-			  "480i and 576i are 15 kHz for a TV (576i for PAL sets); 480p is 31 kHz for a VGA monitor or a PVM / BVM that takes it. "
-			  "HDMI shows the same picture. Games still use their own video and MiSTer.ini's settings."
+			  "240p, 288p, 480i and 576i are 15 kHz for a TV (288p and 576i for PAL sets); 480p is 31 kHz for a VGA monitor or a PVM / BVM that takes it. "
+			  "HDMI shows the same picture. Games still use their own video and MiSTer.ini's settings. "
+			  "In a game, Phosphor's in-game menu shows in MiSTer's menu window on the CRT."
+			: cr == CR_TEXT ? "How the text looks at 240p and 288p. Smooth: soft edges. Sharp: no soft edges, crisp on a sharp monitor. Legible: a plainer, heavier typeface."
+			: cr == CR_OVER ? "Most TVs cut the edges of the picture off. This keeps Phosphor's menu inside: a few per cent off each edge."
 			: "Moves Phosphor's picture on the CRT so it's in the middle of the screen. Each step is one pixel across, or one line up or down.");
 		lv_label_set_text(vd.pwarn, cr == 0 ? "A TV that can't show a mode shows nothing: the old mode comes back by itself unless you keep it."
 		                                   : vd.crt.on ? "" : "Turn CRT mode on first.");
 		if (!mainlink_has_crt()) lv_label_set_text(vd.pwarn, "Needs Phosphor's Main (0.27.42 or later) and Phosphor's menu core.");
-		footer_set(cr == 0 ? VD_HINTS_CRT : VD_HINTS_CRTPOS);
+		footer_set(cr == 0 ? VD_HINTS_CRT : cr == CR_TEXT || cr == CR_OVER ? VD_HINTS_CRTCH : VD_HINTS_CRTPOS);
 	} else {
 		int o = vd.row2opt[vd_list.sel];
 		lv_label_set_text(vd.pname, VOPTS[o].name);
@@ -2879,7 +3019,7 @@ static void show_video(void)
 	memset(vd.edited, 0xff, sizeof(vd.edited));
 	vd.file[0] = 0;
 	vd.nrows = 0;
-	vd.ncrt = 3;
+	vd.ncrt = 5;
 	crt_load(&vd.crt);
 	vd.crt_pick = -2;
 	for (int k = 0; k < vd.ncrt; k++) vd.row2opt[vd.nrows++] = -1 - k;
@@ -2900,8 +3040,10 @@ static void show_video(void)
 	lv_obj_set_width(vd.empty, lw - S(40));
 	lv_label_set_long_mode(vd.empty, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(vd.empty, S(80), S(232));
+	if (theme_lr) { lv_obj_set_pos(vd.empty, L(16), L(64)); lv_obj_set_width(vd.empty, W - L(32)); }
 	int px = S(56) + lw + S(30), pw2 = W - S(56) - px;
 	vd.panel = mk_box(body, pw2, S(410), PAL.panel, S(14));
+	if (theme_lr) { lv_obj_set_hidden(vd.panel, true); lv_obj_set_hidden(vd.chips, true); }
 	lv_obj_set_pos(vd.panel, px, S(220));
 	lv_obj_set_style_border_width(vd.panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(vd.panel, PAL.line, 0);
@@ -2966,6 +3108,7 @@ static void video_key(pkey_t k)
 		int any = 0;
 		for (int o = 0; o < NVOPTS; o++) if (vd.edited[o] >= 0) any = 1;
 		if (vd.crt_pick != -2 && k == K_B) { vd.crt_pick = -2; vlist_refresh(&vd_list); vd_panel(); return; }
+		if (vd.crt_dirty) { vd.crt_dirty = 0; setenv("PHOS_REOPEN", "video", 1); crt_request_restart(); return; }
 		if (any && k == K_B) { memset(vd.edited, 0xff, sizeof(vd.edited)); vlist_refresh(&vd_list); vd_panel(); return; }
 		back_to_settings(SET_VIDEO);
 		return;
@@ -2975,6 +3118,16 @@ static void video_key(pkey_t k)
 	int cr = vd_crt_row(vd_list.sel);
 	if (cr >= 0) {
 		if (!mainlink_has_crt()) { if (k == K_LEFT || k == K_RIGHT || k == K_A) toast_show("CRT mode needs Phosphor's Main and menu core"); return; }
+		if ((cr == CR_TEXT || cr == CR_OVER) && (k == K_LEFT || k == K_RIGHT)) {
+			int d = k == K_RIGHT ? 1 : -1;
+			if (cr == CR_TEXT) SETTINGS.crt_font = (SETTINGS.crt_font + 3 + d) % 3;
+			else SETTINGS.crt_overscan = LV_CLAMP(0, SETTINGS.crt_overscan + d, 10);
+			settings_save();
+			vlist_refresh(&vd_list);
+			vd_panel();
+			if (vd.crt.on && (cr == CR_OVER || vd.crt.mode == CRT_240P || vd.crt.mode == CRT_288P)) vd.crt_dirty = 1;
+			return;
+		}
 		if (cr == 0 && (k == K_LEFT || k == K_RIGHT)) {
 			int at = 0, now = vd.crt.on ? vd.crt.mode : CRT_OFF;
 			for (int i = 0; i < NCRT_MODES; i++) if (CRT_MODES[i] == vd_crt_shown()) at = i;
@@ -2987,12 +3140,13 @@ static void video_key(pkey_t k)
 			crt_cfg_t c = vd.crt;
 			c.on = vd.crt_pick != CRT_OFF;
 			if (c.on) c.mode = vd.crt_pick;
+			setenv("PHOS_REOPEN", "video", 1);
 			if (crt_try(&c)) { toast_show("Couldn't save the CRT setting"); return; }
 			toast_show("Starting the menu again in the new mode");
 		} else if (cr > 0 && (k == K_LEFT || k == K_RIGHT)) {
 			if (!vd.crt.on) { toast_show("Turn CRT mode on first"); return; }
 			int d = k == K_RIGHT ? 1 : -1;
-			if (cr == 1) vd.crt.h = LV_CLAMP(-31, vd.crt.h + d, 31);
+			if (cr == CR_H) vd.crt.h = LV_CLAMP(-31, vd.crt.h + d, 31);
 			else vd.crt.v = LV_CLAMP(-31, vd.crt.v + d, 31);
 			crt_move(vd.crt.h, vd.crt.v);
 			vlist_refresh(&vd_list);
@@ -3052,36 +3206,40 @@ static void vk_show(cJSON *p)
 static void vk_box(const char *what, int total, int left)
 {
 	vk_close();
-	int w = LV_MIN(S(620), W - S(40)), h = S(270);
-	vk.box = mk_box(root, w, h, PAL.panel, S(18));
+	int lr = theme_lr;                                  /* 240p / 288p: the same, in its own units */
+#define VK(a, b) (lr ? L(b) : S(a))
+	int w = lr ? W - L(32) : LV_MIN(S(620), W - S(40)), h = VK(270, 132);
+	vk.box = mk_box(root, w, h, PAL.panel, VK(18, 6));
 	lv_obj_set_style_border_width(vk.box, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(vk.box, PAL.acc, 0);
 	lv_obj_center(vk.box);
 	lv_obj_t *l = mk_label(vk.box, FONT_LABEL, PAL.dim, "T R Y I N G");
-	lv_obj_set_pos(l, S(30), S(24));
+	lv_obj_set_pos(l, VK(30, 10), VK(24, 8));
 	vk.what = mk_label(vk.box, FONT_TITLE, PAL.text, what);
-	lv_obj_set_width(vk.what, w - S(60));
+	lv_obj_set_width(vk.what, w - VK(60, 20));
 	lv_label_set_long_mode(vk.what, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_pos(vk.what, S(30), S(48));
-	l = mk_label(vk.box, FONT_BODY, PAL.dim, "Picture looks right? Keep it. Otherwise the old setting comes back by itself.");
-	lv_obj_set_width(l, w - S(60));
+	lv_obj_set_pos(vk.what, VK(30, 10), VK(48, 20));
+	l = mk_label(vk.box, lr ? FONT_SMALL : FONT_BODY, PAL.dim, "Picture looks right? Keep it. Otherwise the old setting comes back by itself.");
+	lv_obj_set_width(l, w - VK(60, 20));
 	lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_pos(l, S(30), S(88));
-	lv_obj_t *track = mk_box(vk.box, w - S(160), S(6), PAL.line, S(3));
-	lv_obj_set_pos(track, S(30), S(156));
-	vk.bar = mk_box(track, w - S(160), S(6), PAL.acc, S(3));
+	lv_obj_set_pos(l, VK(30, 10), VK(88, 40));
+	lv_obj_t *track = mk_box(vk.box, w - VK(160, 60), VK(6, 4), PAL.line, VK(3, 2));
+	lv_obj_set_pos(track, VK(30, 10), VK(156, 74));
+	vk.bar = mk_box(track, w - VK(160, 60), VK(6, 4), PAL.acc, VK(3, 2));
 	vk.secs = mk_label(vk.box, FONT_NAME, PAL.acc, "");
-	lv_obj_set_pos(vk.secs, w - S(110), S(144));
-	lv_obj_t *b1 = mk_box(vk.box, S(270), S(48), PAL.acc, S(24));
-	lv_obj_set_pos(b1, S(30), h - S(48) - S(26));
+	lv_obj_set_pos(vk.secs, w - VK(110, 44), VK(144, 68));
+	int bw = (w - VK(60, 20) - VK(20, 8)) / 2, bh = VK(48, 22);
+	lv_obj_t *b1 = mk_box(vk.box, bw, bh, PAL.acc, VK(24, 11));
+	lv_obj_set_pos(b1, VK(30, 10), h - bh - VK(26, 10));
 	l = mk_label(b1, FONT_NAME, PAL.bg, "A   Keep");
 	lv_obj_center(l);
-	lv_obj_t *b2 = mk_box(vk.box, S(270), S(48), PAL.panel, S(24));
+	lv_obj_t *b2 = mk_box(vk.box, bw, bh, PAL.panel, VK(24, 11));
 	lv_obj_set_style_border_width(b2, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(b2, PAL.line, 0);
-	lv_obj_set_pos(b2, w - S(30) - S(270), h - S(48) - S(26));
-	l = mk_label(b2, FONT_NAME, PAL.text, "B   Put back now");
+	lv_obj_set_pos(b2, w - VK(30, 10) - bw, h - bh - VK(26, 10));
+	l = mk_label(b2, FONT_NAME, PAL.text, lr ? "B   Put back" : "B   Put back now");
 	lv_obj_center(l);
+#undef VK
 	vk.total = total;
 	vk.until = lv_tick_get() + (uint32_t)left * 1000;
 	vk.open = 1;
@@ -3637,6 +3795,7 @@ static void si_update(void)
 static void si_create(lv_obj_t *parent, int x, int y, int w, int h)
 {
 	si.box = mk_box(parent, w, h, PAL.panel, S(10));
+	if (theme_lr) lv_obj_set_hidden(si.box, true);     /* 240p: no room beside the list */
 	lv_obj_set_pos(si.box, x, y);
 	lv_obj_set_style_border_color(si.box, PAL.line, 0);
 	lv_obj_set_style_border_width(si.box, S(1) > 0 ? S(1) : 1, 0);
@@ -3771,6 +3930,7 @@ static void show_sources(void)
 	lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_width(note, SW(760));
 	lv_obj_set_pos(note, S(56), S(176) + src_list.vis * src_list.row_h + S(14));
+	LR_HIDE(note);
 	static const char *const hints[] = { "A", "On / Off", "Y", "Move up", "X", "Move down", "B", "Back", NULL };
 	footer_set(hints);
 }
@@ -3953,6 +4113,7 @@ static void show_diag(void)
 	lv_label_set_long_mode(diag_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(diag_sub, W - S(112), S(22));
 	lv_obj_set_pos(diag_sub, S(56), S(208));
+	lr_head_sub(diag_head, diag_sub);
 	int ph = diag_power(S(240));
 	vlist_create(&diag_list, body, S(56), S(244) + ph, W - S(112), S(380) - ph);
 	diag_list.fill = diag_fill;
@@ -4780,6 +4941,7 @@ static void show_cloud(void)
 	lv_label_set_long_mode(cl_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(cl_sub, W - S(112), S(22));
 	lv_obj_set_pos(cl_sub, S(56), S(208));
+	lr_head_sub(cl_head, cl_sub);
 	vlist_create(&cl_list, body, S(56), S(244), SW(900), S(380));
 	cl_list.fill = cl_fill;
 	cl_list.sel = 0;
@@ -4981,6 +5143,7 @@ static void show_backup(void)
 	lv_label_set_long_mode(bk_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(bk_sub, W - S(112), S(22));
 	lv_obj_set_pos(bk_sub, S(56), S(208));
+	lr_head_sub(bk_head, bk_sub);
 	vlist_create(&bk_list, body, S(56), S(244), SW(900), S(380));
 	bk_list.fill = bk_fill;
 	bk_list.sel = 0;
@@ -5058,6 +5221,7 @@ static void mc_create(lv_obj_t *parent)
 	mc_box = mk_box(parent, side, S(26) + side + S(42) + 5 * S(22) + S(24), PAL.bg, 0);
 	lv_obj_set_style_bg_opa(mc_box, LV_OPA_TRANSP, 0);
 	lv_obj_set_pos(mc_box, W - S(56) - side, S(150));
+	LR_HIDE(mc_box);                                    /* 240p: the card map doesn't fit beside the list */
 	mc_title = mk_label(mc_box, FONT_LABEL, PAL.dim, "MEMORY CARD");
 	lv_obj_set_style_text_letter_space(mc_title, S(2), 0);
 	lv_obj_set_pos(mc_title, 0, 0);
@@ -6211,6 +6375,7 @@ static void show_storage(void)
 	sg_list.count = 0;
 	lv_obj_t *box = mk_box(body, SW(464), S(430), PAL.panel, S(10));
 	lv_obj_set_pos(box, SX(760), S(170));
+	LR_HIDE(box);
 	lv_obj_set_style_border_color(box, PAL.line, 0);
 	lv_obj_set_style_border_width(box, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_pad_all(box, S(22), 0);
@@ -6426,6 +6591,7 @@ static void show_bt(void)
 	lv_label_set_long_mode(bt_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(bt_sub, W - S(112), S(22));
 	lv_obj_set_pos(bt_sub, S(56), S(208));
+	lr_head_sub(bt_head, bt_sub);
 	vlist_create(&bt_list, body, S(56), S(244), SW(900), S(380));
 	bt_list.fill = bt_fill;
 	bt_list.sel = 0;
@@ -6566,8 +6732,8 @@ static const char *const CT_HINTS3[] = { "A", "Restore", "B", "Back", NULL };
 static void ct_side(void)
 {
 	int s = ct_list.sel, pad = ct.mode == 0 && s < ct.n;
-	lv_obj_set_hidden(padview_obj(ct.pv), !pad);
-	lv_obj_set_hidden(ct.style_lab, !pad);
+	lv_obj_set_hidden(padview_obj(ct.pv), !pad || theme_lr);
+	lv_obj_set_hidden(ct.style_lab, !pad || theme_lr);
 	footer_set(ct.mode == 1 ? CT_HINTS3 : pad ? CT_HINTS : CT_HINTS2);
 	if (pad) {
 		padview_layout(ct.pv, ct.style[s]);
@@ -6614,6 +6780,7 @@ static void show_ctrl(void)
 	lv_obj_set_pos(ct.style_lab, SX(752), S(186));
 	ct.pv = padview_create(body, SX(752), S(214), SW(472));
 	ct.desc = mk_label(body, FONT_SMALL, PAL.dim, "");
+	LR_HIDE(ct.desc); LR_HIDE(ct.style_lab); LR_HIDE(padview_obj(ct.pv));
 	lv_obj_set_width(ct.desc, SW(472));
 	lv_label_set_long_mode(ct.desc, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(ct.desc, SX(752), S(500));
@@ -7178,6 +7345,7 @@ static void show_update(void)
 	up_list.count = 0;
 	up.confirm_row = -1;
 	up.note = mk_label(body, FONT_SMALL, PAL.dim, "");
+	LR_HIDE(up.note);
 	lv_obj_set_width(up.note, SW(900));
 	lv_label_set_long_mode(up.note, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(up.note, S(56), S(560));
@@ -7804,6 +7972,11 @@ static void show_scan(void)
 	lv_obj_set_pos(sl, SX(840), S(166));
 	sc.list = mk_box(body, SW(384), S(380), PAL.bg, 0);
 	lv_obj_set_pos(sc.list, SX(830), S(200));
+	if (theme_lr) {
+		int w = LRW - 32;
+		lr_at(sc.step, 16, 58, w); lr_at(sc.sys, 16, 68, w); lr_at(sc.file, 16, 90, w); lr_at(sc.count, 16, 114, 0);
+		lr_progress(sc.bar, sc.eta, note, nt, nb, sl, sc.list, 106, 140);
+	}
 	footer_set(SCAN_HINTS);
 	sc.t0 = lv_tick_get();
 	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
@@ -7985,6 +8158,12 @@ static void show_art(void)
 	lv_obj_set_pos(sl, SX(840), S(166));
 	ar.list = mk_box(body, SW(384), S(380), PAL.bg, 0);
 	lv_obj_set_pos(ar.list, SX(830), S(200));
+	if (theme_lr) {
+		int w = LRW - 32;
+		lr_at(ar.step, 16, 58, w); lr_at(ar.sys, 16, 68, w); lr_at(ar.game, 16, 88, w); lr_at(ar.src, 16, 103, w);
+		lr_at(ar.count, 16, 126, 0); lr_at(ar.tally, 16, 142, w);
+		lr_progress(ar.bar, ar.eta, note, nt, nb, sl, ar.list, 118, 160);
+	}
 	footer_set(ART_HINTS);
 	ar.t0 = lv_tick_get();
 	/* start it, unless it's already working (then this screen just follows it) */
@@ -8581,6 +8760,7 @@ static void show_discs(void)
 	vlist_refresh(&disc_list);
 	/* 16:9: as designed; narrower (4:3): stacked and as tall as its text, which wraps onto more lines */
 	lv_obj_t *panel = mk_box(body, SW(444), NARROW ? LV_SIZE_CONTENT : S(300), PAL.panel, S(16));
+	LR_HIDE(panel);
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
 	lv_obj_set_pos(panel, SX(780), S(176));
@@ -8672,6 +8852,7 @@ static void show_shots(void)
 	shot_list.fill = shots_fill;
 	vlist_refresh(&shot_list);
 	lv_obj_t *panel = mk_box(body, SW(444), S(300), PAL.panel, S(16));
+	LR_HIDE(panel);
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
 	lv_obj_set_pos(panel, SX(780), S(176));
@@ -8978,6 +9159,7 @@ static void mu_draw(void)
 	screen_title("LIBRARY", "Music");
 	mu_mk_chips();
 	lv_obj_t *panel = mk_box(body, SW(480), S(420), PAL.panel, S(16));
+	LR_HIDE(panel);
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
 	lv_obj_set_pos(panel, W - S(56) - SW(480), S(204));
@@ -9284,6 +9466,7 @@ static void show_ra(void)
 	vlist_refresh(&ra_list);
 	/* 16:9: as designed; narrower (4:3): stacked and as tall as its text, which wraps onto more lines */
 	lv_obj_t *panel = mk_box(body, SW(444), NARROW ? LV_SIZE_CONTENT : S(400), PAL.panel, S(16));
+	LR_HIDE(panel);
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
 	lv_obj_set_pos(panel, SX(780), S(176));
@@ -9478,6 +9661,7 @@ static void rv_draw(void)
 		lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(panel, PAL.line, 0);
 		lv_obj_set_pos(panel, SX(780), S(200));
+		LR_HIDE(panel);
 		rv_title = mk_label(panel, FONT_TITLE, PAL.text, "");
 		lv_label_set_long_mode(rv_title, LV_LABEL_LONG_MODE_DOTS);
 		lv_obj_set_width(rv_title, SW(396));
@@ -9595,6 +9779,7 @@ static void raview_key(int k)
  * screen over the running game (Main's "ingame"; the game keeps running behind it) and the controller
  * here, until Back. Needs Phosphor's Main with API 5. */
 static vlist_t ig_list;
+static int ig_text;                    /* CRT mode: the in-game menu is OSD text (below) */
 enum { IG_BACK, IG_ACH, IG_DISC, IG_OSD, IG_QUIT, IG_LOAD };
 static int ig_rows[8], ig_n;
 /* RetroAchievements in the game being played (Main's "ra"): the Achievements row and its list */
@@ -9890,7 +10075,7 @@ static void igp_key(int k)
 		igp_close();                                    /* back to the menu */
 		return;
 	}
-	if (k == K_Y && igp.view == IGP_GAMES) {
+	if (k == K_Y && igp.view == IGP_GAMES && !ig_text) {
 		static const char *const back[] = { "A", "Load", "Y", "Search", "B", "Back", NULL };
 		osk_open("Search", "Part of a game's name, then Done.", 0, 60, igp_search_done, back);
 		return;
@@ -9906,6 +10091,87 @@ static void igp_key(int k)
 		ig_left_pick();
 	} else if (igp_confirmed(api_str(x, "title") ? api_str(x, "title") : "it"))
 		igp_start((long long)api_num(x, "id", -1), -1);
+}
+
+/* ---------- CRT mode: the in-game menu as text in MiSTer's OSD ----------
+ * With MiSTer's analog port at the TV's own timing (vga_scaler=0) a running core's picture goes out with
+ * MiSTer's OSD on top, and never Linux's framebuffer, so Phosphor's in-game menu can't be drawn there.
+ * Then the same menu (the same rows, keys and lists) is sent to Phosphor's Main as text, which shows it
+ * in the OSD over the game: 16 lines of 30 characters, the highlighted row inverted. */
+static void osd_ascii(char *d, size_t n, const char *s)
+{
+	size_t o = 0;
+	while (*s && o + 1 < n) {
+		unsigned char c = (unsigned char)*s;
+		if (c < 0x80) { d[o++] = (char)(c >= 0x20 ? c : ' '); s++; continue; }
+		const char *r = "";
+		if (!strncmp(s, "\xC2\xB7", 2)) r = "-";
+		else if (!strncmp(s, "\xE2\x9C\x93", 3)) r = "*";
+		else if (!strncmp(s, "\xE2\x80\xA6", 3)) r = "...";
+		else if (!strncmp(s, "\xE2\x80\x94", 3) || !strncmp(s, "\xE2\x80\x93", 3)) r = "-";
+		else if (!strncmp(s, "\xE2\x80\x98", 3) || !strncmp(s, "\xE2\x80\x99", 3)) r = "'";
+		else if (!strncmp(s, "\xC3", 1) && s[1]) {               /* Latin-1 letters: the plain letter */
+			static const char L[] = "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYPsaaaaaaaceeeeiiiidnooooo/ouuuuypy";
+			unsigned char k = (unsigned char)s[1];
+			if (k >= 0x80 && k <= 0xBF) { char one[2] = { L[k - 0x80], 0 }; snprintf(d + o, n - o, "%s", one); o += strlen(d + o); s += 2; continue; }
+		}
+		for (; *r && o + 1 < n; r++) d[o++] = *r;
+		s++;
+		while ((*s & 0xC0) == 0x80) s++;
+	}
+	d[o] = 0;
+}
+/* one row: the text, and its value at the right edge (30 characters) */
+static void osd_row(char *out, size_t n, const char *t, const char *v)
+{
+	char a[160], b[64];
+	osd_ascii(a, sizeof(a), t);
+	osd_ascii(b, sizeof(b), v);
+	int bl = (int)strlen(b), room = 29 - (bl ? bl + 1 : 0);
+	if (room < 8) { room = 29; bl = 0; b[0] = 0; }
+	if ((int)strlen(a) > room) { a[room - 2] = '.'; a[room - 1] = '.'; a[room] = 0; }
+	snprintf(out, n, " %-*s%s%s", room, a, bl ? " " : "", b);
+}
+static void ig_text_draw(void)
+{
+	if (!ig_text || cur != SCR_INGAME) return;
+	char text[1100] = "", line[80], head[160];
+	int sel = -1, nl = 0;
+#define ADD(str) do { size_t l_ = strlen(text); snprintf(text + l_, sizeof(text) - l_, "%s%s", nl ? "\n" : "", str); nl++; } while (0)
+	vlist_t *v = &ig_list;
+	if (igp.view) {
+		v = &igp.list;
+		if (igp.view == IGP_GAMES) snprintf(head, sizeof(head), "Load game: %s", system_name(igp.sys));
+		else snprintf(head, sizeof(head), "Load game: pick a core");
+	} else if (igra.view) {
+		v = &ig_ach_list;
+		snprintf(head, sizeof(head), "Achievements %d/%d", igra.unlocked, igra.total);
+	} else snprintf(head, sizeof(head), "%s", ig_title[0] ? ig_title : "In game");
+	osd_ascii(line, sizeof(line), head);
+	char hl[40];
+	snprintf(hl, sizeof(hl), " %.29s", line);
+	ADD(hl);
+	int small = v == &ig_list;                       /* the menu: MiSTer's small OSD (8 lines); a list: 16 */
+	if (!small) ADD("");
+	int rows = small ? 6 : 12, top = v->sel - rows / 2;
+	if (top > v->count - rows) top = v->count - rows;
+	if (top < 0) top = 0;
+	for (int i = top; i < v->count && i < top + rows; i++) {
+		char t[256], val[64] = "";
+		int dim = 0;
+		v->fill(i, t, sizeof(t), val, sizeof(val), &dim);
+		if (v == &ig_list && !strcmp(val, ">")) val[0] = 0;
+		osd_row(line, sizeof(line), t, val);
+		if (i == v->sel) sel = nl;
+		ADD(line);
+	}
+	if (!v->count) ADD(igp.view ? " Nothing here." : " No achievements here.");
+	while (nl < (small ? 7 : 15)) ADD("");
+	if (ig_note[0] && lv_tick_get() - ig_note_at < 4000) { osd_ascii(head, sizeof(head), ig_note); snprintf(line, sizeof(line), " %.29s", head); }
+	else snprintf(line, sizeof(line), " %s", igp.view || igra.view ? "A select   B back" : "A select   B back to game");
+	ADD(line);
+#undef ADD
+	mainlink_osdmenu(sel, "Phosphor", text);
 }
 
 static void ingame_open(void)
@@ -10020,6 +10286,13 @@ ig_known:
 	ui_activity();
 	/* Main shows Linux's screen over the game first (it switches consoles, which can wipe what's
 	   there), then the menu is drawn once, in full: drawn before, it's lost; drawn twice, it jitters */
+	ig_text = crt_active() && mainlink_has_crt();
+	if (ig_text) {                                    /* a CRT: the menu in MiSTer's OSD, over the game */
+		if (mainlink_ingame_text()) { show_home(); return; }
+		ig_note[0] = 0;
+		ig_text_draw();
+		return;
+	}
 	if (mainlink_ingame(1)) { show_home(); return; }
 	usleep(150000);
 	console_quiet();
@@ -10032,7 +10305,13 @@ static void ingame_close(int to_game)
 	if (to_game) mainlink_ingame(0);
 	show_home();                        /* behind the game, ready for when it ends */
 }
+static void ingame_key_(int k);
 static void ingame_key(int k)
+{
+	ingame_key_(k);
+	ig_text_draw();                                   /* (CRT mode: the OSD text again) */
+}
+static void ingame_key_(int k)
 {
 	if (igp.view) { igp_key(k); return; }
 	if (igra.view) {                         /* the achievements on the left */
@@ -10156,14 +10435,29 @@ void ui_tick(void)
 
 void ui_init(int w, int h)
 {
+	/* CRT mode: overscan keeps everything inside the part of the picture the TV shows (the edges black);
+	   W and H are then that part (a rebuild passes them back: the screen's own size is kept here) */
+	static int scr_w, scr_h;
+	if (!scr_w) { scr_w = w; scr_h = h; }
+	w = scr_w;
+	h = scr_h;
+	int ox = 0, oy = 0;
+	if (crt_active() && SETTINGS.crt_overscan > 0) {
+		ox = w * SETTINGS.crt_overscan / 100;
+		oy = h * SETTINGS.crt_overscan / 100;
+		w -= 2 * ox;
+		h -= 2 * oy;
+	}
+	theme_crt_font = SETTINGS.crt_font;
 	W = w;
 	H = h;
 	theme_set_scale(w, h);
 	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_style_bg_color(scr, PAL.bg, 0);
+	lv_obj_set_style_bg_color(scr, ox || oy ? lv_color_hex(0) : PAL.bg, 0);
 	lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 	if (!root) {
 		root = mk_box(scr, w, h, PAL.bg, 0);
+		lv_obj_set_pos(root, ox, oy);
 	}
 	lv_obj_set_style_bg_color(root, PAL.bg, 0);
 	bg_apply(root);                                      /* redrawn in the accent colour (a texture) */
@@ -10173,21 +10467,21 @@ void ui_init(int w, int h)
 	body = mk_box(root, w, h, PAL.bg, 0);
 	lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
 	lv_obj_move_background(body);
-	footer = mk_box(root, w - S(112), S(64), PAL.bg, 0);
+	footer = mk_box(root, theme_lr ? w - L(32) : w - S(112), theme_lr ? L(22) : S(64), PAL.bg, 0);
 	lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, 0);
 	lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-	lv_obj_set_style_pad_column(footer, S(28), 0);
-	lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, S(56), 0);
+	lv_obj_set_style_pad_column(footer, theme_lr ? L(10) : S(28), 0);
+	lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, theme_lr ? L(16) : S(56), 0);
 
 	if (toast_timer) { lv_timer_delete(toast_timer); toast_timer = NULL; }   /* (a rebuild: the old toast's) */
-	toast = mk_box(root, LV_SIZE_CONTENT, S(44), lv_color_hex(0x1f1f25), S(12));
+	toast = mk_box(root, LV_SIZE_CONTENT, theme_lr ? L(20) : S(44), lv_color_hex(0x1f1f25), theme_lr ? L(4) : S(12));
 	lv_obj_set_style_border_width(toast, 1, 0);
 	lv_obj_set_style_border_color(toast, PAL.acc, 0);
-	lv_obj_set_style_pad_hor(toast, S(20), 0);
+	lv_obj_set_style_pad_hor(toast, theme_lr ? L(8) : S(20), 0);
 	lv_obj_t *tl = mk_label(toast, FONT_SMALL, PAL.text, "");
 	lv_obj_center(tl);
-	lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -S(80));
+	lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, theme_lr ? -L(26) : -S(80));
 	lv_obj_set_hidden(toast, true);
 
 	status_update();
@@ -10195,6 +10489,9 @@ void ui_init(int w, int h)
 	if (sb_disc) lv_obj_set_hidden(sb_disc, !dk.in);
 	if (SETTINGS.setup_done) show_home();
 	else show_welcome();
+	const char *reopen = getenv("PHOS_REOPEN");          /* started again from Settings > Video: back there */
+	if (reopen && !strcmp(reopen, "video") && SETTINGS.setup_done) show_video();
+	unsetenv("PHOS_REOPEN");
 	static int crt_checked;
 	crt_cfg_t prev, now;
 	if (!crt_checked && crt_pending(&prev)) {        /* started again for a CRT mode try: Keep, or it goes back */

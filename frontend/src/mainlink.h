@@ -32,6 +32,8 @@ int mainlink_script_result(void);
 int mainlink_has_disc(void);
 int mainlink_has_crt(void);           /* Main can switch the menu core to a CRT mode */
 int mainlink_crt(int on, int mode, int h, int v);
+int mainlink_ingame_text(void);        /* the in-game menu as OSD text (CRT mode): then mainlink_osdmenu */
+int mainlink_osdmenu(int sel, const char *title, const char *text);
 int mainlink_has_ingame(void);
 int mainlink_in_game(void);           /* a game core is running */
 int mainlink_disc_changed(void);      /* 1 once after the drive changed (ask phosphord "disc") */
