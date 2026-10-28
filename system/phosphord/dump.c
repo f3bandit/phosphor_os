@@ -379,8 +379,21 @@ static int write_cue(const char *path, const char *name, const part_t *pt, const
 	return fclose(f);
 }
 
+/* .phosphor-copy in a copy's folder until it's finished: a copy cut off (power, a crash) is found and
+   thrown away the next time phosphord starts (dump_cleanup), never a folder Phosphor didn't make */
+#define COPY_MARK ".phosphor-copy"
+static void mark_copy(const char *dir, int on)
+{
+	char p[800];
+	snprintf(p, sizeof(p), "%s/" COPY_MARK, dir);
+	if (!on) { unlink(p); return; }
+	FILE *f = fopen(p, "w");
+	if (f) { fputs("an unfinished disc copy: removed when Phosphor starts\n", f); fclose(f); }
+}
+
 static void remove_copy(const char *dir)
 {
+	mark_copy(dir, 0);
 	DIR *d = opendir(dir);
 	struct dirent *e;
 	char p[1200];
@@ -446,7 +459,7 @@ static void *copier(void *arg)
 		mkdirs(parent);
 		/* a folder of its own, new (never one already there: a failed copy removes what's in it) */
 		if (mkdir(dir, 0755)) snprintf(err, sizeof(err), errno == EEXIST ? "Too many copies of it already" : "Couldn't make the folder on the drive");
-		else made = 1;
+		else { made = 1; mark_copy(dir, 1); }               /* (unfinished: cleared at the end; see dump_cleanup) */
 	}
 	if (!err[0]) {
 		pthread_mutex_lock(&lk);
@@ -512,6 +525,7 @@ static void *copier(void *arg)
 		return NULL;
 	}
 
+	mark_copy(dir, 0);                                       /* finished: a copy like any other now */
 	/* checked against Redump: the first data track (the one Redump's lists have) */
 	setmsg(NULL, "Checking the copy against Redump's list...");
 	int dt = -1;
@@ -578,6 +592,28 @@ static int menu_up(void)
 	fclose(f);
 	core[strcspn(core, "\r\n")] = 0;
 	return !core[0] || !strcmp(core, "MENU");
+}
+
+void dump_cleanup(void)
+{
+	char roots[16][256];
+	int nr = p_roots(roots, 14);
+	for (int r = 0; r < nr; r++)
+		for (int k = 0; k < NKINDS; k++) {
+			char sd[600];
+			snprintf(sd, sizeof(sd), "%.300s/%s", roots[r], KINDS[k].folder);
+			DIR *d = opendir(sd);
+			struct dirent *e;
+			while (d && (e = readdir(d))) {
+				if (e->d_name[0] == '.') continue;
+				char dir[900], m[1000];
+				struct stat st;
+				snprintf(dir, sizeof(dir), "%s/%s", sd, e->d_name);
+				snprintf(m, sizeof(m), "%s/" COPY_MARK, dir);
+				if (stat(m, &st) == 0) { plog("disc copy: removing an unfinished copy, %s", dir); remove_copy(dir); }
+			}
+			if (d) closedir(d);
+		}
 }
 
 int dump_supported(const char *type)

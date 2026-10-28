@@ -9,7 +9,8 @@
 int dump_start(sqlite3 *db, char *err, size_t errn);   /* in the background; -1 and why when it can't */
 void dump_stop(void);                                  /* what's unfinished is thrown away */
 int dump_busy(void);
-int dump_supported(const char *type);                  /* a disc type copies can be saved of */
+int dump_supported(const char *type);
+void dump_cleanup(void);                               /* at start-up: copies cut off by a power cut or crash go */                  /* a disc type copies can be saved of */
 /* {busy, state, msg, title, system, dest, cue, track, of, data, mb_done, mb_total, percent, rereads, bad,
    verified, seconds, speed, seconds_left} */
 cJSON *dump_status(void);
