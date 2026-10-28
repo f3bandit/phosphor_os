@@ -156,3 +156,52 @@ int art_thumb(const char *src, const unsigned char *mem, size_t memlen, const ch
 	if (!ok) { unlink(tmp); return -1; }
 	return rename(tmp, out) ? -1 : 0;
 }
+
+int art_size(const char *src, int *w, int *h)
+{
+	int n;
+	return stbi_info(src, w, h, &n) ? 0 : -1;
+}
+
+/* a wallpaper made to cover a W x H screen: scaled (down by averaging, up by nearest pixel), the middle
+ * kept, darkened by dim/255 toward the shell's background so the screen's text stays readable. JPEG. */
+int art_cover(const char *src, const char *out, int W, int H, int dim)
+{
+	int w, h, n;
+	if (!stbi_info(src, &w, &h, &n) || w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS || W < 16 || H < 16) return -1;
+	unsigned char *px = stbi_load(src, &w, &h, &n, 4);
+	if (!px) return -1;
+	double sc = (double)W / w > (double)H / h ? (double)W / w : (double)H / h;
+	int sw = (int)(w * sc + 0.5), sh = (int)(h * sc + 0.5);
+	if (sw < W) sw = W;
+	if (sh < H) sh = H;
+	if (sc < 1.0) {                                     /* down: averaged, then cropped */
+		unsigned char *s = downscale(px, w, h, sw, sh);
+		stbi_image_free(px);
+		if (!s) return -1;
+		px = s; w = sw; h = sh;
+	}
+	unsigned char *o = malloc((size_t)W * H * 3);
+	if (!o) { free(px); return -1; }
+	int ox = (sw - W) / 2, oy = (sh - H) / 2;
+	static const int bg[3] = { 14, 14, 16 };
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++) {
+			int sx = sc < 1.0 ? x + ox : (int)((x + ox) / sc), sy = sc < 1.0 ? y + oy : (int)((y + oy) / sc);
+			if (sx >= w) sx = w - 1;
+			if (sy >= h) sy = h - 1;
+			const unsigned char *p = px + ((size_t)sy * w + sx) * 4;
+			unsigned char *q = o + ((size_t)y * W + x) * 3;
+			for (int c = 0; c < 3; c++) {
+				int v = (p[c] * p[3] + bg[c] * (255 - p[3])) / 255;
+				q[c] = (unsigned char)((v * (255 - dim) + bg[c] * dim) / 255);
+			}
+		}
+	free(px);
+	char tmp[1200];
+	snprintf(tmp, sizeof(tmp), "%s.tmp", out);
+	int ok = stbi_write_jpg(tmp, W, H, 3, o, 88);
+	free(o);
+	if (!ok) { unlink(tmp); return -1; }
+	return rename(tmp, out) ? -1 : 0;
+}

@@ -12,6 +12,7 @@
  *   last                                    the last game played (same shape as game), or null
  *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
  *   game_cores id                           the cores it can start on: [{index, name, core, kind, desc, date, preferred}]
+ *   wallpapers [category] [aspect]          Settings > Wallpapers (wallpaper.c); wallpaper_thumb, wallpaper_screen, wallpaper_osd
  *   folder_cores folder                     _Other / _Utility cores: [{name, file, date}] (+ Update All Link state)
  *   run_core   file                         start one of those on its own
  *   core_pref  id core                      its system starts on that core from now on (-1: the usual one)
@@ -117,6 +118,7 @@
 #include "extras.h"
 #include "bgcache.h"
 #include "upnet.h"
+#include "wallpaper.h"
 #include "ctrl.h"
 #include "dash.h"
 #include "version.h"
@@ -1878,6 +1880,20 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "load_core")) {      /* a system's core, no game */
 		char err[300];
 		out = play_load_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "system")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "wallpapers")) {     /* Settings > Wallpapers: {category, aspect} */
+		cJSON *o = wallpaper_list(cJSON_GetStringValue(cJSON_GetObjectItem(req, "category")), cJSON_GetStringValue(cJSON_GetObjectItem(req, "aspect")));
+		cJSON_AddBoolToObject(o, "ok", 1);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "wallpaper_thumb") || !strcmp(c->valuestring, "wallpaper_screen")) {
+		char p[700];
+		const char *f = cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"));
+		int thumb = !strcmp(c->valuestring, "wallpaper_thumb");
+		int r = thumb ? wallpaper_thumb(f, p, sizeof(p))
+		              : wallpaper_screen(f, (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "w")), (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "h")), p, sizeof(p));
+		if (r) out = fail("Couldn't read that picture");
+		else { cJSON *o = ok(); cJSON_AddStringToObject(o, thumb ? "thumb" : "screen", p); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "wallpaper_osd")) {  /* behind MiSTer's own menu ("" : MiSTer's usual) */
+		out = wallpaper_osd(cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"))) == 0 ? reply(ok()) : fail("Couldn't use that picture");
 	} else if (!strcmp(c->valuestring, "folder_cores")) {   /* the Other and Utility cards: {folder: _Other|_Utility} */
 		const char *fo = cJSON_GetStringValue(cJSON_GetObjectItem(req, "folder"));
 		cJSON *o = ok();
