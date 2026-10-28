@@ -203,6 +203,16 @@ static void draw_cb(lv_event_t *e)
 		line(&p, 30, 52, 30, 16); line(&p, 58, 46, 58, 10);
 		line(&p, 30, 16, 58, 10); line(&p, 30, 24, 58, 18);
 		break;
+	case ICON_OTHER:                                     /* a grid of three, and a plus: more cores */
+		rect(&p, 12, 12, 20, 20, 4); rect(&p, 40, 12, 20, 20, 4); rect(&p, 12, 40, 20, 20, 4);
+		line(&p, 50, 40, 50, 60); line(&p, 40, 50, 60, 50);
+		break;
+	case ICON_UTILITY: {                                 /* a wrench */
+		const float w[] = { 46, 14, 40, 17, 36, 24, 37, 31, 16, 52, 16, 57, 20, 57, 41, 36, 48, 37, 55, 33, 58, 26 };
+		poly(&p, w, 11, 0);
+		line(&p, 58, 26, 51, 30); line(&p, 51, 30, 46, 25); line(&p, 46, 25, 46, 14);
+		break;
+	}
 	default:
 		break;
 	}

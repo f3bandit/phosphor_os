@@ -11,7 +11,10 @@
  *   game       id                           details, art (absolute path), play history, files
  *   last                                    the last game played (same shape as game), or null
  *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
- *   game_cores id                           the cores it can start on: [{index, name, core}]
+ *   game_cores id                           the cores it can start on: [{index, name, core, kind, desc, date, preferred}]
+ *   folder_cores folder                     _Other / _Utility cores: [{name, file, date}] (+ Update All Link state)
+ *   run_core   file                         start one of those on its own
+ *   core_pref  id core                      its system starts on that core from now on (-1: the usual one)
  *   system_cores                            every installed core: [{id, name, core}]
  *   load_core  system                       that system's core, no game
  *   favorite   id on                        mark or unmark
@@ -1875,6 +1878,26 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "load_core")) {      /* a system's core, no game */
 		char err[300];
 		out = play_load_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "system")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "folder_cores")) {   /* the Other and Utility cards: {folder: _Other|_Utility} */
+		const char *fo = cJSON_GetStringValue(cJSON_GetObjectItem(req, "folder"));
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "cores", play_folder_cores(fo));
+		if (fo && !strcmp(fo, "_Utility")) {           /* registering for supporter cores: Update All's account and Link */
+			char p1[600], p2[600];
+			snprintf(p1, sizeof(p1), "%s/Scripts/update_all.sh", p_fat());
+			snprintf(p2, sizeof(p2), "%s/Scripts/.config/retroaccount/verified_chip_id", p_fat());
+			cJSON_AddBoolToObject(o, "update_all", file_exists(p1));
+			cJSON_AddStringToObject(o, "update_all_script", p1);
+			cJSON_AddBoolToObject(o, "linked", file_exists(p2));
+		}
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "run_core")) {       /* a core from _Other or _Utility, on its own */
+		char err[300];
+		out = play_run_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "file")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "core_pref")) {      /* Always start with this: {id, core (index; -1 clears)} */
+		char err[300];
+		cJSON *cv = cJSON_GetObjectItem(req, "core");
+		out = play_core_pref(db, req_id(req), cJSON_IsNumber(cv) ? (int)cv->valuedouble : -1, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	} else if (!strcmp(c->valuestring, "game_cores")) {     /* the cores a game can start on (the in-game menu) */
 		char err[300];
 		cJSON *a = play_cores(db, req_id(req), err, sizeof(err));

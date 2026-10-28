@@ -35,7 +35,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -327,10 +327,11 @@ static int vlist_key(vlist_t *v, pkey_t k)
 /* ---------- Home: category shelf ---------- */
 
 static const icon_t CAT_ICON[CAT_COUNT] = { ICON_DISC, ICON_CARTRIDGE, ICON_HANDHELD, ICON_ARCADE, ICON_COMPUTER };
-/* the shelf: the categories, Music, then Favorites and Recently played */
-enum { SH_MUSIC = CAT_COUNT, SH_FAV, SH_RECENT, SHELF_COUNT };
-static icon_t shelf_icon(int i) { return i == SH_MUSIC ? ICON_MUSIC : i == SH_FAV ? ICON_STAR : i == SH_RECENT ? ICON_CLOCK : CAT_ICON[i]; }
-static const char *shelf_name(int i) { return i == SH_MUSIC ? "Music" : i == SH_FAV ? "Favorites" : i == SH_RECENT ? "Recently played" : category_name((category_t)i); }
+/* the shelf: the categories, Other and Utility (the cores in _Other and _Utility), Music, then Favorites and
+   Recently played */
+enum { SH_OTHER = CAT_COUNT, SH_UTIL, SH_MUSIC, SH_FAV, SH_RECENT, SHELF_COUNT };
+static icon_t shelf_icon(int i) { return i == SH_OTHER ? ICON_OTHER : i == SH_UTIL ? ICON_UTILITY : i == SH_MUSIC ? ICON_MUSIC : i == SH_FAV ? ICON_STAR : i == SH_RECENT ? ICON_CLOCK : CAT_ICON[i]; }
+static const char *shelf_name(int i) { return i == SH_OTHER ? "Other" : i == SH_UTIL ? "Utility" : i == SH_MUSIC ? "Music" : i == SH_FAV ? "Favorites" : i == SH_RECENT ? "Recently played" : category_name((category_t)i); }
 
 static struct {
 	lv_obj_t *card[SHELF_COUNT], *ic[SHELF_COUNT], *nm[SHELF_COUNT], *ct[SHELF_COUNT];
@@ -402,6 +403,12 @@ static void load_home_data(void)
 	cJSON_Delete(r);
 	r = api_call("{\"cmd\":\"games\",\"filter\":\"recent\",\"limit\":0}");
 	if (api_ok(r)) cat_count[SH_RECENT] = (int)api_num(r, "total", 0);
+	cJSON_Delete(r);
+	r = api_call("{\"cmd\":\"folder_cores\",\"folder\":\"_Other\"}");
+	if (api_ok(r)) cat_count[SH_OTHER] = cJSON_GetArraySize(cJSON_GetObjectItem(r, "cores"));
+	cJSON_Delete(r);
+	r = api_call("{\"cmd\":\"folder_cores\",\"folder\":\"_Utility\"}");
+	if (api_ok(r)) cat_count[SH_UTIL] = cJSON_GetArraySize(cJSON_GetObjectItem(r, "cores")) + (cJSON_IsTrue(cJSON_GetObjectItem(r, "update_all")) ? 1 : 0);
 	cJSON_Delete(r);
 	r = api_call("{\"cmd\":\"music_albums\"}");
 	if (api_ok(r)) cat_count[SH_MUSIC] = cJSON_GetArraySize(cJSON_GetObjectItem(r, "albums")) + (cJSON_GetObjectItem(r, "cd") ? 1 : 0);
@@ -580,6 +587,8 @@ static void home_counts(void)
 		char t[48];
 		if (n < 0) snprintf(t, sizeof(t), "Looking...");
 		else if (c == SH_MUSIC) snprintf(t, sizeof(t), "%d album%s", n, n == 1 ? "" : "s");
+		else if (c == SH_OTHER) snprintf(t, sizeof(t), n ? "%d core%s" : "None yet", n, n == 1 ? "" : "s");
+		else if (c == SH_UTIL) snprintf(t, sizeof(t), n ? "%d tool%s" : "None yet", n, n == 1 ? "" : "s");
 		else snprintf(t, sizeof(t), "%d game%s", n, n == 1 ? "" : "s");
 		lv_label_set_text(home.ct[c], t);
 	}
@@ -1271,6 +1280,17 @@ static int cores_start_job(int have_net, int all)
 	return 1;
 }
 static void cores_start(int have_net) { cores_start_job(have_net, 0); }
+/* Utility's Register this SuperStation: Update All (its settings during the countdown), network first */
+static void cores_start_job_fwd(int all)
+{
+	sysinfo_t si;
+	sysinfo_read(&si);
+	cJSON *w = api_call("{\"cmd\":\"wifi\"}");
+	cJSON *ws = w ? cJSON_GetObjectItem(w, "status") : NULL;
+	int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(ws, "connected"));
+	cJSON_Delete(w);
+	cores_start_job(net, all);
+}
 
 /* ---------- Restart (A twice) ---------- */
 
@@ -1765,6 +1785,112 @@ static void guard_key(pkey_t k)
 	default: return;
 	}
 	gd_draw();
+}
+
+/* ---------- Other and Utility: the cores in _Other and _Utility (phosphord folder_cores) ----------
+ * A list on the left, what the highlighted one is on the right; A starts it on its own (its menu picks
+ * a file, as in MiSTer's menu). Utility starts with Register this SuperStation when Update All is there:
+ * Update All's own settings on the TV (its account and Link unlock supporter cores: Coin-Op Collection,
+ * JOTEGO...), through Phosphor's wrapper so a restore point comes first. */
+static void cores_start_job_fwd(int all);
+static struct { int util, reg, linked; cJSON *cores; vlist_t list; lv_obj_t *dtitle, *dtext, *dfile; } fo;
+static cJSON *fo_core(int i) { return cJSON_GetArrayItem(fo.cores, i - fo.reg); }
+static void fo_detail(void)
+{
+	int i = fo.list.sel;
+	if (fo.reg && i == 0) {
+		lv_label_set_text(fo.dtitle, "REGISTER THIS SUPERSTATION");
+		lv_label_set_text(fo.dtext, "Opens Update All's own settings on the TV. Press a button during its countdown for the settings, "
+		                  "sign in to your account there, then use Link so your supporter cores (Coin-Op Collection, JOTEGO and others) "
+		                  "download on this SuperStation. Phosphor comes back by itself when Update All finishes.");
+		lv_label_set_text(fo.dfile, fo.linked ? "Status: linked" : "Status: not linked yet");
+		return;
+	}
+	cJSON *x = fo_core(i);
+	char t[120];
+	spaced_caps(t, sizeof(t), x && api_str(x, "name") ? api_str(x, "name") : "");
+	lv_label_set_text(fo.dtitle, t);
+	lv_label_set_text(fo.dtext, fo.util ? "A test or setup tool. It starts on its own, as from MiSTer's menu."
+	                                    : "Starts on its own, as from MiSTer's menu; its own menu (the menu button) picks a file when it uses one.");
+	const char *f = x ? api_str(x, "file") : NULL;
+	const char *rel = f ? strstr(f, fo.util ? "_Utility/" : "_Other/") : NULL;
+	lv_label_set_text(fo.dfile, rel ? rel : "");
+}
+static void fo_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	if (fo.reg && i == 0) {
+		snprintf(t, n, "Register this SuperStation");
+		snprintf(val, vn, "%s", fo.linked ? "Linked" : "Update All");
+		if (i == fo.list.sel) fo_detail();
+		return;
+	}
+	cJSON *x = fo_core(i);
+	snprintf(t, n, "%s", x && api_str(x, "name") ? api_str(x, "name") : "");
+	snprintf(val, vn, "%s", x && api_str(x, "date") ? api_str(x, "date") : "");
+	if (i == fo.list.sel) fo_detail();
+}
+static void show_folder(int util)
+{
+	cur = SCR_FOLDER;
+	lv_obj_clean(body);
+	fo.util = util;
+	cJSON_Delete(fo.cores);
+	cJSON *r = api_call("{\"cmd\":\"folder_cores\",\"folder\":\"%s\"}", util ? "_Utility" : "_Other");
+	fo.cores = r ? cJSON_DetachItemFromObject(r, "cores") : NULL;
+	fo.reg = util && r && cJSON_IsTrue(cJSON_GetObjectItem(r, "update_all"));
+	fo.linked = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "linked"));
+	cJSON_Delete(r);
+	screen_title("LIBRARY", util ? "Utility" : "Other");
+	int n = cJSON_GetArraySize(fo.cores) + fo.reg;
+	lv_obj_t *sub = mk_label(body, FONT_SMALL, PAL.dim, n ? (util ? "Test and setup tools from _Utility, and registering for supporter cores."
+	                                                                 : "Everything MiSTer or Update All puts in _Other: small games, toys, music players and cores that use the ARM side.")
+	                                                     : (util ? "There's nothing in _Utility yet." : "There's nothing in _Other yet: Update All puts cores there."));
+	lv_obj_set_pos(sub, S(56), S(176));
+	vlist_create(&fo.list, body, S(56), S(214), S(700), S(420));
+	fo.list.fill = fo_fill;
+	fo.list.count = n;
+	fo.list.sel = fo.list.top = 0;
+	lv_obj_t *pan = mk_box(body, S(424), LV_SIZE_CONTENT, PAL.panel, S(16));
+	lv_obj_set_style_border_width(pan, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(pan, PAL.line, 0);
+	lv_obj_set_style_pad_all(pan, S(24), 0);
+	lv_obj_set_flex_flow(pan, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(pan, S(12), 0);
+	lv_obj_set_pos(pan, S(800), S(214));
+	lv_obj_set_hidden(pan, !n);
+	fo.dtitle = mk_label(pan, FONT_LABEL, PAL.dim, "");
+	lv_obj_set_style_text_letter_space(fo.dtitle, S(3), 0);
+	fo.dtext = mk_label(pan, FONT_BODY, PAL.text, "");
+	lv_label_set_long_mode(fo.dtext, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(fo.dtext, S(376));
+	fo.dfile = mk_label(pan, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(fo.dfile, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(fo.dfile, S(376));
+	static const char *const hints[] = { "A", "Start", "B", "Back", NULL };
+	static const char *const uhints[] = { "A", "Open", "B", "Back", NULL };
+	footer_set(util ? uhints : hints);
+	vlist_refresh(&fo.list);
+}
+static void folder_key(pkey_t k)
+{
+	if (vlist_key(&fo.list, k)) return;
+	if (k == K_B || k == K_MENU) { show_home(); return; }
+	if (k != K_A || !fo.list.count) return;
+	if (fo.reg && fo.list.sel == 0) { cores_start_job_fwd(1); return; }
+	cJSON *x = fo_core(fo.list.sel);
+	const char *f = x ? api_str(x, "file") : NULL;
+	if (!f) return;
+	char *q = NULL;
+	cJSON *rq = cJSON_CreateObject();
+	cJSON_AddStringToObject(rq, "cmd", "run_core");
+	cJSON_AddStringToObject(rq, "file", f);
+	q = cJSON_PrintUnformatted(rq);
+	cJSON_Delete(rq);
+	cJSON *r = api_call("%s", q);
+	free(q);
+	if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
+	cJSON_Delete(r);
 }
 
 /* ---------- Scripts (everything in /media/fat/Scripts) ---------- */
@@ -7428,6 +7554,7 @@ void ui_key(pkey_t k)
 		if (k == K_LEFT) shelf_go(home.sel - 1);
 		else if (k == K_RIGHT) shelf_go(home.sel + 1);
 		else if (k == K_A && home.sel == SH_MUSIC) show_music();
+		else if (k == K_A && (home.sel == SH_OTHER || home.sel == SH_UTIL)) show_folder(home.sel == SH_UTIL);
 		else if (k == K_A && home.sel == SH_FAV) show_list(GL_FAV);
 		else if (k == K_A && home.sel == SH_RECENT) show_list(GL_RECENT);
 		else if (k == K_A) show_systems((category_t)home.sel);
@@ -7540,6 +7667,9 @@ void ui_key(pkey_t k)
 		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
+		break;
+	case SCR_FOLDER:
+		folder_key(k);
 		break;
 	case SCR_VIDEO:
 		video_key(k);
