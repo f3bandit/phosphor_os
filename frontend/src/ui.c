@@ -35,11 +35,42 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
 static screen_t cur = SCR_HOME;
+
+/* ---------- the background: the texture, or the wallpaper (Settings > Wallpapers) ----------
+ * phosphord makes the chosen picture cover the screen and darkens it a little (wallpaper_screen), so
+ * text over it stays readable; it's drawn as the object's background image. */
+static char bg_wall_src[720];
+static void bg_apply(lv_obj_t *obj)
+{
+	if (SETTINGS.wallpaper_on && SETTINGS.wallpaper[0] && SETTINGS.wall_osd != 2) {
+		cJSON *q = cJSON_CreateObject();
+		cJSON_AddStringToObject(q, "cmd", "wallpaper_screen");
+		cJSON_AddStringToObject(q, "file", SETTINGS.wallpaper);
+		cJSON_AddNumberToObject(q, "w", W);
+		cJSON_AddNumberToObject(q, "h", H);
+		char *b = cJSON_PrintUnformatted(q);
+		cJSON_Delete(q);
+		cJSON *r = api_call_slow(20000, "%s", b);
+		free(b);
+		const char *sp = api_ok(r) ? api_str(r, "screen") : NULL;
+		if (sp) {
+			texture_apply(obj, 0);                       /* (frees the texture tile) */
+			snprintf(bg_wall_src, sizeof(bg_wall_src), "A:%s", sp);
+			lv_obj_set_style_bg_image_src(obj, bg_wall_src, 0);
+			lv_obj_set_style_bg_image_tiled(obj, false, 0);
+			lv_obj_set_style_bg_image_opa(obj, LV_OPA_COVER, 0);
+			cJSON_Delete(r);
+			return;
+		}
+		cJSON_Delete(r);
+	}
+	texture_apply(obj, (texture_t)SETTINGS.texture);
+}
 
 /* ---------- status bar ---------- */
 
@@ -1469,7 +1500,19 @@ static void shutdown_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_WALLPAPER, SET_WALL_PICK, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
+/* the rows shown: every setting, but Choose wallpaper only while Wallpapers is on */
+static int set_ids[SET_COUNT], set_n;
+static void set_build(void)
+{
+	set_n = 0;
+	for (int id = 0; id < SET_COUNT; id++) {
+		if (id == SET_WALL_PICK && !SETTINGS.wallpaper_on) continue;
+		set_ids[set_n++] = id;
+	}
+}
+static int set_id(int row) { return row >= 0 && row < set_n ? set_ids[row] : -1; }
+static int set_row(int id) { for (int i = 0; i < set_n; i++) if (set_ids[i] == id) return i; return 0; }
 static void si_update(void);
 static int si_pending(void);
 static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Settings is open */
@@ -1512,12 +1555,34 @@ static void scrape_refresh(void)
 	samba_refresh();
 }
 
-static void set_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+static void set_fill(int row, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	(void)dim;
-	switch (i) {
+	switch (set_id(row)) {
 	case SET_ACCENT: snprintf(t, n, "Accent colour"); snprintf(val, vn, "<  %s  >", theme_accent_name(theme_accent())); break;
-	case SET_TEXTURE: snprintf(t, n, "Background texture"); snprintf(val, vn, "<  %s  >", texture_name((texture_t)SETTINGS.texture)); break;
+	case SET_TEXTURE: snprintf(t, n, "Background texture");
+		if (SETTINGS.wallpaper_on) { snprintf(val, vn, "Off while Wallpapers is on"); *dim = 1; }
+		else snprintf(val, vn, "<  %s  >", texture_name((texture_t)SETTINGS.texture));
+		break;
+	case SET_WALLPAPER: snprintf(t, n, "Wallpapers"); snprintf(val, vn, "<  %s  >", SETTINGS.wallpaper_on ? "On" : "Off"); break;
+	case SET_WALL_PICK: {
+		const char *b = strrchr(SETTINGS.wallpaper, '/');
+		char nm[64] = "None yet";
+		if (b) {
+			snprintf(nm, sizeof(nm), "%s", b + 1);
+			char *d = strrchr(nm, '.');
+			if (d) *d = 0;
+			const char *tags[] = { "MiSTer 16X9 ", "MiSTer 4X3 ", "MiSTer ", "16X9 ", "4X3 ", "16x9_", "4x3_" };
+			for (size_t i = 0; i < sizeof(tags) / sizeof(tags[0]); i++) {
+				size_t l = strlen(tags[i]);
+				if (!strncasecmp(nm, tags[i], l)) { memmove(nm, nm + l, strlen(nm + l) + 1); break; }
+			}
+			for (char *c = nm; *c; c++) if (*c == '_') *c = ' ';
+		}
+		snprintf(t, n, "Choose wallpaper...");
+		snprintf(val, vn, "%.40s  >", nm);
+		break;
+	}
 	case SET_SAVER:
 		snprintf(t, n, "Screensaver");
 		if (SETTINGS.saver_min) snprintf(val, vn, "<  After %d minutes  >", SETTINGS.saver_min);
@@ -2034,6 +2099,219 @@ static void folder_key(pkey_t k)
 	free(q);
 	if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
 	cJSON_Delete(r);
+}
+
+/* ---------- Wallpapers: the picker (phosphord wallpaper.c) ----------
+ * Categories along the top (your own, then each Update All creator's, only those with pictures in the
+ * aspect shown), L/R to switch; a grid of thumbnails (made by phosphord, one per tick as they show);
+ * Y: 16:9 / 4:3 / All; X: what it's for (both menus, Phosphor's only, MiSTer's only); A uses it. */
+#define WG_COLS 4
+#define WG_ROWS 2
+static void show_settings(void);
+static struct {
+	cJSON *cats, *items;
+	int cat, sel, top, aspect, pending;            /* aspect 0 16:9, 1 4:3, 2 all; pending: a thumb to make */
+	lv_obj_t *tabs, *grid, *cell[WG_COLS * WG_ROWS], *img[WG_COLS * WG_ROWS], *cap[WG_COLS * WG_ROWS], *use, *asp;
+	char thumbs[WG_COLS * WG_ROWS][720];
+} wg;
+static const char *WG_ASP[3] = { "16:9", "4:3", "all" };
+static const char *WG_USE[3] = { "Both menus", "Phosphor's menu", "MiSTer's menu (OSD)" };
+
+static void wall_osd_apply(void)
+{
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "wallpaper_osd");
+	cJSON_AddStringToObject(q, "file", SETTINGS.wallpaper_on && SETTINGS.wall_osd != 1 ? SETTINGS.wallpaper : "");
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON_Delete(api_call("%s", b));
+	free(b);
+}
+static void wall_toggle(void)
+{
+	SETTINGS.wallpaper_on = !SETTINGS.wallpaper_on;
+	settings_save();
+	wall_osd_apply();
+	bg_apply(root);
+	int keep = set_row(SET_WALLPAPER);
+	set_build();
+	set_list.count = set_n;
+	set_list.sel = keep;
+	vlist_refresh(&set_list);
+	si_update();
+	if (SETTINGS.wallpaper_on && !SETTINGS.wallpaper[0]) toast_show("Choose a wallpaper below");
+}
+static void wg_draw(void);
+static void wg_load(void)
+{
+	cJSON_Delete(wg.cats); cJSON_Delete(wg.items);
+	cJSON *r = api_call_slow(20000, "{\"cmd\":\"wallpapers\",\"aspect\":\"%s\"}", WG_ASP[wg.aspect]);
+	wg.cats = r ? cJSON_DetachItemFromObject(r, "categories") : NULL;
+	cJSON_Delete(r);
+	int nc = cJSON_GetArraySize(wg.cats);
+	if (wg.cat >= nc) wg.cat = nc ? nc - 1 : 0;
+	cJSON *c = cJSON_GetArrayItem(wg.cats, wg.cat);
+	r = c ? api_call_slow(20000, "{\"cmd\":\"wallpapers\",\"aspect\":\"%s\",\"category\":\"%s\"}", WG_ASP[wg.aspect], api_str(c, "id")) : NULL;
+	wg.items = r ? cJSON_DetachItemFromObject(r, "items") : NULL;
+	cJSON_Delete(r);
+	wg.sel = wg.top = 0;
+	int n = cJSON_GetArraySize(wg.items);
+	for (int i = 0; i < n; i++) {                   /* start on the one in use */
+		const char *f = api_str(cJSON_GetArrayItem(wg.items, i), "file");
+		if (f && !strcmp(f, SETTINGS.wallpaper)) { wg.sel = i; wg.top = i / WG_COLS * WG_COLS; }
+	}
+	wg_draw();
+}
+static void wg_draw(void)
+{
+	lv_obj_clean(wg.tabs);
+	int nc = cJSON_GetArraySize(wg.cats);
+	mk_label(wg.tabs, FONT_SMALL, PAL.dim, "L");
+	for (int i = 0; i < nc; i++) {
+		cJSON *c = cJSON_GetArrayItem(wg.cats, i);
+		lv_obj_t *t = mk_box(wg.tabs, LV_SIZE_CONTENT, S(36), i == wg.cat ? PAL.panel_on : PAL.bg, S(18));
+		lv_obj_set_style_bg_opa(t, i == wg.cat ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_style_border_width(t, i == wg.cat ? S(2) : 0, 0);
+		lv_obj_set_style_border_color(t, PAL.acc, 0);
+		lv_obj_set_style_pad_hor(t, S(16), 0);
+		lv_obj_t *l = mk_label(t, FONT_BODY, i == wg.cat ? PAL.text : PAL.dim, api_str(c, "name") ? api_str(c, "name") : "");
+		lv_obj_center(l);
+	}
+	mk_label(wg.tabs, FONT_SMALL, PAL.dim, "R");
+	char a[48];
+	snprintf(a, sizeof(a), "%s  (Y)", wg.aspect == 2 ? "All" : WG_ASP[wg.aspect]);
+	lv_label_set_text(wg.asp, a);
+	char u[80];
+	snprintf(u, sizeof(u), "Use for:  %s  (X)", WG_USE[SETTINGS.wall_osd % 3]);
+	lv_label_set_text(wg.use, u);
+	int n = cJSON_GetArraySize(wg.items);
+	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
+		int k = wg.top + i;
+		cJSON *x = k < n ? cJSON_GetArrayItem(wg.items, k) : NULL;
+		lv_obj_set_hidden(wg.cell[i], !x);
+		if (!x) continue;
+		int on = k == wg.sel;
+		const char *f = api_str(x, "file");
+		int inuse = f && !strcmp(f, SETTINGS.wallpaper);
+		lv_obj_set_style_border_width(wg.cell[i], on ? S(3) : inuse ? S(1) : 0, 0);
+		lv_obj_set_style_border_color(wg.cell[i], PAL.acc, 0);
+		char c[160];
+		snprintf(c, sizeof(c), "%s%s", inuse ? "\xE2\x9C\x93  " : "", api_str(x, "name") ? api_str(x, "name") : "");
+		lv_label_set_text(wg.cap[i], c);
+		lv_image_set_src(wg.img[i], NULL);
+		wg.thumbs[i][0] = 0;
+	}
+	if (!n) lv_label_set_text(wg.cap[0], "");
+	wg.pending = 0;                                   /* thumbnails: one per tick, from the first */
+}
+/* the next thumbnail on the page (wall_tick) */
+static void wall_tick(void)
+{
+	if (cur != SCR_WALL || wg.pending >= WG_COLS * WG_ROWS) return;
+	int i = wg.pending++, k = wg.top + i;
+	cJSON *x = cJSON_GetArrayItem(wg.items, k);
+	if (!x) { wg.pending = WG_COLS * WG_ROWS; return; }
+	cJSON *q = cJSON_CreateObject();
+	cJSON_AddStringToObject(q, "cmd", "wallpaper_thumb");
+	cJSON_AddStringToObject(q, "file", api_str(x, "file"));
+	char *b = cJSON_PrintUnformatted(q);
+	cJSON_Delete(q);
+	cJSON *r = api_call_slow(15000, "%s", b);
+	free(b);
+	const char *t = api_ok(r) ? api_str(r, "thumb") : NULL;
+	if (t) {
+		snprintf(wg.thumbs[i], sizeof(wg.thumbs[i]), "A:%s", t);
+		lv_image_set_src(wg.img[i], wg.thumbs[i]);
+	}
+	cJSON_Delete(r);
+}
+static void show_wallpapers(void)
+{
+	cur = SCR_WALL;
+	lv_obj_clean(body);
+	screen_title("SETTINGS \xC2\xB7 WALLPAPERS", "Choose a wallpaper");
+	wg.tabs = mk_box(body, S(900), S(40), PAL.bg, 0);
+	lv_obj_set_style_bg_opa(wg.tabs, LV_OPA_TRANSP, 0);
+	lv_obj_set_flex_flow(wg.tabs, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(wg.tabs, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_column(wg.tabs, S(10), 0);
+	lv_obj_set_pos(wg.tabs, S(56), S(170));
+	wg.asp = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(wg.asp, S(1080), S(178));
+	int cw = (S(1168) - S(16) * (WG_COLS - 1)) / WG_COLS, ch = cw * 9 / 16;
+	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
+		lv_obj_t *c = mk_box(body, cw, ch + S(28), PAL.bg, S(10));
+		lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
+		lv_obj_set_pos(c, S(56) + (i % WG_COLS) * (cw + S(16)), S(226) + (i / WG_COLS) * (ch + S(44)));
+		lv_obj_t *fr = mk_box(c, cw, ch, PAL.panel, S(10));
+		lv_obj_set_style_clip_corner(fr, true, 0);
+		wg.img[i] = lv_image_create(fr);
+		lv_obj_set_size(wg.img[i], cw, ch);
+		lv_image_set_inner_align(wg.img[i], LV_IMAGE_ALIGN_COVER);
+		lv_obj_center(wg.img[i]);
+		wg.cap[i] = mk_label(c, FONT_SMALL, PAL.dim, "");
+		lv_label_set_long_mode(wg.cap[i], LV_LABEL_LONG_MODE_DOTS);
+		lv_obj_set_width(wg.cap[i], cw);
+		lv_obj_set_pos(wg.cap[i], S(4), ch + S(6));
+		wg.cell[i] = c;
+		lv_obj_set_style_border_side(c, LV_BORDER_SIDE_FULL, 0);
+	}
+	wg.use = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(wg.use, S(56), S(612));
+	static const char *const hints[] = { "A", "Use this one", "L", "R", "R", "Category", "Y", "16:9 / 4:3 / All", "X", "Use for", "B", "Back", NULL };
+	(void)hints;
+	static const char *const h2[] = { "A", "Use this one", "Y", "16:9 / 4:3 / All", "X", "Use for", "B", "Back", NULL };
+	footer_set(h2);
+	wg_load();
+	if (!cJSON_GetArraySize(wg.cats))
+		toast_show("No wallpapers yet: turn them on in Update All, or put your own in wallpapers_user");
+}
+static void wall_key(pkey_t k)
+{
+	int n = cJSON_GetArraySize(wg.items), nc = cJSON_GetArraySize(wg.cats), old = wg.sel;
+	if (k == K_B || k == K_MENU) { back_to_settings(SET_WALL_PICK); return; }
+	if (k == K_L && nc) { wg.cat = (wg.cat + nc - 1) % nc; wg_load(); return; }
+	if (k == K_R && nc) { wg.cat = (wg.cat + 1) % nc; wg_load(); return; }
+	if (k == K_Y) { wg.aspect = (wg.aspect + 1) % 3; wg_load(); return; }
+	if (k == K_X) {
+		SETTINGS.wall_osd = (SETTINGS.wall_osd + 1) % 3;
+		settings_save();
+		wall_osd_apply();
+		bg_apply(root);
+		wg_draw();
+		return;
+	}
+	if (k == K_A && n) {
+		const char *f = api_str(cJSON_GetArrayItem(wg.items, wg.sel), "file");
+		if (!f) return;
+		snprintf(SETTINGS.wallpaper, sizeof(SETTINGS.wallpaper), "%s", f);
+		SETTINGS.wallpaper_on = 1;
+		settings_save();
+		wall_osd_apply();
+		bg_apply(root);
+		toast_show(SETTINGS.wall_osd == 2 ? "Behind MiSTer's menu from the next time it shows" : "Wallpaper set");
+		wg_draw();
+		return;
+	}
+	if (!n) return;
+	if (k == K_LEFT && wg.sel > 0) wg.sel--;
+	else if (k == K_RIGHT && wg.sel + 1 < n) wg.sel++;
+	else if (k == K_UP && wg.sel >= WG_COLS) wg.sel -= WG_COLS;
+	else if (k == K_DOWN && wg.sel + WG_COLS < n) wg.sel += WG_COLS;
+	else if (k == K_DOWN && wg.sel / WG_COLS < (n - 1) / WG_COLS) wg.sel = n - 1;
+	if (wg.sel == old) return;
+	int ntop = wg.top;
+	while (wg.sel < ntop) ntop -= WG_COLS;
+	while (wg.sel >= ntop + WG_COLS * WG_ROWS) ntop += WG_COLS;
+	if (ntop != wg.top) { wg.top = ntop; wg_draw(); }
+	else {                                            /* just the highlight */
+		for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
+			int kk = wg.top + i;
+			const char *f = api_str(cJSON_GetArrayItem(wg.items, kk), "file");
+			int inuse = f && !strcmp(f, SETTINGS.wallpaper);
+			lv_obj_set_style_border_width(wg.cell[i], kk == wg.sel ? S(3) : inuse ? S(1) : 0, 0);
+		}
+	}
 }
 
 /* ---------- Scripts (everything in /media/fat/Scripts) ---------- */
@@ -2632,14 +2910,14 @@ static void back_to_settings(int sel)
 {
 	if (in_setup) { show_welcome(); return; }
 	show_settings();
-	set_list.sel = sel;
+	set_list.sel = set_row(sel);
 	vlist_refresh(&set_list);
 	si_update();
 }
 
 static void settings_change(int dir)
 {
-	if (set_list.sel == SET_ACCENT) {
+	if (set_id(set_list.sel) == SET_ACCENT) {
 		int a = ((int)theme_accent() + dir + ACCENT_COUNT) % ACCENT_COUNT;
 		theme_set_accent((accent_t)a);
 		SETTINGS.accent = a;
@@ -2652,13 +2930,17 @@ static void settings_change(int dir)
 		set_list.sel = keep;
 		vlist_refresh(&set_list);
 		si_update();
-	} else if (set_list.sel == SET_TEXTURE) {
+	} else if (set_id(set_list.sel) == SET_TEXTURE && SETTINGS.wallpaper_on) {
+		toast_show("Turn Wallpapers off to use a texture");
+	} else if (set_id(set_list.sel) == SET_WALLPAPER) {
+		wall_toggle();
+	} else if (set_id(set_list.sel) == SET_TEXTURE) {
 		SETTINGS.texture = texture_step(SETTINGS.texture, dir ? dir : 1);
 		settings_save();
-		texture_apply(root, (texture_t)SETTINGS.texture);
+		bg_apply(root);
 		vlist_refresh(&set_list);
 		si_update();                          /* (the swatch holds the old tile until then) */
-	} else if (set_list.sel == SET_SAVER) {
+	} else if (set_id(set_list.sel) == SET_SAVER) {
 		static const int opts[] = { 0, 5, 10, 20, 30 };
 		int i = 0;
 		while (i < 5 && opts[i] != SETTINGS.saver_min) i++;
@@ -2666,7 +2948,7 @@ static void settings_change(int dir)
 		SETTINGS.saver_min = opts[i];
 		settings_save();
 		vlist_refresh(&set_list);
-	} else if (set_list.sel == SET_SAMBA) {
+	} else if (set_id(set_list.sel) == SET_SAMBA) {
 		if (!api_ok(samba_st) || !samba_b("available")) { toast_show("MiSTer's Samba isn't on this system"); return; }
 		if (samba_b("busy")) { toast_show("Wait a moment, it's still changing"); return; }
 		int on = samba_b("on") && samba_b("running");
@@ -2676,7 +2958,7 @@ static void settings_change(int dir)
 		cJSON_Delete(samba_st);
 		samba_st = r;
 		vlist_refresh(&set_list);
-	} else if (set_list.sel == SET_CLOCK) {
+	} else if (set_id(set_list.sel) == SET_CLOCK) {
 		SETTINGS.clock24 = !SETTINGS.clock24;
 		settings_save();
 		status_update();
@@ -2728,6 +3010,9 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_ACCENT] = { "The colour used for highlights, the wordmark and the background texture. Left and right change it.", NULL },
 	[SET_TEXTURE] = { "A faint pattern behind the menus, in the accent colour. Left and right step through them; it changes as you go.",
 	                  "Drawn once when you pick it, so it costs nothing while you use the menu." },
+	[SET_WALLPAPER] = { "A picture behind the menus instead of the texture: Update All's wallpaper collections (Ranny Snice, Anime0t4ku and others), or your own in wallpapers_user.",
+	                    "The same picture can go behind MiSTer's own menu too, or a different one there." },
+	[SET_WALL_PICK] = { "Choose the wallpaper: L and R switch between your own and each creator's, Y between 16:9, 4:3 and all, X what it's for (both menus, Phosphor's or MiSTer's).", NULL },
 	[SET_CLOCK] = { "How the clock in the top corner shows the time.", NULL },
 	[SET_SAVER] = { "Dims the screen after a while with no buttons pressed, to save the TV from burn-in. Any button wakes it.", NULL },
 	[SET_RESCAN] = { "Looks through the SD card and the games drive for new or removed games and works out what each one is. Run it after adding games.",
@@ -2939,7 +3224,7 @@ static void si_set(lv_obj_t *l, const char *t)
 static void si_update(void)
 {
 	if (!si.box || cur != SCR_SETTINGS) return;
-	int row = set_list.sel;
+	int row = set_id(set_list.sel);
 	if (row < 0 || row >= SET_COUNT) return;
 	uint32_t now = lv_tick_get();
 	if (row != si.row) {
@@ -2958,7 +3243,7 @@ static void si_update(void)
 	}
 	char t[96], val[96];
 	int dim = 0;
-	set_fill(row, t, sizeof(t), val, sizeof(val), &dim);
+	set_fill(set_list.sel, t, sizeof(t), val, sizeof(val), &dim);
 	if (row == SET_SCRAPE_INFO) snprintf(t, sizeof(t), "Box art progress");
 	si_set(si.title, t);
 	char k[SI_ROWS][40], v[SI_ROWS][96];
@@ -3041,7 +3326,8 @@ static void show_settings(void)
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Settings");
 	vlist_create(&set_list, body, S(56), S(176), S(700), S(440));
-	set_list.count = SET_COUNT;
+	set_build();
+	set_list.count = set_n;
 	set_list.fill = set_fill;
 	set_list.wrap = 1;
 	set_list.sel = 0;
@@ -3141,7 +3427,7 @@ static void sources_key(pkey_t k)
 		src_list.sel++; sources_save();
 	} else if (k == K_B || k == K_MENU) {
 		show_settings();
-		set_list.sel = SET_SOURCES;
+		set_list.sel = set_row(SET_SOURCES);
 		vlist_refresh(&set_list);
 	}
 }
@@ -3336,7 +3622,7 @@ static void diag_key(pkey_t k)
 	else if (k == K_X && !diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\",\"bundle\":true}"));
 	else if (k == K_B || k == K_MENU) {
 		show_settings();
-		set_list.sel = SET_DIAG;
+		set_list.sel = set_row(SET_DIAG);
 		vlist_refresh(&set_list);
 	}
 }
@@ -7675,7 +7961,7 @@ static int app_key_blocked(pkey_t k)
 	if (!input_from_app()) return 0;
 	if (cur == SCR_WIFI || cur == SCR_BT || cur == SCR_REMOTE || cur == SCR_WELCOME) return k != K_B && k != K_MENU;
 	if (cur == SCR_SETTINGS && (k == K_A || k == K_LEFT || k == K_RIGHT))
-		return set_list.sel == SET_WIFI || set_list.sel == SET_BT || set_list.sel == SET_REMOTE || set_list.sel == SET_SAMBA;
+		return set_id(set_list.sel) == SET_WIFI || set_id(set_list.sel) == SET_BT || set_id(set_list.sel) == SET_REMOTE || set_id(set_list.sel) == SET_SAMBA;
 	return 0;
 }
 
@@ -7816,6 +8102,9 @@ void ui_key(pkey_t k)
 	case SCR_FOLDER:
 		folder_key(k);
 		break;
+	case SCR_WALL:
+		wall_key(k);
+		break;
 	case SCR_VIDEO:
 		video_key(k);
 		break;
@@ -7835,43 +8124,44 @@ void ui_key(pkey_t k)
 		if (vlist_key(&set_list, k)) { si_update(); break; }
 		if (k == K_LEFT) settings_change(-1);
 		else if (k == K_RIGHT || k == K_A) {
-			if (set_list.sel == SET_RESCAN) { if (k == K_A) show_scan(); }
-			else if (set_list.sel == SET_SCRAPE) { if (k == K_A) show_art(); }
-			else if (set_list.sel == SET_SOURCES) show_sources();
-			else if (set_list.sel == SET_DIAG) show_diag();
-			else if (set_list.sel == SET_WIFI) show_wifi();
-			else if (set_list.sel == SET_BT) show_bt();
-			else if (set_list.sel == SET_CTRL) show_ctrl();
-			else if (set_list.sel == SET_PHOSUPD) show_update();
-			else if (set_list.sel == SET_REMOTE) show_remote();
-			else if (set_list.sel == SET_CLOUD) show_cloud();
-			else if (set_list.sel == SET_BACKUP) show_backup();
-			else if (set_list.sel == SET_PORTS) show_ports();
-			else if (set_list.sel == SET_STORAGE) show_storage();
-			else if (set_list.sel == SET_DISCS) show_discs();
-			else if (set_list.sel == SET_RA) show_ra();
-			else if (set_list.sel == SET_SHOTS) show_shots();
-			else if (set_list.sel == SET_VIDEO) show_video();
-			else if (set_list.sel == SET_ABOUT) show_about();
-			else if ((set_list.sel == SET_CORES || set_list.sel == SET_UPDATE_ALL) && k == K_A) {
-				if (set_list.sel == SET_UPDATE_ALL && !cr.all_available) { toast_show("Update All isn't on the SD card (Scripts/update_all.sh)"); break; }
+			if (set_id(set_list.sel) == SET_RESCAN) { if (k == K_A) show_scan(); }
+			else if (set_id(set_list.sel) == SET_SCRAPE) { if (k == K_A) show_art(); }
+			else if (set_id(set_list.sel) == SET_SOURCES) show_sources();
+			else if (set_id(set_list.sel) == SET_DIAG) show_diag();
+			else if (set_id(set_list.sel) == SET_WIFI) show_wifi();
+			else if (set_id(set_list.sel) == SET_BT) show_bt();
+			else if (set_id(set_list.sel) == SET_CTRL) show_ctrl();
+			else if (set_id(set_list.sel) == SET_PHOSUPD) show_update();
+			else if (set_id(set_list.sel) == SET_REMOTE) show_remote();
+			else if (set_id(set_list.sel) == SET_CLOUD) show_cloud();
+			else if (set_id(set_list.sel) == SET_BACKUP) show_backup();
+			else if (set_id(set_list.sel) == SET_PORTS) show_ports();
+			else if (set_id(set_list.sel) == SET_STORAGE) show_storage();
+			else if (set_id(set_list.sel) == SET_DISCS) show_discs();
+			else if (set_id(set_list.sel) == SET_RA) show_ra();
+			else if (set_id(set_list.sel) == SET_SHOTS) show_shots();
+			else if (set_id(set_list.sel) == SET_VIDEO) show_video();
+			else if (set_id(set_list.sel) == SET_ABOUT) show_about();
+			else if ((set_id(set_list.sel) == SET_CORES || set_id(set_list.sel) == SET_UPDATE_ALL) && k == K_A) {
+				if (set_id(set_list.sel) == SET_UPDATE_ALL && !cr.all_available) { toast_show("Update All isn't on the SD card (Scripts/update_all.sh)"); break; }
 				sysinfo_t si;
 				sysinfo_read(&si);
 				cJSON *w = api_call("{\"cmd\":\"wifi\"}");
 				cJSON *ws = w ? cJSON_GetObjectItem(w, "status") : NULL;
 				int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(ws, "connected"));
 				cJSON_Delete(w);
-				if (!cores_start_job(net, set_list.sel == SET_UPDATE_ALL)) vlist_refresh(&set_list);
+				if (!cores_start_job(net, set_id(set_list.sel) == SET_UPDATE_ALL)) vlist_refresh(&set_list);
 			}
-			else if (set_list.sel == SET_SCRIPTS) show_scripts();
-			else if (set_list.sel == SET_GUARD) show_guard();
-			else if (set_list.sel == SET_UPDLOG) show_log();
-			else if (set_list.sel == SET_MISTER && k == K_A) {
+			else if (set_id(set_list.sel) == SET_SCRIPTS) show_scripts();
+			else if (set_id(set_list.sel) == SET_WALL_PICK) show_wallpapers();
+			else if (set_id(set_list.sel) == SET_GUARD) show_guard();
+			else if (set_id(set_list.sel) == SET_UPDLOG) show_log();
+			else if (set_id(set_list.sel) == SET_MISTER && k == K_A) {
 				if (mainlink_give()) toast_show("Back to Phosphor: hold the menu button, or System > Launch Phosphor");
 				else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
 			}
-			else if (set_list.sel == SET_RESTART && k == K_A) restart_ask();
-			else if (set_list.sel == SET_SHUTDOWN && k == K_A) shutdown_ask();
+			else if (set_id(set_list.sel) == SET_RESTART && k == K_A) restart_ask();
+			else if (set_id(set_list.sel) == SET_SHUTDOWN && k == K_A) shutdown_ask();
 			else settings_change(1);
 		}
 		else if (k == K_B || k == K_MENU) show_home();
@@ -9415,6 +9705,8 @@ void ui_tick(void)
 	vk_tick();
 	if (si_pending()) si_update();
 	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); update_check(); } }   /* the alerts, once after start-up */
+	{ static int wall_done; if (!wall_done && now > 3000) { wall_done = 1; if (SETTINGS.wallpaper_on) bg_apply(root); } }   /* (phosphord up by now) */
+	wall_tick();
 	/* Phosphor's releases on GitHub: a minute after start-up, then every 30 min, never while a game runs
 	   (phosphord asks in the background; its answer is read 20 s later) */
 	{
@@ -9474,7 +9766,7 @@ void ui_init(int w, int h)
 		root = mk_box(scr, w, h, PAL.bg, 0);
 	}
 	lv_obj_set_style_bg_color(root, PAL.bg, 0);
-	texture_apply(root, (texture_t)SETTINGS.texture);    /* redrawn in the accent colour */
+	bg_apply(root);                                      /* redrawn in the accent colour (a texture) */
 	mainlink_shot_combo(!SETTINGS.shot_off);
 	upd_note();
 	status_bar();
