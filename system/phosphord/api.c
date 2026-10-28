@@ -12,6 +12,7 @@
  *   last                                    the last game played (same shape as game), or null
  *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
  *   game_cores id                           the cores it can start on: [{index, name, core, kind, desc, date, preferred}]
+ *   disc_copy  [do: start|stop]             save a copy of the game disc in the drive (dump.c): {copy: progress}
  *   wallpapers [category] [aspect]          Settings > Wallpapers (wallpaper.c); wallpaper_thumb, wallpaper_prefetch, wallpaper_screen, wallpaper_osd
  *   folder_cores folder                     _Other / _Utility cores: [{name, file, date}] (+ Update All Link state)
  *   run_core   file                         start one of those on its own
@@ -96,6 +97,7 @@
  *                                           devices:[{id, name, created, last_seen}]} */
 #include "api.h"
 #include "disc.h"
+#include "dump.h"
 #include "ra.h"
 #include "music.h"
 #include "shot.h"
@@ -1779,7 +1781,24 @@ char *api_handle(sqlite3 *db, const char *request)
 		/* the dock's CD/DVD drive (disc.c): what's in it, named, with box art and whether it plays */
 		cJSON *d = disc_json(db);
 		if (!d) out = fail("this Main doesn't read discs");
-		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "disc", d); out = reply(o); }
+		else {
+			const char *st = cJSON_GetStringValue(cJSON_GetObjectItem(d, "state"));
+			cJSON_AddBoolToObject(d, "copyable", st && !strcmp(st, "ready") && dump_supported(cJSON_GetStringValue(cJSON_GetObjectItem(d, "type"))));
+			cJSON_AddItemToObject(d, "copy", dump_status());
+			cJSON *o = ok();
+			cJSON_AddItemToObject(o, "disc", d);
+			out = reply(o);
+		}
+	} else if (!strcmp(c->valuestring, "disc_copy")) {   /* Save a copy (dump.c): {do: start|stop}, or the progress */
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+		char err[300];
+		if (d && !strcmp(d, "start") && dump_start(db, err, sizeof(err))) out = fail(err);
+		else {
+			if (d && !strcmp(d, "stop")) dump_stop();
+			cJSON *o = ok();
+			cJSON_AddItemToObject(o, "copy", dump_status());
+			out = reply(o);
+		}
 	} else if (!strcmp(c->valuestring, "disc_play")) {
 		char err[300];
 		out = disc_play(db, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
