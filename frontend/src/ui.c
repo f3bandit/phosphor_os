@@ -11,6 +11,7 @@
 #include "ui.h"
 #include <unistd.h>
 #include "mainlink.h"
+#include "crt.h"
 #include "input.h"
 #include "icons.h"
 #include "api.h"
@@ -2644,11 +2645,20 @@ static vlist_t vd_list;
 static void vk_check(int now);
 static struct {
 	cJSON *st;                         /* phosphord's vset reply */
-	int nrows, row2opt[NVOPTS];        /* the list: options in group order */
+	int nrows, row2opt[NVOPTS + 3];        /* the list: options in group order */
 	int edited[NVOPTS];                /* a value picked but not tried yet: its index in vals */
 	char file[64];
 	lv_obj_t *chips, *panel, *pname, *prisk, *ptext, *pwarn, *pdip, *pfoot, *empty;
+	int ncrt;                          /* Phosphor's CRT rows first (row2opt -1, -2, -3) */
+	crt_cfg_t crt;                     /* as saved */
+	int crt_pick;                      /* the mode picked (CRT_OFF: off), not tried yet; -2: none */
 } vd;
+static const char *const VD_HINTS_CRT[] = { "\xE2\x86\x90\xE2\x86\x92", "Change", "A", "Try", "B", "Back", NULL };
+static const char *const VD_HINTS_CRTPOS[] = { "\xE2\x86\x90\xE2\x86\x92", "Move the picture", "B", "Back", NULL };
+static const int CRT_MODES[] = { CRT_OFF, CRT_480I, CRT_576I, CRT_480P };
+#define NCRT_MODES 4
+static int vd_crt_row(int i) { return i < vd.ncrt ? i : -1; }   /* 0 mode, 1 horizontal, 2 vertical */
+static int vd_crt_shown(void) { return vd.crt_pick != -2 ? vd.crt_pick : vd.crt.on ? vd.crt.mode : CRT_OFF; }
 static const char *const VD_HINTS[] = { "\xE2\x86\x90\xE2\x86\x92", "Change", "A", "Try", "X", "Earlier settings", "L/R", "Profile", "B", "Back", NULL };
 static const char *const VD_HINTS_PROF[] = { "A", "Try this profile", "L/R", "Profile", "B", "Back", NULL };
 
@@ -2714,6 +2724,22 @@ static int vd_opt(const char *k) { for (int o = 0; o < NVOPTS; o++) if (!strcmp(
 
 static void vd_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
+	int cr = vd_crt_row(i);
+	if (cr >= 0) {
+		*dim = 0;
+		if (cr == 0) {
+			snprintf(t, n, "CRT mode (analog out)");
+			const char *l = crt_mode_name(vd_crt_shown());
+			if (vd.crt_pick != -2) snprintf(val, vn, "<  %s  >", l);
+			else snprintf(val, vn, "%s", l);
+		} else {
+			int x = cr == 1 ? vd.crt.h : vd.crt.v;
+			snprintf(t, n, cr == 1 ? "CRT picture: left / right" : "CRT picture: up / down");
+			if (!vd.crt.on) { snprintf(val, vn, "%+d", x); *dim = 1; }
+			else snprintf(val, vn, "<  %+d  >", x);
+		}
+		return;
+	}
 	int o = vd.row2opt[i];
 	char buf[64];
 	const char *g = "";
@@ -2721,8 +2747,9 @@ static void vd_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	snprintf(t, n, "%s", VOPTS[o].name);
 	(void)g;
 	const char *l = vd_label(o, vd_shown(o), buf, sizeof(buf));
-	if (vd.edited[o] >= 0) snprintf(val, vn, "<  %.26s%s  >", l, strlen(l) > 26 ? "..." : "");
-	else snprintf(val, vn, "%.30s%s", l, strlen(l) > 30 ? "..." : "");
+	int mx = NARROW ? 16 : 30;                    /* (a 4:3 screen: the name needs the room) */
+	if (vd.edited[o] >= 0) snprintf(val, vn, "<  %.*s%s  >", mx - 4, l, (int)strlen(l) > mx - 4 ? "..." : "");
+	else snprintf(val, vn, "%.*s%s", mx, l, (int)strlen(l) > mx ? "..." : "");
 	*dim = 0;
 }
 
@@ -2751,6 +2778,20 @@ static void vd_panel(void)
 		nd = vd_dip(api_str(cJSON_GetObjectItem(s, "vga_mode"), "value") ? api_str(cJSON_GetObjectItem(s, "vga_mode"), "value") : "",
 		            api_str(cJSON_GetObjectItem(s, "composite_sync"), "value"), api_str(cJSON_GetObjectItem(s, "menu_pal"), "value"), pf ? api_str(pf, "label") : "", dips, 4);
 		footer_set(VD_HINTS_PROF);
+	} else if (vd_crt_row(vd_list.sel) >= 0) {
+		int cr = vd_crt_row(vd_list.sel);
+		lv_label_set_text(vd.pname, cr == 0 ? "CRT mode" : "CRT picture position");
+		lv_label_set_text(vd.prisk, cr == 0 ? "Phosphor's own setting (not MiSTer.ini)" : "Changes right away");
+		lv_obj_set_style_text_color(vd.prisk, PAL.dim, 0);
+		lv_label_set_text(vd.ptext, cr == 0
+			? "Phosphor's menu on a CRT, at the TV's own timing, out of the analog port (VGA, SCART, component). "
+			  "480i and 576i are 15 kHz for a TV (576i for PAL sets); 480p is 31 kHz for a VGA monitor or a PVM / BVM that takes it. "
+			  "HDMI shows the same picture. Games still use their own video and MiSTer.ini's settings."
+			: "Moves Phosphor's picture on the CRT so it's in the middle of the screen. Each step is one pixel across, or one line up or down.");
+		lv_label_set_text(vd.pwarn, cr == 0 ? "A TV that can't show a mode shows nothing: the old mode comes back by itself unless you keep it."
+		                                   : vd.crt.on ? "" : "Turn CRT mode on first.");
+		if (!mainlink_has_crt()) lv_label_set_text(vd.pwarn, "Needs Phosphor's Main (0.27.42 or later) and Phosphor's menu core.");
+		footer_set(cr == 0 ? VD_HINTS_CRT : VD_HINTS_CRTPOS);
 	} else {
 		int o = vd.row2opt[vd_list.sel];
 		lv_label_set_text(vd.pname, VOPTS[o].name);
@@ -2786,7 +2827,9 @@ static void vd_panel(void)
 	lv_label_set_text(vd.pdip, d);
 	lv_obj_set_hidden(vd.pdip, !nd);
 	char f[120];
-	if (cJSON_IsTrue(cJSON_GetObjectItem(vd.st, "game_running"))) snprintf(f, sizeof(f), "A game is running: close it first.");
+	if (vd_crt_row(vd_list.sel) >= 0 && using)
+		snprintf(f, sizeof(f), vd_crt_row(vd_list.sel) == 0 ? "Goes back by itself in %d seconds unless you keep it." : "", CRT_KEEP_SECS);
+	else if (cJSON_IsTrue(cJSON_GetObjectItem(vd.st, "game_running"))) snprintf(f, sizeof(f), "A game is running: close it first.");
 	else snprintf(f, sizeof(f), "Goes back by itself in %d seconds unless you keep it.", (int)api_num(vd.st, "secs", 35));
 	lv_label_set_text(vd.pfoot, f);
 }
@@ -2836,6 +2879,10 @@ static void show_video(void)
 	memset(vd.edited, 0xff, sizeof(vd.edited));
 	vd.file[0] = 0;
 	vd.nrows = 0;
+	vd.ncrt = 3;
+	crt_load(&vd.crt);
+	vd.crt_pick = -2;
+	for (int k = 0; k < vd.ncrt; k++) vd.row2opt[vd.nrows++] = -1 - k;
 	for (int g = 0; g < NVGROUPS; g++)
 		for (int o = 0; o < NVOPTS; o++) if (!strcmp(VOPTS[o].group, VGROUPS_[g][0])) vd.row2opt[vd.nrows++] = o;
 	vd.chips = mk_box(body, W - S(112), S(36), PAL.bg, 0);
@@ -2918,12 +2965,40 @@ static void video_key(pkey_t k)
 	if (k == K_B || k == K_MENU) {
 		int any = 0;
 		for (int o = 0; o < NVOPTS; o++) if (vd.edited[o] >= 0) any = 1;
+		if (vd.crt_pick != -2 && k == K_B) { vd.crt_pick = -2; vlist_refresh(&vd_list); vd_panel(); return; }
 		if (any && k == K_B) { memset(vd.edited, 0xff, sizeof(vd.edited)); vlist_refresh(&vd_list); vd_panel(); return; }
 		back_to_settings(SET_VIDEO);
 		return;
 	}
 	if (!using) { if (k == K_A) vd_try("profile"); return; }
 	if (vlist_key(&vd_list, k)) { vd_panel(); return; }
+	int cr = vd_crt_row(vd_list.sel);
+	if (cr >= 0) {
+		if (!mainlink_has_crt()) { if (k == K_LEFT || k == K_RIGHT || k == K_A) toast_show("CRT mode needs Phosphor's Main and menu core"); return; }
+		if (cr == 0 && (k == K_LEFT || k == K_RIGHT)) {
+			int at = 0, now = vd.crt.on ? vd.crt.mode : CRT_OFF;
+			for (int i = 0; i < NCRT_MODES; i++) if (CRT_MODES[i] == vd_crt_shown()) at = i;
+			at = (at + (k == K_RIGHT ? 1 : NCRT_MODES - 1)) % NCRT_MODES;
+			vd.crt_pick = CRT_MODES[at] == now ? -2 : CRT_MODES[at];
+			vlist_refresh(&vd_list);
+			vd_panel();
+		} else if (cr == 0 && k == K_A) {
+			if (vd.crt_pick == -2) { toast_show("Pick another mode with left and right first"); return; }
+			crt_cfg_t c = vd.crt;
+			c.on = vd.crt_pick != CRT_OFF;
+			if (c.on) c.mode = vd.crt_pick;
+			if (crt_try(&c)) { toast_show("Couldn't save the CRT setting"); return; }
+			toast_show("Starting the menu again in the new mode");
+		} else if (cr > 0 && (k == K_LEFT || k == K_RIGHT)) {
+			if (!vd.crt.on) { toast_show("Turn CRT mode on first"); return; }
+			int d = k == K_RIGHT ? 1 : -1;
+			if (cr == 1) vd.crt.h = LV_CLAMP(-31, vd.crt.h + d, 31);
+			else vd.crt.v = LV_CLAMP(-31, vd.crt.v + d, 31);
+			crt_move(vd.crt.h, vd.crt.v);
+			vlist_refresh(&vd_list);
+		}
+		return;
+	}
 	int o = vd.row2opt[vd_list.sel];
 	if (k == K_LEFT || k == K_RIGHT) {
 		int i = vd.edited[o] >= 0 ? vd.edited[o] : vd_index(o, vd_now(o));
@@ -2941,15 +3016,17 @@ static void video_key(pkey_t k)
 /* ---------- the Keep window: a video try waits for Keep (from here, the phone or the PC) ---------- */
 static struct {
 	lv_obj_t *box, *what, *secs, *bar;
-	int open, total;
+	int open, total, crt;             /* crt: a CRT mode try (Phosphor's own, crt.c), not phosphord's */
 	uint32_t until;                   /* lv_tick when it goes back by itself */
 } vk;
+static void vk_box(const char *what, int total, int left);
 
 static void vk_close(void)
 {
 	if (vk.box) lv_obj_delete(vk.box);
 	vk.box = NULL;
 	vk.open = 0;
+	vk.crt = 0;
 }
 
 static void vk_show(cJSON *p)
@@ -2969,7 +3046,13 @@ static void vk_show(cJSON *p)
 			if (o >= 0) snprintf(what + l, sizeof(what) - l, "%s%s: %s", l ? ", " : "", VOPTS[o].name, vd_label(o, x->valuestring ? x->valuestring : "", buf, sizeof(buf)));
 		}
 	}
-	int w = S(620), h = S(270);
+	vk_box(what, (int)api_num(p, "secs", 35), (int)api_num(p, "secs_left", 35));
+}
+
+static void vk_box(const char *what, int total, int left)
+{
+	vk_close();
+	int w = LV_MIN(S(620), W - S(40)), h = S(270);
 	vk.box = mk_box(root, w, h, PAL.panel, S(18));
 	lv_obj_set_style_border_width(vk.box, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(vk.box, PAL.acc, 0);
@@ -2999,8 +3082,7 @@ static void vk_show(cJSON *p)
 	lv_obj_set_pos(b2, w - S(30) - S(270), h - S(48) - S(26));
 	l = mk_label(b2, FONT_NAME, PAL.text, "B   Put back now");
 	lv_obj_center(l);
-	vk.total = (int)api_num(p, "secs", 35);
-	int left = (int)api_num(p, "secs_left", 35);
+	vk.total = total;
 	vk.until = lv_tick_get() + (uint32_t)left * 1000;
 	vk.open = 1;
 	lv_obj_move_foreground(vk.box);
@@ -3024,6 +3106,10 @@ static void vk_check(int now)
 {
 	static uint32_t last;
 	uint32_t t = lv_tick_get();
+	if (vk.crt) {                                   /* a CRT mode try: the old one back by itself */
+		if ((int32_t)(vk.until - t) <= 0) { vk_close(); crt_revert(); }
+		return;
+	}
 	if (!now && t - last < 1000) return;
 	last = t;
 	char p[300];
@@ -3050,6 +3136,12 @@ static void vk_check(int now)
 static int vk_key(pkey_t k)
 {
 	if (!vk.open) return 0;
+	if (vk.crt && (k == K_A || k == K_B)) {
+		vk_close();
+		if (k == K_A) { crt_keep(); toast_show("Kept"); }
+		else crt_revert();                            /* (the shell starts again in the old mode) */
+		return 1;
+	}
 	if (k == K_A || k == K_B) {
 		cJSON *r = api_call(k == K_A ? "{\"cmd\":\"vset\",\"keep\":true}" : "{\"cmd\":\"vset\",\"revert\":true}");
 		vk_close();
@@ -10103,4 +10195,14 @@ void ui_init(int w, int h)
 	if (sb_disc) lv_obj_set_hidden(sb_disc, !dk.in);
 	if (SETTINGS.setup_done) show_home();
 	else show_welcome();
+	static int crt_checked;
+	crt_cfg_t prev, now;
+	if (!crt_checked && crt_pending(&prev)) {        /* started again for a CRT mode try: Keep, or it goes back */
+		char what[80];
+		crt_load(&now);
+		snprintf(what, sizeof(what), "CRT mode: %s", crt_mode_name(now.on ? now.mode : CRT_OFF));
+		vk_box(what, CRT_KEEP_SECS, CRT_KEEP_SECS);
+		vk.crt = 1;
+	}
+	crt_checked = 1;
 }

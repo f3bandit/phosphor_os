@@ -20,7 +20,7 @@
 
 static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
 /* API 5: the dock's drive (disc events) and Phosphor's in-game menu (ingame) */
-static int ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1, shot_want = 1;
+static int crt_api, ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1, shot_want = 1;
 /* a controller mapping Main runs for the shell (its steps come as events) */
 static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
@@ -88,6 +88,7 @@ static int take(void)
 	    || !((disc_api = strstr(r, "\"disc\":true") != NULL), 1)
 	    || !((ingame_api = strstr(r, "\"ingame\":true") != NULL), 1)
 	    || !((ra_api = strstr(r, "\"ra\":true") != NULL), 1)
+	    || !((crt_api = strstr(r, "\"crt\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
@@ -172,6 +173,15 @@ static int say(const char *line)
 int mainlink_disc_enable(int on) { disc_want = on; return disc_api ? say(on ? "disc on" : "disc off") : -1; }
 int mainlink_shot_combo(int on) { shot_want = on; return ingame_api ? say(on ? "shot on" : "shot off") : -1; }
 int mainlink_ingame(int on) { return ingame_api ? say(on ? "ingame on" : "ingame off") : -1; }
+int mainlink_has_crt(void) { return fd >= 0 && crt_api; }
+/* the menu core into a CRT mode (or back to its usual picture); Main keeps it in phosphor/config/crt */
+int mainlink_crt(int on, int mode, int h, int v)
+{
+	if (!crt_api) return -1;
+	char b[48];
+	snprintf(b, sizeof(b), "crt %d %d %d %d", on ? 1 : 0, mode, h, v);
+	return say(b);
+}
 int mainlink_ingame_osd(void) { return ingame_api ? say("ingame osd") : -1; }
 /* from the in-game menu back to Phosphor: the menu core again (Phosphor's, where it's installed) */
 int mainlink_quit_game(void)
