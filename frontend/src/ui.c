@@ -43,7 +43,7 @@ static screen_t cur = SCR_HOME;
 
 /* ---------- status bar ---------- */
 
-static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc;
+static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc, *sb_upd;
 
 static void status_bar(void)
 {
@@ -76,6 +76,9 @@ static void status_bar(void)
 	lv_obj_set_hidden(sb_alert, true);
 
 	int is = S(22);
+	sb_upd = icon_create(right, ICON_UPDATE, is);         /* a newer Phosphor on GitHub (Settings > Update Phosphor) */
+	lv_obj_set_style_text_color(sb_upd, lv_color_hex(0xf5c542), 0);
+	lv_obj_set_hidden(sb_upd, true);
 	sb_disc = icon_create(right, ICON_DISC, is);          /* a disc in the dock's drive */
 	lv_obj_set_style_text_color(sb_disc, PAL.acc, 0);
 	lv_obj_set_hidden(sb_disc, true);
@@ -6128,6 +6131,22 @@ static void map_requests(void)
  * package, backs up the installed version, installs, and starts Phosphor again (this screen goes
  * away while it does). */
 
+/* Phosphor's releases on GitHub (phosphord upnet.c): looked at a minute after start-up and every 30 min
+ * while no game runs; a newer one shows a yellow arrow in the status bar and a Download row here */
+static struct { int newer, downloaded; char latest[24], state[16], msg[200]; } upo;
+static void upo_apply(cJSON *r)
+{
+	cJSON *on = r ? cJSON_GetObjectItem(r, "online") : NULL;
+	if (!cJSON_IsObject(on)) return;
+	upo.newer = cJSON_IsTrue(cJSON_GetObjectItem(on, "newer"));
+	upo.downloaded = cJSON_IsTrue(cJSON_GetObjectItem(on, "downloaded"));
+	snprintf(upo.latest, sizeof(upo.latest), "%s", api_str(on, "latest") ? api_str(on, "latest") : "");
+	snprintf(upo.state, sizeof(upo.state), "%s", api_str(on, "state") ? api_str(on, "state") : "");
+	snprintf(upo.msg, sizeof(upo.msg), "%s", api_str(on, "msg") ? api_str(on, "msg") : "");
+	if (sb_upd) lv_obj_set_hidden(sb_upd, !upo.newer);
+}
+static int upo_row(void) { return upo.newer && !upo.downloaded ? 1 : 0; }   /* the Download row on top */
+
 static struct {
 	int npk, nrb, busy;
 	char ver[24], pk_file[8][300], pk_ver[8][24], rb_ver[6][24], rb_date[6][24], msg[200];
@@ -6155,6 +6174,7 @@ static int ver_cmp(const char *a, const char *b)
 static void up_apply(cJSON *r)
 {
 	if (!api_ok(r)) { cJSON_Delete(r); return; }
+	upo_apply(r);
 	snprintf(up.ver, sizeof(up.ver), "%s", api_str(r, "version") ? api_str(r, "version") : "?");
 	cJSON *x;
 	up.npk = up.nrb = 0;
@@ -6189,15 +6209,26 @@ static void up_apply(cJSON *r)
 	char h[160];
 	snprintf(h, sizeof(h), "Installed: Phosphor %s", up.ver);
 	if (up.head) lv_label_set_text(up.head, h);
-	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg :
-		"Put a release package (phosphor-<version>-armhf.tar.gz) in phosphor/updates over the network share, or send it from the Phosphor app. A USB drive works too.");
-	up_list.count = up.npk + up.nrb ? up.npk + up.nrb : 1;
+	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
+		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs). "
+		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too.");
+	up_list.count = up.npk + up.nrb + upo_row() ? up.npk + up.nrb + upo_row() : 1;
 	vlist_refresh(&up_list);
 }
 
 static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	int sure = up.confirm_row == i && lv_tick_get() - up.confirm_at < 4000;
+	if (upo_row()) {
+		if (i == 0) {
+			int dl = !strcmp(upo.state, "working");
+			snprintf(t, n, "Download Phosphor %s", upo.latest);
+			snprintf(val, vn, "%s", dl ? "Downloading..." : "From GitHub");
+			*dim = dl;
+			return;
+		}
+		i--;
+	}
 	if (!up.npk && !up.nrb) { *dim = 1; snprintf(t, n, "No update packages found"); return; }
 	if (i < up.npk) {
 		const char *f = strrchr(up.pk_file[i], '/');
@@ -6239,9 +6270,22 @@ static void up_key(pkey_t k)
 {
 	if (vlist_key(&up_list, k)) { up.confirm_row = -1; return; }
 	if (k == K_B || k == K_MENU) { back_to_settings(SET_PHOSUPD); return; }
-	if (k != K_A || up.busy || (!up.npk && !up.nrb)) return;
+	if (k != K_A || up.busy) return;
 	int s = up_list.sel;
-	if (up.confirm_row != s || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = s; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
+	if (upo_row()) {
+		if (s == 0) {                               /* the newer release, into phosphor/updates (checked) */
+			if (!strcmp(upo.state, "working")) return;
+			cJSON *r = api_call("{\"cmd\":\"update\",\"do\":\"download\"}");
+			toast_show(api_ok(r) ? "Downloading..." : api_str(r, "error") ? api_str(r, "error") : "The download didn't start");
+			cJSON_Delete(r);
+			snprintf(upo.state, sizeof(upo.state), "working");
+			vlist_refresh(&up_list);
+			return;
+		}
+		s--;
+	}
+	if (!up.npk && !up.nrb) return;
+	if (up.confirm_row != up_list.sel || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = up_list.sel; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
 	up.confirm_row = -1;
 	/* busy from here: a second press never starts a second update (the updater turns one down too) */
 	up.busy = 1;
@@ -7073,19 +7117,20 @@ static void search_open(void)
 }
 
 /* ---------- Power: the window (Select + Start) and the safe shutdown / restart ----------
- * Select + Start together anywhere in Phosphor: Shut down safely, Restart, Reload the screen. Shut down and Restart
+ * Select + Start together anywhere in Phosphor: Shut down safely, Restart, Reload the screen, MiSTer menu (OSD). Shut down and Restart
  * first make every drive read-only through phosphord (phosphor.sh safe-stop), which is when exFAT
  * clears its dirty flag, so Windows doesn't ask to scan the card afterwards; the screen then says how
  * each drive came out. Phosphor for Windows' Shut down / Restart land here too (phosphord leaves a
  * request in /tmp/phosphor/power-request). */
 
-static struct { lv_obj_t *dim, *box, *row[3], *ic[3], *nm[3]; int sel, open; } pm;
+#define PM_N 4
+static struct { lv_obj_t *dim, *box, *row[PM_N], *ic[PM_N], *nm[PM_N]; int sel, open; } pm;
 static lv_obj_t *splash;
 static int powering;                        /* a safe stop is under way: nothing else happens */
 
 static void pm_draw(void)
 {
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < PM_N; i++) {
 		int on = i == pm.sel;
 		lv_obj_set_style_bg_opa(pm.row[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
 		lv_obj_set_style_bg_color(pm.row[i], PAL.panel_on, 0);
@@ -7122,10 +7167,11 @@ static void pm_open(void)
 	mk_label(pm.box, FONT_TITLE, PAL.text, "Power");
 	lv_obj_t *nt = mk_label(pm.box, FONT_SMALL, PAL.dim, "Saves are written as they happen, so nothing is lost.");
 	lv_obj_set_style_pad_bottom(nt, S(12), 0);
-	static const icon_t IC[3] = { ICON_POWER, ICON_RESTART, ICON_SCREEN };
-	static const char *NM[3] = { "Shut down safely", "Restart", "Reload the screen" };
-	static const char *SUB[3] = { "Switch off when the screen says so", "The SS1 starts again", "Only Phosphor's screen restarts" };
-	for (int i = 0; i < 3; i++) {
+	static const icon_t IC[PM_N] = { ICON_POWER, ICON_RESTART, ICON_SCREEN, ICON_GEAR };
+	static const char *NM[PM_N] = { "Shut down safely", "Restart", "Reload the screen", "MiSTer menu (OSD)" };
+	static const char *SUB[PM_N] = { "Switch off when the screen says so", "The SS1 starts again", "Only Phosphor's screen restarts",
+	                                 "MiSTer's own menu and settings" };
+	for (int i = 0; i < PM_N; i++) {
 		lv_obj_t *r = mk_box(pm.box, LV_PCT(100), S(60), PAL.panel_on, S(10));
 		lv_obj_set_style_border_side(r, LV_BORDER_SIDE_LEFT, 0);
 		lv_obj_set_style_border_color(r, PAL.acc, 0);
@@ -7244,6 +7290,12 @@ static void power_run(int restart)
 static void pm_choose(void)
 {
 	int s = pm.sel;
+	if (s == 3) {                                    /* MiSTer's own menu, as Settings > MiSTer menu (OSD) */
+		pm_close();
+		if (mainlink_give()) toast_show("Back to Phosphor: hold the menu button, or System > Launch Phosphor");
+		else toast_show("Needs Phosphor's Main: press F9 on a keyboard to switch");
+		return;
+	}
 	if (s == 2) {
 		pm_close();
 		cJSON *r = api_call("{\"cmd\":\"system\",\"do\":\"reload_ui\"}");
@@ -7260,8 +7312,8 @@ static int pm_key(pkey_t k)
 	if (powering) return 1;
 	if (k == K_POWER) { if (pm.open) pm_close(); else pm_open(); return 1; }
 	if (!pm.open) return 0;
-	if (k == K_UP) pm.sel = (pm.sel + 2) % 3;
-	else if (k == K_DOWN) pm.sel = (pm.sel + 1) % 3;
+	if (k == K_UP) pm.sel = (pm.sel + PM_N - 1) % PM_N;
+	else if (k == K_DOWN) pm.sel = (pm.sel + 1) % PM_N;
 	else if (k == K_A) { pm_choose(); return 1; }
 	else if (k == K_B || k == K_MENU) { pm_close(); return 1; }
 	pm_draw();
@@ -9088,6 +9140,17 @@ void ui_tick(void)
 	vk_tick();
 	if (si_pending()) si_update();
 	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); update_check(); } }   /* the alerts, once after start-up */
+	/* Phosphor's releases on GitHub: a minute after start-up, then every 30 min, never while a game runs
+	   (phosphord asks in the background; its answer is read 20 s later) */
+	{
+		static uint32_t next = 60000, follow;
+		if (now >= next && !mainlink_in_game()) {
+			next = now + 30u * 60u * 1000u;
+			cJSON_Delete(api_call("{\"cmd\":\"update\",\"do\":\"check\"}"));
+			follow = now + 20000;
+		}
+		if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}"); upo_apply(r); cJSON_Delete(r); }
+	}
 	saver_tick(now);
 	const char *note = input_notice();
 	if (note) toast_show(note);

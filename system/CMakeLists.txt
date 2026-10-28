@@ -47,13 +47,12 @@ target_link_libraries(phosphord PRIVATE sqlite3 cjson chdr rhash pthread m)
 # Phosphor's own ScreenScraper developer login: a build secret from the environment (PHOSPHOR_SS_DEVID,
 # PHOSPHOR_SS_DEVPASSWORD), written to a header in the build folder, never in the repo
 if(DEFINED ENV{PHOSPHOR_SS_DEVID} AND DEFINED ENV{PHOSPHOR_SS_DEVPASSWORD})
-  set(_id "$ENV{PHOSPHOR_SS_DEVID}")
-  set(_pw "$ENV{PHOSPHOR_SS_DEVPASSWORD}")
-  foreach(v _id _pw)
-    string(REPLACE "\\" "\\\\" ${v} "${${v}}")
-    string(REPLACE "\"" "\\\"" ${v} "${${v}}")
-  endforeach()
-  file(WRITE ${CMAKE_BINARY_DIR}/ss_secret.h "#define PHOS_SS_DEVID \"${_id}\"\n#define PHOS_SS_DEVPASSWORD \"${_pw}\"\n")
+  # scrambled (XOR with a random key made for this build), so it isn't plain text in phosphord
+  execute_process(COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/secrets/ss_scramble.py c ${CMAKE_BINARY_DIR}/ss_secret.h
+                  RESULT_VARIABLE _ssrc)
+  if(NOT _ssrc EQUAL 0)
+    message(FATAL_ERROR "ScreenScraper developer login: ss_scramble.py failed")
+  endif()
   target_compile_definitions(phosphord PRIVATE PHOS_SS_SECRET)
   target_include_directories(phosphord PRIVATE ${CMAKE_BINARY_DIR})
 endif()
