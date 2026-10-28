@@ -1,6 +1,6 @@
 // Phosphor for Android: watching the MiSTer for things worth knowing, like Phosphor for Windows' tray
 // alerts (alerts.go): a power supply problem, settings an update reset, a Gen 4 NVMe drive in the dock,
-// a storage check that failed, a drive nearly full, a Phosphor update waiting on the MiSTer, box art
+// a storage check that failed, a drive nearly full, a newer Phosphor out or waiting on the MiSTer, box art
 // finishing. Each becomes a notification in the app (More > Notifications) and, unless turned off, an
 // Android notification. Checked every minute while the app is open, and about every 15 minutes in the
 // background (Android's job scheduler, on WiFi only: the MiSTer is on the home network).
@@ -135,6 +135,10 @@ object Notes {
         }
         runCatching { api.update() }.getOrNull()?.let { u ->
             if (!u.available) return@let
+            // a newer Phosphor on GitHub (the MiSTer looks every 30 minutes): download it from the app or the TV
+            if (u.onlineNewer && !u.onlineDownloaded && u.onlineLatest.isNotEmpty())
+                add(c, "online-${u.onlineLatest}", "info", "Phosphor ${u.onlineLatest} is out",
+                    "$name has ${u.version}. Download and install it from Power & updates > Update.", "power/1")
             u.packages.filter { versionNewer(it.version, u.version) }.reduceOrNull { a, b -> if (versionNewer(b.version, a.version)) b else a }?.let { p ->
                 add(c, "update-${p.version}", "info", "Phosphor ${p.version} is ready to install",
                     "It's on the MiSTer (installed: ${u.version}). Install it from Power & updates > Update.", "power/1")
