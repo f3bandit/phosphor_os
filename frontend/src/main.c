@@ -210,6 +210,22 @@ static void on_term(int sig)
 	_exit(0);
 }
 
+static char **g_argv;                          /* (to start again at a new screen size) */
+
+/* the framebuffer's size now (Main sets it: MiSTer.ini's video_mode, through fb_cmd1) */
+static int fb_size_now(const char *fbdev, int *w, int *h)
+{
+	int fd = open(fbdev, O_RDONLY);
+	if (fd < 0) return -1;
+	struct fb_var_screeninfo v;
+	int r = ioctl(fd, FBIOGET_VSCREENINFO, &v);
+	close(fd);
+	if (r) return -1;
+	*w = (int)v.xres;
+	*h = (int)v.yres;
+	return 0;
+}
+
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
 	signal(SIGTERM, on_term);
@@ -250,6 +266,20 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			char cmd[64], err[256];
 			snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
 			if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
+			/* Main may have come back at another resolution (MiSTer.ini's video_mode changed, e.g. to a
+			   4:3 640x480 for a CRT): the display driver and every layout are sized once, so start again
+			   at the new size rather than draw the old one into it */
+			usleep(300000);
+			int nw, nh;
+			if (fb_size_now(fbdev, &nw, &nh) == 0 && (nw != w || nh != h) && nw > 0 && nh > 0 && g_argv
+			    && access("/proc/self/exe", X_OK) == 0) {
+				plog("the screen is %dx%d now (was %dx%d): starting again at that size", nw, nh, w, h);
+				console_text();
+				for (int fd = 3; fd < 1024; fd++) close(fd);   /* (the new one opens its own: Main's link, phosphord) */
+				execv("/proc/self/exe", g_argv);
+				plog("couldn't start again at the new size");   /* (its links are closed: phosphor.sh start brings it back) */
+				_exit(1);
+			}
 			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 			redraw_at = now + 700;      /* Main may still be setting the video up: draw it all again */
@@ -316,6 +346,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
  * load the Phosphor menu core (stock menu core at boot) */
 int main(int argc, char **argv)
 {
+	g_argv = argv;
 	signal(SIGPIPE, SIG_IGN);                 /* a socket whose other end went away is an error, not the end of the shell */
 	const char *snap = NULL, *keys = NULL, *fb = "/dev/fb0", *serial = NULL, *fb_mode = "full";
 	int w = 1280, h = 720, fb_rb = 1;

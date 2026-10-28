@@ -10,7 +10,10 @@
 	LV_FONT_DECLARE(phos_mono_13) LV_FONT_DECLARE(phos_mono_18) LV_FONT_DECLARE(phos_mono_40) \
 	LV_FONT_DECLARE(phos_inter_14_l) LV_FONT_DECLARE(phos_inter_16_l) LV_FONT_DECLARE(phos_inter_med_18_l) \
 	LV_FONT_DECLARE(phos_inter_semi_22_l) LV_FONT_DECLARE(phos_inter_semi_32_l) \
-	LV_FONT_DECLARE(phos_mono_13_l) LV_FONT_DECLARE(phos_mono_18_l) LV_FONT_DECLARE(phos_mono_40_l)
+	LV_FONT_DECLARE(phos_mono_13_l) LV_FONT_DECLARE(phos_mono_18_l) LV_FONT_DECLARE(phos_mono_40_l) \
+	LV_FONT_DECLARE(phos_inter_14_s) LV_FONT_DECLARE(phos_inter_16_s) LV_FONT_DECLARE(phos_inter_med_18_s) \
+	LV_FONT_DECLARE(phos_inter_semi_22_s) LV_FONT_DECLARE(phos_inter_semi_32_s) \
+	LV_FONT_DECLARE(phos_mono_13_s) LV_FONT_DECLARE(phos_mono_18_s) LV_FONT_DECLARE(phos_mono_40_s)
 
 #undef LV_FONT_DEFAULT
 #define LV_FONT_DEFAULT &phos_inter_16

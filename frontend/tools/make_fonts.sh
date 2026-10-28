@@ -30,6 +30,18 @@ gen phos_inter_semi_32_l 48 "$INTER/Inter-SemiBold.otf" "$TEXT"
 gen phos_mono_13_l     20 "$MONO" "$MONO_RANGE"
 gen phos_mono_18_l     27 "$MONO" "$MONO_RANGE"
 gen phos_mono_40_l     60 "$MONO" "$MONO_RANGE"
+# and about 0.72 times, for small screens (640x480, a 4:3 CRT at 480 lines: Phosphor scales by height there)
+small() {
+gen phos_inter_14_s    10 "$INTER/Inter-Regular.otf"  "$TEXT"
+gen phos_inter_16_s    12 "$INTER/Inter-Regular.otf"  "$TEXT"
+gen phos_inter_med_18_s 13 "$INTER/Inter-Medium.otf"  "$TEXT"
+gen phos_inter_semi_22_s 16 "$INTER/Inter-SemiBold.otf" "$TEXT"
+gen phos_inter_semi_32_s 23 "$INTER/Inter-SemiBold.otf" "$TEXT"
+gen phos_mono_13_s     10 "$MONO" "$MONO_RANGE"
+gen phos_mono_18_s     13 "$MONO" "$MONO_RANGE"
+gen phos_mono_40_s     29 "$MONO" "$MONO_RANGE"
+}
+small
 # LVGL 9 has no LV_VERSION_CHECK (so it reads as false). That's right for the old glyph cache,
 # but the public descriptor must be const to match LV_FONT_DECLARE.
 for f in fonts/*.c; do

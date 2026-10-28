@@ -41,17 +41,27 @@ void theme_init(accent_t a)
 accent_t theme_accent(void) { return cur_accent; }
 const char *theme_accent_name(accent_t a) { return a < ACCENT_COUNT ? ACCENT_NAMES[a] : "?"; }
 
-int theme_big;
+int theme_big, theme_tier = 1;
+int CW = 1280;
 
 void theme_set_scale(int w, int h)
 {
-	int sx = w * 100 / 1280, sy = h * 100 / 720;
-	scale_pct = sx < sy ? sx : sy;
-	if (scale_pct < 50) scale_pct = 50;
+	/* by the height: at 16:9 that's the width too; narrower (4:3) keeps the design's 720 rows and gets a
+	   narrower canvas, down to 900 design units wide (5:4); wider gets a wider one */
+	scale_pct = h * 100 / 720;
+	if (scale_pct < 30) scale_pct = 30;
+	CW = w * 100 / scale_pct;
+	if (CW < 900) {                                     /* (taller than 5:4: by the width again) */
+		scale_pct = w * 100 / 900;
+		CW = 900;
+	}
 	theme_big = scale_pct >= 125;
+	theme_tier = scale_pct >= 125 ? 2 : scale_pct < 85 ? 0 : 1;
 }
 
 int S(int px) { return px * scale_pct / 100; }
+int SX(int px) { return CW >= 1280 ? S(px) : S(56 + (px - 56) * (CW - 112) / 1168); }
+int SW(int px) { return CW >= 1280 ? S(px) : S(px * (CW - 112) / 1168); }
 
 lv_obj_t *mk_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text)
 {
