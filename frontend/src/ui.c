@@ -36,7 +36,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -682,7 +682,7 @@ static void play_id_core(long long id, int core)
  * bar and "In the drive" at the top of Disc. Nothing starts by itself. Music CDs and DVDs aren't played
  * yet. Disc support: Main_MiSTer_Physical_Disc by Anime0t4ku and bonna79. (docs/discs.md) */
 static struct {
-	int known, enabled, in, playable, tries;
+	int known, enabled, in, playable, tries, copyable;   /* copyable: Save a copy works for it (dump.c) */
 	long long game_id;                 /* the same game in the library (its details), else 0 */
 	char state[16], title[200], system[64], serial[32], reason[96], art[700];
 } dk = { .enabled = 1 };
@@ -724,6 +724,7 @@ static void disc_refresh(void)
 		DKS(state, "state"); DKS(title, "title"); DKS(system, "system"); DKS(serial, "serial"); DKS(reason, "reason"); DKS(art, "art");
 #undef DKS
 		dk.playable = cJSON_IsTrue(cJSON_GetObjectItem(d, "playable"));
+		dk.copyable = cJSON_IsTrue(cJSON_GetObjectItem(d, "copyable"));
 		dk.game_id = (long long)api_num(d, "game_id", 0);
 		dk.in = dk.enabled && (!strcmp(dk.state, "reading") || !strcmp(dk.state, "ready") || !strcmp(dk.state, "unreadable"));
 	}
@@ -960,7 +961,10 @@ static void sys_detail(void)
 	static const char *const hints_sys[] = { "A", "Open", "B", "Back", NULL };
 	static const char *const hints_drive[] = { "A", "Play", "Y", "Eject", "B", "Back", NULL };
 	static const char *const hints_drive_off[] = { "Y", "Eject", "B", "Back", NULL };
-	footer_set(!s->drive ? hints_sys : dk.playable ? hints_drive : hints_drive_off);
+	static const char *const hints_drive_copy[] = { "A", "Play", "X", "Save a copy", "Y", "Eject", "B", "Back", NULL };
+	static const char *const hints_drive_off_copy[] = { "X", "Save a copy", "Y", "Eject", "B", "Back", NULL };
+	footer_set(!s->drive ? hints_sys : dk.playable ? (dk.copyable ? hints_drive_copy : hints_drive)
+	                                               : (dk.copyable ? hints_drive_off_copy : hints_drive_off));
 	if (s->drive) {
 		lv_label_set_text(sys_detail_name, disc_line());
 		char t[160];
@@ -1045,6 +1049,181 @@ static void systems_disc_update(void)
 	if (sys_list.top > sys_list.sel) sys_list.top = sys_list.sel;
 	vlist_refresh(&sys_list);
 	sys_detail();
+}
+
+/* ---------- Disc > In the drive > Save a copy (phosphord dump.c) ----------
+ * The game disc in the drive copied into the library (.cue and .bin tracks, Redump's layout), checked
+ * against Redump's list. Progress while it runs (nothing else happens meanwhile), then the result. */
+static void show_games(const char *sys_id, const char *sys_name, int cat);
+static struct {
+	lv_obj_t *art, *title, *where, *step, *bar, *fill, *line, *left, *note, *badge, *res;
+	char art_src[720], sys[48];
+	int stop_armed, finished;
+	uint32_t armed_at;
+} dc;
+static const char *const DC_HINTS_RUN[] = { "B", "Stop", NULL };
+static const char *const DC_HINTS_DONE[] = { "A", "Show it", "Y", "Eject", "B", "Done", NULL };
+static const char *const DC_HINTS_FAIL[] = { "X", "Try again", "B", "Back", NULL };
+
+static void dcopy_update(void)
+{
+	cJSON *r = api_call("{\"cmd\":\"disc_copy\"}");
+	cJSON *c = api_ok(r) ? cJSON_GetObjectItem(r, "copy") : NULL;
+	if (!c) { cJSON_Delete(r); return; }
+	const char *st = api_str(c, "state") ? api_str(c, "state") : "";
+	int busy = cJSON_IsTrue(cJSON_GetObjectItem(c, "busy")), done = !strcmp(st, "done");
+	snprintf(dc.sys, sizeof(dc.sys), "%s", api_str(c, "system") ? api_str(c, "system") : "");
+	lv_label_set_text(dc.title, api_str(c, "title") ? api_str(c, "title") : "Disc");
+	char t[400];
+	const char *dest = api_str(c, "dest");
+	snprintf(t, sizeof(t), "%s%s%s", dc.sys, dest ? "  \xC2\xB7  " : "", dest ? dest : "");
+	lv_label_set_text(dc.where, t);
+	int pct = (int)api_num(c, "percent", 0);
+	lv_obj_set_width(dc.fill, LV_MAX(1, lv_obj_get_width(dc.bar) * pct / 100));
+	lv_obj_set_hidden(dc.bar, !busy);
+	if (busy) {
+		snprintf(t, sizeof(t), "TRACK %d OF %d  \xC2\xB7  %s", (int)api_num(c, "track", 0), (int)api_num(c, "of", 0),
+		         cJSON_IsTrue(cJSON_GetObjectItem(c, "data")) ? "DATA" : "MUSIC");
+		lv_label_set_text(dc.step, (int)api_num(c, "of", 0) ? t : "READING THE DISC");
+		int rr = (int)api_num(c, "rereads", 0);
+		char re[48] = "";
+		if (rr) snprintf(re, sizeof(re), "  \xC2\xB7  %d spot%s read again", rr, rr == 1 ? "" : "s");
+		double sp = api_num(c, "speed", 0);
+		char spd[24] = "";
+		if (sp > 0) snprintf(spd, sizeof(spd), "  \xC2\xB7  %.0f\xC3\x97", sp);
+		snprintf(t, sizeof(t), "%d of %d MB%s%s", (int)api_num(c, "mb_done", 0), (int)api_num(c, "mb_total", 0), spd, re);
+		lv_label_set_text(dc.line, t);
+		int left = (int)api_num(c, "seconds_left", -1);
+		if (left >= 0) snprintf(t, sizeof(t), left >= 90 ? "about %d minutes left" : left > 10 ? "under %d minute left" : "almost done",
+		                        left >= 90 ? (left + 30) / 60 : 2);
+		else t[0] = 0;
+		if (left > 10 && left < 90) snprintf(t, sizeof(t), "about a minute left");
+		lv_label_set_text(dc.left, t);
+		lv_label_set_text(dc.res, api_str(c, "msg") ? api_str(c, "msg") : "");
+	} else {
+		lv_label_set_text(dc.step, done ? "SAVED" : !strcmp(st, "stopped") ? "STOPPED" : "DIDN'T FINISH");
+		lv_label_set_text(dc.line, "");
+		lv_label_set_text(dc.left, "");
+		const char *cue = api_str(c, "cue");
+		snprintf(t, sizeof(t), "%s%s%s", api_str(c, "msg") ? api_str(c, "msg") : "", cue ? "\n" : "", cue ? cue : "");
+		lv_label_set_text(dc.res, t);
+	}
+	int verified = cJSON_IsTrue(cJSON_GetObjectItem(c, "verified"));
+	lv_obj_set_hidden(dc.badge, !(done && verified));
+	lv_obj_set_hidden(dc.note, !busy);
+	if (!busy && !dc.finished) {
+		dc.finished = 1;
+		footer_set(done ? DC_HINTS_DONE : DC_HINTS_FAIL);
+		if (done) toast_show(verified ? "Copy saved: an exact copy of the disc" : "Copy saved");
+	} else if (busy) {
+		dc.finished = 0;
+		footer_set(DC_HINTS_RUN);
+	}
+	if (dc.stop_armed && lv_tick_get() - dc.armed_at > 4000) dc.stop_armed = 0;
+	cJSON_Delete(r);
+}
+
+static void show_dcopy(int start)
+{
+	if (start) {
+		cJSON *r = api_call("{\"cmd\":\"disc_copy\",\"do\":\"start\"}");
+		if (!api_ok(r)) {
+			toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start the copy");
+			cJSON_Delete(r);
+			return;
+		}
+		cJSON_Delete(r);
+	}
+	cur = SCR_DCOPY;
+	memset(&dc, 0, sizeof(dc));
+	lv_obj_clean(body);
+	screen_title("DISC", "Saving a copy");
+	int aw = S(220);
+	lv_obj_t *frame = mk_box(body, aw, aw, PAL.panel, S(10));
+	lv_obj_set_pos(frame, S(56), S(196));
+	lv_obj_set_style_clip_corner(frame, true, 0);
+	dc.art = lv_image_create(frame);
+	lv_obj_set_size(dc.art, aw, aw);
+	lv_image_set_inner_align(dc.art, LV_IMAGE_ALIGN_CONTAIN);
+	lv_obj_center(dc.art);
+	if (dk.art[0]) { snprintf(dc.art_src, sizeof(dc.art_src), "A:%s", dk.art); lv_image_set_src(dc.art, dc.art_src); }
+	else { lv_obj_t *ic = icon_create(frame, ICON_DISC, S(72)); lv_obj_set_style_text_color(ic, PAL.dim, 0); lv_obj_center(ic); }
+	int x = S(56) + aw + S(36), w = W - S(56) - x;
+	dc.title = mk_label(body, FONT_TITLE, PAL.text, "");
+	lv_label_set_long_mode(dc.title, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(dc.title, w);
+	lv_obj_set_pos(dc.title, x, S(200));
+	dc.where = mk_label(body, FONT_SMALL, PAL.dim, "");
+	lv_label_set_long_mode(dc.where, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_set_width(dc.where, w);
+	lv_obj_set_pos(dc.where, x, S(240));
+	dc.badge = mk_box(body, LV_SIZE_CONTENT, S(32), lv_color_hex(0x1d2b22), S(16));
+	lv_obj_set_style_border_width(dc.badge, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_border_color(dc.badge, lv_color_hex(0x5cf08a), 0);
+	lv_obj_set_style_pad_hor(dc.badge, S(14), 0);
+	lv_obj_t *bl = mk_label(dc.badge, FONT_BODY, lv_color_hex(0xc8f5d6), "\xE2\x9C\x93  Matches Redump");
+	lv_obj_center(bl);
+	lv_obj_set_pos(dc.badge, x, S(272));
+	lv_obj_set_hidden(dc.badge, true);
+	dc.step = mk_label(body, FONT_LABEL, PAL.acc, "READING THE DISC");
+	lv_obj_set_style_text_letter_space(dc.step, S(3), 0);
+	lv_obj_set_pos(dc.step, x, S(318));
+	dc.bar = mk_box(body, w, S(16), PAL.line, S(8));
+	lv_obj_set_pos(dc.bar, x, S(344));
+	dc.fill = mk_box(dc.bar, 1, S(16), PAL.acc, S(8));
+	lv_obj_set_pos(dc.fill, 0, 0);
+	dc.line = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_obj_set_pos(dc.line, x, S(372));
+	dc.left = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_obj_set_style_text_align(dc.left, LV_TEXT_ALIGN_RIGHT, 0);
+	lv_obj_set_width(dc.left, SW(300));
+	lv_obj_set_pos(dc.left, W - S(56) - SW(300), S(372));
+	dc.res = mk_label(body, FONT_BODY, PAL.text, "");
+	lv_label_set_long_mode(dc.res, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(dc.res, w);
+	lv_obj_set_pos(dc.res, x, S(410));
+	dc.note = mk_box(body, w, LV_SIZE_CONTENT, PAL.bg, S(10));
+	lv_obj_set_style_bg_opa(dc.note, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_color(dc.note, PAL.line, 0);
+	lv_obj_set_style_border_width(dc.note, LV_MAX(1, S(1)), 0);
+	lv_obj_set_style_pad_all(dc.note, S(18), 0);
+	lv_obj_set_flex_flow(dc.note, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(dc.note, S(8), 0);
+	lv_obj_set_pos(dc.note, x, S(470));
+	mk_label(dc.note, FONT_NAME, PAL.text, "Everything else waits until this is done.");
+	lv_obj_t *nb = mk_label(dc.note, FONT_SMALL, PAL.dim, "Stopping it throws the unfinished copy away; the disc isn't changed.");
+	lv_label_set_long_mode(nb, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(nb, w - 2 * S(18));
+	footer_set(DC_HINTS_RUN);
+	dcopy_update();
+}
+
+static void dcopy_key(int k)
+{
+	cJSON *r = api_call("{\"cmd\":\"disc_copy\"}");
+	cJSON *c = api_ok(r) ? cJSON_GetObjectItem(r, "copy") : NULL;
+	int busy = c && cJSON_IsTrue(cJSON_GetObjectItem(c, "busy")), done = c && api_str(c, "state") && !strcmp(api_str(c, "state"), "done");
+	cJSON_Delete(r);
+	if (busy) {
+		if (k != K_B) return;
+		if (!dc.stop_armed) {                                /* twice: it throws the copy away */
+			dc.stop_armed = 1;
+			dc.armed_at = lv_tick_get();
+			toast_show("Press B again to stop: the unfinished copy is thrown away");
+			return;
+		}
+		cJSON_Delete(api_call("{\"cmd\":\"disc_copy\",\"do\":\"stop\"}"));
+		dc.stop_armed = 0;
+		return;
+	}
+	if (k == K_B) { show_systems(CAT_DISC); return; }
+	if (k == K_Y) { disc_eject_now(); return; }
+	if (k == K_X && !done) { show_dcopy(1); return; }
+	if (k == K_A && done) {                                  /* its system's games, where it is now */
+		show_systems(CAT_DISC);
+		for (int i = 0; i < nsys; i++)
+			if (!sys_items[i].drive && !strcmp(sys_items[i].name, dc.sys)) { show_games(sys_items[i].id, sys_items[i].name, CAT_DISC); return; }
+	}
 }
 
 /* ---------- Games of a system ---------- */
@@ -8126,6 +8305,7 @@ void ui_key(pkey_t k)
 		else if (nsys && sys_items[sys_list.sel].drive) {
 			if (k == K_A && dk.playable) disc_play_now();
 			else if (k == K_A && dk.reason[0]) toast_show(dk.reason);
+			else if (k == K_X && dk.copyable) show_dcopy(1);
 			else if (k == K_Y) disc_eject_now();
 			else if (k == K_B) show_home();
 		}
@@ -8205,6 +8385,9 @@ void ui_key(pkey_t k)
 		break;
 	case SCR_WALL:
 		wall_key(k);
+		break;
+	case SCR_DCOPY:
+		dcopy_key(k);
 		break;
 	case SCR_VIDEO:
 		video_key(k);
@@ -9813,6 +9996,7 @@ void ui_tick(void)
 	if (us.shown) { ui_activity(); return; }        /* an update has the screen: nothing else asks phosphord */
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	if (cur == SCR_ART) { ui_activity(); art_tick(now); }
+	if (cur == SCR_DCOPY) { ui_activity(); static uint32_t ld; if (now - ld >= 500) { ld = now; dcopy_update(); } }
 	if (cur == SCR_MAP) { ui_activity(); static uint32_t lm; if (now - lm >= 100) { lm = now; map_tick(); } }
 	if (cur == SCR_CTEST) { ui_activity(); static uint32_t lt; if (now - lt >= 60) { lt = now; tw_poll(); } }
 	if (cur == SCR_CTRL) {
