@@ -19,9 +19,10 @@ accent_t theme_accent(void);
 const char *theme_accent_name(accent_t a);
 
 /* fonts */
-/* each in two sizes: the 1280x720 design, and 1.5 times that for a 1920x1080 screen */
-extern int theme_big;
-#define PHOS_F(n)    (theme_big ? &n##_l : &n)
+/* each in three sizes: the 1280x720 design, 1.5 times that for a 1920x1080 screen, and about 0.72
+   times for a small one (640x480: a 4:3 CRT). theme_tier picks: 2 big, 1 the design's, 0 small */
+extern int theme_big, theme_tier;
+#define PHOS_F(n)    (theme_tier == 2 ? &n##_l : theme_tier == 0 ? &n##_s : &n)
 #define FONT_SMALL   PHOS_F(phos_inter_14)
 #define FONT_BODY    PHOS_F(phos_inter_16)
 #define FONT_NAME    PHOS_F(phos_inter_med_18)
@@ -31,9 +32,18 @@ extern int theme_big;
 #define FONT_WORD    PHOS_F(phos_mono_18)   /* PHOSPHOR wordmark */
 #define FONT_LOGO    PHOS_F(phos_mono_40)
 
-/* layout (designed at 1280x720; scaled with the screen) */
+/* layout (designed at 1280x720; scaled with the screen). A screen narrower than 16:9 (4:3, 5:4) is
+   scaled by its height, so the design keeps its full 720 height and gets narrower: CW is the canvas
+   width in design units (1280 at 16:9, 960 at 4:3). Anything placed from the right or sized to the
+   width uses CW, not 1280. */
 int S(int px);
+extern int CW;
 void theme_set_scale(int screen_w, int screen_h);
+#define NARROW (CW < 1200)          /* 4:3 and the like: fewer columns, narrower panels */
+/* horizontal positions and widths in the 1280-wide design, fitted to the canvas: the 56-unit margins
+   stay, what's between them is squeezed (at 16:9 these are exactly S()) */
+int SX(int px);
+int SW(int px);
 
 /* helpers */
 lv_obj_t *mk_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text);

@@ -254,6 +254,21 @@ static void footer_set(const char *const *hints)
 		lv_obj_center(g);
 		mk_label(item, FONT_SMALL, PAL.dim, hints[i + 1]);
 	}
+	/* a narrow screen (4:3, 5:4) can't fit a long row: the last hints go (never B, Back), the first ones
+	   being the ones that matter */
+	if (!NARROW) return;
+	lv_obj_update_layout(footer);
+	for (;;) {
+		int n = (int)lv_obj_get_child_count(footer);
+		lv_obj_t *last = n ? lv_obj_get_child(footer, n - 1) : NULL;
+		if (!last || lv_obj_get_x(last) + lv_obj_get_width(last) <= lv_obj_get_width(footer) || n <= 2) break;
+		int drop = -1;
+		for (int k = n - 1; k >= 1 && drop < 0; k--)
+			if (strcmp(hints[2 * k], "B")) drop = k;
+		if (drop < 0) break;
+		lv_obj_delete(lv_obj_get_child(footer, drop));
+		lv_obj_update_layout(footer);
+	}
 }
 
 /* ---------- toast ---------- */
@@ -548,7 +563,7 @@ static int cc_open(long long id, cJSON *cores, const char *title, const char *sy
 	lv_obj_set_pos(st, S(56), S(186));
 	for (int i = 0; i < cc.n; i++) {
 		cJSON *x = cJSON_GetArrayItem(cores, i);
-		lv_obj_t *r = mk_box(cc.dim, S(1168), S(80), PAL.panel, S(12));
+		lv_obj_t *r = mk_box(cc.dim, SW(1168), S(80), PAL.panel, S(12));
 		lv_obj_set_pos(r, S(56), S(214) + i * S(88));
 		lv_obj_set_style_border_width(r, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_pad_hor(r, S(22), 0);
@@ -982,16 +997,16 @@ static void show_systems(category_t c)
 	load_systems(c);
 	lv_obj_clean(body);
 	screen_title("LIBRARY", category_name(c));
-	vlist_create(&sys_list, body, S(56), S(176), S(640), S(440));
+	vlist_create(&sys_list, body, S(56), S(176), SW(640), S(440));
 	sys_list.count = nsys;
 	sys_list.fill = sys_fill;
 	sys_list.sel = 0;
 	sys_list.top = 0;
 
-	lv_obj_t *panel = mk_box(body, S(470), S(300), PAL.panel, S(16));
+	lv_obj_t *panel = mk_box(body, SW(470), S(300), PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, W - S(56) - S(470), S(176));
+	lv_obj_set_pos(panel, W - S(56) - SW(470), S(176));
 	lv_obj_t *ic = icon_create(panel, CAT_ICON[c], S(64));
 	lv_obj_set_style_text_color(ic, PAL.acc, 0);
 	lv_obj_set_pos(ic, S(28), S(28));
@@ -1244,14 +1259,14 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 	char label[96];
 	spaced_caps(label, sizeof(label), games_mode == GL_SYSTEM ? category_name((category_t)cat) : "Library");
 	screen_title(label, sys_name);
-	vlist_create(&game_list, body, S(56), S(176), S(560), S(440));
+	vlist_create(&game_list, body, S(56), S(176), SW(560), S(440));
 	game_list.count = ngames;
 	game_list.fill = game_fill;
 	game_list.sel = 0;
 	game_list.top = 0;
 
 	/* details: box art on top, then title, details and description */
-	int pw = S(584), ph = S(456), pad = S(26), iw = pw - 2 * pad;
+	int pw = SW(584), ph = S(456), pad = S(26), iw = pw - 2 * pad;
 	lv_obj_t *panel = mk_box(body, pw, ph, PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
@@ -1298,7 +1313,7 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 
 	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.dim, cnt);
 	lv_obj_update_layout(c);
-	lv_obj_set_pos(c, S(56) + S(560) - S(10) - lv_obj_get_width(c), S(134));
+	lv_obj_set_pos(c, S(56) + SW(560) - S(10) - lv_obj_get_width(c), S(134));
 
 	vlist_refresh(&game_list);
 	game_detail();
@@ -1369,7 +1384,7 @@ static void picker_show(void)
 	cJSON_Delete(r);
 	if (!npicks && !pick_unlink) { picker_free(); toast_show("No other games for this system yet"); return; }
 
-	int pw = S(760), ph = S(560), pad = S(30);
+	int pw = SW(760), ph = S(560), pad = S(30);
 	pick_panel = mk_box(root, pw, ph, PAL.panel, S(18));
 	lv_obj_set_style_border_width(pick_panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(pick_panel, PAL.acc, 0);
@@ -1806,7 +1821,7 @@ static void gd_draw(void)
 	lv_obj_t *intro = mk_label(gd.left, FONT_SMALL, PAL.dim, awaiting
 		? "A Linux update replaces MiSTer's system files, so settings stored there go back to stock. Most people never change these: restore only what you set up yourself. Phosphor kept your copies."
 		: "Nothing was reset. Phosphor keeps copies of these settings, in case a Linux update puts them back to stock. Most people never change them.");
-	lv_obj_set_width(intro, S(560));
+	lv_obj_set_width(intro, SW(560));
 	lv_label_set_long_mode(intro, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(intro, 0, S(22));
 	lv_obj_update_layout(intro);
@@ -1818,7 +1833,7 @@ static void gd_draw(void)
 		for (size_t j = 0; j < sizeof(GD_FILES) / sizeof(GD_FILES[0]); j++) if (path && !strcmp(path, GD_FILES[j].path)) k = (int)j;
 		int focus = gd.side == 0 && gd.sel[0] == i;
 		if (focus) {
-			lv_obj_t *hl = mk_box(gd.left, S(560), S(72), PAL.panel_on, S(7));
+			lv_obj_t *hl = mk_box(gd.left, SW(560), S(72), PAL.panel_on, S(7));
 			lv_obj_set_pos(hl, -S(8), y - S(6));
 		}
 		gd_check(gd.left, 0, y, gd.tick_f[i], focus);
@@ -1827,7 +1842,7 @@ static void gd_draw(void)
 		lv_obj_t *pl = mk_label(gd.left, FONT_LABEL, PAL.faint, path ? (strrchr(path, '/') + 1) : "");
 		lv_obj_align_to(pl, nm, LV_ALIGN_OUT_RIGHT_MID, S(10), 0);
 		lv_obj_t *stl = mk_label(gd.left, FONT_SMALL, reset ? PAL.acc : PAL.faint, reset ? "Reset by the update" : "Unchanged");
-		lv_obj_set_pos(stl, S(400), y);
+		lv_obj_set_pos(stl, SX(400), y);
 		if (k >= 0) {
 			lv_obj_t *w = mk_label(gd.left, FONT_SMALL, focus ? PAL.text : PAL.dim, GD_FILES[k].what);
 			lv_obj_set_pos(w, S(32), y + S(22));
@@ -1899,14 +1914,14 @@ static void show_guard(void)
 	cur = SCR_GUARD;
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Updates & restore points");
-	gd.left = mk_box(body, S(580), S(500), PAL.bg, 0);
+	gd.left = mk_box(body, SW(580), S(500), PAL.bg, 0);
 	lv_obj_set_pos(gd.left, S(56), S(170));
-	gd.right = mk_box(body, S(560), S(500), PAL.bg, 0);
-	lv_obj_set_pos(gd.right, S(668), S(170));
+	gd.right = mk_box(body, SW(560), S(500), PAL.bg, 0);
+	lv_obj_set_pos(gd.right, SX(668), S(170));
 	lv_obj_t *div = mk_box(body, S(1) > 0 ? S(1) : 1, S(460), PAL.line, 0);
-	lv_obj_set_pos(div, S(646), S(172));
+	lv_obj_set_pos(div, SX(646), S(172));
 	gd.note = mk_label(body, FONT_SMALL, PAL.acc, "");
-	lv_obj_set_pos(gd.note, S(668), S(140));
+	lv_obj_set_pos(gd.note, SX(668), S(140));
 	gd.side = 0;
 	gd.sel[0] = gd.sel[1] = 0;
 	gd.st = NULL;
@@ -2078,17 +2093,17 @@ static void show_folder(int util)
 	                                                                 : "Everything MiSTer or Update All puts in _Other: small games, toys, music players and cores that use the ARM side.")
 	                                                     : (util ? "There's nothing in _Utility yet." : "There's nothing in _Other yet: Update All puts cores there."));
 	lv_obj_set_pos(sub, S(56), S(176));
-	vlist_create(&fo.list, body, S(56), S(214), S(700), S(420));
+	vlist_create(&fo.list, body, S(56), S(214), SW(700), S(420));
 	fo.list.fill = fo_fill;
 	fo.list.count = n;
 	fo.list.sel = fo.list.top = 0;
-	lv_obj_t *pan = mk_box(body, S(424), LV_SIZE_CONTENT, PAL.panel, S(16));
+	lv_obj_t *pan = mk_box(body, SW(424), LV_SIZE_CONTENT, PAL.panel, S(16));
 	lv_obj_set_style_border_width(pan, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(pan, PAL.line, 0);
 	lv_obj_set_style_pad_all(pan, S(24), 0);
 	lv_obj_set_flex_flow(pan, LV_FLEX_FLOW_COLUMN);
 	lv_obj_set_style_pad_row(pan, S(12), 0);
-	lv_obj_set_pos(pan, S(800), S(214));
+	lv_obj_set_pos(pan, SX(800), S(214));
 	lv_obj_set_hidden(pan, !n);
 	fo.dtitle = mk_label(pan, FONT_LABEL, PAL.dim, "");
 	lv_obj_set_style_text_letter_space(fo.dtitle, S(3), 0);
@@ -2304,15 +2319,15 @@ static void show_wallpapers(void)
 	wg.opening = 1;
 	lv_obj_clean(body);
 	screen_title("SETTINGS \xC2\xB7 WALLPAPERS", "Choose a wallpaper");
-	wg.tabs = mk_box(body, S(900), S(40), PAL.bg, 0);
+	wg.tabs = mk_box(body, SW(900), S(40), PAL.bg, 0);
 	lv_obj_set_style_bg_opa(wg.tabs, LV_OPA_TRANSP, 0);
 	lv_obj_set_flex_flow(wg.tabs, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(wg.tabs, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 	lv_obj_set_style_pad_column(wg.tabs, S(10), 0);
 	lv_obj_set_pos(wg.tabs, S(56), S(170));
 	wg.asp = mk_label(body, FONT_BODY, PAL.text, "");
-	lv_obj_set_pos(wg.asp, S(1080), S(178));
-	int cw = (S(1168) - S(16) * (WG_COLS - 1)) / WG_COLS, ch = cw * 9 / 16;
+	lv_obj_set_pos(wg.asp, SX(1080), S(178));
+	int cw = (SW(1168) - S(16) * (WG_COLS - 1)) / WG_COLS, ch = cw * 9 / 16;
 	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
 		lv_obj_t *c = mk_box(body, cw, ch + S(28), PAL.bg, S(10));
 		lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
@@ -2332,7 +2347,7 @@ static void show_wallpapers(void)
 	}
 	wg.empty = mk_label(body, FONT_BODY, PAL.dim, "");
 	lv_label_set_long_mode(wg.empty, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(wg.empty, S(900));
+	lv_obj_set_width(wg.empty, SW(900));
 	lv_obj_set_pos(wg.empty, S(56), S(240));
 	wg.use = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_obj_set_pos(wg.use, S(56), S(634));
@@ -2418,7 +2433,7 @@ static void show_scripts(void)
 	qsort(sc_names, (size_t)sc_n, sizeof(sc_names[0]), sc_cmp);
 	lv_obj_t *sub = mk_label(body, FONT_SMALL, PAL.dim, sc_n ? "The scripts in the SD card's Scripts folder. They run in MiSTer's terminal, as from MiSTer's Scripts menu." : "There are no scripts in the SD card's Scripts folder.");
 	lv_obj_set_pos(sub, S(56), S(176));
-	vlist_create(&sc_list, body, S(56), S(210), S(1000), S(420));
+	vlist_create(&sc_list, body, S(56), S(210), SW(1000), S(420));
 	sc_list.count = sc_n;
 	sc_list.fill = sc_fill;
 	sc_list.sel = 0;
@@ -2649,7 +2664,7 @@ static void show_video(void)
 	lv_obj_set_flex_flow(vd.chips, LV_FLEX_FLOW_ROW);
 	lv_obj_set_style_pad_column(vd.chips, S(10), 0);
 	lv_obj_set_pos(vd.chips, S(56), S(170));
-	int lw = W - S(112) - S(500);
+	int lw = W - S(112) - SW(500);
 	vlist_create(&vd_list, body, S(56), S(220), lw, S(410));
 	vd_list.fill = vd_fill;
 	vd_list.count = vd.nrows;
@@ -3401,7 +3416,7 @@ static void show_settings(void)
 	scrape_refresh();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Settings");
-	vlist_create(&set_list, body, S(56), S(176), S(700), S(440));
+	vlist_create(&set_list, body, S(56), S(176), SW(700), S(440));
 	set_build();
 	set_list.count = set_n;
 	set_list.fill = set_fill;
@@ -3409,7 +3424,7 @@ static void show_settings(void)
 	set_list.sel = 0;
 	set_list.top = 0;
 	vlist_refresh(&set_list);
-	si_create(body, S(780), S(170), S(444), S(452));
+	si_create(body, SX(780), S(170), SW(444), S(452));
 	si_update();
 	static const char *const hints[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
 	footer_set(hints);
@@ -3472,7 +3487,7 @@ static void show_sources(void)
 	sources_load(api_call("{\"cmd\":\"scrape_sources\"}"));
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Box art sources");
-	vlist_create(&src_list, body, S(56), S(176), S(760), S(330));
+	vlist_create(&src_list, body, S(56), S(176), SW(760), S(330));
 	src_list.count = nsrcs;
 	src_list.fill = src_fill;
 	src_list.sel = 0;
@@ -3483,7 +3498,7 @@ static void show_sources(void)
 	        "Games are matched by their contents, never guessed from file names.\n"
 	        "TheGamesDB, ScreenScraper and IGDB need a key or login: put them in phosphor/config/scraper.ini on the SD card.");
 	lv_label_set_long_mode(note, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(note, S(760));
+	lv_obj_set_width(note, SW(760));
 	lv_obj_set_pos(note, S(56), S(176) + src_list.vis * src_list.row_h + S(14));
 	static const char *const hints[] = { "A", "On / Off", "Y", "Move up", "X", "Move down", "B", "Back", NULL };
 	footer_set(hints);
@@ -3975,7 +3990,7 @@ static void show_wifi(void)
 	lv_label_set_long_mode(wifi_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(wifi_sub, W - S(112), S(22));
 	lv_obj_set_pos(wifi_sub, S(56), S(208));
-	vlist_create(&wifi_list, body, S(56), S(244), S(900), S(380));
+	vlist_create(&wifi_list, body, S(56), S(244), SW(900), S(380));
 	wifi_list.fill = wifi_fill;
 	wifi_list.sel = 0;
 	wifi_list.top = 0;
@@ -4149,7 +4164,7 @@ static void pair_open(void)
 	cJSON *r = api_call("{\"cmd\":\"remote\",\"do\":\"pair\"}");
 	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't start pairing"); cJSON_Delete(r); return; }
 	r_paired[0] = 0;
-	pair_box = mk_box(body, S(720), S(300), PAL.panel, S(16));
+	pair_box = mk_box(body, SW(720), S(300), PAL.panel, S(16));
 	lv_obj_set_style_border_width(pair_box, 1, 0);
 	lv_obj_set_style_border_color(pair_box, PAL.acc, 0);
 	lv_obj_center(pair_box);
@@ -4179,7 +4194,7 @@ static void show_remote(void)
 	lv_label_set_long_mode(rem_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(rem_sub, W - S(112), S(22));
 	lv_obj_set_pos(rem_sub, S(56), S(208));
-	vlist_create(&rem_list, body, S(56), S(244), S(900), S(380));
+	vlist_create(&rem_list, body, S(56), S(244), SW(900), S(380));
 	rem_list.fill = rem_fill;
 	rem_list.sel = 0;
 	rem_list.top = 0;
@@ -4494,7 +4509,7 @@ static void show_cloud(void)
 	lv_label_set_long_mode(cl_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(cl_sub, W - S(112), S(22));
 	lv_obj_set_pos(cl_sub, S(56), S(208));
-	vlist_create(&cl_list, body, S(56), S(244), S(900), S(380));
+	vlist_create(&cl_list, body, S(56), S(244), SW(900), S(380));
 	cl_list.fill = cl_fill;
 	cl_list.sel = 0;
 	cl_list.top = 0;
@@ -4695,7 +4710,7 @@ static void show_backup(void)
 	lv_label_set_long_mode(bk_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(bk_sub, W - S(112), S(22));
 	lv_obj_set_pos(bk_sub, S(56), S(208));
-	vlist_create(&bk_list, body, S(56), S(244), S(900), S(380));
+	vlist_create(&bk_list, body, S(56), S(244), SW(900), S(380));
 	bk_list.fill = bk_fill;
 	bk_list.sel = 0;
 	bk_list.top = 0;
@@ -5023,24 +5038,26 @@ static void pt_do(const char *what, int port, const char *name)
 
 static void show_ports(void)
 {
+	/* the list, with the memory card picture (mc_create) on its right */
+	int ptw = LV_MIN(S(880), W - S(112) - 32 * LV_MAX(4, S(7)) - S(24));
 	cur = SCR_PORTS;
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Front ports & memory cards");
 	pt_head = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_label_set_long_mode(pt_head, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_size(pt_head, S(880), S(24));
+	lv_obj_set_size(pt_head, ptw, S(24));
 	lv_obj_set_pos(pt_head, S(56), S(178));
 	for (int p = 0; p < 2; p++) {
 		pt_padl[p] = mk_label(body, FONT_BODY, PAL.dim, "");
 		lv_label_set_long_mode(pt_padl[p], LV_LABEL_LONG_MODE_DOTS);
-		lv_obj_set_size(pt_padl[p], S(880), S(24));
+		lv_obj_set_size(pt_padl[p], ptw, S(24));
 		lv_obj_set_pos(pt_padl[p], S(56), S(216 + 30 * p));
 	}
 	pt_sub = mk_label(body, FONT_SMALL, PAL.dim, "");
 	lv_label_set_long_mode(pt_sub, LV_LABEL_LONG_MODE_DOTS);
-	lv_obj_set_size(pt_sub, S(880), S(22));
+	lv_obj_set_size(pt_sub, ptw, S(22));
 	lv_obj_set_pos(pt_sub, S(56), S(282));
-	vlist_create(&pt_list, body, S(56), S(316), S(880), S(320));
+	vlist_create(&pt_list, body, S(56), S(316), ptw, S(320));
 	mc_create(body);
 	pt_list.fill = pt_fill;
 	pt_list.sel = 0;
@@ -5916,19 +5933,19 @@ static void show_storage(void)
 	sg.menu_box = NULL;
 	sg.menu = 0;
 	screen_title("SETTINGS", "Storage");
-	vlist_create(&sg_list, body, S(56), S(170), S(660), S(452));
+	vlist_create(&sg_list, body, S(56), S(170), SW(660), S(452));
 	sg_list.fill = sg_fill_row;
 	sg_list.sel = 0;
 	sg_list.top = 0;
 	sg_list.count = 0;
-	lv_obj_t *box = mk_box(body, S(464), S(430), PAL.panel, S(10));
-	lv_obj_set_pos(box, S(760), S(170));
+	lv_obj_t *box = mk_box(body, SW(464), S(430), PAL.panel, S(10));
+	lv_obj_set_pos(box, SX(760), S(170));
 	lv_obj_set_style_border_color(box, PAL.line, 0);
 	lv_obj_set_style_border_width(box, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_pad_all(box, S(22), 0);
 	lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
 	lv_obj_set_style_pad_row(box, S(6), 0);
-	int iw = S(464) - 2 * S(22);
+	int iw = SW(464) - 2 * S(22);
 	sg_ptitle = mk_label(box, FONT_NAME, PAL.text, "");
 	lv_obj_set_width(sg_ptitle, iw);
 	lv_label_set_long_mode(sg_ptitle, LV_LABEL_LONG_MODE_DOTS);
@@ -6138,7 +6155,7 @@ static void show_bt(void)
 	lv_label_set_long_mode(bt_sub, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_size(bt_sub, W - S(112), S(22));
 	lv_obj_set_pos(bt_sub, S(56), S(208));
-	vlist_create(&bt_list, body, S(56), S(244), S(900), S(380));
+	vlist_create(&bt_list, body, S(56), S(244), SW(900), S(380));
 	bt_list.fill = bt_fill;
 	bt_list.sel = 0;
 	bt_list.top = 0;
@@ -6316,21 +6333,21 @@ static void show_ctrl(void)
 	lv_obj_clean(body);
 	free(ct.pv);                            /* (its objects went with the screen) */
 	screen_title("SETTINGS", "Controllers");
-	vlist_create(&ct_list, body, S(56), S(176), S(660), S(440));
+	vlist_create(&ct_list, body, S(56), S(176), SW(660), S(440));
 	ct_list.fill = ct_fill;
 	ct_list.sel = ct_list.top = 0;
 	ct_list.count = 0;
 	ct.mode = 0;
 	ct.confirm_row = -1;
 	ct.style_lab = mk_label(body, FONT_SMALL, PAL.text, "");
-	lv_obj_set_pos(ct.style_lab, S(752), S(186));
-	ct.pv = padview_create(body, S(752), S(214), S(472));
+	lv_obj_set_pos(ct.style_lab, SX(752), S(186));
+	ct.pv = padview_create(body, SX(752), S(214), SW(472));
 	ct.desc = mk_label(body, FONT_SMALL, PAL.dim, "");
-	lv_obj_set_width(ct.desc, S(472));
+	lv_obj_set_width(ct.desc, SW(472));
 	lv_label_set_long_mode(ct.desc, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_pos(ct.desc, S(752), S(500));
+	lv_obj_set_pos(ct.desc, SX(752), S(500));
 	ct.empty = mk_label(body, FONT_BODY, PAL.dim, "No USB or Bluetooth controller found. Plug one in or switch it on: it shows up here by itself.");
-	lv_obj_set_width(ct.empty, S(660));
+	lv_obj_set_width(ct.empty, SW(660));
 	lv_label_set_long_mode(ct.empty, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(ct.empty, S(80), S(136) + S(46) * 4);
 	ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
@@ -6457,11 +6474,11 @@ static void show_ctest(int idx)
 	lv_obj_set_style_text_letter_space(tw.what, S(1), 0);
 	lv_obj_set_pos(tw.what, S(56), S(200));
 	tw.ask = mk_label(body, FONT_HEADING, PAL.text, "Press anything");
-	lv_obj_set_width(tw.ask, S(440));
+	lv_obj_set_width(tw.ask, SW(440));
 	lv_label_set_long_mode(tw.ask, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_pos(tw.ask, S(56), S(226));
 	tw.hint = mk_label(body, FONT_BODY, PAL.dim, "Everything lights as you press it. Sticks and triggers show how far they go.");
-	lv_obj_set_width(tw.hint, S(430));
+	lv_obj_set_width(tw.hint, SW(430));
 	lv_label_set_long_mode(tw.hint, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(tw.hint, S(56), S(282));
 	const char *K[5] = { "Left stick", "Right stick", padview_label(tw.style, "l2"), padview_label(tw.style, "r2"), "MiSTer gets" };
@@ -6473,7 +6490,7 @@ static void show_ctest(int idx)
 		lv_label_set_long_mode(tw.v[i], LV_LABEL_LONG_MODE_DOTS);
 		lv_obj_set_pos(tw.v[i], S(190), S(360 + 30 * i));
 	}
-	tw.pv = padview_create(body, S(520), S(196), S(704));
+	tw.pv = padview_create(body, SX(520), S(196), SW(704));
 	padview_layout(tw.pv, tw.style);
 	footer_set(TW_HINTS);
 	tw_poll();
@@ -6645,21 +6662,21 @@ static void show_map(int idx)
 	mw.ask = mk_label(body, FONT_HEADING, PAL.text, "");
 	lv_obj_set_pos(mw.ask, S(56), S(226));
 	mw.hint = mk_label(body, FONT_BODY, PAL.dim, "");
-	lv_obj_set_width(mw.hint, S(430));
+	lv_obj_set_width(mw.hint, SW(430));
 	lv_label_set_long_mode(mw.hint, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(mw.hint, S(56), S(282));
 	mw.bar = lv_bar_create(body);
-	lv_obj_set_size(mw.bar, S(430), S(10));
+	lv_obj_set_size(mw.bar, SW(430), S(10));
 	lv_obj_set_pos(mw.bar, S(56), S(560));
 	lv_obj_set_style_bg_color(mw.bar, PAL.line, LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(mw.bar, LV_OPA_COVER, LV_PART_MAIN);
 	lv_obj_set_style_bg_color(mw.bar, PAL.acc, LV_PART_INDICATOR);
 	lv_bar_set_range(mw.bar, 0, 100);
 	mw.note = mk_label(body, FONT_SMALL, PAL.dim, "Each button goes into MiSTer's mapping for this controller: the menu, Phosphor and every core.");
-	lv_obj_set_width(mw.note, S(430));
+	lv_obj_set_width(mw.note, SW(430));
 	lv_label_set_long_mode(mw.note, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(mw.note, S(56), S(586));
-	mw.pv = padview_create(body, S(520), S(196), S(704));
+	mw.pv = padview_create(body, SX(520), S(196), SW(704));
 	padview_layout(mw.pv, mw.style);
 	footer_set(MAP_HINTS);
 	plog("controllers: mapping %s (%s)", mw.name, mw.vp);
@@ -6884,13 +6901,13 @@ static void show_update(void)
 	screen_title("SETTINGS", "Update Phosphor");
 	up.head = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_obj_set_pos(up.head, S(56), S(178));
-	vlist_create(&up_list, body, S(56), S(214), S(900), S(320));
+	vlist_create(&up_list, body, S(56), S(214), SW(900), S(320));
 	up_list.fill = up_fill;
 	up_list.sel = up_list.top = 0;
 	up_list.count = 0;
 	up.confirm_row = -1;
 	up.note = mk_label(body, FONT_SMALL, PAL.dim, "");
-	lv_obj_set_width(up.note, S(900));
+	lv_obj_set_width(up.note, SW(900));
 	lv_label_set_long_mode(up.note, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_pos(up.note, S(56), S(560));
 	footer_set(UP_HINTS);
@@ -7258,7 +7275,7 @@ static void show_about(void)
 	ab_add("Open-source software", "LVGL, SQLite, musl and more: phosphor/THIRD_PARTY_NOTICES.md");
 	ab_add("Main and menu core", "GPL-3.0; their source: phosphor/SOURCE.md");
 
-	vlist_create(&ab_list, body, S(56), S(176), S(900), S(460));
+	vlist_create(&ab_list, body, S(56), S(176), SW(900), S(460));
 	ab_list.fill = ab_fill;
 	ab_list.sel = 0;
 	ab_list.top = 0;
@@ -7320,7 +7337,7 @@ static void show_welcome(void)
 	lv_obj_set_pos(sub, S(56), S(186));
 	wl_refresh_net();
 	int keep = wl_list.sel;
-	vlist_create(&wl_list, body, S(56), S(224), S(900), S(380));
+	vlist_create(&wl_list, body, S(56), S(224), SW(900), S(380));
 	wl_list.fill = wl_fill;
 	wl_list.count = WL_COUNT;
 	wl_list.sel = keep < WL_COUNT ? keep : 0;
@@ -7481,11 +7498,11 @@ static void show_scan(void)
 	sc.sys = mk_label(body, FONT_HEADING, PAL.text, "");
 	lv_obj_set_pos(sc.sys, S(56), S(224));
 	sc.file = mk_label(body, FONT_BODY, PAL.dim, "");
-	lv_obj_set_width(sc.file, S(706));
+	lv_obj_set_width(sc.file, SW(706));
 	lv_label_set_long_mode(sc.file, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_pos(sc.file, S(56), S(284));
 	sc.bar = lv_bar_create(body);
-	lv_obj_set_size(sc.bar, S(706), S(16));
+	lv_obj_set_size(sc.bar, SW(706), S(16));
 	lv_obj_set_pos(sc.bar, S(56), S(346));
 	lv_obj_set_style_bg_color(sc.bar, PAL.line, LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(sc.bar, LV_OPA_COVER, LV_PART_MAIN);
@@ -7496,22 +7513,26 @@ static void show_scan(void)
 	sc.count = mk_label(body, FONT_TITLE, PAL.text, "");
 	lv_obj_set_pos(sc.count, S(56), S(376));
 	sc.eta = mk_label(body, FONT_BODY, PAL.dim, "");
-	lv_obj_set_width(sc.eta, S(500));
+	lv_obj_set_width(sc.eta, SW(500));
 	lv_obj_set_style_text_align(sc.eta, LV_TEXT_ALIGN_RIGHT, 0);
-	lv_obj_set_pos(sc.eta, S(56 + 706 - 500), S(380));
-	lv_obj_t *note = mk_box(body, S(706), S(100), PAL.bg, S(10));
+	lv_obj_set_pos(sc.eta, SX(56 + 706) - SW(500), S(380));
+	lv_obj_t *note = mk_box(body, SW(706), NARROW ? LV_SIZE_CONTENT : S(100), PAL.bg, S(10));   /* (4:3: as tall as its text) */
 	lv_obj_set_style_border_color(note, PAL.line, 0);
 	lv_obj_set_style_border_width(note, S(1) > 0 ? S(1) : 1, 0);
 	lv_obj_set_pos(note, S(56), S(466));
 	lv_obj_t *nt = mk_label(note, FONT_NAME, PAL.text, "Everything else waits until this is done.");
 	lv_obj_set_pos(nt, S(20), S(18));
-	lv_obj_t *nb = mk_label(note, FONT_SMALL, PAL.dim, "Games found so far are kept. If it is stopped or the SS1 is turned off,\nLook for games carries on from where it left off next time.");
+	lv_obj_set_style_pad_bottom(note, S(18), 0);
+	lv_obj_t *nb = mk_label(note, FONT_SMALL, PAL.dim, NARROW ? "Games found so far are kept. If it is stopped or the SS1 is turned off, Look for games carries on from where it left off next time."
+	                                                 : "Games found so far are kept. If it is stopped or the SS1 is turned off,\nLook for games carries on from where it left off next time.");
+	lv_label_set_long_mode(nb, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(nb, SW(706) - S(40));
 	lv_obj_set_pos(nb, S(20), S(50));
 	lv_obj_t *sl = mk_label(body, FONT_LABEL, PAL.dim, "SYSTEMS");
 	lv_obj_set_style_text_letter_space(sl, S(2), 0);
-	lv_obj_set_pos(sl, S(840), S(166));
-	sc.list = mk_box(body, S(384), S(380), PAL.bg, 0);
-	lv_obj_set_pos(sc.list, S(830), S(200));
+	lv_obj_set_pos(sl, SX(840), S(166));
+	sc.list = mk_box(body, SW(384), S(380), PAL.bg, 0);
+	lv_obj_set_pos(sc.list, SX(830), S(200));
 	footer_set(SCAN_HINTS);
 	sc.t0 = lv_tick_get();
 	cJSON_Delete(api_call("{\"cmd\":\"rescan\"}"));
@@ -7644,23 +7665,23 @@ static void show_art(void)
 	screen_title("LIBRARY", "Getting box art and details");
 	ar.step = mk_label(body, FONT_LABEL, PAL.acc, "STARTING");
 	lv_obj_set_style_text_letter_space(ar.step, S(1), 0);
-	lv_obj_set_width(ar.step, S(706));
+	lv_obj_set_width(ar.step, SW(706));
 	lv_label_set_long_mode(ar.step, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_pos(ar.step, S(56), S(200));
 	ar.sys = mk_label(body, FONT_HEADING, PAL.text, "");
-	lv_obj_set_width(ar.sys, S(706));
+	lv_obj_set_width(ar.sys, SW(706));
 	lv_label_set_long_mode(ar.sys, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_pos(ar.sys, S(56), S(224));
 	ar.game = mk_label(body, FONT_TITLE, PAL.text, "");
-	lv_obj_set_width(ar.game, S(706));
+	lv_obj_set_width(ar.game, SW(706));
 	lv_label_set_long_mode(ar.game, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_pos(ar.game, S(56), S(276));
 	ar.src = mk_label(body, FONT_BODY, PAL.dim, "");
-	lv_obj_set_width(ar.src, S(706));
+	lv_obj_set_width(ar.src, SW(706));
 	lv_label_set_long_mode(ar.src, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_pos(ar.src, S(56), S(306));
 	ar.bar = lv_bar_create(body);
-	lv_obj_set_size(ar.bar, S(706), S(16));
+	lv_obj_set_size(ar.bar, SW(706), S(16));
 	lv_obj_set_pos(ar.bar, S(56), S(346));
 	lv_obj_set_style_bg_color(ar.bar, PAL.line, LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(ar.bar, LV_OPA_COVER, LV_PART_MAIN);
@@ -7671,24 +7692,28 @@ static void show_art(void)
 	ar.count = mk_label(body, FONT_TITLE, PAL.text, "");
 	lv_obj_set_pos(ar.count, S(56), S(376));
 	ar.eta = mk_label(body, FONT_BODY, PAL.dim, "");
-	lv_obj_set_width(ar.eta, S(500));
+	lv_obj_set_width(ar.eta, SW(500));
 	lv_obj_set_style_text_align(ar.eta, LV_TEXT_ALIGN_RIGHT, 0);
-	lv_obj_set_pos(ar.eta, S(56 + 706 - 500), S(380));
+	lv_obj_set_pos(ar.eta, SX(56 + 706) - SW(500), S(380));
 	ar.tally = mk_label(body, FONT_BODY, PAL.dim, "");
 	lv_obj_set_pos(ar.tally, S(56), S(412));
-	lv_obj_t *note = mk_box(body, S(706), S(100), PAL.bg, S(10));
+	lv_obj_t *note = mk_box(body, SW(706), NARROW ? LV_SIZE_CONTENT : S(100), PAL.bg, S(10));   /* (4:3: as tall as its text) */
 	lv_obj_set_style_border_color(note, PAL.line, 0);
 	lv_obj_set_style_border_width(note, S(1) > 0 ? S(1) : 1, 0);
 	lv_obj_set_pos(note, S(56), S(466));
 	lv_obj_t *nt = mk_label(note, FONT_NAME, PAL.text, "Everything else waits until this is done.");
 	lv_obj_set_pos(nt, S(20), S(18));
-	lv_obj_t *nb = mk_label(note, FONT_SMALL, PAL.dim, "Box art and details found so far are kept. If it is stopped or the SS1 is\nturned off, it carries on from where it left off next time.");
+	lv_obj_set_style_pad_bottom(note, S(18), 0);
+	lv_obj_t *nb = mk_label(note, FONT_SMALL, PAL.dim, NARROW ? "Box art and details found so far are kept. If it is stopped or the SS1 is turned off, it carries on from where it left off next time."
+	                                                 : "Box art and details found so far are kept. If it is stopped or the SS1 is\nturned off, it carries on from where it left off next time.");
+	lv_label_set_long_mode(nb, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(nb, SW(706) - S(40));
 	lv_obj_set_pos(nb, S(20), S(50));
 	lv_obj_t *sl = mk_label(body, FONT_LABEL, PAL.dim, "SYSTEMS  \xC2\xB7  BOX ART FOUND");
 	lv_obj_set_style_text_letter_space(sl, S(2), 0);
-	lv_obj_set_pos(sl, S(840), S(166));
-	ar.list = mk_box(body, S(384), S(380), PAL.bg, 0);
-	lv_obj_set_pos(ar.list, S(830), S(200));
+	lv_obj_set_pos(sl, SX(840), S(166));
+	ar.list = mk_box(body, SW(384), S(380), PAL.bg, 0);
+	lv_obj_set_pos(ar.list, SX(830), S(200));
 	footer_set(ART_HINTS);
 	ar.t0 = lv_tick_get();
 	/* start it, unless it's already working (then this screen just follows it) */
@@ -8273,25 +8298,36 @@ static void show_discs(void)
 	disc_refresh();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Discs");
-	vlist_create(&disc_list, body, S(56), S(176), S(700), S(440));
+	vlist_create(&disc_list, body, S(56), S(176), SW(700), S(440));
 	disc_list.count = DS_COUNT;
 	disc_list.fill = ds_fill;
 	disc_list.sel = 0;
 	disc_list.top = 0;
 	vlist_refresh(&disc_list);
-	lv_obj_t *panel = mk_box(body, S(444), S(300), PAL.panel, S(16));
+	/* 16:9: as designed; narrower (4:3): stacked and as tall as its text, which wraps onto more lines */
+	lv_obj_t *panel = mk_box(body, SW(444), NARROW ? LV_SIZE_CONTENT : S(300), PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, S(780), S(176));
+	lv_obj_set_pos(panel, SX(780), S(176));
+	if (NARROW) {
+		lv_obj_set_style_pad_hor(panel, S(24), 0);
+		lv_obj_set_style_pad_ver(panel, S(22), 0);
+		lv_obj_set_style_pad_row(panel, S(14), 0);
+		lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
+	}
 	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "Discs");
-	lv_obj_set_pos(h, S(24), S(22));
+	if (!NARROW) lv_obj_set_pos(h, S(24), S(22));
 	ds_note = mk_label(panel, FONT_BODY, PAL.dim, "Play games from the dock's CD/DVD drive: PlayStation, Saturn, Mega-CD, PC Engine CD, "
 	                   "Neo Geo CD, CD-i and 3DO, and MSU-1 / MD+ discs. Off: Phosphor doesn't use the drive.");
 	lv_label_set_long_mode(ds_note, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(ds_note, S(396));
-	lv_obj_set_pos(ds_note, S(24), S(64));
+	lv_obj_set_width(ds_note, NARROW ? SW(444) - 2 * S(24) : S(396));
+	if (!NARROW) lv_obj_set_pos(ds_note, S(24), S(64));
 	lv_obj_t *cr = mk_label(panel, FONT_SMALL, PAL.faint, "Disc support by Anime0t4ku and bonna79.");
-	lv_obj_set_pos(cr, S(24), S(250));
+	if (NARROW) {
+		lv_label_set_long_mode(cr, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_width(cr, SW(444) - 2 * S(24));
+		lv_obj_set_style_margin_top(cr, S(16), 0);
+	} else lv_obj_set_pos(cr, S(24), S(250));
 	static const char *const hints[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
 	footer_set(hints);
 }
@@ -8356,20 +8392,20 @@ static void show_shots(void)
 	shots_load();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Screenshots");
-	vlist_create(&shot_list, body, S(56), S(176), S(700), S(440));
+	vlist_create(&shot_list, body, S(56), S(176), SW(700), S(440));
 	shot_list.count = SHOT_ROWS;
 	shot_list.fill = shots_fill;
 	vlist_refresh(&shot_list);
-	lv_obj_t *panel = mk_box(body, S(444), S(300), PAL.panel, S(16));
+	lv_obj_t *panel = mk_box(body, SW(444), S(300), PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, S(780), S(176));
+	lv_obj_set_pos(panel, SX(780), S(176));
 	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "Screenshots");
 	lv_obj_set_pos(h, S(24), S(22));
 	lv_obj_t *nt = mk_label(panel, FONT_BODY, PAL.dim, "Press both sticks in (L3 + R3) to save a picture of the screen: the game, or Phosphor's own screens. "
 	                        "Off: the combo does nothing.");
 	lv_label_set_long_mode(nt, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(nt, S(396));
+	lv_obj_set_width(nt, SW(396));
 	lv_obj_set_pos(nt, S(24), S(64));
 	static const char *const hints[] = { "A", "Select", "\xE2\x86\x94", "Change", "B", "Back", NULL };
 	footer_set(hints);
@@ -8666,10 +8702,10 @@ static void mu_draw(void)
 	lv_obj_clean(body);
 	screen_title("LIBRARY", "Music");
 	mu_mk_chips();
-	lv_obj_t *panel = mk_box(body, S(480), S(420), PAL.panel, S(16));
+	lv_obj_t *panel = mk_box(body, SW(480), S(420), PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, W - S(56) - S(480), S(204));
+	lv_obj_set_pos(panel, W - S(56) - SW(480), S(204));
 	lv_obj_t *ph = mk_box(panel, S(180), S(180), lv_color_hex(0x2a2119), S(10));   /* no cover: a note */
 	lv_obj_set_pos(ph, S(24), S(24));
 	lv_obj_t *phi = icon_create(ph, ICON_MUSIC, S(64));
@@ -8693,7 +8729,7 @@ static void mu_draw(void)
 	lv_obj_set_width(mu_tl, S(432));
 	lv_obj_set_pos(mu_tl, S(24), S(224));
 	if (mu_tracks_view) {
-		vlist_create(&mu_tracks, body, S(56), S(204), S(620), S(420));
+		vlist_create(&mu_tracks, body, S(56), S(204), SW(620), S(420));
 		mu_tracks.fill = mu_tracks_fill;
 		mu_tracks.count = cJSON_GetArraySize(cJSON_GetObjectItem(mu_album, "track_list"));
 		vlist_refresh(&mu_tracks);
@@ -8702,7 +8738,7 @@ static void mu_draw(void)
 		lv_obj_set_hidden(mu_cover, !cv);
 		if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
 	} else {
-		vlist_create(&mu_list, body, S(56), S(204), S(620), S(420));
+		vlist_create(&mu_list, body, S(56), S(204), SW(620), S(420));
 		mu_list.fill = mu_fill;
 		mu_list.count = mu_n;
 		if (mu_list.sel >= mu_n) mu_list.sel = mu_n ? mu_n - 1 : 0;
@@ -8965,27 +9001,39 @@ static void show_ra(void)
 	ra_load();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "RetroAchievements");
-	vlist_create(&ra_list, body, S(56), S(176), S(700), S(440));
+	vlist_create(&ra_list, body, S(56), S(176), SW(700), S(440));
 	ra_list.count = RA_COUNT;
 	ra_list.fill = ra_fill;
 	ra_list.sel = 0;
 	ra_list.top = 0;
 	vlist_refresh(&ra_list);
-	lv_obj_t *panel = mk_box(body, S(444), S(400), PAL.panel, S(16));
+	/* 16:9: as designed; narrower (4:3): stacked and as tall as its text, which wraps onto more lines */
+	lv_obj_t *panel = mk_box(body, SW(444), NARROW ? LV_SIZE_CONTENT : S(400), PAL.panel, S(16));
 	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, S(780), S(176));
+	lv_obj_set_pos(panel, SX(780), S(176));
+	if (NARROW) {
+		lv_obj_set_style_pad_hor(panel, S(24), 0);
+		lv_obj_set_style_pad_ver(panel, S(22), 0);
+		lv_obj_set_style_pad_row(panel, S(8), 0);
+		lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_style_max_height(panel, S(494), 0);   /* (to just above the hints) */
+	}
 	lv_obj_t *h = mk_label(panel, FONT_TITLE, PAL.text, "RetroAchievements");
-	lv_obj_set_pos(h, S(24), S(22));
+	if (!NARROW) lv_obj_set_pos(h, S(24), S(22));
 	ra_note = mk_label(panel, FONT_BODY, PAL.dim,
 		"Log in once: your password goes to RetroAchievements and only the login it gives back is kept. Games on the "
 		"RetroAchievements cores get achievements; unlocks pop up in the game.\n\nHardcore: no save states, cheats or slow motion. "
 		"Your progress needs your Web API key, from your settings on retroachievements.org (or paste it from Phosphor for Windows).");
 	lv_label_set_long_mode(ra_note, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(ra_note, S(396));
-	lv_obj_set_pos(ra_note, S(24), S(64));
+	lv_obj_set_width(ra_note, NARROW ? SW(444) - 2 * S(24) : S(396));
+	if (!NARROW) lv_obj_set_pos(ra_note, S(24), S(64));
 	lv_obj_t *cr = mk_label(panel, FONT_SMALL, PAL.faint, "RetroAchievements support by odelot.\nrcheevos by the RetroAchievements team.");
-	lv_obj_set_pos(cr, S(24), S(340));
+	if (NARROW) {
+		lv_label_set_long_mode(cr, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_width(cr, SW(444) - 2 * S(24));
+		lv_obj_set_style_margin_top(cr, S(8), 0);
+	} else lv_obj_set_pos(cr, S(24), S(340));
 	ra_footer();
 }
 static void ra_pw_done(const char *pw)
@@ -9150,18 +9198,18 @@ static void rv_draw(void)
 	rv_sub = mk_label(body, FONT_SMALL, PAL.dim, sub);
 	lv_obj_set_pos(rv_sub, S(56), S(168));
 	if (rv_mode == 0) {
-		vlist_create(&rv_list, body, S(56), S(200), S(700), S(420));
-		lv_obj_t *panel = mk_box(body, S(444), S(300), PAL.panel, S(16));
+		vlist_create(&rv_list, body, S(56), S(200), SW(700), S(420));
+		lv_obj_t *panel = mk_box(body, SW(444), S(300), PAL.panel, S(16));
 		lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
 		lv_obj_set_style_border_color(panel, PAL.line, 0);
-		lv_obj_set_pos(panel, S(780), S(200));
+		lv_obj_set_pos(panel, SX(780), S(200));
 		rv_title = mk_label(panel, FONT_TITLE, PAL.text, "");
 		lv_label_set_long_mode(rv_title, LV_LABEL_LONG_MODE_DOTS);
-		lv_obj_set_width(rv_title, S(396));
+		lv_obj_set_width(rv_title, SW(396));
 		lv_obj_set_pos(rv_title, S(24), S(22));
 		rv_info = mk_label(panel, FONT_BODY, PAL.dim, "");
 		lv_label_set_long_mode(rv_info, LV_LABEL_LONG_MODE_WRAP);
-		lv_obj_set_width(rv_info, S(396));
+		lv_obj_set_width(rv_info, SW(396));
 		lv_obj_set_pos(rv_info, S(24), S(64));
 		rv_list.fill = rv_fill;
 		rv_list.count = cJSON_GetArraySize(rv_games());
@@ -9686,7 +9734,7 @@ ig_known:
 	lv_label_set_long_mode(e, LV_LABEL_LONG_MODE_DOTS);
 	lv_obj_set_width(e, S(400));
 	lv_obj_set_pos(e, S(30), S(96));
-	vlist_create(&ig_list, sheet, S(20), S(140), S(420), S(300));
+	vlist_create(&ig_list, sheet, S(20), S(140), SW(420), S(300));
 	ig_list.count = ig_n;
 	ig_list.fill = ig_fill;
 	ig_list.sel = 0;
