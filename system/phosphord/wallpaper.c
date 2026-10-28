@@ -4,7 +4,8 @@
  * person's own go in /media/fat/wallpapers_user. A picture's aspect comes from its name (4X3, 16X9:
  * Ranny Snice's) or its size.
  *   wallpapers [category] [aspect]   {categories:[{id,name,count}], items:[{file,name,aspect}], osd}
- *   wallpaper_thumb file             a small JPEG of it (made once): {thumb}
+ *   wallpaper_thumb file             a small JPEG of it: {thumb}, or {pending} while the worker makes it
+ *   wallpaper_prefetch files         the worker makes these next (the page on screen, then the next one)
  *   wallpaper_screen file w h        the picture made to cover the screen, darkened: {screen}
  *   wallpaper_osd file|""            behind MiSTer's own menu (Phosphor's Main reads
  *                                    phosphor/config/osd_wallpaper); "" puts MiSTer's usual back
@@ -14,6 +15,9 @@
 #include "log.h"
 #include "paths.h"
 #include <dirent.h>
+#include <pthread.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,10 +208,10 @@ static unsigned long long fnv(const char *s)
 	return h;
 }
 
-int wallpaper_thumb(const char *file, char *out, size_t n)
+/* where a picture's thumbnail goes (named by its path, size and date, so a changed picture gets a new one) */
+static int thumb_path(const char *real, char *out, size_t n)
 {
-	char real[PATH_MAX], dir[600];
-	if (!ok_file(file, real)) return -1;
+	char dir[600];
 	snprintf(dir, sizeof(dir), "%s/wall_thumbs", p_data());
 	mkdirs(dir);
 	struct stat s;
@@ -215,8 +219,88 @@ int wallpaper_thumb(const char *file, char *out, size_t n)
 	char key[PATH_MAX + 40];
 	snprintf(key, sizeof(key), "%s|%lld|%lld", real, (long long)s.st_size, (long long)s.st_mtime);
 	snprintf(out, n, "%s/%016llx.jpg", dir, fnv(key));
+	return 0;
+}
+
+/* the thumbnail worker: a big wallpaper takes about a second to shrink on the SS1, so the picker never
+   waits for one. One thread, at low priority, working through a short queue the picker sets (the page
+   on screen first); it stops when the queue is empty */
+#define WQ_MAX 32
+static pthread_mutex_t wq_lk = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wq_cv = PTHREAD_COND_INITIALIZER;
+static char wq[WQ_MAX][PATH_MAX];
+static int wq_n, wq_started;
+static char wq_busy[PATH_MAX];                  /* the one being made */
+
+static void *wq_thread(void *arg)
+{
+	(void)arg;
+	setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 15);
+	for (;;) {
+		char src[PATH_MAX], out[700];
+		pthread_mutex_lock(&wq_lk);
+		while (!wq_n) pthread_cond_wait(&wq_cv, &wq_lk);
+		snprintf(src, sizeof(src), "%s", wq[0]);
+		memmove(wq[0], wq[1], sizeof(wq[0]) * (size_t)(--wq_n));
+		snprintf(wq_busy, sizeof(wq_busy), "%s", src);
+		pthread_mutex_unlock(&wq_lk);
+		if (thumb_path(src, out, sizeof(out)) == 0 && !file_exists(out)) {
+			char tmp[720];
+			snprintf(tmp, sizeof(tmp), "%s.part.jpg", out);
+			if (art_thumb(src, NULL, 0, tmp, 320) == 0) rename(tmp, out);
+			else { unlink(tmp); plog("wallpapers: couldn't read %s", src); }
+		}
+		pthread_mutex_lock(&wq_lk);
+		wq_busy[0] = 0;
+		pthread_mutex_unlock(&wq_lk);
+	}
+	return NULL;
+}
+
+/* adds it to the queue (first: in front); the lock is held */
+static void wq_add(const char *real, int first)
+{
+	if (!strcmp(wq_busy, real)) return;
+	for (int i = 0; i < wq_n; i++)
+		if (!strcmp(wq[i], real)) {
+			if (!first) return;
+			memmove(wq[1], wq[0], sizeof(wq[0]) * (size_t)i);
+			snprintf(wq[0], sizeof(wq[0]), "%s", real);
+			return;
+		}
+	if (wq_n == WQ_MAX) wq_n--;                  /* full: the last one waits for the next ask */
+	if (first) { memmove(wq[1], wq[0], sizeof(wq[0]) * (size_t)wq_n); snprintf(wq[0], sizeof(wq[0]), "%s", real); }
+	else snprintf(wq[wq_n], sizeof(wq[0]), "%s", real);
+	wq_n++;
+	if (!wq_started) {
+		pthread_t t;
+		if (pthread_create(&t, NULL, wq_thread, NULL) == 0) { pthread_detach(t); wq_started = 1; }
+	}
+	pthread_cond_signal(&wq_cv);
+}
+
+int wallpaper_thumb(const char *file, char *out, size_t n)
+{
+	char real[PATH_MAX];
+	if (!ok_file(file, real) || thumb_path(real, out, n)) return -1;
 	if (file_exists(out)) return 0;
-	return art_thumb(real, NULL, 0, out, 320);
+	pthread_mutex_lock(&wq_lk);
+	wq_add(real, 1);
+	pthread_mutex_unlock(&wq_lk);
+	return 1;
+}
+
+void wallpaper_prefetch(cJSON *files)
+{
+	pthread_mutex_lock(&wq_lk);
+	wq_n = 0;                                   /* only what the picker shows now */
+	cJSON *f;
+	cJSON_ArrayForEach(f, files) {
+		char real[PATH_MAX], out[700];
+		const char *s = cJSON_GetStringValue(f);
+		if (wq_n < WQ_MAX && ok_file(s, real) && thumb_path(real, out, sizeof(out)) == 0 && !file_exists(out)) wq_add(real, 0);
+	}
+	pthread_mutex_unlock(&wq_lk);
 }
 
 int wallpaper_screen(const char *file, int w, int h, char *out, size_t n)

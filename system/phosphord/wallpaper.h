@@ -6,7 +6,8 @@
 #include "cJSON.h"
 
 cJSON *wallpaper_list(const char *category, const char *aspect);   /* aspect "16:9", "4:3" or "all" */
-int wallpaper_thumb(const char *file, char *out, size_t n);
+int wallpaper_thumb(const char *file, char *out, size_t n);         /* 0 made, 1 being made, -1 not a wallpaper */
+void wallpaper_prefetch(cJSON *files);                               /* make these next, in this order */
 int wallpaper_screen(const char *file, int w, int h, char *out, size_t n);
 int wallpaper_osd(const char *file);                                /* "" or NULL: MiSTer's usual */
 #endif
