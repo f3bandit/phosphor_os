@@ -18,6 +18,7 @@
 #include "settings.h"
 #include "sysinfo.h"
 #include "texture.h"
+#include "jpeg.h"
 #include "padview.h"
 #include "theme.h"
 #include "video_opts.h"
@@ -44,7 +45,7 @@ static screen_t cur = SCR_HOME;
 /* ---------- the background: the texture, or the wallpaper (Settings > Wallpapers) ----------
  * phosphord makes the chosen picture cover the screen and darkens it a little (wallpaper_screen), so
  * text over it stays readable; it's drawn as the object's background image. */
-static char bg_wall_src[720];
+static lv_draw_buf_t *bg_wall_buf;                    /* the wallpaper, decoded (bg_apply) */
 static void bg_apply(lv_obj_t *obj)
 {
 	if (SETTINGS.wallpaper_on && SETTINGS.wallpaper[0] && SETTINGS.wall_osd != 2) {
@@ -58,18 +59,26 @@ static void bg_apply(lv_obj_t *obj)
 		cJSON *r = api_call_slow(20000, "%s", b);
 		free(b);
 		const char *sp = api_ok(r) ? api_str(r, "screen") : NULL;
-		if (sp) {
+		/* decoded once into its own buffer: in the image cache it got pushed out by box art, and every
+		   redraw then decoded the whole picture again (a second on the SS1), leaving the menu half drawn */
+		char src[720];
+		snprintf(src, sizeof(src), "A:%s", sp ? sp : "");
+		lv_draw_buf_t *nb = sp ? jpeg_load_buf(src) : NULL;
+		cJSON_Delete(r);
+		if (nb) {
 			texture_apply(obj, 0);                       /* (frees the texture tile) */
-			snprintf(bg_wall_src, sizeof(bg_wall_src), "A:%s", sp);
-			lv_obj_set_style_bg_image_src(obj, bg_wall_src, 0);
+			lv_obj_set_style_bg_image_src(obj, nb, 0);
 			lv_obj_set_style_bg_image_tiled(obj, false, 0);
 			lv_obj_set_style_bg_image_opa(obj, LV_OPA_COVER, 0);
-			cJSON_Delete(r);
+			if (bg_wall_buf) lv_draw_buf_destroy(bg_wall_buf);
+			bg_wall_buf = nb;
+			lv_obj_invalidate(lv_screen_active());
 			return;
 		}
-		cJSON_Delete(r);
 	}
 	texture_apply(obj, (texture_t)SETTINGS.texture);
+	if (bg_wall_buf) { lv_draw_buf_destroy(bg_wall_buf); bg_wall_buf = NULL; }
+	lv_obj_invalidate(lv_screen_active());
 }
 
 /* ---------- status bar ---------- */
@@ -2110,7 +2119,9 @@ static void folder_key(pkey_t k)
 static void show_settings(void);
 static struct {
 	cJSON *cats, *items;
-	int cat, sel, top, aspect, pending;            /* aspect 0 16:9, 1 4:3, 2 all; pending: a thumb to make */
+	int cat, sel, top, aspect, pending;            /* aspect 0 16:9, 1 4:3, 2 all; pending: thumbs still to come */
+	uint32_t poll_at;
+	int drawn_top;                                 /* the page whose thumbnails are up (-1: none) */
 	lv_obj_t *tabs, *grid, *cell[WG_COLS * WG_ROWS], *img[WG_COLS * WG_ROWS], *cap[WG_COLS * WG_ROWS], *use, *asp, *empty;
 	char thumbs[WG_COLS * WG_ROWS][720];
 } wg;
@@ -2155,6 +2166,7 @@ static void wg_load(void)
 	wg.items = r ? cJSON_DetachItemFromObject(r, "items") : NULL;
 	cJSON_Delete(r);
 	wg.sel = wg.top = 0;
+	wg.drawn_top = -1;
 	int n = cJSON_GetArraySize(wg.items);
 	for (int i = 0; i < n; i++) {                   /* start on the one in use */
 		const char *f = api_str(cJSON_GetArrayItem(wg.items, i), "file");
@@ -2184,7 +2196,8 @@ static void wg_draw(void)
 	char u[80];
 	snprintf(u, sizeof(u), "Use for:  %s  (X)", WG_USE[SETTINGS.wall_osd % 3]);
 	lv_label_set_text(wg.use, u);
-	int n = cJSON_GetArraySize(wg.items);
+	int n = cJSON_GetArraySize(wg.items), newpage = wg.drawn_top != wg.top;
+	wg.drawn_top = wg.top;
 	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
 		int k = wg.top + i;
 		cJSON *x = k < n ? cJSON_GetArrayItem(wg.items, k) : NULL;
@@ -2198,8 +2211,10 @@ static void wg_draw(void)
 		char c[160];
 		snprintf(c, sizeof(c), "%s%s", inuse ? "\xE2\x9C\x93  " : "", api_str(x, "name") ? api_str(x, "name") : "");
 		lv_label_set_text(wg.cap[i], c);
-		lv_image_set_src(wg.img[i], NULL);
-		wg.thumbs[i][0] = 0;
+		if (newpage) {
+			lv_image_set_src(wg.img[i], NULL);
+			wg.thumbs[i][0] = 0;
+		}
 	}
 	if (!n) lv_label_set_text(wg.cap[0], "");
 	cJSON *cc = cJSON_GetArrayItem(wg.cats, wg.cat);
@@ -2209,28 +2224,45 @@ static void wg_draw(void)
 		: nc <= 1 ? "None in this shape yet: Y shows the others. To get some, put your own in the wallpapers_user folder on the SD card, or turn on a wallpaper collection in Update All's settings and run it."
 		: cid && !strcmp(cid, "user") ? "None of your own in this shape: put pictures in the wallpapers_user folder on the SD card. L and R show the collections."
 		: "None in this shape: Y shows the others.");
-	wg.pending = 0;                                   /* thumbnails: one per tick, from the first */
+	/* thumbnails: phosphord's worker makes them (about a second each for a big picture), this page
+	   first and then the next; wall_tick puts each in as it's ready */
+	cJSON *q = cJSON_CreateObject(), *fl = cJSON_AddArrayToObject(q, "files");
+	cJSON_AddStringToObject(q, "cmd", "wallpaper_prefetch");
+	for (int k = wg.top; k < n && k < wg.top + 2 * WG_COLS * WG_ROWS; k++) {
+		const char *f = api_str(cJSON_GetArrayItem(wg.items, k), "file");
+		if (f) cJSON_AddItemToArray(fl, cJSON_CreateString(f));
+	}
+	char *b = n && newpage ? cJSON_PrintUnformatted(q) : NULL;
+	cJSON_Delete(q);
+	if (b) { cJSON_Delete(api_call("%s", b)); free(b); }
+	if (newpage) { wg.pending = 1; wg.poll_at = 0; }
 }
-/* the next thumbnail on the page (wall_tick) */
+/* the page's thumbnails that are ready (wall_tick): a quick check every 300 ms, never a wait */
 static void wall_tick(void)
 {
-	if (cur != SCR_WALL || wg.pending >= WG_COLS * WG_ROWS) return;
-	int i = wg.pending++, k = wg.top + i;
-	cJSON *x = cJSON_GetArrayItem(wg.items, k);
-	if (!x) { wg.pending = WG_COLS * WG_ROWS; return; }
-	cJSON *q = cJSON_CreateObject();
-	cJSON_AddStringToObject(q, "cmd", "wallpaper_thumb");
-	cJSON_AddStringToObject(q, "file", api_str(x, "file"));
-	char *b = cJSON_PrintUnformatted(q);
-	cJSON_Delete(q);
-	cJSON *r = api_call_slow(15000, "%s", b);
-	free(b);
-	const char *t = api_ok(r) ? api_str(r, "thumb") : NULL;
-	if (t) {
-		snprintf(wg.thumbs[i], sizeof(wg.thumbs[i]), "A:%s", t);
-		lv_image_set_src(wg.img[i], wg.thumbs[i]);
+	if (cur != SCR_WALL || !wg.pending) return;
+	uint32_t now = lv_tick_get();
+	if (wg.poll_at && (int32_t)(now - wg.poll_at) < 0) return;
+	wg.poll_at = now + 300;
+	int left = 0;
+	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
+		cJSON *x = cJSON_GetArrayItem(wg.items, wg.top + i);
+		if (!x || wg.thumbs[i][0]) continue;
+		cJSON *q = cJSON_CreateObject();
+		cJSON_AddStringToObject(q, "cmd", "wallpaper_thumb");
+		cJSON_AddStringToObject(q, "file", api_str(x, "file"));
+		char *b = cJSON_PrintUnformatted(q);
+		cJSON_Delete(q);
+		cJSON *r = api_call("%s", b);
+		free(b);
+		const char *t = api_ok(r) ? api_str(r, "thumb") : NULL;
+		if (t) {
+			snprintf(wg.thumbs[i], sizeof(wg.thumbs[i]), "A:%s", t);
+			lv_image_set_src(wg.img[i], wg.thumbs[i]);
+		} else if (api_ok(r)) left++;              /* still being made (an unreadable one stays empty) */
+		cJSON_Delete(r);
 	}
-	cJSON_Delete(r);
+	if (!left) wg.pending = 0;
 }
 static void show_wallpapers(void)
 {
@@ -2268,7 +2300,7 @@ static void show_wallpapers(void)
 	lv_obj_set_width(wg.empty, S(900));
 	lv_obj_set_pos(wg.empty, S(56), S(240));
 	wg.use = mk_label(body, FONT_BODY, PAL.text, "");
-	lv_obj_set_pos(wg.use, S(56), S(612));
+	lv_obj_set_pos(wg.use, S(56), S(634));
 	static const char *const hints[] = { "A", "Use this one", "L", "R", "R", "Category", "Y", "16:9 / 4:3 / All", "X", "Use for", "B", "Back", NULL };
 	(void)hints;
 	static const char *const h2[] = { "A", "Use this one", "Y", "16:9 / 4:3 / All", "X", "Use for", "B", "Back", NULL };

@@ -12,7 +12,7 @@
  *   last                                    the last game played (same shape as game), or null
  *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
  *   game_cores id                           the cores it can start on: [{index, name, core, kind, desc, date, preferred}]
- *   wallpapers [category] [aspect]          Settings > Wallpapers (wallpaper.c); wallpaper_thumb, wallpaper_screen, wallpaper_osd
+ *   wallpapers [category] [aspect]          Settings > Wallpapers (wallpaper.c); wallpaper_thumb, wallpaper_prefetch, wallpaper_screen, wallpaper_osd
  *   folder_cores folder                     _Other / _Utility cores: [{name, file, date}] (+ Update All Link state)
  *   run_core   file                         start one of those on its own
  *   core_pref  id core                      its system starts on that core from now on (-1: the usual one)
@@ -1890,8 +1890,12 @@ char *api_handle(sqlite3 *db, const char *request)
 		int thumb = !strcmp(c->valuestring, "wallpaper_thumb");
 		int r = thumb ? wallpaper_thumb(f, p, sizeof(p))
 		              : wallpaper_screen(f, (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "w")), (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "h")), p, sizeof(p));
-		if (r) out = fail("Couldn't read that picture");
+		if (r < 0) out = fail("Couldn't read that picture");
+		else if (r > 0) { cJSON *o = ok(); cJSON_AddBoolToObject(o, "pending", 1); out = reply(o); }
 		else { cJSON *o = ok(); cJSON_AddStringToObject(o, thumb ? "thumb" : "screen", p); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "wallpaper_prefetch")) {   /* the picker's page, then the next */
+		wallpaper_prefetch(cJSON_GetObjectItem(req, "files"));
+		out = reply(ok());
 	} else if (!strcmp(c->valuestring, "wallpaper_osd")) {  /* behind MiSTer's own menu ("" : MiSTer's usual) */
 		out = wallpaper_osd(cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"))) == 0 ? reply(ok()) : fail("Couldn't use that picture");
 	} else if (!strcmp(c->valuestring, "folder_cores")) {   /* the Other and Utility cards: {folder: _Other|_Utility} */
