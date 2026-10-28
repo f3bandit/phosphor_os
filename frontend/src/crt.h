@@ -16,6 +16,8 @@ const char *crt_mode_name(int mode);                /* "480i (15 kHz)" */
 /* CRT mode on: Phosphor's frames also go to the native buffer, at the display's size */
 int crt_attach(lv_display_t *d, int w, int h);
 int crt_active(void);
+void crt_tick(void);                                /* a frame waiting for the next flip: now, if it's time */
+int crt_flip_waiting(void);
 /* the shell starts again (main.c) to take a new CRT setting: the screen size changes with it */
 void crt_request_restart(void);
 int crt_take_restart(void);

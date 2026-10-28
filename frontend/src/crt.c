@@ -57,7 +57,7 @@ int crt_save(const crt_cfg_t *c)
 {
 	char p[300], t[320];
 	cfg_path(p, sizeof(p));
-	snprintf(t, sizeof(t), "%s.tmp", p);
+	snprintf(t, sizeof(t), "%s.shell.tmp", p);         /* (Main writes crt.tmp) */
 	FILE *f = fopen(t, "w");
 	if (!f) return -1;
 	fprintf(f, "%d %d %d %d\n", c->on ? 1 : 0, c->mode, c->h, c->v);
@@ -103,8 +103,27 @@ static int restart_wanted;
 void crt_request_restart(void) { restart_wanted = 1; }
 int crt_take_restart(void) { int r = restart_wanted; restart_wanted = 0; return r; }
 
+/* the menu core reads the control word once a frame: two flips in one frame would draw into the buffer
+   being shown. A frame drawn sooner waits (crt_tick) */
+#define CRT_MIN_FLIP_MS 21
+static uint32_t last_flip;
+static int flip_wanted;
+static void present_now(void);
 static void present(void)
 {
+	if (mainlink_in_game()) return;                    /* a game core owns that memory now (not the menu core) */
+	if (lv_tick_get() - last_flip < CRT_MIN_FLIP_MS) { flip_wanted = 1; return; }
+	present_now();
+}
+void crt_tick(void)
+{
+	if (cr.on && flip_wanted && lv_tick_get() - last_flip >= CRT_MIN_FLIP_MS) present();
+}
+int crt_flip_waiting(void) { return cr.on && flip_wanted; }
+static void present_now(void)
+{
+	flip_wanted = 0;
+	last_flip = lv_tick_get();
 	int back = cr.cur ^ 1;
 	size_t fsz = (size_t)cr.w * cr.h * 4;
 	memcpy((void *)(cr.mem + NATIVE_BUF0 + (size_t)back * fsz), cr.shadow, fsz);
@@ -170,11 +189,13 @@ int crt_try(const crt_cfg_t *nc)
 	crt_cfg_t old;
 	char p[300];
 	crt_load(&old);                                   /* (none: off) */
-	FILE *f = fopen(prev_path(p, sizeof(p)), "w");
-	if (!f) return -1;
-	fprintf(f, "%d %d %d %d\n", old.on ? 1 : 0, old.mode, old.h, old.v);
-	fclose(f);
 	if (crt_save(nc)) return -1;                       /* (Main writes the same; the shell reads it when it starts again) */
+	FILE *f = fopen(prev_path(p, sizeof(p)), "w");     /* what comes back unless it's kept */
+	if (!f || fprintf(f, "%d %d %d %d\n", old.on ? 1 : 0, old.mode, old.h, old.v) < 0 || fclose(f)) {
+		if (f) fclose(f);
+		crt_save(&old);                               /* (no way back: not tried) */
+		return -1;
+	}
 	mainlink_crt(nc->on, nc->mode, nc->h, nc->v);
 	crt_request_restart();
 	return 0;

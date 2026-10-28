@@ -279,6 +279,9 @@ static int handle_line(const char *l)
 		if ((q = strstr(l, "\"dev\":\"")) && sscanf(q + 7, "%15[0-9a-f:]", mp.dev) != 1) mp.dev[0] = 0;
 		return 0;
 	}
+	/* the in-game screen refused or gone (ingame on / ingame text on / osdmenu): as if Main took it back */
+	if (!strncmp(l, "{\"ok\":false", 12) && (strstr(l, "no game is running") || strstr(l, "another client has the screen")
+	                                       || strstr(l, "not in text mode") || strstr(l, "can't show Phosphor's screen"))) { ingame_ended = 1; return 0; }
 	if (mp.pending && !strncmp(l, "{\"ok\":", 6)) {
 		mp.pending = 0;
 		if (!strncmp(l, "{\"ok\":false", 12)) {
