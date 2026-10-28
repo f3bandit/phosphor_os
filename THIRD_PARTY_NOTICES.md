@@ -64,6 +64,26 @@ freely, subject to the following restrictions:
     distribution.
 ```
 
+### TJpgDec R0.03 (from LVGL)
+
+JPEG decoding at reduced size for wallpaper thumbnails in phosphord (LVGL's copy, with scaled output
+added back by Phosphor: system/third_party/tjpgd).
+
+```
+TJpgDec - Tiny JPEG Decompressor R0.03 (C)ChaN, 2021
+
+The TJpgDec is a generic JPEG decompressor module for tiny embedded systems.
+This is a free software that opened for education, research and commercial
+developments under license policy of following terms.
+
+ Copyright (C) 2021, ChaN, all right reserved.
+
+* The TJpgDec module is a free software and there is NO WARRANTY.
+* No restriction on use. You can use, modify and redistribute it for
+  personal, non-profit or commercial products UNDER YOUR RESPONSIBILITY.
+* Redistributions of source code must retain the above copyright notice.
+```
+
 ### cJSON 1.7.19
 
 JSON in `phosphor`, `phosphord` and `phos`. MIT License.

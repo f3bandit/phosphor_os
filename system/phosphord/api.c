@@ -1881,7 +1881,8 @@ char *api_handle(sqlite3 *db, const char *request)
 		char err[300];
 		out = play_load_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "system")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	} else if (!strcmp(c->valuestring, "wallpapers")) {     /* Settings > Wallpapers: {category, aspect} */
-		cJSON *o = wallpaper_list(cJSON_GetStringValue(cJSON_GetObjectItem(req, "category")), cJSON_GetStringValue(cJSON_GetObjectItem(req, "aspect")));
+		cJSON *o = wallpaper_list(cJSON_GetStringValue(cJSON_GetObjectItem(req, "category")), cJSON_GetStringValue(cJSON_GetObjectItem(req, "aspect")),
+		                          cJSON_GetStringValue(cJSON_GetObjectItem(req, "current")));
 		cJSON_AddBoolToObject(o, "ok", 1);
 		out = reply(o);
 	} else if (!strcmp(c->valuestring, "wallpaper_thumb") || !strcmp(c->valuestring, "wallpaper_screen")) {
