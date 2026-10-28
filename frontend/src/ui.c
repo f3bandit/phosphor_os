@@ -459,9 +459,152 @@ static void play_id_quiet(long long id)
 	ig_game = cJSON_IsObject(gg) ? gg : (cJSON_Delete(gg), NULL);
 	cJSON_Delete(g);
 }
+/* ---------- Start with: the core a game starts on, when it has more than one ----------
+ * The MiSTer core, the RetroAchievements core, an older version kept on the card, a test build from
+ * _Unstable, another system's core that takes the game (phosphord game_cores). Shown only when there's a
+ * choice and none was set for the system; X sets one (Always start with this: core_pref), so after that
+ * games start straight away. */
+static void play_id_core(long long id, int core);
+static struct { lv_obj_t *dim, *row[8], *nm[8], *ds[8]; cJSON *cores; long long id; int n, sel, open; char sys[64]; } cc;
+static void cc_draw(void)
+{
+	for (int i = 0; i < cc.n; i++) {
+		int on = i == cc.sel;
+		lv_obj_set_style_bg_color(cc.row[i], on ? PAL.panel_on : PAL.panel, 0);
+		lv_obj_set_style_border_color(cc.row[i], on ? PAL.acc : PAL.line, 0);
+		lv_obj_set_style_border_width(cc.row[i], on ? S(2) : LV_MAX(1, S(1)), 0);
+		lv_obj_set_style_text_color(cc.nm[i], on ? PAL.text : PAL.dim, 0);
+	}
+}
+static void cc_close(void)
+{
+	if (!cc.open) return;
+	lv_obj_delete(cc.dim);
+	cJSON_Delete(cc.cores);
+	memset(&cc, 0, sizeof(cc));
+}
+static int cc_open(long long id, cJSON *cores, const char *title, const char *sysname)
+{
+	cc_close();
+	cc.open = 1;
+	cc.id = id;
+	cc.cores = cores;
+	cc.n = LV_MIN(8, cJSON_GetArraySize(cores));
+	snprintf(cc.sys, sizeof(cc.sys), "%s", sysname ? sysname : "");
+	cc.dim = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(cc.dim);
+	lv_obj_set_size(cc.dim, W, H);
+	lv_obj_set_style_bg_color(cc.dim, PAL.bg, 0);
+	lv_obj_set_style_bg_opa(cc.dim, LV_OPA_COVER, 0);
+	char cap[120];
+	spaced_caps(cap, sizeof(cap), sysname && *sysname ? sysname : "START WITH");
+	lv_obj_t *l = mk_label(cc.dim, FONT_LABEL, PAL.dim, cap);
+	lv_obj_set_style_text_letter_space(l, S(3), 0);
+	lv_obj_set_pos(l, S(56), S(96));
+	lv_obj_t *t = mk_label(cc.dim, FONT_HEADING, PAL.text, title && *title ? title : "Start with");
+	lv_obj_set_pos(t, S(56), S(122));
+	lv_obj_t *st = mk_label(cc.dim, FONT_LABEL, PAL.dim, "START WITH");
+	lv_obj_set_style_text_letter_space(st, S(3), 0);
+	lv_obj_set_pos(st, S(56), S(186));
+	for (int i = 0; i < cc.n; i++) {
+		cJSON *x = cJSON_GetArrayItem(cores, i);
+		lv_obj_t *r = mk_box(cc.dim, S(1168), S(80), PAL.panel, S(12));
+		lv_obj_set_pos(r, S(56), S(214) + i * S(88));
+		lv_obj_set_style_border_width(r, LV_MAX(1, S(1)), 0);
+		lv_obj_set_style_pad_hor(r, S(22), 0);
+		cc.row[i] = r;
+		char nm[220];
+		const char *d = api_str(x, "date");
+		snprintf(nm, sizeof(nm), "%s%s%s", api_str(x, "name") ? api_str(x, "name") : "", d ? "  \xC2\xB7  " : "", d ? d : "");
+		cc.nm[i] = mk_label(r, FONT_NAME, PAL.dim, nm);
+		lv_obj_align(cc.nm[i], LV_ALIGN_TOP_LEFT, 0, S(14));
+		cc.ds[i] = mk_label(r, FONT_SMALL, PAL.dim, api_str(x, "desc") ? api_str(x, "desc") : "");
+		lv_obj_align(cc.ds[i], LV_ALIGN_TOP_LEFT, 0, S(46));
+		if (cJSON_IsTrue(cJSON_GetObjectItem(x, "preferred"))) {
+			lv_obj_t *p = mk_label(r, FONT_SMALL, PAL.acc, "Always");
+			lv_obj_align(p, LV_ALIGN_RIGHT_MID, 0, 0);
+			cc.sel = i;
+		}
+	}
+	char xh[96];
+	snprintf(xh, sizeof(xh), "Always start %s games with this", sysname && *sysname ? sysname : "these");
+	static char xhint[96];
+	snprintf(xhint, sizeof(xhint), "%s", xh);
+	const char *hints[] = { "A", "Start", "X", xhint, "B", "Back", NULL };
+	lv_obj_t *hb = mk_box(cc.dim, W, S(40), PAL.bg, 0);
+	lv_obj_set_style_bg_opa(hb, LV_OPA_TRANSP, 0);
+	lv_obj_set_flex_flow(hb, LV_FLEX_FLOW_ROW);
+	lv_obj_set_style_pad_column(hb, S(28), 0);
+	lv_obj_set_pos(hb, S(56), H - S(56));
+	for (int i = 0; hints[i]; i += 2) {
+		char h[140];
+		snprintf(h, sizeof(h), "(%s)  %s", hints[i], hints[i + 1]);
+		mk_label(hb, FONT_SMALL, PAL.dim, h);
+	}
+	cc_draw();
+	plog("start with: %d cores", cc.n);
+	return 1;
+}
+/* the chooser's part of a key press: 1 when it ate it */
+static int cc_key(pkey_t k)
+{
+	if (!cc.open) return 0;
+	if (k == K_UP && cc.n) cc.sel = (cc.sel + cc.n - 1) % cc.n;
+	else if (k == K_DOWN && cc.n) cc.sel = (cc.sel + 1) % cc.n;
+	else if (k == K_B || k == K_MENU) { cc_close(); return 1; }
+	else if (k == K_A || k == K_X) {
+		cJSON *x = cJSON_GetArrayItem(cc.cores, cc.sel);
+		int core = x ? (int)api_num(x, "index", 0) : 0;
+		long long id = cc.id;
+		if (k == K_X) {
+			cJSON *r = api_call("{\"cmd\":\"core_pref\",\"id\":%lld,\"core\":%d}", id, core);
+			if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't keep that choice");
+			cJSON_Delete(r);
+		}
+		cc_close();
+		play_id_core(id, core);
+		return 1;
+	}
+	cc_draw();
+	return 1;
+}
+
+/* Start with... (Select on a game): the chooser even when a default is set, to change it */
+static void play_choose(long long id)
+{
+	cJSON *c = api_call("{\"cmd\":\"game_cores\",\"id\":%lld}", id);
+	cJSON *cores = api_ok(c) ? cJSON_DetachItemFromObject(c, "cores") : NULL;
+	cJSON_Delete(c);
+	if (cJSON_GetArraySize(cores) < 2) { cJSON_Delete(cores); toast_show("This game has just the one core"); return; }
+	cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", id);
+	cJSON *gg = api_ok(g) ? cJSON_GetObjectItem(g, "game") : NULL;
+	cc_open(id, cores, gg ? api_str(gg, "title") : NULL, gg ? api_str(gg, "system_name") : NULL);
+	cJSON_Delete(g);
+}
+static void play_id_core(long long id, int core);
 static void play_id(long long id)
 {
-	cJSON *r = api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
+	/* more than one core, and none set for the system: ask which (Start with) */
+	cJSON *c = api_call("{\"cmd\":\"game_cores\",\"id\":%lld}", id);
+	cJSON *cores = api_ok(c) ? cJSON_DetachItemFromObject(c, "cores") : NULL;
+	cJSON_Delete(c);
+	int n = cJSON_GetArraySize(cores), pref = 0;
+	cJSON *x;
+	cJSON_ArrayForEach(x, cores) if (cJSON_IsTrue(cJSON_GetObjectItem(x, "preferred"))) pref = 1;
+	if (n > 1 && !pref) {
+		cJSON *g = api_call("{\"cmd\":\"game\",\"id\":%lld}", id);
+		cJSON *gg = api_ok(g) ? cJSON_GetObjectItem(g, "game") : NULL;
+		cc_open(id, cores, gg ? api_str(gg, "title") : NULL, gg ? api_str(gg, "system_name") : NULL);
+		cJSON_Delete(g);
+		return;
+	}
+	cJSON_Delete(cores);
+	play_id_core(id, -1);
+}
+static void play_id_core(long long id, int core)
+{
+	cJSON *r = core >= 0 ? api_call("{\"cmd\":\"launch\",\"id\":%lld,\"core\":%d}", id, core)
+	                     : api_call("{\"cmd\":\"launch\",\"id\":%lld}", id);
 	if (!r) toast_show("The system service isn't responding");
 	else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start the game");
 	else {
@@ -1124,7 +1267,7 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 
 static void games_hints(void)
 {
-	static const char *const hints[] = { "A", "Play", "B", "Back", "X", "Favorite", "Y", "Based on", "L", "Page up", "R", "Page down", NULL };
+	static const char *const hints[] = { "A", "Play", "B", "Back", "X", "Favorite", "Y", "Based on", "SELECT", "Start with", "L", "Page up", "R", "Page down", NULL };
 	footer_set(hints);
 }
 
@@ -7548,6 +7691,7 @@ void ui_key(pkey_t k)
 	if (cur == SCR_CTEST) { tw_key(k); return; }    /* locked: Select + Start closes */
 	if (vk_key(k)) return;                           /* a video try waits for Keep */
 	if (pm_key(k)) return;
+	if (cc_key(k)) return;
 	if (osk_key(k)) return;
 	switch (cur) {
 	case SCR_HOME:
@@ -7607,6 +7751,7 @@ void ui_key(pkey_t k)
 		else if (k == K_Y && ngames) picker_show();
 		else if (k == K_X && ngames) games_toggle_fav();
 		else if (k == K_A && ngames) play_id(games[game_list.sel].id);
+		else if (k == K_SELECT && ngames) play_choose(games[game_list.sel].id);   /* Start with...: always ask */
 		else if (k == K_B && games_mode != GL_SYSTEM) show_home();
 		else if (k == K_B) {
 			int keep = 0;
