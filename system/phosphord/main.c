@@ -18,6 +18,7 @@
 #include "memcard.h"
 #include "wifi.h"
 #include "db.h"
+#include "dump.h"
 #include "indexer.h"
 #include "log.h"
 #include "paths.h"
@@ -131,6 +132,7 @@ int main(int argc, char **argv)
 	if (lfd < 0) return 1;
 	for (int i = 0; i < MAX_CLIENTS; i++) cl[i].fd = -1;
 	busy_init();
+	dump_cleanup();                 /* (before the library looks: half-copied discs never get listed) */
 	indexer_start();
 	scraper_start();
 	ra_init();
