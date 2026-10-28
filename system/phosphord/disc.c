@@ -11,6 +11,7 @@
  * What was decided (docs/discs.md): the disc only shows while it's in (Disc › In the drive); nothing
  * starts by itself; music CDs and DVDs aren't played yet; Play last is the last game from storage
  * unless a disc was played after it and is still in. */
+#include "dump.h"
 #include "disc.h"
 #include "art.h"
 #include "db.h"
@@ -285,6 +286,7 @@ cJSON *disc_json(sqlite3 *db)
 
 int disc_play(sqlite3 *db, char *err, size_t errn)
 {
+	if (dump_busy()) { snprintf(err, errn, "A copy of the disc is being saved: stop it first"); return -1; }
 	music_stop();                            /* music only plays while no game runs */
 	char *r = main_req("disc", 1500);
 	cJSON *m = r ? cJSON_Parse(r) : NULL;
@@ -336,6 +338,7 @@ int disc_play(sqlite3 *db, char *err, size_t errn)
 
 int disc_eject(char *err, size_t errn)
 {
+	if (dump_busy()) { snprintf(err, errn, "A copy of the disc is being saved: stop it first"); return -1; }
 	char *r = main_req("disc eject", 3000);
 	cJSON *m = r ? cJSON_Parse(r) : NULL;
 	free(r);

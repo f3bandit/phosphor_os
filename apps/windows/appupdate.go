@@ -25,7 +25,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,10 +56,10 @@ func newerVersion(a, b string) bool {
 	for i := 0; i < len(x) || i < len(y); i++ {
 		var p, q int
 		if i < len(x) {
-			p, _ = strconv.Atoi(x[i])
+			p = leadingInt(x[i])
 		}
 		if i < len(y) {
-			q, _ = strconv.Atoi(y[i])
+			q = leadingInt(y[i])
 		}
 		if p != q {
 			return p > q
@@ -69,7 +68,31 @@ func newerVersion(a, b string) bool {
 	return false
 }
 
+// leadingInt: the number a version part starts with ("41-beta" is 41)
+func leadingInt(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
 var updClient = &http.Client{Timeout: 30 * time.Second}
+
+// the zip: no limit on the whole download (a slow line takes minutes), only on GitHub starting to answer
+var dlClient = &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 30 * time.Second, TLSHandshakeTimeout: 30 * time.Second}}
+
+func ghGetLong(url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Phosphor for Windows/"+appVersion)
+	return dlClient.Do(req)
+}
 
 func ghGet(url string) (*http.Response, error) {
 	req, err := http.NewRequest("GET", url, nil)
@@ -132,7 +155,10 @@ func appCheck() error {
 
 // watchAppUpdates: a minute after starting, then every 6 hours; a newer one is a notification (once)
 func watchAppUpdates() {
-	appCleanOld()
+	go func() { // (once this copy has kept running a while: the old one is no longer needed to go back to)
+		time.Sleep(2 * time.Minute)
+		appCleanOld()
+	}()
 	time.Sleep(time.Minute)
 	for {
 		if appCheck() == nil {
@@ -208,7 +234,7 @@ func appDoInstall(s appUpd) error {
 	if want == "" {
 		return errors.New("the release's checksums don't list " + name)
 	}
-	r, err = ghGet(s.zip)
+	r, err = ghGetLong(s.zip)
 	if err != nil || r.StatusCode != 200 {
 		if r != nil {
 			r.Body.Close()
@@ -267,10 +293,18 @@ func appDoInstall(s appUpd) error {
 	if err := cmd.Start(); err != nil {
 		return errors.New("installed: start Phosphor again to use " + s.Latest)
 	}
-	// the new copy asks this one to quit (replaceOlder); if it doesn't within a while, quit anyway
+	// the new copy asks this one to quit (replaceOlder). If it hasn't within a while it didn't start
+	// properly: this copy goes back in place and stays running
 	go func() {
-		time.Sleep(20 * time.Second)
-		quitApp()
+		time.Sleep(25 * time.Second)
+		_ = cmd.Process.Kill()
+		time.Sleep(time.Second)
+		os.Remove(exe + ".failed")
+		if os.Rename(exe, exe+".failed") == nil && os.Rename(old, exe) == nil {
+			appSetState("failed", "Phosphor for Windows "+s.Latest+" didn't start: this version was put back")
+			return
+		}
+		appSetState("failed", "Phosphor for Windows "+s.Latest+" didn't start; the old copy is "+old)
 	}()
 	return nil
 }

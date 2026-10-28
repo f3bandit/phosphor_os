@@ -118,7 +118,8 @@ static void *dl_thread(void *arg)
 		char line[300];
 		while (f && fgets(line, sizeof(line), f)) {
 			char h[65], n[200];
-			if (sscanf(line, "%64s %199s", h, n) == 2 && !strcmp(n, name)) { snprintf(want, sizeof(want), "%s", h); break; }
+			/* "hash  name", or "hash *name" (sha256sum -b) */
+			if (sscanf(line, "%64s %199s", h, n) == 2 && !strcmp(n[0] == '*' ? n + 1 : n, name)) { snprintf(want, sizeof(want), "%s", h); break; }
 		}
 		if (f) fclose(f);
 		unlink(sp);
@@ -148,6 +149,17 @@ int upnet_download(const char **err)
 		cJSON_Delete(r);
 		*err = "No newer release seen yet: check again in a moment";
 		return -1;
+	}
+	{                                                    /* only a newer one than what's installed */
+		char vp[600], inst[64] = "";
+		snprintf(vp, sizeof(vp), "%s/phosphor/VERSION", p_fat());
+		FILE *vf = fopen(vp, "r");
+		if (vf) { if (fgets(inst, sizeof(inst), vf)) inst[strcspn(inst, " \n")] = 0; fclose(vf); }
+		if (inst[0] && !upnet_newer(cJSON_GetStringValue(cJSON_GetObjectItem(r, "version")), inst)) {
+			cJSON_Delete(r);
+			*err = "This is already the newest Phosphor";
+			return -1;
+		}
 	}
 	pthread_mutex_lock(&dl_lk);
 	if (dl_running) { pthread_mutex_unlock(&dl_lk); cJSON_Delete(r); *err = "A download is already running"; return -1; }
