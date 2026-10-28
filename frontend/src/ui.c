@@ -2111,7 +2111,7 @@ static void show_settings(void);
 static struct {
 	cJSON *cats, *items;
 	int cat, sel, top, aspect, pending;            /* aspect 0 16:9, 1 4:3, 2 all; pending: a thumb to make */
-	lv_obj_t *tabs, *grid, *cell[WG_COLS * WG_ROWS], *img[WG_COLS * WG_ROWS], *cap[WG_COLS * WG_ROWS], *use, *asp;
+	lv_obj_t *tabs, *grid, *cell[WG_COLS * WG_ROWS], *img[WG_COLS * WG_ROWS], *cap[WG_COLS * WG_ROWS], *use, *asp, *empty;
 	char thumbs[WG_COLS * WG_ROWS][720];
 } wg;
 static const char *WG_ASP[3] = { "16:9", "4:3", "all" };
@@ -2166,7 +2166,7 @@ static void wg_draw(void)
 {
 	lv_obj_clean(wg.tabs);
 	int nc = cJSON_GetArraySize(wg.cats);
-	mk_label(wg.tabs, FONT_SMALL, PAL.dim, "L");
+	if (nc > 1) mk_label(wg.tabs, FONT_SMALL, PAL.dim, "L");
 	for (int i = 0; i < nc; i++) {
 		cJSON *c = cJSON_GetArrayItem(wg.cats, i);
 		lv_obj_t *t = mk_box(wg.tabs, LV_SIZE_CONTENT, S(36), i == wg.cat ? PAL.panel_on : PAL.bg, S(18));
@@ -2177,7 +2177,7 @@ static void wg_draw(void)
 		lv_obj_t *l = mk_label(t, FONT_BODY, i == wg.cat ? PAL.text : PAL.dim, api_str(c, "name") ? api_str(c, "name") : "");
 		lv_obj_center(l);
 	}
-	mk_label(wg.tabs, FONT_SMALL, PAL.dim, "R");
+	if (nc > 1) mk_label(wg.tabs, FONT_SMALL, PAL.dim, "R");
 	char a[48];
 	snprintf(a, sizeof(a), "%s  (Y)", wg.aspect == 2 ? "All" : WG_ASP[wg.aspect]);
 	lv_label_set_text(wg.asp, a);
@@ -2202,6 +2202,13 @@ static void wg_draw(void)
 		wg.thumbs[i][0] = 0;
 	}
 	if (!n) lv_label_set_text(wg.cap[0], "");
+	cJSON *cc = cJSON_GetArrayItem(wg.cats, wg.cat);
+	const char *cid = cc ? api_str(cc, "id") : NULL;
+	lv_label_set_text(wg.empty, n ? ""
+		: nc <= 1 && wg.aspect == 2 ? "No wallpapers yet. Put your own in the wallpapers_user folder on the SD card, or turn on a wallpaper collection in Update All's settings (Utility > Register this SuperStation opens it) and run it."
+		: nc <= 1 ? "None in this shape yet: Y shows the others. To get some, put your own in the wallpapers_user folder on the SD card, or turn on a wallpaper collection in Update All's settings and run it."
+		: cid && !strcmp(cid, "user") ? "None of your own in this shape: put pictures in the wallpapers_user folder on the SD card. L and R show the collections."
+		: "None in this shape: Y shows the others.");
 	wg.pending = 0;                                   /* thumbnails: one per tick, from the first */
 }
 /* the next thumbnail on the page (wall_tick) */
@@ -2256,6 +2263,10 @@ static void show_wallpapers(void)
 		wg.cell[i] = c;
 		lv_obj_set_style_border_side(c, LV_BORDER_SIDE_FULL, 0);
 	}
+	wg.empty = mk_label(body, FONT_BODY, PAL.dim, "");
+	lv_label_set_long_mode(wg.empty, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(wg.empty, S(900));
+	lv_obj_set_pos(wg.empty, S(56), S(240));
 	wg.use = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_obj_set_pos(wg.use, S(56), S(612));
 	static const char *const hints[] = { "A", "Use this one", "L", "R", "R", "Category", "Y", "16:9 / 4:3 / All", "X", "Use for", "B", "Back", NULL };
@@ -2263,8 +2274,6 @@ static void show_wallpapers(void)
 	static const char *const h2[] = { "A", "Use this one", "Y", "16:9 / 4:3 / All", "X", "Use for", "B", "Back", NULL };
 	footer_set(h2);
 	wg_load();
-	if (!cJSON_GetArraySize(wg.cats))
-		toast_show("No wallpapers yet: turn them on in Update All, or put your own in wallpapers_user");
 }
 static void wall_key(pkey_t k)
 {
