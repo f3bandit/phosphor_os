@@ -428,12 +428,12 @@ static void vlist_refresh(vlist_t *v)
 		if (strcmp(lv_label_get_text(v->lab[r]), t)) lv_label_set_text(v->lab[r], t);
 		if (strcmp(lv_label_get_text(v->val[r]), val)) {
 			lv_label_set_text(v->val[r], val);
-			if (theme_lr) {                          /* the name gets what the value leaves */
-				lv_text_attributes_t ta;
-				lv_text_attributes_init(&ta);
-				int vw = val[0] ? lv_text_get_width(val, strlen(val), FONT_SMALL, &ta) + L(10) : 0;
-				lv_obj_set_width(v->lab[r], LV_MAX(L(40), v->row_w - L(12) - vw));
-			}
+			/* the name gets what the value leaves, so a long value (a status) never runs over it */
+			lv_text_attributes_t ta;
+			lv_text_attributes_init(&ta);
+			int vw = val[0] ? lv_text_get_width(val, strlen(val), FONT_SMALL, &ta) : 0;
+			if (theme_lr) lv_obj_set_width(v->lab[r], LV_MAX(L(40), v->row_w - L(12) - (vw ? vw + L(10) : 0)));
+			else lv_obj_set_width(v->lab[r], LV_MAX(S(120), LV_MIN(v->row_w - S(190), v->row_w - S(24) - S(18) - (vw ? vw + S(20) : 0))));
 		}
 		int look = on * 2 + (dim ? 1 : 0);
 		if (v->shown[r] != look) {
