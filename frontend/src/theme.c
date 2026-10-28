@@ -41,7 +41,9 @@ void theme_init(accent_t a)
 accent_t theme_accent(void) { return cur_accent; }
 const char *theme_accent_name(accent_t a) { return a < ACCENT_COUNT ? ACCENT_NAMES[a] : "?"; }
 
-int theme_big, theme_tier = 1;
+int theme_big, theme_tier = 1, theme_crt_font, theme_lr, LRW = 320;
+static int lr_pct = 100;
+int L(int px) { return px * lr_pct / 100; }
 int CW = 1280;
 
 void theme_set_scale(int w, int h)
@@ -57,6 +59,12 @@ void theme_set_scale(int w, int h)
 	}
 	theme_big = scale_pct >= 125;
 	theme_tier = scale_pct >= 125 ? 2 : scale_pct < 85 ? 0 : 1;
+	theme_lr = h <= 300;                                 /* 240p / 288p (with any overscan taken off) */
+	if (theme_lr) {
+		theme_tier = 3;
+		lr_pct = h * 100 / 240 < 100 ? 100 : h * 100 / 240;
+		LRW = w * 100 / lr_pct;
+	}
 }
 
 int S(int px) { return px * scale_pct / 100; }

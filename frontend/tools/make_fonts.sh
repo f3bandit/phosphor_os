@@ -42,6 +42,23 @@ gen phos_mono_18_s     13 "$MONO" "$MONO_RANGE"
 gen phos_mono_40_s     29 "$MONO" "$MONO_RANGE"
 }
 small
+# a CRT at 240 or 288 lines (Settings > Video > CRT mode 240p / 288p): bigger for the screen, in three looks
+# (Text: Smooth, Sharp: no anti-aliasing, Legible: DejaVu Sans Bold), as Console Mode offers
+crt() { # suffix bpp sans-regular sans-bold
+gen_b() { $C --no-compress --no-prefilter --bpp "$2" --size "$3" --font "$4" -r "$5" --format lvgl --lv-include lvgl.h -o "fonts/$1.c"; }
+gen_b phos_inter_14$1      $2 10 "$3" "$TEXT"
+gen_b phos_inter_16$1      $2 12 "$3" "$TEXT"
+gen_b phos_inter_med_18$1  $2 12 "$4" "$TEXT"
+gen_b phos_inter_semi_22$1 $2 14 "$4" "$TEXT"
+gen_b phos_inter_semi_32$1 $2 17 "$4" "$TEXT"
+gen_b phos_mono_13$1       $2 8  "$MONO" "$MONO_RANGE"
+gen_b phos_mono_18$1       $2 10 "$MONO" "$MONO_RANGE"
+gen_b phos_mono_40$1       $2 24 "$MONO" "$MONO_RANGE"
+}
+DJ="${DEJAVU_DIR:-/usr/share/fonts/truetype/dejavu}"
+crt _c  4 "$INTER/Inter-SemiBold.otf" "$INTER/Inter-Bold.otf"
+crt _cs 1 "$INTER/Inter-SemiBold.otf" "$INTER/Inter-Bold.otf"
+crt _cl 4 "$DJ/DejaVuSans-Bold.ttf"   "$DJ/DejaVuSans-Bold.ttf"
 # LVGL 9 has no LV_VERSION_CHECK (so it reads as false). That's right for the old glyph cache,
 # but the public descriptor must be const to match LV_FONT_DECLARE.
 for f in fonts/*.c; do

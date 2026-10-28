@@ -174,6 +174,17 @@ int mainlink_disc_enable(int on) { disc_want = on; return disc_api ? say(on ? "d
 int mainlink_shot_combo(int on) { shot_want = on; return ingame_api ? say(on ? "shot on" : "shot off") : -1; }
 int mainlink_ingame(int on) { return ingame_api ? say(on ? "ingame on" : "ingame off") : -1; }
 int mainlink_has_crt(void) { return fd >= 0 && crt_api; }
+/* CRT mode: the in-game menu as text in MiSTer's OSD (the analog port never shows the framebuffer) */
+int mainlink_ingame_text(void) { return crt_api ? say("ingame text on") : -1; }
+int mainlink_osdmenu(int sel, const char *title, const char *text)
+{
+	if (fd < 0 || !crt_api) return -1;
+	char b[900];
+	int n = snprintf(b, sizeof(b), "osdmenu %d %.24s\x1f", sel, title);
+	for (const char *c = text; *c && n < (int)sizeof(b) - 2; c++) b[n++] = *c == '\n' ? 0x1f : (*c == '\r' ? ' ' : *c);
+	b[n++] = '\n';
+	return send(fd, b, (size_t)n, MSG_NOSIGNAL) == n ? 0 : -1;
+}
 /* the menu core into a CRT mode (or back to its usual picture); Main keeps it in phosphor/config/crt */
 int mainlink_crt(int on, int mode, int h, int v)
 {

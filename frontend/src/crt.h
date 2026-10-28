@@ -5,7 +5,7 @@
 #include "lvgl.h"
 
 /* the modes Phosphor offers (the menu core's native modes: rtl/native_video_*, phosphor-menu) */
-enum { CRT_OFF = -1, CRT_480I = 1, CRT_576I = 4, CRT_480P = 7 };
+enum { CRT_OFF = -1, CRT_240P = 0, CRT_480I = 1, CRT_288P = 2, CRT_576I = 4, CRT_480P = 7 };
 
 typedef struct { int on, mode, h, v; } crt_cfg_t;
 
