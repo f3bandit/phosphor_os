@@ -124,6 +124,11 @@ cJSON *wallpaper_list(const char *cat, const char *aspect)
 	cJSON *own = owners();
 	int count[NCOLL + 2] = { 0 };               /* [0] the person's, [1..] collections, [NCOLL+1] other */
 	const char *dirs[2] = { "wallpapers_user", "wallpapers" };
+	{
+		char u[600];                                /* the person's own folder, so it's there to put pictures in */
+		snprintf(u, sizeof(u), "%s/wallpapers_user", p_fat());
+		mkdirs(u);
+	}
 	for (int di = 0; di < 2; di++) {
 		char d[600];
 		snprintf(d, sizeof(d), "%s/%s", p_fat(), dirs[di]);
@@ -155,9 +160,9 @@ cJSON *wallpaper_list(const char *cat, const char *aspect)
 		if (dd) closedir(dd);
 	}
 	cJSON_Delete(own);
-	/* the categories with something in them (in this aspect): yours first */
+	/* yours (always, so there's somewhere to start), then the ones with something in them (in this aspect) */
 	for (int i = 0; i < NCOLL + 2; i++) {
-		if (!count[i]) continue;
+		if (!count[i] && i) continue;
 		cJSON *c = cJSON_CreateObject();
 		cJSON_AddStringToObject(c, "id", i == 0 ? "user" : i == NCOLL + 1 ? "other" : COLL[i - 1].id);
 		cJSON_AddStringToObject(c, "name", i == 0 ? "Your wallpapers" : i == NCOLL + 1 ? "Other wallpapers" : COLL[i - 1].name);
