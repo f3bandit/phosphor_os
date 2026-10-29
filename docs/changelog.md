@@ -3,11 +3,15 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.44 (in progress)
+## 0.27.44
 
 ### New
 - **Settings › Update Phosphor › Check GitHub for updates** asks GitHub right away instead of waiting for
   the half-hourly check (the Windows and Android apps already had one).
+
+### Fixed
+- **Downloading an update from GitHub:** the row no longer disappears when the download finishes and comes
+  back later. It stays in place: Download, Downloading..., then Install as soon as the package is ready.
 
 ## 0.27.43
 
