@@ -342,7 +342,8 @@ class AppSettings {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="upl"><div class="empty"><span class="spin"></span></div></div>
 			<div class="panel"><h2>Update Phosphor</h2><p class="note" id="upv"></p>
-			<div class="acts"><button class="btn primary" data-nav id="up_pick">Send a package from this PC…</button><input type="file" id="up_file" accept=".gz" hidden></div>
+			<p class="note" id="upon"></p>
+			<div class="acts"><button class="btn" data-nav id="up_check">Check GitHub now</button><button class="btn" data-nav id="up_pick">Send a package from this PC…</button><input type="file" id="up_file" accept=".gz" hidden></div>
 			<p class="note">A release package is phosphor-&lt;version&gt;-armhf.tar.gz. It's checked, the installed version is backed up, and the SuperStation restarts by itself to finish, with your library, box art and settings as they were. MiSTer's own files aren't touched.</p>
 			<p class="note" id="upst"></p></div></div>`));
 		const draw = async () => {
@@ -351,11 +352,18 @@ class AppSettings {
 			if (!alive()) return false;
 			if (!s.available) { $("#upl").innerHTML = `<div class="empty">This SS1's Phosphor is older than the updater: install 0.27.6 once with the update script, then updates work from here.</div>`; return false; }
 			$("#upv").textContent = "Installed on the SS1: Phosphor " + (s.version || "?");
+			/* online (Phosphor 0.27.42 on): the newest release on GitHub, which the SS1 checks every 30 minutes */
+			const on = s.online, dl = on && (on.state === "working");
+			$("#upon").innerHTML = !on ? "" : on.error ? `<span class="bad">GitHub: ${esc(on.error)}</span>`
+				: `Newest on GitHub: Phosphor ${esc(on.latest || "?")}${on.newer ? "" : " (this is it)"}${on.checked ? ` · looked ${esc(new Date(on.checked * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}` : ""}`
+				  + (on.msg && on.state ? `<br><span class="${on.state === "failed" ? "bad" : dl ? "" : "good"}">${dl ? '<span class="spin"></span> ' : ""}${esc(on.msg)}</span>` : "");
+			$("#up_check").hidden = !on;
 			const st = s.state || {}, busy = st.state === "working";
 			$("#upst").innerHTML = st.msg && (busy || Date.now() / 1000 - (st.at || 0) < 600) ? `<span class="${st.state === "failed" ? "bad" : busy ? "" : "good"}">${busy ? `<span class="spin"></span> ` : ""}${esc(st.msg)}</span>` : "";
 			const l = $("#upl");
 			l.innerHTML = "";
-			const rows = [...(s.packages || []).map(p => ({ t: "Install Phosphor " + p.version, v: p.file.includes("/media/usb") ? "USB drive" : "On the SS1", q: { do: "install", file: p.file } })),
+			const getNew = on && on.newer && !on.downloaded && !dl ? [{ t: "Download Phosphor " + on.latest + " from GitHub", v: "then install it", q: { do: "download" }, get: true }] : [];
+			const rows = [...getNew, ...(s.packages || []).map(p => ({ t: "Install Phosphor " + p.version, v: p.file.includes("/media/usb") ? "USB drive" : "On the SS1", q: { do: "install", file: p.file } })),
 				...(s.rollbacks || []).filter(r => r.version !== s.version).map(r => ({ t: "Roll back to Phosphor " + r.version, v: r.date, q: { do: "rollback", version: r.version } }))];
 			if (!rows.length) l.innerHTML = `<div class="empty">No packages on the SS1 yet, and no earlier version kept. Send one from this PC.</div>`;
 			for (const x of rows) {
@@ -363,6 +371,11 @@ class AppSettings {
 				const v = $(".v", el);
 				el.onclick = async () => {
 					if (busy) return toast("An update is running");
+					if (x.get) {   /* a download: nothing changes on the SS1 until it's installed */
+						try { await ss1(Object.assign({ cmd: "update" }, x.q)); toast("Downloading Phosphor " + on.latest + " to the SS1…"); } catch (e) { toast(e.message); }
+						setTimeout(draw, 1500);
+						return;
+					}
 					if (el.dataset.sure !== "1") { el.dataset.sure = "1"; v.textContent = "Press again"; setTimeout(() => { el.dataset.sure = ""; v.textContent = x.v; }, 4000); return; }
 					el.dataset.sure = "";
 					try { await ss1(Object.assign({ cmd: "update" }, x.q)); toast("Updating: the TV closes Phosphor and opens it again"); } catch (e) { toast(e.message); }
@@ -373,6 +386,11 @@ class AppSettings {
 			return busy;
 		};
 		const busy = await draw();
+		$("#up_check").onclick = async () => {
+			toast("Asking GitHub…");
+			try { await ss1({ cmd: "update", do: "check" }); } catch (e) { toast(e.message); }
+			setTimeout(draw, 4000);   /* (the SS1 asks in the background) */
+		};
 		$("#up_pick").onclick = () => $("#up_file").click();
 		$("#up_file").onchange = async () => {
 			const f = $("#up_file").files[0];
@@ -1117,6 +1135,7 @@ class AppSettings {
 		const alive = this.alive;
 		b.append(h(`<div class="panel" style="max-width:46rem"><h2>Phosphor for Windows ${esc(S.appVersion || "")}</h2>
 			<p class="note">The PC companion for Phosphor on the SuperStation One: the library, box art and details, base games, and the SS1's settings and tools, from your PC.</p>
+			<p class="note" id="au"></p><div class="acts"><button class="btn primary" id="au_go" data-nav hidden></button><button class="btn" id="au_check" data-nav>Check for updates</button></div>
 			<p class="note">Unofficial. Not made or supported by MiSTer-devel or the makers of the SuperStation One. Free for personal, non-commercial use (PolyForm Noncommercial 1.0.0).</p>
 			<p class="note">Thanks to Taki and Retro Remake for making the SuperStation One, such excellent hardware. Disc support by Anime0t4ku and bonna79. RetroAchievements by odelot (RA Main and cores) and rcheevos by the RetroAchievements team. Music CD names from MusicBrainz and covers from the Cover Art Archive; audio decoding by dr_libs (David Reid) and stb_vorbis (Sean Barrett).</p>
 			<p class="note">Phosphor is licensed under the PolyForm Noncommercial License 1.0.0. Phosphor's Main and menu core are GPL-3.0, with their source at <a href="https://github.com/f3bandit/phosphor-main" target="_blank" rel="noopener">github.com/f3bandit/phosphor-main</a> and <a href="https://github.com/f3bandit/phosphor-menu" target="_blank" rel="noopener">github.com/f3bandit/phosphor-menu</a>. The open-source software Phosphor is built with keeps its own licences:</p>
@@ -1125,6 +1144,24 @@ class AppSettings {
 			<div class="acts"><button class="btn" id="quit" data-nav>Exit Phosphor</button></div></div>`));
 		$("#quit").onclick = async () => { await api("/api/quit", {}); window.close(); };
 		$("#licences").onclick = () => window.open("THIRD_PARTY_NOTICES.md", "_blank"); // copied in by build-exe.sh
+		/* this app's own updates, from Phosphor's releases on GitHub (appupdate.go) */
+		const au = async (q) => {
+			let r;
+			try { r = await api("/api/app_update", q); } catch (e) { if (alive()) $("#au").innerHTML = `<span class="bad">${esc(e.message)}</span>`; return true; }
+			if (!alive()) return false;
+			if (!r.ok) { toast(r.error || "Couldn't check"); r = await api("/api/app_update").catch(() => ({})); if (!alive()) return false; }
+			const u = r.update || {}, busy = u.state === "working";
+			$("#au").innerHTML = (u.latest ? (u.newer ? `<b>Phosphor for Windows ${esc(u.latest)} is out</b> (you have ${esc(r.version)}).` : `This is the newest Phosphor for Windows.`) : `Phosphor for Windows looks for a newer version on GitHub now and then.`)
+				+ (u.msg ? `<br><span class="${u.state === "failed" ? "bad" : busy ? "" : "good"}">${busy ? '<span class="spin"></span> ' : ""}${esc(u.msg)}</span>` : "");
+			const go = $("#au_go");
+			go.hidden = !u.newer || busy || u.state === "done";
+			go.textContent = "Update to " + (u.latest || "");
+			return busy;
+		};
+		$("#au_check").onclick = async () => { toast("Asking GitHub…"); await au({ do: "check" }); };
+		$("#au_go").onclick = async () => { await au({ do: "install" }); toast("Updating: Phosphor closes and opens again by itself"); };
+		au();
+		this.every(3000, async () => { await au(); return true; });
 	}
 
 	/* ---------- Devices (view only: pairing and changes are made on the SS1 itself) ---------- */

@@ -20,7 +20,7 @@
 
 static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
 /* API 5: the dock's drive (disc events) and Phosphor's in-game menu (ingame) */
-static int ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1, shot_want = 1;
+static int crt_api, ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1, shot_want = 1;
 /* a controller mapping Main runs for the shell (its steps come as events) */
 static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
@@ -88,6 +88,7 @@ static int take(void)
 	    || !((disc_api = strstr(r, "\"disc\":true") != NULL), 1)
 	    || !((ingame_api = strstr(r, "\"ingame\":true") != NULL), 1)
 	    || !((ra_api = strstr(r, "\"ra\":true") != NULL), 1)
+	    || !((crt_api = strstr(r, "\"crt\":true") != NULL), 1)
 	    || ask("screen phosphor", r, sizeof(r)) || !strstr(r, "\"ok\":true") || ask("subscribe", r, sizeof(r))) {
 		close(fd);
 		fd = -1;
@@ -172,6 +173,26 @@ static int say(const char *line)
 int mainlink_disc_enable(int on) { disc_want = on; return disc_api ? say(on ? "disc on" : "disc off") : -1; }
 int mainlink_shot_combo(int on) { shot_want = on; return ingame_api ? say(on ? "shot on" : "shot off") : -1; }
 int mainlink_ingame(int on) { return ingame_api ? say(on ? "ingame on" : "ingame off") : -1; }
+int mainlink_has_crt(void) { return fd >= 0 && crt_api; }
+/* CRT mode: the in-game menu as text in MiSTer's OSD (the analog port never shows the framebuffer) */
+int mainlink_ingame_text(void) { return crt_api ? say("ingame text on") : -1; }
+int mainlink_osdmenu(int sel, const char *title, const char *text)
+{
+	if (fd < 0 || !crt_api) return -1;
+	char b[900];
+	int n = snprintf(b, sizeof(b), "osdmenu %d %.24s\x1f", sel, title);
+	for (const char *c = text; *c && n < (int)sizeof(b) - 2; c++) b[n++] = *c == '\n' ? 0x1f : (*c == '\r' ? ' ' : *c);
+	b[n++] = '\n';
+	return send(fd, b, (size_t)n, MSG_NOSIGNAL) == n ? 0 : -1;
+}
+/* the menu core into a CRT mode (or back to its usual picture); Main keeps it in phosphor/config/crt */
+int mainlink_crt(int on, int mode, int h, int v)
+{
+	if (!crt_api) return -1;
+	char b[48];
+	snprintf(b, sizeof(b), "crt %d %d %d %d", on ? 1 : 0, mode, h, v);
+	return say(b);
+}
 int mainlink_ingame_osd(void) { return ingame_api ? say("ingame osd") : -1; }
 /* from the in-game menu back to Phosphor: the menu core again (Phosphor's, where it's installed) */
 int mainlink_quit_game(void)
@@ -258,6 +279,9 @@ static int handle_line(const char *l)
 		if ((q = strstr(l, "\"dev\":\"")) && sscanf(q + 7, "%15[0-9a-f:]", mp.dev) != 1) mp.dev[0] = 0;
 		return 0;
 	}
+	/* the in-game screen refused or gone (ingame on / ingame text on / osdmenu): as if Main took it back */
+	if (!strncmp(l, "{\"ok\":false", 12) && (strstr(l, "no game is running") || strstr(l, "another client has the screen")
+	                                       || strstr(l, "not in text mode") || strstr(l, "can't show Phosphor's screen"))) { ingame_ended = 1; return 0; }
 	if (mp.pending && !strncmp(l, "{\"ok\":", 6)) {
 		mp.pending = 0;
 		if (!strncmp(l, "{\"ok\":false", 12)) {

@@ -155,11 +155,16 @@ class SsLoginTest {
 
     @Test fun missing() {
         fun acct(m: Map<String, String>): (String, String) -> String = { _, k -> m[k] ?: "" }
+        // a release build has Phosphor's own login built in: test without it, then put it back
+        val keepId = com.f3bandit.phosphor.scrape.ssBuiltinId; val keepPw = com.f3bandit.phosphor.scrape.ssBuiltinPw
+        com.f3bandit.phosphor.scrape.ssBuiltinId = ""; com.f3bandit.phosphor.scrape.ssBuiltinPw = ""
+        try {
         assertTrue("developer ID" in com.f3bandit.phosphor.scrape.ssMissing(acct(mapOf("user" to "u", "password" to "p"))))
         assertEquals("", com.f3bandit.phosphor.scrape.ssMissing(acct(mapOf("user" to "u", "password" to "p", "devid" to "d", "devpassword" to "x"))))
         com.f3bandit.phosphor.scrape.ssBuiltinId = "phosphor"; com.f3bandit.phosphor.scrape.ssBuiltinPw = "s"
         try {
             assertEquals("", com.f3bandit.phosphor.scrape.ssMissing(acct(mapOf("user" to "u", "password" to "p"))))
         } finally { com.f3bandit.phosphor.scrape.ssBuiltinId = ""; com.f3bandit.phosphor.scrape.ssBuiltinPw = "" }
+        } finally { com.f3bandit.phosphor.scrape.ssBuiltinId = keepId; com.f3bandit.phosphor.scrape.ssBuiltinPw = keepPw }
     }
 }

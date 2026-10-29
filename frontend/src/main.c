@@ -16,6 +16,7 @@
 #include "input.h"
 #include "api.h"
 #include "mainlink.h"
+#include "crt.h"
 #include "log.h"
 #include "settings.h"
 #include "theme.h"
@@ -210,6 +211,33 @@ static void on_term(int sig)
 	_exit(0);
 }
 
+static char **g_argv;                          /* (to start again at a new screen size) */
+
+/* the framebuffer's size now (Main sets it: MiSTer.ini's video_mode, through fb_cmd1) */
+static int fb_size_now(const char *fbdev, int *w, int *h)
+{
+	int fd = open(fbdev, O_RDONLY);
+	if (fd < 0) return -1;
+	struct fb_var_screeninfo v;
+	int r = ioctl(fd, FBIOGET_VSCREENINFO, &v);
+	close(fd);
+	if (r) return -1;
+	*w = (int)v.xres;
+	*h = (int)v.yres;
+	return 0;
+}
+
+/* start again (the display driver and every layout are sized once): the same program, the same options */
+static void restart_self(void)
+{
+	if (!g_argv || access("/proc/self/exe", X_OK) != 0) { plog("can't start again"); return; }
+	console_text();
+	for (int fd = 3; fd < 1024; fd++) close(fd);   /* (the new one opens its own: Main's link, phosphord) */
+	execv("/proc/self/exe", g_argv);
+	plog("couldn't start again");                  /* (its links are closed: phosphor.sh start brings it back) */
+	_exit(1);
+}
+
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
 	signal(SIGTERM, on_term);
@@ -225,6 +253,23 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 	fb_black(fbdev);
 	/* with phosphor-main the shell takes the screen itself; with stock Main it's F9 */
 	mainlink_start();
+	/* CRT mode (Settings > Video): Phosphor's menu core shows the shell's frames at a TV's own timing on
+	   the analog port, so the shell draws at that mode's size (and HDMI shows the same, scaled up) */
+	crt_cfg_t crt;
+	int crt_w = 0, crt_h = 0;
+	int crt_cfg = crt_load(&crt) == 0;
+	/* CRT mode on: Main may not be listening yet (just after boot, or Main restarting): a few more tries,
+	   since the TV shows only what this shell puts in the native buffer */
+	for (int t = 0; crt_cfg && crt.on && !mainlink_connected() && t < 10; t++) { usleep(500000); mainlink_start(); }
+	int crt_on = crt_cfg && crt.on && mainlink_has_crt() && crt_size(crt.mode, &crt_w, &crt_h) == 0;
+	/* Main as the file says (it reads it once: a change while it wasn't listening, an off, a revert) */
+	if (mainlink_has_crt() && !crt_on) mainlink_crt(0, crt.mode, crt.h, crt.v);
+	if (crt_on) {
+		mw = crt_w;
+		mh = crt_h;
+		have_mode = 1;
+		mainlink_crt(1, crt.mode, crt.h, crt.v);
+	}
 	if (have_mode) {
 		/* Main only accepts this while the Linux framebuffer is showing */
 		char cmd[64], err[256];
@@ -239,6 +284,18 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 	lv_linux_fbdev_set_file(d, fbdev);
 	int w = lv_display_get_horizontal_resolution(d), h = lv_display_get_vertical_resolution(d);
 	plog("screen %dx%d on %s", w, h, fbdev);
+	/* CRT mode that can't be shown (the screen didn't become the mode's size, /dev/mem): off, or the mode
+	   before a try, rather than a TV showing an old frame and a Keep window asking about it */
+	if (crt_on && ((w != crt_w || h != crt_h) ? (plog("crt: the screen is %dx%d, not %dx%d", w, h, crt_w, crt_h), 1) : crt_attach(d, w, h) != 0)) {
+		crt_cfg_t prev;
+		if (crt_pending(&prev)) crt_revert();
+		else {
+			crt.on = 0;
+			crt_save(&crt);
+			mainlink_crt(0, crt.mode, crt.h, crt.v);
+		}
+		plog("crt: CRT mode off (couldn't show it)");
+	}
 	input_init();
 	ui_init(w, h);
 
@@ -250,11 +307,25 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			char cmd[64], err[256];
 			snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
 			if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
+			/* Main may have come back at another resolution (MiSTer.ini's video_mode changed, e.g. to a
+			   4:3 640x480 for a CRT): the display driver and every layout are sized once, so start again
+			   at the new size rather than draw the old one into it */
+			usleep(300000);
+			int nw, nh;
+			if (fb_size_now(fbdev, &nw, &nh) == 0 && (nw != w || nh != h) && nw > 0 && nh > 0) {
+				plog("the screen is %dx%d now (was %dx%d): starting again at that size", nw, nh, w, h);
+				restart_self();
+			}
 			console_quiet();
 			lv_obj_invalidate(lv_screen_active());
 			redraw_at = now + 700;      /* Main may still be setting the video up: draw it all again */
 			int st = mainlink_script_result();
 			if (st >= 0) ui_script_done(st);
+		}
+		crt_tick();                                   /* (a frame waiting for its flip) */
+		if (crt_take_restart()) {
+			plog("CRT mode changed: starting again at its size");
+			restart_self();
 		}
 		if (redraw_at && (int)(now - redraw_at) >= 0) {
 			redraw_at = 0;
@@ -302,6 +373,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		uint32_t wait = lv_timer_handler();
 		uint32_t cap = (uint32_t)ui_max_sleep();
 		if (input_held() || redraw_at) cap = 16;
+		if (crt_flip_waiting()) cap = 10;
 		if (wait > cap) wait = cap;
 		struct pollfd p[24];
 		int n = input_pollfds(p, 23);
@@ -316,6 +388,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
  * load the Phosphor menu core (stock menu core at boot) */
 int main(int argc, char **argv)
 {
+	g_argv = argv;
 	signal(SIGPIPE, SIG_IGN);                 /* a socket whose other end went away is an error, not the end of the shell */
 	const char *snap = NULL, *keys = NULL, *fb = "/dev/fb0", *serial = NULL, *fb_mode = "full";
 	int w = 1280, h = 720, fb_rb = 1;

@@ -17,4 +17,8 @@ void art_path(const char *rel, char *out, size_t n);
  * renamed): from an image file, or from image bytes in memory (art in a music file). 0 on success. */
 int art_thumb(const char *src_file, const unsigned char *mem, size_t memlen, const char *out, int max);
 
+int art_size(const char *src, int *w, int *h);
+/* a wallpaper scaled to cover W x H (middle kept), darkened by dim/255; JPEG at out. 0 on success */
+int art_cover(const char *src, const char *out, int W, int H, int dim);
+
 #endif

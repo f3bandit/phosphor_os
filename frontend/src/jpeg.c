@@ -55,6 +55,41 @@ static lv_result_t info(lv_image_decoder_t *dec, lv_image_decoder_dsc_t *dsc, lv
 	return LV_RESULT_OK;
 }
 
+/* stb's RGB into LVGL's BGRA */
+static lv_draw_buf_t *to_buf(unsigned char *px, int w, int h)
+{
+	lv_draw_buf_t *db = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_ARGB8888, 0);
+	if (!db) return NULL;
+	for (int y = 0; y < h; y++) {
+		uint8_t *row = db->data + (size_t)y * db->header.stride;
+		const unsigned char *s = px + (size_t)y * w * 3;
+		for (int x = 0; x < w; x++) {
+			row[x * 4 + 0] = s[x * 3 + 2];
+			row[x * 4 + 1] = s[x * 3 + 1];
+			row[x * 4 + 2] = s[x * 3 + 0];
+			row[x * 4 + 3] = 0xff;
+		}
+	}
+	return db;
+}
+
+lv_draw_buf_t *jpeg_load_buf(const char *path)
+{
+	lv_fs_file_t f;
+	if (!path || lv_fs_open(&f, path, LV_FS_MODE_RD) != LV_FS_RES_OK) return NULL;
+	uint32_t len;
+	unsigned char *buf = read_all(&f, &len);
+	lv_fs_close(&f);
+	if (!buf) return NULL;
+	int w, h, n;
+	unsigned char *px = stbi_load_from_memory(buf, (int)len, &w, &h, &n, 3);
+	lv_free(buf);
+	if (!px) return NULL;
+	lv_draw_buf_t *db = to_buf(px, w, h);
+	stbi_image_free(px);
+	return db;
+}
+
 static lv_result_t open_(lv_image_decoder_t *dec, lv_image_decoder_dsc_t *dsc)
 {
 	if (dsc->src_type != LV_IMAGE_SRC_FILE) return LV_RESULT_INVALID;
@@ -68,19 +103,9 @@ static lv_result_t open_(lv_image_decoder_t *dec, lv_image_decoder_dsc_t *dsc)
 	unsigned char *px = stbi_load_from_memory(buf, (int)len, &w, &h, &n, 3);
 	lv_free(buf);
 	if (!px) { LV_LOG_WARN("jpeg: %s", stbi_failure_reason()); return LV_RESULT_INVALID; }
-	lv_draw_buf_t *db = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_ARGB8888, 0);
-	if (!db) { stbi_image_free(px); return LV_RESULT_INVALID; }
-	for (int y = 0; y < h; y++) {
-		uint8_t *row = db->data + (size_t)y * db->header.stride;
-		const unsigned char *s = px + (size_t)y * w * 3;
-		for (int x = 0; x < w; x++) {          /* RGB -> LVGL's BGRA */
-			row[x * 4 + 0] = s[x * 3 + 2];
-			row[x * 4 + 1] = s[x * 3 + 1];
-			row[x * 4 + 2] = s[x * 3 + 0];
-			row[x * 4 + 3] = 0xff;
-		}
-	}
+	lv_draw_buf_t *db = to_buf(px, w, h);
 	stbi_image_free(px);
+	if (!db) return LV_RESULT_INVALID;
 	dsc->decoded = db;
 	if (dsc->args.no_cache || !lv_image_cache_is_enabled()) return LV_RESULT_OK;
 	lv_image_cache_data_t key;

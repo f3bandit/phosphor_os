@@ -1057,6 +1057,18 @@ PAGES.power = { async show(c, p) {
 			const nw = pk.filter(x => newer(x.version, u.version)), other = pk.filter(x => !nw.includes(x));
 			let h = errp(err) + flat(row("Phosphor " + (u.version || "?"), { value: "installed" }));
 			if (S.msg && (busy || Date.now() / 1000 - S.at < 600)) h += `<p class="${S.state === "failed" ? "err" : busy ? "busy" : "small good"}">${esc(S.msg)}</p>`;
+			/* online (Phosphor 0.27.42 on): the newest release on GitHub, which the MiSTer looks for every 30 minutes */
+			const on = u.online;
+			if (on) {
+				const dl = on.state === "working";
+				const when = on.checked ? " · looked " + new Date(on.checked * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+				if (on.error) h += note("GitHub: " + on.error);
+				else if (on.newer && !on.downloaded)
+					h += card(`<h3>Phosphor ${esc(on.latest)} is out</h3><p class="small">On GitHub${esc(when)}. The MiSTer downloads it and checks it; then install it below.</p>${btn(dl ? "Downloading…" : "Download " + on.latest, "download", { p: true, off: busy || dl })}`, "on");
+				else h += flat(row("Newest on GitHub", { value: (on.latest || "?") + (on.newer ? "" : " (this one)"), sub: when.replace(" · ", "") }));
+				if (on.msg && on.state) h += `<p class="${on.state === "failed" ? "err" : dl ? "busy" : "small good"}">${esc(on.msg)}</p>`;
+				h += btn("Check GitHub now", "check", { off: dl });
+			}
 			if (!pk.length && !rb.length) h += note("No packages on the MiSTer yet, and no earlier version kept. Send one from Phosphor for Windows, or copy phosphor-<version>-armhf.tar.gz to the SD card.");
 			nw.concat(other).forEach(x => { h += card(`<h3>Install Phosphor ${esc(x.version)}</h3><p class="small">${/\/media\/usb/.test(x.file) ? "On a USB drive" : "On the MiSTer"}</p>${btn("Install " + x.version, "install", { arg: x.file, p: nw.includes(x), off: busy, sure: "Press again: the TV closes Phosphor and opens it again" })}`, nw.includes(x) ? "on" : ""); });
 			rb.forEach(r => { h += card(`<h3>Roll back to Phosphor ${esc(r.version)}</h3><p class="small">${esc(r.date)}</p>${btn("Roll back", "rollback", { arg: r.version, off: busy, sure: "Press again to roll back" })}`); });
@@ -1064,9 +1076,11 @@ PAGES.power = { async show(c, p) {
 		};
 		acts = {
 			install: async f => { u = await call("update", { do: "install", file: f }); toast("Updating: the TV closes Phosphor and opens it again"); draw(); },
+			download: async () => { u = await call("update", { do: "download" }); toast("Downloading to the MiSTer…"); draw(); },
+			check: async () => { toast("Asking GitHub…"); await call("update", { do: "check" }); setTimeout(async () => { try { u = await call("update"); draw(); } catch (e) {} }, 4000); },
 			rollback: async ver => { u = await call("update", { do: "rollback", version: ver }); toast("Rolling back to Phosphor " + ver); draw(); },
 		};
-		await c.every(async () => { try { u = await call("update"); err = ""; } catch (e) { err = e.message; } draw(); return u && u.state && u.state.state === "working" ? 2000 : 8000; });
+		await c.every(async () => { try { u = await call("update"); err = ""; } catch (e) { err = e.message; } draw(); return u && ((u.state && u.state.state === "working") || (u.online && u.online.state === "working")) ? 2000 : 8000; });
 		return;
 	}
 	let g = null, err = "";

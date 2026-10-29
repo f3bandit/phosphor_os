@@ -11,8 +11,16 @@ import java.net.URLEncoder
 
 /** Phosphor's own developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD when the
  *  app is built), never in the repo. Empty until ScreenScraper gives one. */
-var ssBuiltinId: String = BuildConfig.SS_DEVID
-var ssBuiltinPw: String = BuildConfig.SS_DEVPASSWORD
+var ssBuiltinId: String = ssUnscramble(BuildConfig.SS_DEVID)
+var ssBuiltinPw: String = ssUnscramble(BuildConfig.SS_DEVPASSWORD)
+
+/** Undo build.gradle.kts' scrambling: hex bytes XOR the per-build key BuildConfig.SS_K. */
+private fun ssUnscramble(h: String): String {
+    if (h.isEmpty()) return ""
+    val k = BuildConfig.SS_K.chunked(2).map { it.toInt(16) }
+    val b = h.chunked(2).mapIndexed { i, s -> (s.toInt(16) xor k[i % k.size]).toByte() }.toByteArray()
+    return String(b, Charsets.UTF_8)
+}
 
 fun ssDevLogin(acct: (String, String) -> String): Pair<String, String> =
     if (ssBuiltinId.isNotEmpty() && ssBuiltinPw.isNotEmpty()) ssBuiltinId to ssBuiltinPw

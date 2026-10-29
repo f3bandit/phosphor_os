@@ -1,4 +1,6 @@
 // Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+import java.security.SecureRandom
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,13 +14,20 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.9.8"
+        versionCode = 19
+        versionName = "0.9.9"
         // Phosphor's own ScreenScraper developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD
-        // in the environment), never in the repo; empty without it
-        fun lit(v: String?) = "\"" + (v ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-        buildConfigField("String", "SS_DEVID", lit(System.getenv("PHOSPHOR_SS_DEVID")))
-        buildConfigField("String", "SS_DEVPASSWORD", lit(System.getenv("PHOSPHOR_SS_DEVPASSWORD")))
+        // in the environment), never in the repo; empty without it. Scrambled (XOR with a fresh random key each
+        // build, stored as hex) so it isn't plain text in the APK; SsLogin.kt unscrambles it.
+        val ssKey = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
+        fun scr(v: String?): String {
+            val b = (v ?: "").toByteArray(Charsets.UTF_8)
+            return "\"" + hex(ByteArray(b.size) { (b[it].toInt() xor ssKey[it % ssKey.size].toInt()).toByte() }) + "\""
+        }
+        buildConfigField("String", "SS_K", "\"" + hex(ssKey) + "\"")
+        buildConfigField("String", "SS_DEVID", scr(System.getenv("PHOSPHOR_SS_DEVID")))
+        buildConfigField("String", "SS_DEVPASSWORD", scr(System.getenv("PHOSPHOR_SS_DEVPASSWORD")))
     }
     buildFeatures { buildConfig = true }
 

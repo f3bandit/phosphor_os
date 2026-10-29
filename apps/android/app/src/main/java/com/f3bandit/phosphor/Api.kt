@@ -112,7 +112,9 @@ data class StorageState(val installed: Boolean, val drives: List<Drive>, val ove
 data class UpdatePackage(val file: String, val version: String)
 data class Rollback(val version: String, val date: String)
 data class UpdateState(val available: Boolean, val version: String, val packages: List<UpdatePackage>, val rollbacks: List<Rollback>,
-                       val state: String, val msg: String, val at: Long)
+                       val state: String, val msg: String, val at: Long,
+                       /** the newest release on GitHub, as the MiSTer last saw it (Phosphor 0.27.42 on; "" before) */
+                       val onlineLatest: String = "", val onlineNewer: Boolean = false, val onlineDownloaded: Boolean = false)
 
 /** compares dotted versions: "0.27.16" > "0.27.9" */
 fun versionNewer(a: String, b: String): Boolean {
@@ -395,6 +397,8 @@ class PhosphorApi(val address: String, private val token: String?) {
             (0 until pa.length()).map { pa.getJSONObject(it) }.map { UpdatePackage(it.optString("file"), it.optString("version")) },
             (0 until ra.length()).map { ra.getJSONObject(it) }.map { Rollback(it.optString("version"), it.optString("date")) },
             st.optString("state"), st.optString("msg"), st.optLong("at"),
+            r.optJSONObject("online")?.optString("latest") ?: "", r.optJSONObject("online")?.optBoolean("newer") ?: false,
+            r.optJSONObject("online")?.optBoolean("downloaded") ?: false,
         )
     }
 

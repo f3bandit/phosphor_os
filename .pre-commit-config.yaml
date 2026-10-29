@@ -1,0 +1,7 @@
+# Secret scan before each commit (pip install pre-commit; pre-commit install). GitHub Actions runs the
+# same scan on every push (Secret builds). Keeps things like the ScreenScraper developer login out of git.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

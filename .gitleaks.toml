@@ -1,0 +1,12 @@
+# Secret scan settings (gitleaks: Secret builds workflow and .pre-commit-config.yaml): the default
+# rules, without other projects' code copied in as-is (its "keys" are variable names, not secrets).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "third-party sources and build output"
+paths = [
+  '''(^|/)third_party/''',
+  '''(^|/)build(-arm|-asan)?/''',
+  '''^dist/''',
+]

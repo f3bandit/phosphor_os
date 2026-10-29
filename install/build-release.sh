@@ -17,6 +17,13 @@ for pair in $pairs; do
 	[ -z "$newer" ] || { echo "$1 is older than $newer: build it first" >&2; exit 1; }
 done
 cp frontend/build-arm/phosphor system/build-arm/phosphord system/build-arm/phos system/build-arm/phos-nvme "$D/bin/"
+# phosphord with Phosphor's ScreenScraper developer login (GitHub Actions "Secret builds", downloaded to
+# PHOS_SECRET_BUILDS): the login is a repo secret, so release builds take that phosphord
+if [ -n "$PHOS_SECRET_BUILDS" ]; then
+	[ -x "$PHOS_SECRET_BUILDS/phosphord" ] || { echo "PHOS_SECRET_BUILDS has no phosphord" >&2; exit 1; }
+	cp "$PHOS_SECRET_BUILDS/phosphord" "$D/bin/phosphord"
+	echo "phosphord: the Secret builds one (Phosphor's ScreenScraper developer ID built in)"
+fi
 # phosphor-main (GPL-3.0, its own repo): copied in when built next to this repo; never started by the installer
 if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/bin/MiSTer_phosphor"; fi
 # RetroAchievements' unlock sound (from odelot's RetroAchievements Main, in phosphor-main)
@@ -56,6 +63,7 @@ if [ -f "$D/bin/MiSTer_phosphor" ] || [ -d "$D/cores" ]; then
 		echo
 		[ -z "$main_src" ] || echo "- bin/MiSTer_phosphor (Phosphor's Main, a fork of MiSTer's Main with odelot's RetroAchievements): $main_src"
 		[ -z "$menu_src" ] || echo "- cores/menu_phosphor.rbf (Phosphor's menu core, a fork of MiSTer's Menu core, GPL-2.0-or-later, with GPL-3.0 additions): $menu_src"
+		[ -z "$menu_src" ] || echo "  Its CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later)."
 		echo
 		echo "achievement.wav, the RetroAchievements unlock sound, comes with odelot's RetroAchievements Main"
 		echo "(https://github.com/odelot/Main_MiSTer); see THIRD_PARTY_NOTICES.md."
