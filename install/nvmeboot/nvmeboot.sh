@@ -15,6 +15,10 @@
 #     says it was tried: u-boot sets "trying" before starting from the drive, Phosphor clears it once it's
 #     up. Still "trying" at the next start-up = it didn't come up: u-boot starts from the SD card and
 #     leaves "fell back" for Phosphor to tell the user. /phosphor_boot_sd on the SD card = start from it.
+#   - The drive can't be checked while it's the system's own (/ and /media/fat are on it), so a drive
+#     Linux found marked dirty at start-up (not shut down safely) gets "check": u-boot starts once from the
+#     SD card, where the drive is only storage and Phosphor's dirty-drive check repairs it (fsck.exfat -p),
+#     then it restarts and runs from the drive again.
 # The boot drive is found by its partition's PARTUUID, never by its Linux name (sda / sdb change with
 # what's plugged in). Two partitions with the same PARTUUID (a cloned drive) are refused.
 #
@@ -25,7 +29,9 @@
 #                                 storage_priority to 'prefer_sd' on the drive (the old value kept)
 #   nvmeboot.sh disable           the start-up lines off the SD card (it starts from it again)
 #   nvmeboot.sh copyback          running from the drive: what changed there copied back to the SD card
-#   nvmeboot.sh boot              at boot, from phosphor.sh boot: the restart word, the second mount
+#   nvmeboot.sh boot              at boot, from phosphor.sh boot: the restart word, the second mount; the
+#                                 drive marked dirty at start-up: once from the SD card to check it
+#   nvmeboot.sh after-check       at boot, after the dirty-drive check: back to the drive once it's clean
 #   nvmeboot.sh sync              running from the drive: the kernel, menu.rbf and u-boot.txt's own lines
 #                                 copied to the SD card when they changed (after updates)
 set -u
@@ -39,6 +45,7 @@ MARK="${NVB_MARK:-0x1FFFFF10}"
 TMPD="${PHOS_TMP:-/tmp/phosphor}"
 BLOCK="$HERE/u-boot.phosphor.txt"
 M_TRY=0x504E5452 M_FELL=0x504E4642 M_FORCED=0x504E4653  # "RTNP", "BFNP", "SFNP" in memory
+M_CHECK=0x504E4643                                      # "CFNP": start from the SD card once, to check the drive
 
 mkdir -p "$TMPD" 2> /dev/null
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$FAT/phosphor/logs/nvmeboot.log" 2> /dev/null; }
@@ -73,6 +80,39 @@ kb_free() { df -kP "$1" 2> /dev/null | awk 'NR == 2 {print $4}'; }
 # the start-up lines in an u-boot.txt: ours are phos_* and our mmcboot
 has_block() { grep -q '^phos_partuuid=' "$1" 2> /dev/null; }
 strip_block() { grep -v -e '^phos_' -e '^mmcboot=if run phos_force' "$1" 2> /dev/null; }
+
+# the drive Linux runs from was marked dirty when it was mounted (this boot's kernel log)
+root_was_dirty() {
+	d="$(stat -c %d "$FAT" 2> /dev/null)"; [ -n "$d" ] || return 1
+	n="$(basename "$(readlink -f "/sys/dev/block/$(( (d >> 8) & 0xfff )):$(( (d & 0xff) | ((d >> 12) & 0xfff00) ))" 2> /dev/null)")"
+	[ -n "${NVB_ROOTDEV:-}" ] && n="$NVB_ROOTDEV"
+	[ -n "$n" ] && ${NVB_DMESG:-dmesg} 2> /dev/null | grep -q "exFAT-fs ($n): Volume was not properly unmounted"
+}
+
+# started from the SD card to check the drive: back to it once Phosphor's dirty-drive check (run just
+# before this) has cleaned it
+cmd_after_check() {
+	[ "$(boot_word)" = check ] || return 0
+	p="$(sed -n 's/^phos_partuuid=//p' "$FAT/linux/u-boot.txt" 2> /dev/null | head -1)"
+	dev="$(blkid 2> /dev/null | grep -i "PARTUUID=\"$p\"" | head -1 | cut -d: -f1)"
+	if [ -z "$dev" ]; then log "check: the drive isn't here"; echo check-failed > "$TMPD/boot-from"; return 0; fi
+	mnt="$(awk -v d="$dev" '$1 == d {print $2; exit}' "${NVB_MOUNTS:-/proc/mounts}")"
+	# the dirty-drive check's own line for it, this boot (it's mounted again after the check, and Linux
+	# marks a drive in use while it's mounted, so its flag now means nothing)
+	l="$(grep "  $dev " "$FAT/phosphor/logs/drives.log" 2> /dev/null | tail -1)"
+	up="$(cut -d. -f1 /proc/uptime 2> /dev/null)"; t="$(date -d "${l%%  *}" +%s 2> /dev/null)"
+	[ -n "$t" ] && [ -n "$up" ] && [ "$t" -lt $(( $(date +%s) - up - 5 )) ] && l=""      # an older boot's line
+	case "$l" in
+		*"still dirty"*|*"COULDN'T MOUNT"*|*"not checked"*)
+			log "check: the drive wasn't cleaned (${l#*  }): staying on the SD card"
+			echo check-failed > "$TMPD/boot-from"; return 0 ;;
+	esac
+	log "check: the drive ($dev${mnt:+ at $mnt}) is clean: restarting from it"
+	$DEVMEM "$MARK" 32 0 2> /dev/null
+	[ -n "${NVB_NOREBOOT:-}" ] && { echo back-to-drive > "$TMPD/boot-from"; return 0; }
+	sh "$FAT/phosphor/phosphor.sh" safe-stop > /dev/null 2>&1; sync; reboot
+	sleep 30; return 0
+}
 
 cmd_status() {
 	w="$(boot_word)"
@@ -215,9 +255,25 @@ cmd_boot() {
 		nvme)     echo drive > "$TMPD/boot-from" ;;
 		fallback) echo fallback > "$TMPD/boot-from"; log "started from the SD card: the drive didn't come up" ;;
 		forced)   echo forced > "$TMPD/boot-from" ;;
+		check)    echo check > "$TMPD/boot-from"; log "started from the SD card to check the drive" ;;
 		*)        rm -f "$TMPD/boot-from"; return 0 ;;     # not set up: nothing to do
 	esac
 	$DEVMEM "$MARK" 32 0 2> /dev/null                          # up: the next restart tries the drive again
+	if [ "$w" = nvme ] && root_was_dirty; then
+		# marked dirty when Linux mounted it: it can't be checked while it's in use, so once from the SD card
+		# (at most once in 10 minutes: a drive the check can't clean is left to run as it is)
+		st="$FAT/phosphor/state/nvmeboot.checked"
+		last="$(cat "$st" 2> /dev/null)"; now="$(date +%s)"
+		if [ -z "$last" ] || [ $((now - last)) -gt 600 ]; then
+			mkdir -p "${st%/*}"; echo "$now" > "$st"
+			log "the drive was marked dirty at start-up: restarting from the SD card to check it"
+			$DEVMEM "$MARK" 32 "$M_CHECK" 2> /dev/null
+			[ -n "${NVB_NOREBOOT:-}" ] && { echo check > "$TMPD/boot-from"; return 0; }
+			sh "$FAT/phosphor/phosphor.sh" safe-stop > /dev/null 2>&1; sync; reboot
+			sleep 30; return 0
+		fi
+		log "the drive was marked dirty at start-up, but it was checked less than 10 minutes ago: left as it is"
+	fi
 	if [ "$w" = nvme ]; then
 		# usbmount found the drive again and mounted it a second time (/media/usbN): the same file system
 		# twice, so the library would list every game twice
@@ -239,5 +295,6 @@ case "${1:-status}" in
 	copyback) cmd_copyback ;;
 	sync) cmd_sync ;;
 	boot) cmd_boot ;;
+	after-check) cmd_after_check ;;
 	*) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

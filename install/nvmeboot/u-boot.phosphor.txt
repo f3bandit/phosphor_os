@@ -4,4 +4,4 @@ phos_go=bootz $loadaddr - $fdt_addr
 phos_force=test -e mmc 0:$mmc_boot /phosphor_boot_sd
 phos_sd=setenv bootargs console=ttyS0,115200 $v loop.max_part=8 mem=511M memmap=513M$511M root=$mmcroot loop=linux/linux.img ro rootwait phosphor.boot=$phos_why;run phos_go
 phos_nvme=setenv bootargs console=ttyS0,115200 $v loop.max_part=8 mem=511M memmap=513M$511M root=PARTUUID=$phos_partuuid loop=linux/linux.img ro rootwait=20 panic=3 phosphor.boot=nvme;run phos_go
-mmcboot=if run phos_force;then mw.l $phos_mark 0x504e4653;setenv phos_why forced;run phos_sd;elif itest.l *$phos_mark == 0x504e5452;then mw.l $phos_mark 0x504e4642;setenv phos_why fallback;run phos_sd;else mw.l $phos_mark 0x504e5452;run phos_nvme;fi
+mmcboot=if run phos_force;then mw.l $phos_mark 0x504e4653;setenv phos_why forced;run phos_sd;elif itest.l *$phos_mark == 0x504e5452;then mw.l $phos_mark 0x504e4642;setenv phos_why fallback;run phos_sd;elif itest.l *$phos_mark == 0x504e4643;then mw.l $phos_mark 0x504e4644;setenv phos_why check;run phos_sd;else mw.l $phos_mark 0x504e5452;run phos_nvme;fi
