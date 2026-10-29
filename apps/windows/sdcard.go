@@ -2,8 +2,8 @@
 
 package main
 
-// Tools > SD card flash & health: put the official SuperStation One SD card image on a card in this
-// PC's reader (the same images and the same careful write as SS1 Tool: partition table last, then the
+// Tools > SD card flash & health: put Phosphor's SD card image, or the SuperStation One's regular MiSTer
+// image, on a card in this PC's reader (the same images and the same careful write as SS1 Tool: partition table last, then the
 // whole card read back and compared), and a read test of a card (every part read once, nothing
 // written). Writing to a disk needs administrator rights: the window never has them. A small helper
 // (this same program, started with --sdjob through Windows' own "allow this app" prompt) does the one
@@ -26,8 +26,11 @@ import (
 
 const installerRepo = "Retro-Remake/SuperStation-SD-Card-Installer"
 
+// Phosphor's own SD card image (MiSTer with Phosphor on it), from Phosphor's releases
+const phosphorRepo = "f3bandit/phosphor_os"
+
 type flashImage struct {
-	Kind      string `json:"kind"` // consolemode | regular
+	Kind      string `json:"kind"` // phosphor | regular
 	Label     string `json:"label"`
 	Name      string `json:"name"`
 	Tag       string `json:"tag"`
@@ -53,22 +56,23 @@ type ghRelease struct {
 	Assets     []ghAsset `json:"assets"`
 }
 
-// imageKind: is a release file an SD card image, and which (linux.img is a Linux file, not a card)
+// imageKind: is a release file an SD card image, and which (linux.img is a Linux file, not a card).
+// Only the regular MiSTer image from the SuperStation installer: Console Mode's image isn't offered
+// (Phosphor runs on regular MiSTer).
 func imageKind(name string) (string, bool) {
 	n := strings.ToLower(name)
 	if !(strings.HasSuffix(n, ".img.zip") || strings.HasSuffix(n, ".img")) || strings.HasPrefix(n, "linux") {
 		return "", false
 	}
 	if strings.Contains(strings.NewReplacer("-", "", "_", "", " ", "").Replace(n), "consolemode") {
-		return "consolemode", true
+		return "", false
 	}
 	return "regular", true
 }
 
-var imageLabels = map[string]string{"consolemode": "Console Mode", "regular": "Regular MiSTer"}
+var imageLabels = map[string]string{"phosphor": "Phosphor OS", "regular": "Regular MiSTer"}
 
 func pickImages(rels []ghRelease) []flashImage {
-	seen := map[string]bool{}
 	var res []flashImage
 	for _, r := range rels {
 		if r.Draft || r.Prerelease {
@@ -76,22 +80,38 @@ func pickImages(rels []ghRelease) []flashImage {
 		}
 		for _, a := range r.Assets {
 			k, ok := imageKind(a.Name)
-			if !ok || seen[k] {
+			if !ok {
 				continue
 			}
-			seen[k] = true
 			name := r.Name
 			if name == "" {
 				name = r.Tag
 			}
-			res = append(res, flashImage{Kind: k, Label: imageLabels[k], Name: a.Name, Tag: r.Tag, Release: name, URL: a.URL, Size: a.Size, Published: r.Published})
+			return append(res, flashImage{Kind: k, Label: imageLabels[k], Name: a.Name, Tag: r.Tag, Release: name, URL: a.URL, Size: a.Size, Published: r.Published})
 		}
 	}
-	// Regular first: Phosphor runs on regular MiSTer
-	if len(res) == 2 && res[0].Kind != "regular" {
-		res[0], res[1] = res[1], res[0]
-	}
 	return res
+}
+
+// phosphorImage: the SD card image of the newest Phosphor release that has one
+// (phosphor-<v>-sdcard-<date>.img.zip; drafts left out, as Phosphor's own updater does)
+func phosphorImage(rels []ghRelease) (flashImage, bool) {
+	for _, r := range rels {
+		if r.Draft {
+			continue
+		}
+		for _, a := range r.Assets {
+			n := strings.ToLower(a.Name)
+			if strings.HasPrefix(n, "phosphor-") && strings.Contains(n, "-sdcard-") && strings.HasSuffix(n, ".img.zip") {
+				name := r.Name
+				if name == "" {
+					name = "Phosphor " + r.Tag
+				}
+				return flashImage{Kind: "phosphor", Label: imageLabels["phosphor"], Name: a.Name, Tag: r.Tag, Release: name, URL: a.URL, Size: a.Size, Published: r.Published}, true
+			}
+		}
+	}
+	return flashImage{}, false
 }
 
 var webClient = &http.Client{Timeout: 30 * time.Second}
@@ -150,20 +170,31 @@ func installerImages(force bool) ([]flashImage, error) {
 		return imgCache, nil
 	}
 	var imgs []flashImage
+	// Phosphor's first
+	if pb, perr := webGet("https://api.github.com/repos/" + phosphorRepo + "/releases?per_page=10"); perr == nil {
+		var rels []ghRelease
+		if json.Unmarshal(pb, &rels) == nil {
+			if p, ok := phosphorImage(rels); ok {
+				imgs = append(imgs, p)
+			}
+		}
+	}
+	var reg []flashImage
 	b, err := webGet("https://api.github.com/repos/" + installerRepo + "/releases?per_page=10")
 	if err == nil {
 		var rels []ghRelease
 		if json.Unmarshal(b, &rels) == nil {
-			imgs = pickImages(rels)
+			reg = pickImages(rels)
 		}
 	}
-	if len(imgs) == 0 {
+	if len(reg) == 0 {
 		h, herr := imagesFromHTML()
-		if herr != nil && err != nil {
+		if herr != nil && err != nil && len(imgs) == 0 {
 			return nil, fmt.Errorf("couldn't reach GitHub: %v", err)
 		}
-		imgs = h
+		reg = h
 	}
+	imgs = append(imgs, reg...)
 	if len(imgs) == 0 {
 		return nil, errors.New("no SD card images in the latest release")
 	}
