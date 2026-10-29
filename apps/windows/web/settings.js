@@ -613,7 +613,7 @@ class AppSettings {
 	redrawStorage(s) {
 		if (!this.alive()) return;
 		const keep = cur && cur.id;
-		if (this.ti === 0 && $("#sdbox")) { const d = (s.drives || []).find(x => x.kind === "sd"); if (d) this.driveTool($("#sdbox"), d, s); this.overlap(s); }
+		if (this.ti === 0 && $("#sdbox")) { const d = (s.drives || []).find(x => x.kind === "sd"); if (d) this.driveTool($("#sdbox"), d, s); this.overlap(s); this.rescue(s); }
 		if (this.ti === 1 && $("#exbox") && this.exSel) { const d = (s.drives || []).find(x => x.path === this.exSel); if (d) this.driveTool($("#exbox"), d, s); }
 		if (keep && $("#" + keep)) focus($("#" + keep), true);
 	}
@@ -628,10 +628,63 @@ class AppSettings {
 		const un = $("#ov_un");
 		if (un) un.onclick = async () => { try { await ss1({ cmd: "storage", do: "overlap-undo" }); this.ovUndo = false; setTimeout(async () => this.overlap(await this.storageState()), 1500); } catch (e) { toast(e.message); } };
 	}
+	/* the offline SD card repair: a copy of MiSTer's Linux on a USB / NVMe drive repairs the SD card at a restart */
+	rescue(s) {
+		const o = $("#sdr");
+		if (!o) return;
+		const r = s.sdrescue || {}, L = s.last || {};
+		const busy = L.busy, mine = (L.job || "").startsWith("sdrescue-");
+		const cands = r.candidates || [];
+		const name = (p, m) => `${m === "NVMe drive" ? "NVMe drive" : "USB drive" + (m ? " · " + m : "")} (${(p || "").split("/").pop()})`;
+		const res = { clean: "No errors found", repaired: "Repaired", errors_left: "Errors left: repair it in this app (SD card flash & health › Card health)" }[r.last_result] || "Didn't run";
+		let body = "", acts = "";
+		if (!r.drive && !cands.length) {
+			body = `<p class="note warn">No NVMe drive? Plug a USB drive (exFAT, 1 GB free) into the SS1 to repair the SD card there, without taking it out. Or repair it in this app with the card in this PC (SD card flash & health › Card health).</p>`;
+		} else if (!r.drive) {
+			body = `<p class="note">The SD card can't be repaired while the SS1 runs from it. Choose a drive: Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart runs the repair from that drive and starts Phosphor again.</p>`;
+			acts = cands.map((c, i) => `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(c.path, c.model))}</button>`).join("");
+		} else if (!r.drive_present) {
+			const n = r.new_drive;
+			body = `<p class="note warn">The repair drive (${esc(r.drive_model || "a USB drive")}) isn't plugged in.${n ? " Another drive is: make it the repair drive?" : " Plug it back in, or another USB drive to use instead."}</p>`;
+			if (n) acts = `<button class="btn primary" data-nav data-sr="setup" data-t="${esc(n.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(n.path, n.model))}</button>`;
+			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off offline repair</button>`;
+		} else {
+			body = `<dl class="kv"><dt>Repair drive</dt><dd>${esc(name(r.drive_mount, r.drive_model))}</dd><dt>At start-up</dt><dd>${r.sd_dirty_at_boot ? "Wasn't shut down safely" : "Clean"}</dd>${r.armed ? "<dt>Next restart</dt><dd>Repairs the SD card</dd>" : ""}</dl>
+				<p class="note${r.sd_dirty_at_boot ? " warn" : ""}">Restart and repair: the TV stays dark for about a minute while the SD card is repaired, then Phosphor starts again and shows how it went.</p>`;
+			acts = `<button class="btn primary" data-nav data-sr="go"${busy ? " disabled" : ""}>Restart and repair</button>`;
+			if (r.armed) acts += `<button class="btn" data-nav data-sr="disarm"${busy ? " disabled" : ""}>Not at the next restart</button>`;
+			for (const c of cands) if (c.path !== r.drive_mount) acts += `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(c.path, c.model))} instead</button>`;
+			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off offline repair</button>`;
+		}
+		const last = r.last_result ? `<p class="note">Last offline repair: ${esc(res)} · ${esc((r.last_at || "").slice(0, 16))}</p>` : "";
+		o.innerHTML = `<h3 style="margin-top:1.4rem">Repair offline on the SS1</h3>${body}${last}${acts ? `<div class="acts">${acts}</div>` : ""}${mine ? `<pre class="out">${busy ? `<span class="spin"></span>Copying MiSTer's Linux to the drive…` : esc((L.output || "").trim().split("\n").pop() || "")}</pre>` : ""}`;
+		const poll = () => this.every(2000, async () => {
+			const t = await this.storageState();
+			this.rescue(t);
+			if (t.last && t.last.busy) return true;
+			if (this.srRestart && t.last && t.last.job === "sdrescue-arm") {
+				this.srRestart = false;
+				if (t.last.ok) { try { await ss1({ cmd: "system", do: "reboot" }); toast("Restarting the SS1 to repair the SD card…"); } catch (e) { toast(e.message); } }
+				else toast("Couldn't get the repair ready: " + ((t.last.output || "").trim().split("\n").pop() || ""));
+			}
+			return false;
+		});
+		const run = async (what, target) => {
+			try { await ss1(Object.assign({ cmd: "storage", do: "sdrescue-" + what }, target ? { target } : {})); poll(); }
+			catch (e) { this.srRestart = false; toast(e.message); }
+		};
+		o.querySelectorAll("[data-sr]").forEach(btn => {
+			const w = btn.dataset.sr, t = btn.dataset.t;
+			if (w === "go") twice(btn, "Press again: the SS1 restarts", () => { this.srRestart = true; toast("Getting the repair ready…"); return run("arm"); });
+			else if (w === "remove") twice(btn, "Press again to turn it off", () => run("remove"));
+			else if (w === "setup") btn.onclick = () => { toast("Copying MiSTer's Linux to the drive…"); run("setup", t); };
+			else btn.onclick = () => run(w);
+		});
+	}
 	async tSD(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="sdbox"><div class="empty"><span class="spin"></span></div></div>
-			<div class="panel"><h2>SD card</h2><p class="note">The checks only read, except the speed test (one temporary file) and Repair, which asks first. Results also go to the SS1's /media/fat/sd_integrity.log.</p><div id="ovl"></div></div></div>`));
+			<div class="panel"><h2>SD card</h2><p class="note">The checks only read, except the speed test (one temporary file) and Repair, which asks first. Results also go to the SS1's /media/fat/sd_integrity.log.</p><div id="ovl"></div><div id="sdr"></div></div></div>`));
 		let s;
 		try { s = await this.storageState(); } catch (e) { if (!alive()) return false; $("#sdbox").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
 		if (!alive()) return;
@@ -640,6 +693,7 @@ class AppSettings {
 		if (!d) { $("#sdbox").innerHTML = `<div class="empty">No SD card found.</div>`; return; }
 		this.driveTool($("#sdbox"), d, s);
 		this.overlap(s);
+		this.rescue(s);
 		if (s.last && s.last.busy) this.every(2000, async () => { const t = await this.storageState(); this.redrawStorage(t); return t.last && t.last.busy; });
 	}
 	async tExt(b) {

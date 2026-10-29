@@ -1163,6 +1163,36 @@ function checksFor(d) {
 	if (d.kind === "nvme") c.splice(2, 0, ["health", "Drive health", "The NVMe drive's own health report"]);
 	return c;
 }
+/* the offline SD card repair: a copy of MiSTer's Linux on a USB / NVMe drive repairs the SD card at a restart */
+function rescueCard(s) {
+	const r = s.sdrescue || {}, l = s.last || {}, cands = r.candidates || [], busy = l.busy;
+	const name = (p, m) => `${m === "NVMe drive" ? "NVMe drive" : "USB drive" + (m ? " · " + m : "")} (${String(p || "").split("/").pop()})`;
+	const res = { clean: "No errors found", repaired: "Repaired", errors_left: "Errors left: repair it on a PC" }[r.last_result] || "Didn't run";
+	let h = "<h3>Repair offline</h3>";
+	if (!r.drive && !cands.length)
+		h += `<p class="vw">No NVMe drive? Plug a USB drive (exFAT, 1 GB free) into the MiSTer to repair the SD card without a PC. Or repair it on a PC with Phosphor for Windows.</p>`;
+	else if (!r.drive) {
+		h += `<p class="small">The SD card can't be repaired while the MiSTer runs from it. Choose a drive: Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart runs the repair from that drive and starts Phosphor again.</p>`;
+		h += cands.map(c => btn("Use the " + name(c.path, c.model), "sr", { arg: "setup|" + c.path, off: busy })).join("");
+	} else if (!r.drive_present) {
+		const n = r.new_drive;
+		h += `<p class="vw">The repair drive (${esc(r.drive_model || "a USB drive")}) isn't plugged in.${n ? " Another drive is: make it the repair drive?" : " Plug it back in, or another USB drive to use instead."}</p>`;
+		if (n) h += btn("Use the " + name(n.path, n.model), "sr", { p: true, arg: "setup|" + n.path, off: busy });
+		h += btn("Turn off offline repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });
+	} else {
+		h += row("Repair drive", { value: name(r.drive_mount, r.drive_model) }) + row("At start-up", { value: r.sd_dirty_at_boot ? "Wasn't shut down safely" : "Clean", accent: r.sd_dirty_at_boot })
+			+ (r.armed ? row("Next restart", { value: "Repairs the SD card", accent: true }) : "")
+			+ `<p class="small">The TV stays dark for about a minute while the SD card is repaired, then Phosphor starts again and shows how it went.</p>`
+			+ btn("Restart and repair", "sr", { p: true, arg: "go", off: busy, sure: "Press again: the MiSTer restarts" })
+			+ (r.armed ? btn("Not at the next restart", "sr", { arg: "disarm", off: busy }) : "")
+			+ cands.filter(c => c.path !== r.drive_mount).map(c => btn("Use the " + name(c.path, c.model) + " instead", "sr", { arg: "setup|" + c.path, off: busy })).join("")
+			+ btn("Turn off offline repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });
+	}
+	if (r.last_result) h += `<p class="small">Last offline repair: ${esc(res)} · ${esc(String(r.last_at || "").slice(0, 16))}</p>`;
+	if (String(l.job || "").startsWith("sdrescue-")) h += `<pre class="out">${busy ? "Copying MiSTer's Linux to the drive…" : esc(String(l.output || "").trim().split("\n").pop() || "")}</pre>`;
+	return card(h);
+}
+
 PAGES.storage = { async show(c, p) {
 	setBar("Storage");
 	const tab = ["sd", "drives", "phone"].includes(p.arg) ? p.arg : "sd";
@@ -1207,16 +1237,37 @@ PAGES.storage = { async show(c, p) {
 				${!mounted ? `<p class="vw">Not mounted: MiSTer can't see the games on it right now.</p>${btn("Mount it again", "mount", { p: true, arg: d.path, off: l.busy })}`
 					: lbl("Checks") + `<div>${checksFor(d).map(([t, name, what]) => row(name, { sub: what, value: l.busy ? null : "Run", accent: true }).replace('<div class="row', l.busy ? '<div class="row' : `<div data-act="check" data-arg="${attr(t + "|" + d.path)}" class="row`)).join("")}</div>`
 					+ btn("Repair the file system", "check", { arg: "fsrepair|" + d.path, off: l.busy, sure: "Press again: it unmounts and repairs" })}
-				${l.target === d.path && l.job ? lbl(l.busy ? "Checking: " + l.job : `Last: ${l.job} · ${whenText(l.at * 1000)}`) + (l.output ? `<pre class="out">${esc(String(l.output).trim().split("\n").slice(-14).join("\n"))}</pre>` : "") : ""}`);
+				${l.target === d.path && l.job && !l.job.startsWith("sdrescue-") ? lbl(l.busy ? "Checking: " + l.job : `Last: ${l.job} · ${whenText(l.at * 1000)}`) + (l.output ? `<pre class="out">${esc(String(l.output).trim().split("\n").slice(-14).join("\n"))}</pre>` : "") : ""}`);
 		});
+		if (sd) h += rescueCard(s);
 		if (sd && (s.overlap_tool || []).length) h += `<p class="err">Faulty overlap "fix" tool found (${esc(s.overlap_tool.map(x => x.split("/").pop()).join(", "))}): remove it from Phosphor for Windows or on the MiSTer.</p>`;
 		c.draw(h + note("The checks only read, except the speed test (one temporary file) and Repair, which asks first."));
 	};
 	acts = {
 		check: async a => { const [test, target] = a.split("|"); s = await call("storage", { do: "check", test, target }); toast("Checking…"); draw(); },
 		mount: async target => { s = await call("storage", { do: "mount", target }); toast("Mounting…"); draw(); },
+		/* the offline SD card repair */
+		sr: async a => {
+			const [what, target] = a.split("|");
+			if (what === "go") { restartAfter = true; toast("Getting the repair ready…"); }
+			else if (what === "setup") toast("Copying MiSTer's Linux to the drive…");
+			try { s = await call("storage", Object.assign({ do: "sdrescue-" + (what === "go" ? "arm" : what) }, target ? { target } : {})); }
+			catch (e) { restartAfter = false; throw e; }
+			draw();
+		},
 	};
-	await c.every(async () => { try { s = await call("storage"); err = ""; } catch (e) { err = e.message; } draw(); return s && s.last && s.last.busy ? 2000 : 10000; });
+	let restartAfter = false;
+	await c.every(async () => {
+		try { s = await call("storage"); err = ""; } catch (e) { err = e.message; }
+		const l = s && s.last;
+		if (restartAfter && l && !l.busy && l.job === "sdrescue-arm") {
+			restartAfter = false;
+			if (l.ok) { try { await call("system", { do: "reboot" }); toast("Restarting the MiSTer to repair the SD card…"); } catch (e) { toast(e.message); } }
+			else toast("Couldn't get the repair ready: " + (String(l.output || "").trim().split("\n").pop() || ""));
+		}
+		draw();
+		return l && l.busy ? 2000 : 10000;
+	});
 } };
 
 /* ---------------------------------------------------------------- Bluetooth, Diagnostics */

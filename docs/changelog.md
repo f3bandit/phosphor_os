@@ -3,6 +3,18 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## Unreleased
+
+### Added
+- **Repair the SD card offline, on the SS1:** Settings › Storage › Repair the SD card offline (also in
+  the SD card's own menu, Phosphor for Windows' Storage › SD card and the phone app). Choose a USB or NVMe
+  drive once: Phosphor puts a copy of MiSTer's own Linux on it (`phosphor/rescue/`, about 400 MB) and a few
+  lines in the SD card's `linux/u-boot.txt`. Restart and repair: the SS1 restarts into that copy, with the
+  SD card unmounted, runs fsck.exfat on it, and restarts normally; Phosphor then says how it went. Those
+  lines run u-boot's own start-up unless a repair was asked for, and Update All leaves them alone. With no
+  NVMe drive it says to plug in a USB drive (exFAT, 1 GB free); when the repair drive isn't plugged in but
+  another drive is, it offers to use that one instead.
+
 ## 0.27.47
 
 ### Added

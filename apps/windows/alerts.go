@@ -213,6 +213,21 @@ func watchSS1() {
 				}
 				lastStorage, firstStorage = at, false
 			}
+			// the offline SD card repair: one that just ran, and another drive to use when the repair drive is gone
+			if r, ok := s["sdrescue"].(map[string]any); ok {
+				if r["fresh"] == true && str(r["last_result"]) != "" {
+					res := map[string]string{"clean": "no errors found, the card is marked clean", "repaired": "the card was repaired",
+						"errors_left": "errors are left: repair it in this app (SD card flash & health > Card health)"}[str(r["last_result"])]
+					if res == "" {
+						res = "the repair didn't run: see Settings > Storage"
+					}
+					addNote("sdrescue-"+str(r["last_at"]), "info", "SD card repaired offline", "The SS1 restarted to repair its SD card: "+res+".", "settings/storage")
+				}
+				if nd, ok := r["new_drive"].(map[string]any); ok && r["drive_present"] != true {
+					addNote("sdrescue-new-"+str(nd["partuuid"]), "info", "A new drive for repairing the SD card",
+						"The SD card's repair drive isn't plugged in, but "+str(nd["model"])+" is. Make it the repair drive in Settings > Storage > SD card.", "settings/storage")
+				}
+			}
 		}
 		// a newer Phosphor for the SS1 on GitHub (the SS1 looks every 30 minutes; Phosphor 0.27.42 on)
 		if u := ask(`{"cmd":"update"}`); u != nil {
