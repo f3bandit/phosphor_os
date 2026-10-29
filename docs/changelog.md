@@ -3,6 +3,36 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.47
+
+### Added
+- **Phosphor for Windows repairs SD cards itself:** SD card flash & health › Card health › Check and
+  repair runs exfatprogs' fsck.exfat (the exFAT checker Linux's driver is maintained alongside), built for
+  Windows, instead of Windows' own scan. Check changes nothing; Repair fixes what's safe and clears the
+  dirty mark; Deep repair fixes everything it finds. No FOUND.000 folders. The card's mark is shown before
+  and after.
+- **More cores to start a game on** (Start with): a system's dual RAM build (TheJesusFish's Dual RAM
+  Console Cores, `_Console (Dual SDRAM)`), its other builds in `_Other` (ajgowans' Alt Cores: PlayStation
+  2XCPU, N64 80MHz, Genesis), and its Y/C builds (MikeS11's, `_YCConsole` / `_YCComputer`), when installed.
+  Y/C builds are only listed when the video settings in use make S-Video / composite in the FPGA
+  (`vga_mode=svideo` or `cvbs`, the SVID profile): on HDMI they'd only be a wrong choice.
+
+### Changed
+- **RetroAchievements cores are Phosphor's default** for every system that has one installed, logged in or
+  not (log in under Settings › RetroAchievements to unlock achievements).
+- Start with lists only the game's own system's cores (no more other systems' cores that open the same
+  kind of file); older versions are at the bottom.
+- Phosphor for Windows' Flash an SD card offers Phosphor's own SD card image only.
+
+### Fixed
+- **The SD card no longer looks dirty while it's in use:** Will Windows complain? on the SD card asks the
+  kernel how the card was when the SS1 started (Linux keeps a card marked as in use while it runs and
+  takes the mark off at a safe shutdown or restart). A card that was dirty at start-up still fails, and
+  points to Phosphor for Windows' Repair.
+- The shutdown / restart screen shows the SD card's state too (Clean or Still marked dirty), not "Done".
+- The kernel log check counts only the checked drive's errors; another drive's (the dock's NVMe while the
+  SD card is checked) are shown as a warning.
+
 ## 0.27.46
 
 ### Fixed

@@ -11,6 +11,7 @@
 #include "log.h"
 #include "paths.h"
 #include "systems.h"
+#include "vtry.h"
 #include <dirent.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -308,6 +309,7 @@ static int core_opts(const gsys_t *s, const char *path, core_opt_t *o)
 	(void)path;
 	/* the same system's core built another way: dual SDRAM builds (TheJesusFish's Dual RAM Console Cores)
 	   and the alternative builds in _Other (ajgowans' Alt Cores: PSX2XCPU, N64_80MHz, ...) */
+	int yc = vt_fpga_yc();
 	snprintf(rbfs, sizeof(rbfs), "%s", s->rbf);
 	save = NULL;
 	for (char *c = strtok_r(rbfs, "|", &save); c && n < MAX_CORE_OPTS; c = strtok_r(NULL, "|", &save)) {
@@ -322,8 +324,10 @@ static int core_opts(const gsys_t *s, const char *path, core_opt_t *o)
 			if (n > k) { snprintf(o[k].kind, sizeof(o[0].kind), "dualram"); rbf_date(vers[0], o[k].date, sizeof(o[0].date)); }
 		}
 		n = alt_opts(o, n, b, s, "_Other", 0);
-		n = alt_opts(o, n, b, s, "_YCConsole", 1);
-		n = alt_opts(o, n, b, s, "_YCComputer", 1);
+		if (yc) {                                        /* (only when the FPGA makes S-Video / composite) */
+			n = alt_opts(o, n, b, s, "_YCConsole", 1);
+			n = alt_opts(o, n, b, s, "_YCComputer", 1);
+		}
 	}
 	/* older versions last, so the other builds are never off the bottom of a short list (stable: the
 	   first stays the one a plain launch uses) */
@@ -346,7 +350,8 @@ static int core_pref(sqlite3 *db, const gsys_t *s, const core_opt_t *o, int n)
 }
 static const char *kind_desc(const char *kind)
 {
-	if (!strcmp(kind, "ra")) return "Unlocks achievements while you play (logged in under Settings > RetroAchievements).";
+	if (!strcmp(kind, "ra")) return ra_logged_in() ? "Unlocks achievements while you play. Phosphor's default."
+	                                               : "Phosphor's default. Log in under Settings > RetroAchievements to unlock achievements.";
 	if (!strcmp(kind, "version")) return "An earlier build still on the SD card.";
 	if (!strcmp(kind, "unstable")) return "A newer test build from the core's developer. May have bugs.";
 	if (!strcmp(kind, "dualram")) return "Built for a second SDRAM module: needs the dual RAM board.";
