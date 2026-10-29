@@ -1245,7 +1245,8 @@ static char *cmd_update(cJSON *req)
 		if (lv && cJSON_IsTrue(cJSON_GetObjectItem(on, "downloaded"))) {
 			char want[120];
 			snprintf(want, sizeof(want), "/phosphor-%s-armhf.tar.gz|", lv);
-			if (!pk || !strstr(pk, want)) { free(pk); pk = bgcache_now(&c_upd_list); }
+			static time_t relisted;                   /* (at most every 30 s: a package update.sh doesn't list) */
+			if ((!pk || !strstr(pk, want)) && time(NULL) - relisted >= 30) { relisted = time(NULL); free(pk); pk = bgcache_now(&c_upd_list); }
 		}
 	}
 	const char *keys[2] = { "packages", "rollbacks" }, *f1[2] = { "file", "version" }, *f2[2] = { "version", "date" };

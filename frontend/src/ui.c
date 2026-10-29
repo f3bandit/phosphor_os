@@ -7304,9 +7304,9 @@ static void up_apply(cJSON *r)
 	snprintf(h, sizeof(h), "Installed: Phosphor %s", up.ver);
 	if (up.head) lv_label_set_text(up.head, h);
 	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
-		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs, or now: Check GitHub for updates). "
+		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs, or right now with Check GitHub for updates, at the top). "
 		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too.");
-	up_list.count = upo_row() + up.npk + up.nrb + 1;     /* (+ Check GitHub for updates, last) */
+	up_list.count = 1 + upo_row() + up.npk + up.nrb;     /* Check GitHub for updates always first */
 	vlist_refresh(&up_list);
 }
 
@@ -7317,8 +7317,14 @@ static void up_check_done(lv_timer_t *t)
 	(void)t;
 	up_checking = 0;
 	cJSON *r = api_call("{\"cmd\":\"update\"}");
+	if (!api_ok(r)) {                                 /* (no answer: say so, not "up to date") */
+		cJSON_Delete(r);
+		if (cur == SCR_PUPD) { vlist_refresh(&up_list); toast_show("No answer from Phosphor's service: try again"); }
+		return;
+	}
 	if (cur == SCR_PUPD) {
 		up_apply(r);
+		if (upo.newer && upo_row() && up_list.sel == 0) { up_list.sel = 1; vlist_refresh(&up_list); }   /* onto its Download row */
 		toast_show(upo.newer ? "A newer Phosphor is on GitHub" : !strcmp(upo.state, "failed") ? (upo.msg[0] ? upo.msg : "Couldn't reach GitHub") : "Phosphor is up to date");
 	} else {
 		upo_apply(r);
@@ -7329,6 +7335,13 @@ static void up_check_done(lv_timer_t *t)
 static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	int sure = up.confirm_row == i && lv_tick_get() - up.confirm_at < 4000;
+	if (i == 0) {                                     /* always on top */
+		snprintf(t, n, "Check GitHub for updates");
+		snprintf(val, vn, "%s", up_checking ? "Asking GitHub..." : upo.newer ? "Newer one found" : upo.latest[0] ? "Up to date" : "GitHub");
+		*dim = up_checking != 0;
+		return;
+	}
+	i--;
 	if (upo_row()) {
 		if (i == 0) {
 			int dl = !strcmp(upo.state, "working"), ready = upo.downloaded;
@@ -7349,12 +7362,6 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		return;
 	}
 	i -= up.npk;
-	if (i >= up.nrb) {
-		snprintf(t, n, "Check GitHub for updates");
-		snprintf(val, vn, "%s", up_checking ? "Asking GitHub..." : upo.newer ? "Newer one found" : "GitHub");
-		*dim = up_checking != 0;
-		return;
-	}
 	snprintf(t, n, "Roll back to Phosphor %s", up.rb_ver[i]);
 	snprintf(val, vn, "%s", sure ? "Press A again to roll back" : up.rb_date[i]);
 }
@@ -7388,6 +7395,19 @@ static void up_key(pkey_t k)
 	if (k == K_B || k == K_MENU) { back_to_settings(SET_PHOSUPD); return; }
 	if (k != K_A || up.busy) return;
 	int s = up_list.sel;
+	if (s == 0) {                                     /* Check GitHub for updates (always on top) */
+		if (up_checking) return;
+		cJSON *r = api_call("{\"cmd\":\"update\",\"do\":\"check\"}");
+		if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't ask GitHub"); cJSON_Delete(r); return; }
+		cJSON_Delete(r);
+		up_checking = lv_tick_get() | 1;
+		toast_show("Asking GitHub...");
+		vlist_refresh(&up_list);
+		lv_timer_t *tm = lv_timer_create(up_check_done, 6000, NULL);
+		lv_timer_set_repeat_count(tm, 1);
+		return;
+	}
+	s--;
 	if (upo_row()) {
 		if (s == 0) {                               /* the newer release, into phosphor/updates (checked) */
 			if (!strcmp(upo.state, "working") || upo.downloaded) return;
@@ -7399,18 +7419,6 @@ static void up_key(pkey_t k)
 			return;
 		}
 		s--;
-	}
-	if (s >= up.npk + up.nrb) {                       /* Check GitHub for updates */
-		if (up_checking) return;
-		cJSON *r = api_call("{\"cmd\":\"update\",\"do\":\"check\"}");
-		if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't ask GitHub"); cJSON_Delete(r); return; }
-		cJSON_Delete(r);
-		up_checking = lv_tick_get() | 1;
-		toast_show("Asking GitHub...");
-		vlist_refresh(&up_list);
-		lv_timer_t *tm = lv_timer_create(up_check_done, 6000, NULL);
-		lv_timer_set_repeat_count(tm, 1);
-		return;
 	}
 	if (up.confirm_row != up_list.sel || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = up_list.sel; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
 	up.confirm_row = -1;
