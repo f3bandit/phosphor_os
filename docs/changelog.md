@@ -3,7 +3,7 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## Unreleased
+## 0.27.48
 
 ### Added
 - **Repair the SD card offline, on the SS1:** Settings › Storage › Repair the SD card offline (also in
@@ -14,7 +14,8 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   card (don't switch off), then the result for a few seconds; after the restart Phosphor says it again. Those
   lines run u-boot's own start-up unless a repair was asked for, and Update All leaves them alone. With no
   NVMe drive it says to plug in a USB drive (exFAT, 1 GB free); when the repair drive isn't plugged in but
-  another drive is, it offers to use that one instead.
+  another drive is, it offers to use that one instead. Phosphor for Windows 0.2.46 and the phone app have it
+  too, and tell you when a repair ran or another drive could be the repair drive.
 
 ## 0.27.47
 
