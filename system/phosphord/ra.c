@@ -386,7 +386,7 @@ int ra_get_cores(char *err, size_t errn)
 int ra_core_for(const char *sys, char *rbf, size_t rn, char *setname, size_t sn)
 {
 	const char *c = sys_core(sys);
-	if (!c || !ra_logged_in()) return 0;
+	if (!c) return 0;                     /* (logged in or not: it's Phosphor's default core for the system) */
 	char dir[600], p[700];
 	core_dir(dir, sizeof(dir));
 	snprintf(p, sizeof(p), "%s/%s.rbf", dir, c);

@@ -18,5 +18,6 @@ cJSON *vt_cmd(cJSON *req, const char **err);   /* the reply (no "ok"), or NULL w
 void vt_boot(void);                            /* at start: a try that was never kept is put back */
 cJSON *vt_read(const char *text);
 char *vt_set(const char *text, const char *key, const char *value);
+int vt_fpga_yc(void);                          /* Main's video settings now: vga_mode svideo or cvbs */
 int vt_altcfg(int set);                        /* the profile Main uses (-1 reads; -1 back: unknown) */
 #endif

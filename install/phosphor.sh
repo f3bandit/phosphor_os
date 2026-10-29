@@ -195,7 +195,13 @@ case "${1:-status}" in
 		for m in $mounts; do
 			[ "$m" = /media/fat/cifs ] && continue
 			dev="$(awk -v m="$m" '$2 == m {print $1; exit}' /proc/mounts)"
-			[ "$dev" = /dev/root ] && dev=""
+			if [ "$dev" = /dev/root ]; then         # the SD card: Linux names it /dev/root; its real device
+				d="$(stat -c %d "$m" 2> /dev/null)"; dev=""
+				if [ -n "$d" ]; then
+					n="$(basename "$(readlink -f "/sys/dev/block/$(( (d >> 8) & 0xfff )):$(( (d & 0xff) | ((d >> 12) & 0xfff00) ))")")"
+					[ -b "/dev/$n" ] && dev="/dev/$n"
+				fi
+			fi
 			st="n/a"
 			if [ -b "$dev" ] && [ "$(dd if="$dev" bs=1 skip=3 count=5 2> /dev/null)" = EXFAT ]; then
 				f="$(dd if="$dev" bs=1 skip=106 count=1 2> /dev/null | od -An -tu1 | tr -d ' ')"
