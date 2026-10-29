@@ -1,7 +1,8 @@
 /* phosphord: drives the storage module (SD card, NVMe and USB checks; the faulty overlap tool).
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  * Only fsrepair changes a file system (and mount mounts a drive that was left unmounted) (the checker unmounts and repairs it); speed writes and removes
- * one file; the overlap tool is moved into phosphor/backups, never deleted, and can be put back. */
+ * one file; the overlap tool is moved into phosphor/backups, never deleted, and can be put back; the offline
+ * SD card repair (sdrescue) writes a copy of Linux to the chosen drive and a few lines to linux/u-boot.txt. */
 #include "storage.h"
 #include "modjob.h"
 #include "bgcache.h"
@@ -17,6 +18,9 @@ static char last_target[64];
 static char *run_targets(void *u) { (void)u; int rc; const char *a[] = { "targets", NULL }; return modjob_run(&mj, a, 30, &rc); }
 static char *run_overlap(void *u) { (void)u; int rc; const char *a[] = { "overlap", NULL }; return modjob_run(&mj, a, 15, &rc); }
 static bgcache_t c_targets = BGCACHE(run_targets, NULL, 30), c_overlap = BGCACHE(run_overlap, NULL, 60);
+/* the offline SD card repair: its drive, the drives that could be it, a result left from a repair */
+static char *run_rescue(void *u) { (void)u; int rc; const char *a[] = { "sdrescue", "status", NULL }; return modjob_run(&mj, a, 30, &rc); }
+static bgcache_t c_rescue = BGCACHE(run_rescue, NULL, 30);
 
 static int valid_target(const char *t)
 {
@@ -27,7 +31,7 @@ static int valid_target(const char *t)
 	return t[10] != 0;
 }
 
-void storage_prime(void) { if (modjob_installed(&mj)) { free(bgcache_get(&c_targets, 0)); free(bgcache_get(&c_overlap, 0)); } }
+void storage_prime(void) { if (modjob_installed(&mj)) { free(bgcache_get(&c_targets, 0)); free(bgcache_get(&c_overlap, 0)); free(bgcache_get(&c_rescue, 0)); } }
 
 int storage_start(const char *test, const char *target)
 {
@@ -40,6 +44,21 @@ int storage_start(const char *test, const char *target)
 		argv[0] = "mount"; argv[1] = target; argv[2] = NULL;
 		snprintf(last_target, sizeof(last_target), "%s", target);
 		return modjob_start(&mj, test, argv, 60);
+	}
+	/* the offline SD card repair: setup (target: the drive /media/usbN), arm (repair at the next restart),
+	   disarm, remove. Setup and arm copy Linux to the drive (~400 MB) when it isn't there or is out of date */
+	if (!strncmp(test, "sdrescue-", 9)) {
+		const char *c = test + 9;
+		if (strcmp(c, "setup") && strcmp(c, "arm") && strcmp(c, "disarm") && strcmp(c, "remove")) return -2;
+		argv[0] = "sdrescue"; argv[1] = c; argv[2] = NULL;
+		if (!strcmp(c, "setup")) {
+			if (!target || !valid_target(target) || !strcmp(target, "/media/fat")) return -2;
+			argv[2] = target; argv[3] = NULL;
+		}
+		snprintf(last_target, sizeof(last_target), "/media/fat");
+		int r = modjob_start(&mj, test, argv, 600);
+		bgcache_stale(&c_rescue);
+		return r;
 	}
 	if (!strcmp(test, "overlap-remove") || !strcmp(test, "overlap-undo")) {
 		argv[0] = "overlap"; argv[1] = test + 8; argv[2] = NULL;
@@ -64,10 +83,11 @@ void storage_state(storage_state_t *s)
 	if (s->installed) {
 		s->targets = bgcache_get(&c_targets, 1);
 		s->overlap = bgcache_get(&c_overlap, 1);
+		s->rescue = bgcache_get(&c_rescue, 1);
 	}
 	modjob_last(&mj, s->job, sizeof(s->job), &s->busy, &s->ok, &s->output, &s->at);
 	/* a check or mount just finished: the drives may have changed */
 	static time_t seen;
-	if (s->at != seen) { seen = s->at; bgcache_stale(&c_targets); bgcache_stale(&c_overlap); }
+	if (s->at != seen) { seen = s->at; bgcache_stale(&c_targets); bgcache_stale(&c_overlap); bgcache_stale(&c_rescue); }
 	snprintf(s->target, sizeof(s->target), "%s", last_target);
 }
