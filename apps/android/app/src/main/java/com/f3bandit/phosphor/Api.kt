@@ -107,9 +107,10 @@ data class GuardState(val installed: Boolean, val linux: String, val updatedAt: 
 data class Drive(val path: String, val kind: String, val fs: String, val sizeKb: Long, val freeKb: Long, val model: String,
                  val gen: String, val watts: String, val mounted: Boolean)
 data class StorageCheck(val job: String, val target: String, val busy: Boolean, val ok: Boolean, val at: Long, val output: String)
-/** the offline SD card repair: fresh = a repair ran just before this start-up; newDrive* = another drive to use when the repair drive is gone */
+/** Repair all drives: fresh = a repair ran just before this start-up; newDrive* = another USB drive to use when the repair
+ *  drive is gone; anyBad = the SD card or another drive still has errors after it */
 data class SdRescue(val drive: String, val present: Boolean, val model: String, val lastResult: String, val lastAt: String, val fresh: Boolean,
-                    val newDrivePartuuid: String, val newDriveModel: String)
+                    val newDrivePartuuid: String, val newDriveModel: String, val anyBad: Boolean = false)
 data class StorageState(val installed: Boolean, val drives: List<Drive>, val overlapTool: List<String>, val last: StorageCheck,
                         val sdRescue: SdRescue = SdRescue("", false, "", "", "", false, "", ""))
 
@@ -390,8 +391,11 @@ class PhosphorApi(val address: String, private val token: String?) {
             StorageCheck(l.optString("job"), l.optString("target"), l.optBoolean("busy"), l.optBoolean("ok"), l.optDouble("at").toLong(), l.optString("output")),
             (r.optJSONObject("sdrescue") ?: JSONObject()).let { x ->
                 val n = x.optJSONObject("new_drive") ?: JSONObject()
+                val bad = { v: String -> v == "errors_left" || v == "failed" }
+                val ld = x.optJSONArray("last_drives") ?: JSONArray()
                 SdRescue(x.optString("drive"), x.optBoolean("drive_present"), x.optString("drive_model"), x.optString("last_result"), x.optString("last_at"),
-                    x.optBoolean("fresh"), n.optString("partuuid"), n.optString("model"))
+                    x.optBoolean("fresh"), n.optString("partuuid"), n.optString("model"),
+                    bad(x.optString("last_result")) || (0 until ld.length()).any { bad(ld.getJSONObject(it).optString("result")) })
             },
         )
     }

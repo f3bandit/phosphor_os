@@ -1157,6 +1157,8 @@ static char *cmd_storage(cJSON *req)
 	/* the offline SD card repair (storage.sh sdrescue status) */
 	cJSON *sr = cJSON_AddObjectToObject(o, "sdrescue");
 	cJSON *cands = cJSON_AddArrayToObject(sr, "candidates");
+	cJSON *plugged = cJSON_AddArrayToObject(sr, "plugged");      /* every drive plugged in: what a repair repairs */
+	cJSON *lastd = cJSON_AddArrayToObject(sr, "last_drives");    /* the other drives the last repair repaired */
 	save = NULL;
 	for (char *line = ss.rescue ? strtok_r(ss.rescue, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
 		char *eq = strchr(line, '=');
@@ -1174,7 +1176,30 @@ static char *cmd_storage(cJSON *req)
 			if (f[3]) cJSON_AddNumberToObject(x, "free_mb", atof(f[3]));
 			if (!strcmp(k, "candidate")) cJSON_AddItemToArray(cands, x);
 			else { cJSON_DeleteItemFromObject(sr, "new_drive"); cJSON_AddItemToObject(sr, "new_drive", x); }
-		} else if (!strcmp(k, "drive_present") || !strcmp(k, "armed") || !strcmp(k, "sd_dirty_at_boot") || !strcmp(k, "fresh"))
+		} else if (!strcmp(k, "plugged") || !strcmp(k, "last_drive")) {
+			int pl = !strcmp(k, "plugged"), nf = pl ? 5 : 6;
+			char buf[512], *f[6] = { 0 }, *p = buf;
+			snprintf(buf, sizeof(buf), "%s", v);
+			for (int n = 0; n < nf && p; n++) { f[n] = p; p = strchr(p, '|'); if (p) *p++ = 0; }
+			cJSON *x = cJSON_CreateObject();
+			if (pl) {
+				cJSON_AddStringToObject(x, "path", f[0] ? f[0] : "");
+				cJSON_AddStringToObject(x, "partuuid", f[1] ? f[1] : "");
+				cJSON_AddStringToObject(x, "model", f[2] ? f[2] : "");
+				cJSON_AddStringToObject(x, "fs", f[3] ? f[3] : "");
+				cJSON_AddStringToObject(x, "label", f[4] ? f[4] : "");
+				cJSON_AddItemToArray(plugged, x);
+			} else {
+				const char *c = f[4] ? f[4] : "";
+				cJSON_AddStringToObject(x, "partuuid", f[0] ? f[0] : "");
+				cJSON_AddStringToObject(x, "label", f[1] ? f[1] : "");
+				cJSON_AddStringToObject(x, "model", f[2] ? f[2] : "");
+				cJSON_AddStringToObject(x, "fs", f[3] ? f[3] : "");
+				cJSON_AddStringToObject(x, "result", !strcmp(c, "0") ? "clean" : !strcmp(c, "1") ? "repaired" : !strcmp(c, "4") ? "errors_left" : !strcmp(c, "9") ? "skipped" : "failed");
+				cJSON_AddStringToObject(x, "summary", f[5] ? f[5] : "");
+				cJSON_AddItemToArray(lastd, x);
+			}
+		} else if (!strcmp(k, "drive_present") || !strcmp(k, "armed") || !strcmp(k, "sd_dirty_at_boot") || !strcmp(k, "fresh") || !strcmp(k, "drive_nvme"))
 			cJSON_AddBoolToObject(sr, k, !strcmp(v, "1"));
 		else if (!cJSON_GetObjectItem(sr, k)) cJSON_AddStringToObject(sr, k, v);
 	}

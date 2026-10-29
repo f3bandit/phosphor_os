@@ -5954,8 +5954,9 @@ static void mcards_key(pkey_t k)
  * One row per drive (space used, the last check on it), then the checks. A on a drive: its checks;
  * X: a quick check of it. A drive that dropped off (unmounted) is mounted again with A. Only a
  * repair changes a drive, and it asks twice. The SD card can't be repaired while Phosphor runs from it:
- * "Repair the SD card offline" restarts into a copy of MiSTer's Linux on a USB / NVMe drive that repairs
- * it and restarts again (the storage module's sdrescue.sh). Back up: the backup-agent's snapshot of saves
+ * "Repair all drives" restarts into a copy of MiSTer's Linux on a USB drive (the repair drive; never the
+ * NVMe drive) that repairs the SD card and every other drive, and restarts again; the repair drive itself
+ * is repaired after that (the storage module's sdrescue.sh). Back up: the backup-agent's snapshot of saves
  * and settings, now. */
 #define SG_MAX 8
 typedef struct { char path[64], kind[8], fs[16], model[64], gen[16]; double size_kb, free_kb; int mounted; } sg_drive_t;
@@ -5963,9 +5964,10 @@ typedef struct { char target[64], job[24], summary[120]; int ok; long at; } sg_r
 enum { SG_QUICKALL, SG_SPEED, SG_REPAIR, SG_SDREPAIR, SG_BACKUP, SG_ACTIONS };
 /* the offline SD card repair (storage API "sdrescue") */
 typedef struct {
-	int drive, present, armed, dirty, fresh, ncand;
-	char mount[64], model[64], last[16], last_at[24], last_summary[120], newp[64], newmodel[64];
+	int drive, present, armed, dirty, fresh, ncand, nvme, nother, nlastd, self_running;
+	char mount[64], model[64], last[16], last_at[24], last_summary[120], newp[64], newmodel[64], self_res[16];
 	char cand[SG_MAX][64], cand_model[SG_MAX][64];
+	char lastd[3][48], lastd_res[3][16];   /* the other drives the last repair repaired */
 } sg_rescue_t;
 static struct {
 	int installed, busy, bk_busy, bk_installed, n, menu, menu_sel, menu_n, confirm;
@@ -5992,7 +5994,7 @@ static const char *sg_jobname(const char *j)
 		{ "quick", "Quick check" }, { "fscheck", "File system check" }, { "fsrepair", "Repair" }, { "speed", "Speed test" },
 		{ "health", "Drive health" }, { "drive", "Drive check" }, { "mount", "Mount again" },
 		{ "sdrescue-setup", "Setting up the repair drive" }, { "sdrescue-arm", "Getting the repair ready" },
-		{ "sdrescue-disarm", "Repair at the next restart off" }, { "sdrescue-remove", "Offline repair off" }, { NULL, NULL } };
+		{ "sdrescue-disarm", "Repair at the next restart off" }, { "sdrescue-remove", "Drive repair off" }, { NULL, NULL } };
 	for (int i = 0; N[i].k; i++) if (!strcmp(N[i].k, j)) return N[i].v;
 	return j;
 }
@@ -6059,6 +6061,22 @@ static void sg_rescue_parse(cJSON *o, sg_rescue_t *x)
 		snprintf(x->newp, sizeof(x->newp), "%s", api_str(n, "path") ? api_str(n, "path") : "");
 		snprintf(x->newmodel, sizeof(x->newmodel), "%s", api_str(n, "model") ? api_str(n, "model") : "");
 	}
+	x->nvme = cJSON_IsTrue(cJSON_GetObjectItem(o, "drive_nvme"));
+	const char *ss = api_str(o, "self_state"), *sres = api_str(o, "self_result");
+	x->self_running = ss && !strcmp(ss, "running");
+	snprintf(x->self_res, sizeof(x->self_res), "%s", sres ? sres : "");
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(o, "plugged")) {
+		const char *pu = api_str(it, "partuuid");
+		if (!pu || !d || strcmp(pu, d)) x->nother++;
+	}
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(o, "last_drives")) {
+		if (x->nlastd >= 3) break;
+		const char *lb = api_str(it, "label"), *md = api_str(it, "model"), *rs = api_str(it, "result");
+		int nv = md && !strcmp(md, "NVMe drive");
+		snprintf(x->lastd[x->nlastd], sizeof(x->lastd[0]), "%s", nv ? "NVMe drive" : lb && *lb ? lb : md && *md ? md : "USB drive");
+		snprintf(x->lastd_res[x->nlastd], sizeof(x->lastd_res[0]), "%s", rs ? rs : "");
+		x->nlastd++;
+	}
 	cJSON_ArrayForEach(it, cJSON_GetObjectItem(o, "candidates")) {
 		if (x->ncand >= SG_MAX) break;
 		snprintf(x->cand[x->ncand], sizeof(x->cand[0]), "%s", api_str(it, "path") ? api_str(it, "path") : "");
@@ -6077,16 +6095,17 @@ static void sdrescue_check(void)
 		sg_rescue_parse(cJSON_GetObjectItem(r, "sdrescue"), &x);
 		char t[200];
 		if (x.fresh && x.last[0]) {
-			snprintf(t, sizeof(t), "SD card repaired offline: %s", !strcmp(x.last, "clean") ? "no errors found, marked clean" :
-				!strcmp(x.last, "repaired") ? "repaired" : !strcmp(x.last, "errors_left") ? "errors left, repair it on a PC" : "it didn't run (Settings > Storage)");
+			int bad = !strcmp(x.last, "errors_left") || !strcmp(x.last, "failed");
+			for (int i = 0; i < x.nlastd; i++) if (!strcmp(x.lastd_res[i], "errors_left") || !strcmp(x.lastd_res[i], "failed")) bad = 1;
+			snprintf(t, sizeof(t), "Drives repaired offline: %s", bad ? "some need a look (Settings > Storage)" : "all fine");
 			toast_show(t);
-		} else if (x.dirty && x.drive && x.present)
-			toast_show("The SD card wasn't shut down safely: Settings > Storage > Repair the SD card offline");
-		else if (x.dirty && !x.drive)
+		} else if (x.dirty && x.drive && x.present && !x.nvme)
+			toast_show("The SD card wasn't shut down safely: Settings > Storage > Repair all drives");
+		else if (x.dirty && (!x.drive || x.nvme))
 			toast_show(x.ncand ? "The SD card wasn't shut down safely: Settings > Storage can repair it offline"
-				: "The SD card wasn't shut down safely: plug in a USB drive to repair it offline (Settings > Storage)");
+				: "The SD card wasn't shut down safely: plug in a spare USB drive to repair it offline (Settings > Storage)");
 		else if (x.drive && !x.present && x.newp[0])
-			toast_show("A new drive can be the SD card's repair drive: Settings > Storage > Repair the SD card offline");
+			toast_show("A new USB drive can be the repair drive: Settings > Storage > Repair all drives");
 	}
 	cJSON_Delete(r);
 }
@@ -6104,7 +6123,7 @@ static void sg_rescue_name(const char *path, const char *model, char *out, size_
 static const char *sg_rescue_res(const char *r)
 {
 	return !strcmp(r, "clean") ? "No errors found" : !strcmp(r, "repaired") ? "Repaired" :
-		!strcmp(r, "errors_left") ? "Errors left: repair it on a PC" : "Didn't run";
+		!strcmp(r, "errors_left") ? "Errors left: repair it on a PC" : !strcmp(r, "skipped") ? "Not checked here" : "Didn't run";
 }
 
 /* sdrescue.sh's answer: its last line, without the ok / FAIL mark */
@@ -6169,7 +6188,7 @@ static void sg_refresh(void)
 			if (ok && sg.sr_restart && !strcmp(sg.job, "sdrescue-arm")) {
 				sg.sr_restart = 0;
 				cJSON_Delete(r);
-				toast_show("Restarting to repair the SD card");
+				toast_show("Restarting to repair all drives");
 				power_run(1);
 				return;
 			}
@@ -6240,10 +6259,11 @@ static void sg_fill_row(int i, char *t, size_t n, char *val, size_t vn, int *dim
 	case SG_REPAIR: snprintf(t, n, "Repair a drive"); snprintf(val, vn, "NVMe / USB  >"); break;
 	case SG_SDREPAIR: {
 		const sg_rescue_t *x = &sg.sr;
-		snprintf(t, n, "Repair the SD card offline");
+		snprintf(t, n, "Repair all drives");
 		if (sg.busy && !strncmp(sg.job, "sdrescue-", 9)) snprintf(val, vn, "Preparing...");
+		else if (x->self_running) snprintf(val, vn, "Repairing the repair drive...");
 		else if (x->armed) snprintf(val, vn, "At the next restart  >");
-		else if (!x->drive) snprintf(val, vn, x->ncand ? "Set up  >" : "Needs a USB drive  >");
+		else if (!x->drive || x->nvme) snprintf(val, vn, x->ncand ? "Set up  >" : "Needs a USB drive  >");
 		else if (!x->present) snprintf(val, vn, x->newp[0] ? "New drive found  >" : "Drive not plugged in  >");
 		else snprintf(val, vn, x->dirty ? "Recommended  >" : "Ready  >");
 		break;
@@ -6304,14 +6324,14 @@ static void sg_panel(void)
 			sg_kv(r++, "Last check", b);
 		} else sg_kv(r++, "Last check", "Not since Phosphor started");
 		if (!d->mounted) lv_label_set_text(sg_note, "A: mount it again, as MiSTer does at start-up. Nothing on it is changed.");
-		else if (!strcmp(d->kind, "sd")) lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair offline (a restart). X: a quick check now.");
+		else if (!strcmp(d->kind, "sd")) lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair offline (Repair all drives, a restart). X: a quick check now.");
 		else lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair. X: a quick check now.");
 	} else {
-		static const char *const T[] = { "Quick check of everything", "Speed test", "Repair a drive", "Repair the SD card offline", "Back up saves & settings" };
+		static const char *const T[] = { "Quick check of everything", "Speed test", "Repair a drive", "Repair all drives", "Back up saves & settings" };
 		static const char *const N[] = {
 			"A quick check of every drive, one after another: the file system's state, the partition and the boot files. Nothing is changed.",
 			"Writes one temporary file to a drive and reads it back, then removes it. Shows how fast the drive reads and writes.",
-			"Unmounts an NVMe or USB drive, asks the file system checker to repair it, and mounts it again. Asks twice first. For the SD card, see Repair the SD card offline.",
+			"Unmounts an NVMe or USB drive, asks the file system checker to repair it, and mounts it again. Asks twice first. For the SD card (and every drive at once, offline), see Repair all drives.",
 			"",
 			"A snapshot of your saves, save states and settings now, the same as after a game. Restore it from Settings > Backups." };
 		int k = i - sg.n;
@@ -6320,24 +6340,32 @@ static void sg_panel(void)
 		if (k == SG_SDREPAIR) {
 			const sg_rescue_t *x = &sg.sr;
 			int r = 0;
-			if (x->drive) {
+			if (x->drive && !x->nvme) {
 				if (x->present) sg_rescue_name(x->mount, x->model, b, sizeof(b));
 				else snprintf(b, sizeof(b), "%s \xC2\xB7 not plugged in", x->model[0] ? x->model : "The repair drive");
 				sg_kv(r++, "Repair drive", b);
-			} else sg_kv(r++, "Repair drive", "None yet");
-			sg_kv(r++, "SD card at start-up", x->dirty ? "Wasn't shut down safely" : "Clean");
-			if (x->armed) sg_kv(r++, "Next restart", "Repairs the SD card");
-			if (x->last[0]) { snprintf(b, sizeof(b), "%s \xC2\xB7 %.16s", sg_rescue_res(x->last), x->last_at); sg_kv(r++, "Last repair", b); }
-			if (!x->drive && !x->ncand)
-				lv_label_set_text(sg_note, "No NVMe drive? Plug in a USB drive (exFAT, 1 GB free) to repair the SD card without a PC: Phosphor puts a copy of MiSTer's Linux on it, and a restart runs the repair from there. Or repair it on a PC with Phosphor for Windows (Card health > Repair).");
-			else if (!x->drive)
-				lv_label_set_text(sg_note, "The SD card can't be repaired while Phosphor runs from it. A: choose a USB or NVMe drive, and Phosphor puts a copy of MiSTer's Linux on it (about 400 MB). Then a restart runs the repair from the drive, with the SD card unmounted, and starts Phosphor again.");
+			} else sg_kv(r++, "Repair drive", x->nvme ? "The NVMe drive: choose a USB drive" : "None yet");
+			if (x->armed) sg_kv(r++, "Next restart", "Repairs all drives");
+			if (x->last[0]) {
+				snprintf(b, sizeof(b), "%s \xC2\xB7 %.16s", sg_rescue_res(x->last), x->last_at);
+				sg_kv(r++, "SD card", b);
+				for (int j = 0; j < x->nlastd && r < 4; j++) sg_kv(r++, x->lastd[j], sg_rescue_res(x->lastd_res[j]));
+				if (r < 5) sg_kv(r++, "Repair drive after", x->self_running ? "Repairing now..." : x->self_res[0] ? sg_rescue_res(x->self_res) : "Not checked");
+			} else sg_kv(r++, "SD card at start-up", x->dirty ? "Wasn't shut down safely" : "Clean");
+			if ((!x->drive || x->nvme) && !x->ncand)
+				lv_label_set_text(sg_note, "Plug a spare USB drive into the SuperStation (exFAT, 1 GB free) to repair all drives without a PC: Phosphor puts a copy of MiSTer's Linux on it, and a restart repairs the SD card, the NVMe drive and any other USB drives from there. Why not the NVMe drive: the drive the repair runs from can't be repaired in the same pass, and the NVMe drive holds your games.");
+			else if (!x->drive || x->nvme)
+				lv_label_set_text(sg_note, "A: choose the USB drive the repair starts from. Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart repairs the SD card, the NVMe drive and any other USB drives while nothing is using them, and starts Phosphor again.");
 			else if (!x->present && x->newp[0])
-				lv_label_set_text(sg_note, "The repair drive isn't plugged in, but another drive is. A: make it the repair drive (a copy of MiSTer's Linux goes on it, about 400 MB).");
+				lv_label_set_text(sg_note, "The repair drive isn't plugged in, but another USB drive is. A: make it the repair drive (a copy of MiSTer's Linux goes on it, about 400 MB).");
 			else if (!x->present)
-				lv_label_set_text(sg_note, "Plug the repair drive back in, or another USB drive (exFAT, 1 GB free) to use instead.");
-			else
-				lv_label_set_text(sg_note, "A: restart and repair the SD card. The TV shows the repair as it runs (under a minute), then Phosphor starts again and shows how it went.");
+				lv_label_set_text(sg_note, "Plug the repair drive back in, or another spare USB drive (exFAT, 1 GB free) to use instead.");
+			else {
+				char nb[320];
+				snprintf(nb, sizeof(nb), "A: restart and repair the SD card%s while nothing is using them. The TV shows the repair as it runs, then Phosphor starts again; the repair drive itself is repaired after that.",
+					x->nother ? " and the other drives plugged in" : "");
+				lv_label_set_text(sg_note, nb);
+			}
 		} else if (k == SG_BACKUP) {
 			sg_kv(0, "Last backup", sg.bk_last[0] ? sg.bk_last : "None yet");
 			if (sg.bk_dest[0]) sg_kv(1, "Kept in", sg.bk_dest);
@@ -6451,7 +6479,7 @@ static void sg_menu_pick(void)
 		sg.menu_n = 0;
 		sg_menu_add("Yes, restart and repair", job, "");
 		sg_menu_add("Cancel", "", "");
-		sg_menu_open("Restart now and repair the SD card? It takes about a minute, then Phosphor starts again.");
+		sg_menu_open("Restart now and repair all drives? The TV shows the repair, then Phosphor starts again.");
 		sg.confirm = 1;
 		return;
 	}
@@ -6459,7 +6487,7 @@ static void sg_menu_pick(void)
 		sg.menu_n = 0;
 		sg_menu_add("Yes, turn it off", job, "");
 		sg_menu_add("Cancel", "", "");
-		sg_menu_open("Turn off offline repair? Its lines come off the SD card and its copy of Linux off the drive.");
+		sg_menu_open("Turn off drive repair? Its lines come off the SD card and its copy of Linux off the repair drive.");
 		sg.confirm = 1;
 		return;
 	}
@@ -6479,35 +6507,35 @@ static void sg_menu_pick(void)
 	sg_start(job, tgt);
 }
 
-/* Repair the SD card offline: set up a drive, restart and repair, a new drive instead of one that's gone */
+/* Repair all drives: set up a USB drive, restart and repair, a new drive instead of one that's gone */
 static void sg_rescue_action(void)
 {
 	const sg_rescue_t *x = &sg.sr;
 	char nm[96], lab[80];
 	if (sg.busy) { toast_show("A check is running: wait for it to finish"); return; }
 	sg.menu_n = 0;
-	if (!x->drive) {
-		if (!x->ncand) { toast_show("Plug in a USB drive (exFAT, 1 GB free) first"); return; }
+	if (!x->drive || x->nvme) {
+		if (!x->ncand) { toast_show("Plug in a spare USB drive (exFAT, 1 GB free) first"); return; }
 		for (int i = 0; i < x->ncand && sg.menu_n < 5; i++) {
 			sg_rescue_name(x->cand[i], x->cand_model[i], nm, sizeof(nm));
 			snprintf(lab, sizeof(lab), "Use the %s", nm);
 			sg_menu_add(lab, "sdrescue-setup", x->cand[i]);
 		}
 		sg_menu_add("Cancel", "", "");
-		sg_menu_open("Which drive repairs the SD card? A copy of MiSTer's Linux goes on it (about 400 MB); nothing else on it changes.");
+		sg_menu_open("Which USB drive does the repair start from? A copy of MiSTer's Linux goes on it (about 400 MB); nothing else on it changes.");
 		return;
 	}
 	if (!x->present) {
-		if (!x->newp[0]) { toast_show("Plug the repair drive back in, or another USB drive"); return; }
+		if (!x->newp[0]) { toast_show("Plug the repair drive back in, or another spare USB drive"); return; }
 		sg_rescue_name(x->newp, x->newmodel, nm, sizeof(nm));
 		snprintf(lab, sizeof(lab), "Use the %s", nm);
 		sg_menu_add(lab, "sdrescue-setup", x->newp);
-		sg_menu_add("Turn off offline repair", "sdrescue-remove", "");
+		sg_menu_add("Turn off drive repair", "sdrescue-remove", "");
 		sg_menu_add("Cancel", "", "");
-		sg_menu_open("The repair drive isn't plugged in. Use this drive instead?");
+		sg_menu_open("The repair drive isn't plugged in. Use this USB drive instead?");
 		return;
 	}
-	sg_menu_add("Restart and repair the SD card", "sdrescue-go", "");
+	sg_menu_add("Restart and repair all drives", "sdrescue-go", "");
 	if (x->armed) sg_menu_add("Don't repair at the next restart", "sdrescue-disarm", "");
 	for (int i = 0; i < x->ncand && sg.menu_n < 4; i++) {
 		if (!strcmp(x->cand[i], x->mount)) continue;
@@ -6515,9 +6543,9 @@ static void sg_rescue_action(void)
 		snprintf(lab, sizeof(lab), "Use the %s instead", nm);
 		sg_menu_add(lab, "sdrescue-setup", x->cand[i]);
 	}
-	sg_menu_add("Turn off offline repair", "sdrescue-remove", "");
+	sg_menu_add("Turn off drive repair", "sdrescue-remove", "");
 	sg_menu_add("Cancel", "", "");
-	sg_menu_open("Repair the SD card offline");
+	sg_menu_open("Repair all drives");
 }
 
 static void storage_key(pkey_t k)
