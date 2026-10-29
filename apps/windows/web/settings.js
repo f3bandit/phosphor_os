@@ -1530,7 +1530,7 @@ class AppSettings {
 				<div class="mrow" style="margin-top:.6rem"><button class="btn" id="fl_rescan" data-nav>Look again</button><button class="btn" id="fl_why" data-nav>Why isn't my card listed?</button></div><div id="fl_all"></div></div>
 			<div class="mcard"><h3>3 · Write it</h3><div class="mrow"><label for="fl_conf">Type the card's disk number to confirm</label><input id="fl_conf" style="width:5rem" data-nav><button class="btn primary" id="fl_go" data-nav>Write the card</button></div>
 				<div id="fl_st"></div></div></div>
-			<div class="panel"><h2>Flash an SD card</h2><p class="note">Puts the official SuperStation One SD card image on a card in this PC's card reader, the same way SS1 Tool does: everything on the card is replaced, the partition table is written last, and then the whole card is read back and compared.</p>
+			<div class="panel"><h2>Flash an SD card</h2><p class="note">Puts Phosphor's SD card image (MiSTer with Phosphor ready to go), or the SuperStation One's regular MiSTer image, on a card in this PC's card reader, the same way SS1 Tool does: everything on the card is replaced, the partition table is written last, and then the whole card is read back and compared.</p>
 				<p class="note">Phosphor runs on the Regular MiSTer image: once the SuperStation has set the card up, install Phosphor on it as usual.</p>
 				<p class="note">Windows asks "allow this app to make changes" when the writing starts: writing to a disk needs it. Only SD cards and USB card readers are offered, never this PC's own drives.</p></div></div>`));
 		const showImg = () => { $("#fl_img").textContent = F.image ? F.image.split(/[\\/]/).pop() : "No image chosen yet"; };
