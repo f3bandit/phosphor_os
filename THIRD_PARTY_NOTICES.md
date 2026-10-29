@@ -15,6 +15,10 @@ Not in this list, because they are separate programs with their own source:
 - **achievement.wav**, the RetroAchievements unlock sound, comes with odelot's RetroAchievements
   Main for MiSTer (https://github.com/odelot/Main_MiSTer, GPL-3.0). Its origin and licence are
   odelot's; it is included as part of his work and isn't covered by Phosphor's licence.
+- **fsck.exfat for Windows** (built into Phosphor for Windows, for Card health › Check and repair)
+  is exfatprogs' fsck.exfat (https://github.com/exfatprogs/exfatprogs, GPL-2.0-or-later), run as a
+  separate program. Its source, the Windows layer and the licence are in apps/windows/fsck-exfat/.
+  It is built with MinGW-w64, whose runtime is under permissive licences.
 - **Fan-made box art** that Phosphor for Windows can fetch (apps/windows/fanart) belongs to the
   people who made it; each cover is credited in apps/windows/fanart/README.md. It isn't covered by
   Phosphor's licence, and a cover is taken out when its maker asks.

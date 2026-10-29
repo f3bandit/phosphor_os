@@ -168,17 +168,20 @@ func haveImage(a flashImage) (string, bool) {
 // ---------- the job: a download here, or a flash / read test in the helper ----------
 
 type sdState struct {
-	Running bool    `json:"running"`
-	Job     string  `json:"job"`   // download | flash | readtest
-	Phase   string  `json:"phase"` // download, prepare, write, verify, read, done, failed, ready
-	Done    int64   `json:"done"`
-	Total   int64   `json:"total"`
-	Message string  `json:"message"`
-	Error   string  `json:"error"`
-	Image   string  `json:"image"`
-	MBps    float64 `json:"mbps,omitempty"`
-	Bad     []int64 `json:"bad,omitempty"` // read test: MB offsets that couldn't be read
-	At      int64   `json:"at"`
+	Running    bool     `json:"running"`
+	Job        string   `json:"job"`   // download | flash | readtest | fsck
+	Phase      string   `json:"phase"` // download, prepare, write, verify, read, done, failed, ready
+	Done       int64    `json:"done"`
+	Total      int64    `json:"total"`
+	Message    string   `json:"message"`
+	Error      string   `json:"error"`
+	Image      string   `json:"image"`
+	MBps       float64  `json:"mbps,omitempty"`
+	Bad        []int64  `json:"bad,omitempty"`         // read test: MB offsets that couldn't be read
+	Log        []string `json:"log,omitempty"`         // fsck: what fsck.exfat said
+	Dirty      string   `json:"dirty,omitempty"`       // fsck: the card's exFAT mark before (clean, dirty, media-failure)
+	DirtyAfter string   `json:"dirty_after,omitempty"` // and after
+	At         int64    `json:"at"`
 }
 
 var (
@@ -421,6 +424,7 @@ func sdRoutes(h func(string, http.HandlerFunc)) {
 			Disk    int
 			Image   string
 			Confirm string
+			Mode    string // fsck: check | repair | deep
 		}
 		if err := readJSON(r, &req); err != nil {
 			fail(w, "bad request")
@@ -458,8 +462,14 @@ func sdRoutes(h func(string, http.HandlerFunc)) {
 			}
 			args = append(args, "--image", req.Image)
 		case "readtest":
+		case "fsck":
+			if _, ok := fsckFlags[req.Mode]; !ok {
+				fail(w, "mode: check, repair or deep")
+				return
+			}
+			args = append(args, "--mode", req.Mode)
 		default:
-			fail(w, "job: flash or readtest")
+			fail(w, "job: flash, readtest or fsck")
 			return
 		}
 		_ = os.Remove(sdStatusPath())
@@ -514,6 +524,8 @@ func runSDJob(args []string) bool {
 		err = flash(d, opt["image"])
 	} else if job == "readtest" {
 		err = readTest(d)
+	} else if job == "fsck" {
+		err = fsckCard(d, opt["mode"])
 	} else {
 		err = errors.New("unknown job")
 	}

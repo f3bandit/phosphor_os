@@ -53,6 +53,8 @@ func startHelper(args []string) error {
 		var err error
 		if opt["sdjob"] == "flash" {
 			err = flash(d, opt["image"])
+		} else if opt["sdjob"] == "fsck" {
+			err = fsckCard(d, opt["mode"])
 		} else {
 			err = readTest(d)
 		}
