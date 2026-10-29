@@ -76,10 +76,39 @@ put_menu_core() {
 	echo "menu.rbf: Phosphor's menu core (MiSTer's kept in $ROOT/backup/menu.rbf.mister)"
 }
 
+# exFAT's "dirty" flag on a USB / NVMe drive, cleared with a disk check at boot. Linux never clears it
+# itself on a drive that was dirty when it was mounted (fs/exfat keeps it as a "persistent" flag), so one
+# restart without a clean stop leaves the drive dirty on every boot after, until a disk check runs. Only
+# a drive nothing has open yet and only mounted once (no bind mounts) is checked: unmounted, fsck.exfat
+# -p (repairs only what's safe to repair without asking), mounted again with its own options. The SD
+# card can't be checked here (Linux runs from linux.img on it): Windows' scan does that one.
+# One line a drive in logs/drives.log.
+exfat_flags() { dd if="$1" bs=1 skip=106 count=1 2> /dev/null | od -An -tu1 | tr -d ' '; }
+check_dirty_drives() {
+	log="$ROOT/logs/drives.log"
+	grep -E '^/dev/[^ ]+ /media/usb[0-9]+ exfat ' /proc/mounts | while read -r dev mnt _ opts _; do
+		[ -b "$dev" ] && [ "$(dd if="$dev" bs=1 skip=3 count=5 2> /dev/null)" = EXFAT ] || continue
+		f="$(exfat_flags "$dev")"
+		[ $(( ${f:-0} & 2 )) -ne 0 ] || continue
+		now="$(date '+%Y-%m-%d %H:%M:%S')"
+		if [ "$(grep -c "^$dev " /proc/mounts)" != 1 ]; then echo "$now  $dev ($mnt)  dirty, not checked: mounted more than once" >> "$log"; continue; fi
+		sync
+		if ! umount "$mnt" 2> /dev/null; then echo "$now  $dev ($mnt)  dirty, not checked: in use" >> "$log"; continue; fi
+		out="$(timeout 300 fsck.exfat -p "$dev" 2>&1 | tail -1)"
+		if ! mount -t exfat -o "$opts" "$dev" "$mnt" 2>> "$log"; then
+			mount "$dev" "$mnt" 2>> "$log" || echo "$now  $dev ($mnt)  COULDN'T MOUNT IT AGAIN" >> "$log"
+		fi
+		f="$(exfat_flags "$dev")"; st=clean; [ $(( ${f:-0} & 2 )) -ne 0 ] && st="still dirty"
+		echo "$now  $dev ($mnt)  was dirty, checked: $st ($out)" >> "$log"
+	done
+}
+
 case "${1:-status}" in
 	boot)
 		# a line a boot (with the uptime), to tell restarts apart from Main's (logs/main-reboots.log)
 		echo "$(date '+%Y-%m-%d %H:%M:%S')  boot  up $(cut -d' ' -f1 /proc/uptime 2>/dev/null)s" >> "$ROOT/logs/boots.log"
+		# before anything of Phosphor's opens files on them
+		command -v fsck.exfat > /dev/null && check_dirty_drives
 		# MiSTer's downloader may have put its own menu.rbf back: Phosphor's again (for the next boot)
 		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" > /dev/null
 		# Phosphor first, so it's on screen within seconds of MiSTer starting
