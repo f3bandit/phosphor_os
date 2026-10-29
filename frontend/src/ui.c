@@ -8361,7 +8361,7 @@ static void splash_drives(cJSON *r)
 	}
 	if (!any) lv_label_set_text(sp_sub, "Everything is written to the card.");
 	else if (!bad) lv_label_set_text(sp_sub, "Everything is written and the drives are marked clean: Windows won't ask to scan the card.");
-	else if (bad) lv_label_set_text(sp_sub, "Everything is written, but a drive is still marked dirty: Windows may offer to scan it (nothing is lost).");
+	else if (bad) lv_label_set_text(sp_sub, "Everything is written, but a drive is still marked dirty (nothing is lost). Phosphor checks an NVMe or USB drive when it starts; for the SD card, let Windows scan it once.");
 }
 
 static void power_run(int restart)
