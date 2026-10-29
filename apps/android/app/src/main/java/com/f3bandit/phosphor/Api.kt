@@ -107,7 +107,11 @@ data class GuardState(val installed: Boolean, val linux: String, val updatedAt: 
 data class Drive(val path: String, val kind: String, val fs: String, val sizeKb: Long, val freeKb: Long, val model: String,
                  val gen: String, val watts: String, val mounted: Boolean)
 data class StorageCheck(val job: String, val target: String, val busy: Boolean, val ok: Boolean, val at: Long, val output: String)
-data class StorageState(val installed: Boolean, val drives: List<Drive>, val overlapTool: List<String>, val last: StorageCheck)
+/** the offline SD card repair: fresh = a repair ran just before this start-up; newDrive* = another drive to use when the repair drive is gone */
+data class SdRescue(val drive: String, val present: Boolean, val model: String, val lastResult: String, val lastAt: String, val fresh: Boolean,
+                    val newDrivePartuuid: String, val newDriveModel: String)
+data class StorageState(val installed: Boolean, val drives: List<Drive>, val overlapTool: List<String>, val last: StorageCheck,
+                        val sdRescue: SdRescue = SdRescue("", false, "", "", "", false, "", ""))
 
 data class UpdatePackage(val file: String, val version: String)
 data class Rollback(val version: String, val date: String)
@@ -384,6 +388,11 @@ class PhosphorApi(val address: String, private val token: String?) {
             },
             (0 until oa.length()).map { oa.getString(it) },
             StorageCheck(l.optString("job"), l.optString("target"), l.optBoolean("busy"), l.optBoolean("ok"), l.optDouble("at").toLong(), l.optString("output")),
+            (r.optJSONObject("sdrescue") ?: JSONObject()).let { x ->
+                val n = x.optJSONObject("new_drive") ?: JSONObject()
+                SdRescue(x.optString("drive"), x.optBoolean("drive_present"), x.optString("drive_model"), x.optString("last_result"), x.optString("last_at"),
+                    x.optBoolean("fresh"), n.optString("partuuid"), n.optString("model"))
+            },
         )
     }
 

@@ -36,7 +36,8 @@
  *                                           pending, found, not_found, status
  *   dashboard  [kernel]                     live numbers: temps, cpu, load, uptime, mem, disks, io, ips, net,
  *                                           procs, core; kernel: the kernel log's last lines (read only)
- *   storage    [do: check (test, target) | mount (target /dev/sdXN) | overlap-remove | overlap-undo]
+ *   storage    [do: check (test, target) | mount (target /dev/sdXN) | overlap-remove | overlap-undo |
+ *              sdrescue-setup (target /media/usbN) | sdrescue-arm | sdrescue-disarm | sdrescue-remove]
  *                                           drives {path,kind,fs,size_kb,free_kb,model,gen,watts,mounted},
  *                                           overlap_tool [paths], last {job,target,busy,ok,at,output}
  *   controllers [live: eventN] [do: style (vidpid, style|auto) | reset (vidpid) | backup [name] |
@@ -1119,7 +1120,7 @@ static char *cmd_storage(cJSON *req)
 	if (d && *d) {
 		const char *test = !strcmp(d, "check") ? cJSON_GetStringValue(cJSON_GetObjectItem(req, "test")) : d;
 		int r = test ? storage_start(test, cJSON_GetStringValue(cJSON_GetObjectItem(req, "target"))) : -2;
-		if (r == -2) return fail("do: check (test, target), mount (target /dev/sdXN), overlap-remove or overlap-undo");
+		if (r == -2) return fail("do: check (test, target), mount (target /dev/sdXN), overlap-remove, overlap-undo, sdrescue-setup (target /media/usbN), sdrescue-arm, sdrescue-disarm or sdrescue-remove");
 		if (r == 1) return fail("A check is already running; try again when it's done");
 		if (r < 0) return fail("The storage module isn't installed");
 	}
@@ -1153,6 +1154,30 @@ static char *cmd_storage(cJSON *req)
 		save = NULL;
 		for (char *t = strtok_r(v, " ", &save); t; t = strtok_r(NULL, " ", &save)) cJSON_AddItemToArray(ov, cJSON_CreateString(t));
 	}
+	/* the offline SD card repair (storage.sh sdrescue status) */
+	cJSON *sr = cJSON_AddObjectToObject(o, "sdrescue");
+	cJSON *cands = cJSON_AddArrayToObject(sr, "candidates");
+	save = NULL;
+	for (char *line = ss.rescue ? strtok_r(ss.rescue, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = 0;
+		const char *k = line, *v = eq + 1;
+		if (!strcmp(k, "candidate") || !strcmp(k, "new_drive")) {
+			char buf[256], *f[4] = { 0 }, *p = buf;
+			snprintf(buf, sizeof(buf), "%s", v);
+			for (int n = 0; n < 4 && p; n++) { f[n] = p; p = strchr(p, '|'); if (p) *p++ = 0; }
+			cJSON *x = cJSON_CreateObject();
+			cJSON_AddStringToObject(x, "path", f[0] ? f[0] : "");
+			cJSON_AddStringToObject(x, "partuuid", f[1] ? f[1] : "");
+			cJSON_AddStringToObject(x, "model", f[2] ? f[2] : "");
+			if (f[3]) cJSON_AddNumberToObject(x, "free_mb", atof(f[3]));
+			if (!strcmp(k, "candidate")) cJSON_AddItemToArray(cands, x);
+			else { cJSON_DeleteItemFromObject(sr, "new_drive"); cJSON_AddItemToObject(sr, "new_drive", x); }
+		} else if (!strcmp(k, "drive_present") || !strcmp(k, "armed") || !strcmp(k, "sd_dirty_at_boot") || !strcmp(k, "fresh"))
+			cJSON_AddBoolToObject(sr, k, !strcmp(v, "1"));
+		else if (!cJSON_GetObjectItem(sr, k)) cJSON_AddStringToObject(sr, k, v);
+	}
 	cJSON *last = cJSON_AddObjectToObject(o, "last");
 	cJSON_AddStringToObject(last, "job", ss.job);
 	cJSON_AddStringToObject(last, "target", ss.target);
@@ -1160,7 +1185,7 @@ static char *cmd_storage(cJSON *req)
 	cJSON_AddBoolToObject(last, "ok", ss.ok);
 	cJSON_AddNumberToObject(last, "at", (double)ss.at);
 	cJSON_AddStringToObject(last, "output", ss.output ? ss.output : "");
-	free(ss.targets); free(ss.overlap); free(ss.output);
+	free(ss.targets); free(ss.overlap); free(ss.rescue); free(ss.output);
 	return reply(o);
 }
 
