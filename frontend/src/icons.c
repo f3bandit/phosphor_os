@@ -213,6 +213,27 @@ static void draw_cb(lv_event_t *e)
 		line(&p, 58, 26, 51, 30); line(&p, 51, 30, 46, 25); line(&p, 46, 25, 46, 14);
 		break;
 	}
+	case ICON_SDCARD: {                                  /* an SD card with a tick on it */
+		const float c[] = { 20, 8, 44, 8, 56, 20, 56, 64, 20, 64 };
+		poly(&p, c, 5, 1);
+		line(&p, 30, 8, 30, 20); line(&p, 39, 8, 39, 20);
+		{ const float k[] = { 29, 44, 35, 50, 47, 36 }; poly(&p, k, 3, 0); }
+		break;
+	}
+	case ICON_DONE:                                      /* a tick in a circle */
+		circle(&p, 36, 36, 28, 0);
+		{ const float k[] = { 23, 37, 32, 46, 50, 27 }; poly(&p, k, 3, 0); }
+		break;
+	case ICON_WARN: {                                    /* a triangle with ! */
+		const float t[] = { 36, 9, 65, 60, 7, 60 };
+		poly(&p, t, 3, 1);
+		line(&p, 36, 28, 36, 42); circle(&p, 36, 51, 2, 1);
+		break;
+	}
+	case ICON_FAILED:                                    /* a cross in a circle */
+		circle(&p, 36, 36, 28, 0);
+		line(&p, 25, 25, 47, 47); line(&p, 47, 25, 25, 47);
+		break;
 	default:
 		break;
 	}
