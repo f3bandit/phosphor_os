@@ -149,6 +149,8 @@ case "${1:-status}" in
 		[ -f "$ROOT/nvmeboot/nvmeboot.sh" ] && sh "$ROOT/nvmeboot/nvmeboot.sh" boot
 		# before anything of Phosphor's opens files on them
 		command -v fsck.exfat > /dev/null && check_dirty_drives
+		# started from the SD card to check the drive it runs from: back to the drive (a restart) once it's clean
+		[ -f "$ROOT/nvmeboot/nvmeboot.sh" ] && sh "$ROOT/nvmeboot/nvmeboot.sh" after-check
 		# MiSTer's downloader may have put its own menu.rbf back: Phosphor's again (for the next boot)
 		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" > /dev/null
 		# running from the drive: a new kernel or menu core (an update, the line above) to the SD card,

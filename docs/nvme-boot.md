@@ -44,6 +44,20 @@ isn't found, its `linux.img` is missing or broken, or nothing of Phosphor's star
 restarts and the next start-up is from the SD card, with `phosphor.boot=fallback` on the kernel's command
 line for Phosphor to tell the user. The restart after that tries the drive again.
 
+## A drive that wasn't shut down safely
+
+The drive can't be checked while the system runs from it (`/` and `/media/fat` are on it), and the kernel
+has no initramfs to check it before mounting. So when Linux logs "Volume was not properly unmounted" for it
+at start-up, `nvmeboot.sh boot` sets the word to "check" and restarts (a safe stop first). u-boot then
+starts once from the SD card (`phosphor.boot=check`), where the drive is just storage: Phosphor's start-up
+dirty-drive check repairs it (`fsck.exfat -p`), and `nvmeboot.sh after-check` restarts from the drive. If the
+check couldn't clean it, it stays on the SD card. At most one such round in 10 minutes, so a drive that
+can't be cleaned never loops.
+
+| Word at start-up | Starts from | Leaves |
+|---|---|---|
+| "check" | the SD card (`phosphor.boot=check`) | "checked" (the next start-up tries the drive) |
+
 ## Finding the right drive
 
 By the partition's PARTUUID (from its GPT), never by its Linux name: with another drive plugged in the NVMe
@@ -80,7 +94,9 @@ check at start-up never touches the system's own drive.
   `mw.l`, `if … elif`; `CONFIG_HUSH_PARSER`, `CONFIG_CMD_ITEST`).
 - `nvmeboot.sh` under BusyBox with a fake SD card and drive: check, copy (games merged, nothing on the drive
   replaced, the copy checked), enable twice (one set of lines), status, boot from the drive and after a
-  fall-back, sync, copyback (including an SD card too small), disable.
+  fall-back, sync, copyback (including an SD card too small), disable; a dirty drive at start-up ("check"
+  set, a second time within 10 minutes left alone), after-check (cleaned: back to the drive; still dirty:
+  stays; an older boot's log line ignored). The "check" word in the sandbox too.
 - On the SS1, read only: `check /media/usb0` passes (exFAT, PARTUUID 7a06eb63-…, room, kernel 6.18.38),
   `status`, `boot` with nothing set up.
 - **Not tested yet: an actual start-up from the drive** (needs the SD card's `u-boot.txt` changed and a
