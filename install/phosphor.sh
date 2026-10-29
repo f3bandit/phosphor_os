@@ -91,6 +91,8 @@ check_dirty_drives() {
 		f="$(exfat_flags "$dev")"
 		[ $(( ${f:-0} & 2 )) -ne 0 ] || continue
 		now="$(date '+%Y-%m-%d %H:%M:%S')"
+		# running from this drive (nvmeboot): it's the system's own file system, mounted here a second time
+		if [ "$(stat -c %d "$mnt" 2> /dev/null)" = "$(stat -c %d /media/fat 2> /dev/null)" ]; then echo "$now  $dev ($mnt)  the system's own drive (running from it): not checked" >> "$log"; continue; fi
 		if [ "$(grep -c "^$dev " /proc/mounts)" != 1 ]; then echo "$now  $dev ($mnt)  dirty, not checked: mounted more than once" >> "$log"; continue; fi
 		sync
 		if ! umount "$mnt" 2> /dev/null; then echo "$now  $dev ($mnt)  dirty, not checked: in use" >> "$log"; continue; fi
@@ -143,10 +145,15 @@ case "${1:-status}" in
 	boot)
 		# a line a boot (with the uptime), to tell restarts apart from Main's (logs/main-reboots.log)
 		echo "$(date '+%Y-%m-%d %H:%M:%S')  boot  up $(cut -d' ' -f1 /proc/uptime 2>/dev/null)s" >> "$ROOT/logs/boots.log"
+		# running from the NVMe / a USB drive (nvmeboot/): the restart word, the drive's second mount gone
+		[ -f "$ROOT/nvmeboot/nvmeboot.sh" ] && sh "$ROOT/nvmeboot/nvmeboot.sh" boot
 		# before anything of Phosphor's opens files on them
 		command -v fsck.exfat > /dev/null && check_dirty_drives
 		# MiSTer's downloader may have put its own menu.rbf back: Phosphor's again (for the next boot)
 		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" > /dev/null
+		# running from the drive: a new kernel or menu core (an update, the line above) to the SD card,
+		# which the SuperStation starts from
+		[ -f "$ROOT/nvmeboot/nvmeboot.sh" ] && sh "$ROOT/nvmeboot/nvmeboot.sh" sync > /dev/null
 		# Phosphor first, so it's on screen within seconds of MiSTer starting
 		start_service
 		pidof MiSTer_phosphor > /dev/null || switch_main      # main= in MiSTer.ini normally does this
@@ -217,6 +224,7 @@ case "${1:-status}" in
 		# Phosphor's menu core as menu.rbf again (MiSTer's downloader puts its own back on updates);
 		# at shutdown and after Update / Update All. MiSTer's is kept in backup/menu.rbf.mister.
 		[ -x "$BIN/MiSTer_phosphor" ] && put_menu_core "$(dirname "$ROOT")" && sync
+		[ -f "$ROOT/nvmeboot/nvmeboot.sh" ] && sh "$ROOT/nvmeboot/nvmeboot.sh" sync > /dev/null
 		;;
 	main)
 		switch_main && echo "Phosphor's Main is running (MiSTer's comes back on the next boot)"

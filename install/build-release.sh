@@ -38,6 +38,8 @@ for f in phosphor phosphord phos phos-nvme; do
 	if grep -qa "GNU C Library" "$D/bin/$f"; then echo "bin/$f is linked with glibc: build with tools/musl first" >&2; exit 1; fi
 done
 cp install/install.sh install/uninstall.sh install/phosphor.sh install/update.sh install/ss1_video_ini.sh LICENSE.md THIRD_PARTY_NOTICES.md "$D/"
+# run from the NVMe / a USB drive: the start-up lines for the SD card's u-boot.txt and their script
+mkdir -p "$D/nvmeboot" && cp install/nvmeboot/nvmeboot.sh install/nvmeboot/u-boot.phosphor.txt "$D/nvmeboot/"
 # the GPL builds (Phosphor's Main, the menu core): their licence, and where their exact source is
 mkdir -p "$D/licenses"
 if [ -f "$D/bin/MiSTer_phosphor" ] || [ -d "$D/cores" ]; then
