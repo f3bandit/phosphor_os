@@ -3,6 +3,24 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.49
+
+### Changed
+- **Repair all drives** (was Repair the SD card offline, Settings › Storage): one restart now repairs the
+  SD card **and every other drive plugged in** (the dock's NVMe drive, other USB drives), while nothing is
+  using any of them. The TV shows each one as it goes ("NVMe drive · 2 of 3") and a row per drive at the
+  end. The repair drive itself is repaired straight after the restart, once nothing runs from it.
+- **The repair drive is a USB drive only, not the NVMe drive.** The drive the repair runs from can't be
+  repaired in that same pass, and the NVMe drive is the one with your games on it: with a spare USB stick
+  as the repair drive, the NVMe drive gets a real offline repair with the SD card. A repair drive set up as
+  the NVMe drive by 0.27.48 asks for a USB drive now. Any spare stick works (exFAT, 1 GB free); nothing
+  else on it changes.
+- Phosphor for Windows 0.2.47 and the phone app show the new card and every drive's result.
+
+### Fixed
+- A USB drive that MiSTer mounted twice (`/media/usb0` and `usb1`, the same drive) is listed once, and its
+  other mount comes off before it's repaired, so the checker never runs on a drive that's still mounted.
+
 ## 0.27.48
 
 ### Added

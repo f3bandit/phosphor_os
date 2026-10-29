@@ -1,4 +1,4 @@
-/* Phosphor frontend: the offline SD card repair's screen.
+/* Phosphor frontend: the offline drive repair's screen (the SD card, then the other drives).
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
  *
  * Only in the repair copy of MiSTer's Linux on the repair drive (the storage module's sdrescue.sh puts this
@@ -7,6 +7,8 @@
  *   phase=repairing|done   drive=NVMe drive|USB drive
  *   result=clean|repaired|errors_left|failed   reason=<why it didn't run>
  *   dirs=N files=N secs=N fixed=<what the checker fixed>   restart=<seconds until the restart>
+ *   step=<the drive being repaired> stepn=N steps=N   (repairing: "NVMe drive · 2 of 3")
+ *   d1..d3=<drive>|clean|repaired|errors_left|failed|skipped   others_bad=1   (done: the other drives)
  * The repair step restarts the SuperStation itself; this only shows what's happening. */
 #include "sdrepair.h"
 #include "icons.h"
@@ -16,13 +18,15 @@
 #include <string.h>
 #include <time.h>
 
+#define KVN 4
 static const char *state_path;
 static struct {
-	char phase[16], drive[40], result[16], reason[120], fixed[120], dirs[16], files[16], secs[16];
-	int restart;
+	char phase[16], drive[40], result[16], reason[120], fixed[120], dirs[16], files[16], secs[16], step[48];
+	char d[3][72];
+	int restart, stepn, steps, others_bad;
 } st;
 static char last_raw[1024];
-static lv_obj_t *ic, *lab, *title, *body, *bar, *bar_fill, *sub, *note, *note_txt, *note_ic, *kv, *kv_k[3], *kv_v[3], *foot;
+static lv_obj_t *ic, *lab, *title, *body, *bar, *bar_fill, *sub, *note, *note_txt, *note_ic, *kv, *kv_k[KVN], *kv_v[KVN], *foot;
 static int bar_x, bar_w, fill_w;
 static time_t done_at;
 
@@ -47,9 +51,13 @@ static void read_state(void)
 		*eq = 0;
 		const char *k = l, *v = eq + 1;
 #define SET(name) if (!strcmp(k, #name)) snprintf(st.name, sizeof(st.name), "%s", v)
-		SET(phase); SET(drive); SET(result); SET(reason); SET(fixed); SET(dirs); SET(files); SET(secs);
+		SET(phase); SET(drive); SET(result); SET(reason); SET(fixed); SET(dirs); SET(files); SET(secs); SET(step);
 #undef SET
 		if (!strcmp(k, "restart")) st.restart = atoi(v);
+		if (!strcmp(k, "stepn")) st.stepn = atoi(v);
+		if (!strcmp(k, "steps")) st.steps = atoi(v);
+		if (!strcmp(k, "others_bad")) st.others_bad = atoi(v);
+		if (k[0] == 'd' && k[1] >= '1' && k[1] <= '3' && !k[2]) snprintf(st.d[k[1] - '1'], sizeof(st.d[0]), "%s", v);
 	}
 	if (!strcmp(st.phase, "done") && !done_at) done_at = time(NULL);
 }
@@ -84,15 +92,19 @@ static void draw(void)
 	lv_obj_align(note, LV_ALIGN_BOTTOM_MID, 0, -S(done ? 140 : 56));   /* (above the countdown when done) */
 	lv_obj_set_hidden(kv, !done || (strcmp(r, "clean") && strcmp(r, "repaired")));
 	lv_obj_set_hidden(foot, !done);
-	for (int i = 0; i < 3; i++) kv_row(i, "", "");
+	for (int i = 0; i < KVN; i++) kv_row(i, "", "");
+	int multi = st.steps > 1 || st.d[0][0];
 	if (!done) {
 		icon_set(ic, ICON_SDCARD);
 		lv_obj_set_style_text_color(ic, PAL.acc, 0);
 		lv_label_set_text(lab, "O F F L I N E   R E P A I R");
-		lv_label_set_text(title, "Repairing the SD card");
-		snprintf(b, sizeof(b), "Started from the %s so the SD card can be checked while nothing is using it. Phosphor starts again by itself when it's done.",
+		lv_label_set_text(title, multi ? "Repairing the drives" : "Repairing the SD card");
+		snprintf(b, sizeof(b), multi ? "Started from the %s so the SD card and the other drives can be checked while nothing is using them. Phosphor starts again by itself when it's done."
+		                             : "Started from the %s so the SD card can be checked while nothing is using it. Phosphor starts again by itself when it's done.",
 			st.drive[0] ? st.drive : "repair drive");
 		lv_label_set_text(body, b);
+		if (multi && st.step[0]) { snprintf(b, sizeof(b), "%s \xC2\xB7 %d of %d", st.step, st.stepn, st.steps); lv_label_set_text(sub, b); }
+		else lv_label_set_text(sub, "Checking files and folders \xC2\xB7 usually under a minute");
 		lv_label_set_text(note_txt, "Don't switch off or unplug the SuperStation");
 		icon_set(note_ic, ICON_POWER);
 		lv_obj_set_style_text_color(note_ic, PAL.acc, 0);
@@ -101,7 +113,27 @@ static void draw(void)
 		return;
 	}
 	lv_label_set_text(lab, "O F F L I N E   R E P A I R   \xC2\xB7   D O N E");
-	if (!strcmp(r, "clean") || !strcmp(r, "repaired")) {
+	if ((!strcmp(r, "clean") || !strcmp(r, "repaired")) && multi) {
+		/* the SD card and the other drives, one row each */
+		int fixed = !strcmp(r, "repaired");
+		for (int i = 0; i < 3 && st.d[i][0]; i++) if (strstr(st.d[i], "|repaired")) fixed = 1;
+		int bad = st.others_bad;
+		icon_set(ic, bad ? ICON_WARN : fixed ? ICON_UTILITY : ICON_DONE);
+		lv_obj_set_style_text_color(ic, C(bad ? AMBER : GREEN), 0);
+		lv_label_set_text(title, bad ? "Some errors couldn't be fixed here" : fixed ? "The drives are repaired" : "All drives are fine");
+		lv_label_set_text(body, bad ? "Phosphor still starts, and what it fixed stays fixed. For a drive with errors left, back up what's on it and repair it on a PC."
+		                            : fixed ? "The errors found are fixed. Your games, saves and settings are where they were, and the drives are marked clean again."
+		                                    : "No errors found. They're marked clean again, so Windows won't ask to scan them.");
+		lv_obj_set_hidden(note, true);
+		kv_row(0, "SD card", fixed && !strcmp(r, "repaired") ? "Repaired" : "No errors");
+		for (int i = 0; i < 3 && st.d[i][0]; i++) {
+			char name[48];
+			const char *bar_ = strrchr(st.d[i], '|'), *res = bar_ ? bar_ + 1 : "";
+			snprintf(name, sizeof(name), "%.*s", bar_ ? (int)(bar_ - st.d[i]) : 40, st.d[i]);
+			kv_row(i + 1, name, !strcmp(res, "clean") ? "No errors" : !strcmp(res, "repaired") ? "Repaired"
+			                  : !strcmp(res, "errors_left") ? "Errors left" : !strcmp(res, "skipped") ? "Not checked here" : "Not repaired");
+		}
+	} else if (!strcmp(r, "clean") || !strcmp(r, "repaired")) {
 		int fixed = !strcmp(r, "repaired");
 		icon_set(ic, fixed ? ICON_UTILITY : ICON_DONE);
 		lv_obj_set_style_text_color(ic, C(GREEN), 0);
@@ -116,7 +148,7 @@ static void draw(void)
 			kv_row(n++, "Checked", b);
 		}
 		if (!fixed && st.secs[0]) { snprintf(b, sizeof(b), "%s second%s", st.secs, strcmp(st.secs, "1") ? "s" : ""); kv_row(n++, "Took", b); }
-		if (fixed) kv_row(n++, "Full report", "Settings \xE2\x80\xBA Storage \xE2\x80\xBA Repair the SD card offline");
+		if (fixed) kv_row(n++, "Full report", "Settings \xE2\x80\xBA Storage \xE2\x80\xBA Repair all drives");
 		if (!n) lv_obj_set_hidden(kv, true);
 	} else if (!strcmp(r, "errors_left")) {
 		icon_set(ic, ICON_WARN);
@@ -218,11 +250,11 @@ void sdrepair_build(int w, int h, const char *state)
 	lv_obj_set_style_pad_hor(kv, S(30), 0);
 	lv_obj_set_style_pad_ver(kv, S(20), 0);
 	lv_obj_set_style_margin_top(kv, S(6), 0);
-	static int32_t cols[] = { 0, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST }, rows[] = { LV_GRID_CONTENT, LV_GRID_CONTENT, LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST };
+	static int32_t cols[] = { 0, LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST }, rows[] = { LV_GRID_CONTENT, LV_GRID_CONTENT, LV_GRID_CONTENT, LV_GRID_CONTENT, LV_GRID_TEMPLATE_LAST };
 	cols[0] = SW(170);
 	lv_obj_set_grid_dsc_array(kv, cols, rows);
 	lv_obj_set_style_pad_row(kv, S(10), 0);
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < KVN; i++) {
 		kv_k[i] = mk_label(kv, FONT_BODY, PAL.dim, "");
 		kv_v[i] = mk_label(kv, FONT_BODY, PAL.text, "");
 		lv_obj_set_grid_cell(kv_k[i], LV_GRID_ALIGN_START, 0, 1, LV_GRID_ALIGN_START, i, 1);

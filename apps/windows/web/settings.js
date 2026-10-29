@@ -628,43 +628,47 @@ class AppSettings {
 		const un = $("#ov_un");
 		if (un) un.onclick = async () => { try { await ss1({ cmd: "storage", do: "overlap-undo" }); this.ovUndo = false; setTimeout(async () => this.overlap(await this.storageState()), 1500); } catch (e) { toast(e.message); } };
 	}
-	/* the offline SD card repair: a copy of MiSTer's Linux on a USB / NVMe drive repairs the SD card at a restart */
+	/* Repair all drives: a copy of MiSTer's Linux on a USB drive (the repair drive; never the NVMe drive)
+	   repairs the SD card and every other drive at a restart; the repair drive itself after it */
 	rescue(s) {
 		const o = $("#sdr");
 		if (!o) return;
 		const r = s.sdrescue || {}, L = s.last || {};
 		const busy = L.busy, mine = (L.job || "").startsWith("sdrescue-");
 		const cands = r.candidates || [];
-		const name = (p, m) => `${m === "NVMe drive" ? "NVMe drive" : "USB drive" + (m ? " · " + m : "")} (${(p || "").split("/").pop()})`;
-		const res = { clean: "No errors found", repaired: "Repaired", errors_left: "Errors left: repair it in this app (SD card flash & health › Card health)" }[r.last_result] || "Didn't run";
+		const name = (p, m, lb) => (m === "NVMe drive" ? "NVMe drive" : lb ? `USB drive "${lb}"` : "USB drive" + (m ? " · " + m : "")) + (p ? ` (${p.split("/").pop()})` : "");
+		const resT = x => ({ clean: "No errors", repaired: "Repaired", errors_left: "Errors left: repair it in this app (SD card flash & health › Card health)", skipped: "Not checked there" }[x] || "Not repaired");
+		const others = (r.plugged || []).filter(d => d.partuuid !== r.drive);
+		const why = `<p class="note">Why a USB drive, not the NVMe drive: the drive the repair runs from can't be repaired in that same pass, and the NVMe drive holds your games. Any spare USB stick works; nothing else on it changes.</p>`;
 		let body = "", acts = "";
-		if (!r.drive && !cands.length) {
-			body = `<p class="note warn">No NVMe drive? Plug a USB drive (exFAT, 1 GB free) into the SS1 to repair the SD card there, without taking it out. Or repair it in this app with the card in this PC (SD card flash & health › Card health).</p>`;
-		} else if (!r.drive) {
-			body = `<p class="note">The SD card can't be repaired while the SS1 runs from it. Choose a drive: Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart runs the repair from that drive and starts Phosphor again.</p>`;
-			acts = cands.map((c, i) => `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(c.path, c.model))}</button>`).join("");
+		if ((!r.drive || r.drive_nvme) && !cands.length) {
+			body = `<p class="note warn">Plug a spare USB drive (exFAT, 1 GB free) into the SS1 to repair the SD card, the NVMe drive and any other drives there, without a PC. Or repair the SD card in this app with it in this PC (SD card flash & health › Card health).</p>` + why;
+		} else if (!r.drive || r.drive_nvme) {
+			body = `<p class="note">Windows often can't repair these drives properly. This repairs them on the SS1 itself: choose the USB drive the repair starts from, and Phosphor puts a copy of MiSTer's Linux on it (about 400 MB). Then one restart repairs every drive while nothing is using them and starts Phosphor again.</p>` + why;
+			acts = cands.map(c => `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(c.path, c.model))}</button>`).join("");
 		} else if (!r.drive_present) {
 			const n = r.new_drive;
-			body = `<p class="note warn">The repair drive (${esc(r.drive_model || "a USB drive")}) isn't plugged in.${n ? " Another drive is: make it the repair drive?" : " Plug it back in, or another USB drive to use instead."}</p>`;
+			body = `<p class="note warn">The repair drive (${esc(r.drive_model || "a USB drive")}) isn't plugged in.${n ? " Another USB drive is: make it the repair drive?" : " Plug it back in, or another spare USB drive to use instead."}</p>`;
 			if (n) acts = `<button class="btn primary" data-nav data-sr="setup" data-t="${esc(n.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(n.path, n.model))}</button>`;
-			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off offline repair</button>`;
+			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off drive repair</button>`;
 		} else {
-			body = `<dl class="kv"><dt>Repair drive</dt><dd>${esc(name(r.drive_mount, r.drive_model))}</dd><dt>At start-up</dt><dd>${r.sd_dirty_at_boot ? "Wasn't shut down safely" : "Clean"}</dd>${r.armed ? "<dt>Next restart</dt><dd>Repairs the SD card</dd>" : ""}</dl>
-				<p class="note${r.sd_dirty_at_boot ? " warn" : ""}">Restart and repair: the TV shows the repair as it runs, then Phosphor starts again and shows how it went (about a minute in all).</p>`;
-			acts = `<button class="btn primary" data-nav data-sr="go"${busy ? " disabled" : ""}>Restart and repair</button>`;
+			const me = (r.plugged || []).find(d => d.partuuid === r.drive) || { path: r.drive_mount, model: r.drive_model };
+			body = `<p class="note">Checks and repairs:</p><ul class="note" style="margin:.2rem 0 .6rem 1.2rem"><li>SD card${r.sd_dirty_at_boot ? " · wasn't shut down safely" : ""}</li>${others.map(d => `<li>${esc(name("", d.model, d.label))}</li>`).join("")}<li>${esc(name(me.path, me.model, me.label))} · after the restart, since repair mode runs from it</li></ul>${r.armed ? `<dl class="kv"><dt>Next restart</dt><dd>Repairs all drives</dd></dl>` : ""}
+				<p class="note${r.sd_dirty_at_boot ? " warn" : ""}">The TV shows the repair as it runs, then Phosphor starts again and shows how it went.</p>`;
+			acts = `<button class="btn primary" data-nav data-sr="go"${busy ? " disabled" : ""}>Restart and repair all drives</button>`;
 			if (r.armed) acts += `<button class="btn" data-nav data-sr="disarm"${busy ? " disabled" : ""}>Not at the next restart</button>`;
-			for (const c of cands) if (c.path !== r.drive_mount) acts += `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(c.path, c.model))} instead</button>`;
-			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off offline repair</button>`;
+			for (const c of cands) if (c.path !== r.drive_mount) acts += `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Start from the ${esc(name(c.path, c.model))} instead</button>`;
+			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off drive repair</button>`;
 		}
-		const last = r.last_result ? `<p class="note">Last offline repair: ${esc(res)} · ${esc((r.last_at || "").slice(0, 16))}</p>` : "";
-		o.innerHTML = `<h3 style="margin-top:1.4rem">Repair offline on the SS1</h3>${body}${last}${acts ? `<div class="acts">${acts}</div>` : ""}${mine ? `<pre class="out">${busy ? `<span class="spin"></span>Copying MiSTer's Linux to the drive…` : esc((L.output || "").trim().split("\n").pop() || "")}</pre>` : ""}`;
+		const last = r.last_result ? `<p class="note" style="margin-top:.8rem"><b>Last repair</b> · ${esc((r.last_at || "").slice(0, 16))}</p><dl class="kv"><dt>SD card</dt><dd>${esc(resT(r.last_result))}</dd>${(r.last_drives || []).map(d => `<dt>${esc(name("", d.model, d.label))}</dt><dd>${esc(resT(d.result))}</dd>`).join("")}<dt>Repair drive (after)</dt><dd>${r.self_state === "running" ? "Repairing now…" : r.self_result ? esc(resT(r.self_result)) : "Not checked"}</dd></dl>` : "";
+		o.innerHTML = `<h3 style="margin-top:1.4rem">Repair all drives</h3>${body}${last}${acts ? `<div class="acts">${acts}</div>` : ""}${mine ? `<pre class="out">${busy ? `<span class="spin"></span>Copying MiSTer's Linux to the drive…` : esc((L.output || "").trim().split("\n").pop() || "")}</pre>` : ""}`;
 		const poll = () => this.every(2000, async () => {
 			const t = await this.storageState();
 			this.rescue(t);
 			if (t.last && t.last.busy) return true;
 			if (this.srRestart && t.last && t.last.job === "sdrescue-arm") {
 				this.srRestart = false;
-				if (t.last.ok) { try { await ss1({ cmd: "system", do: "reboot" }); toast("Restarting the SS1 to repair the SD card…"); } catch (e) { toast(e.message); } }
+				if (t.last.ok) { try { await ss1({ cmd: "system", do: "reboot" }); toast("Restarting the SS1 to repair all drives…"); } catch (e) { toast(e.message); } }
 				else toast("Couldn't get the repair ready: " + ((t.last.output || "").trim().split("\n").pop() || ""));
 			}
 			return false;

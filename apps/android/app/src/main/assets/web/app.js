@@ -1163,32 +1163,40 @@ function checksFor(d) {
 	if (d.kind === "nvme") c.splice(2, 0, ["health", "Drive health", "The NVMe drive's own health report"]);
 	return c;
 }
-/* the offline SD card repair: a copy of MiSTer's Linux on a USB / NVMe drive repairs the SD card at a restart */
+/* Repair all drives: a copy of MiSTer's Linux on a USB drive (the repair drive; never the NVMe drive) repairs
+   the SD card and every other drive at a restart; the repair drive itself after it */
 function rescueCard(s) {
 	const r = s.sdrescue || {}, l = s.last || {}, cands = r.candidates || [], busy = l.busy;
-	const name = (p, m) => `${m === "NVMe drive" ? "NVMe drive" : "USB drive" + (m ? " · " + m : "")} (${String(p || "").split("/").pop()})`;
-	const res = { clean: "No errors found", repaired: "Repaired", errors_left: "Errors left: repair it on a PC" }[r.last_result] || "Didn't run";
-	let h = "<h3>Repair offline</h3>";
-	if (!r.drive && !cands.length)
-		h += `<p class="vw">No NVMe drive? Plug a USB drive (exFAT, 1 GB free) into the MiSTer to repair the SD card without a PC. Or repair it on a PC with Phosphor for Windows.</p>`;
-	else if (!r.drive) {
-		h += `<p class="small">The SD card can't be repaired while the MiSTer runs from it. Choose a drive: Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart runs the repair from that drive and starts Phosphor again.</p>`;
+	const name = (p, m, lb) => m === "NVMe drive" ? "NVMe drive" : (lb ? `USB drive "${lb}"` : "USB drive" + (m ? " · " + m : "")) + (p ? ` (${String(p).split("/").pop()})` : "");
+	const resT = x => ({ clean: "No errors", repaired: "Repaired", errors_left: "Errors left: repair it on a PC", skipped: "Not checked here" }[x] || "Not repaired");
+	const others = (r.plugged || []).filter(d => d.partuuid !== r.drive);
+	let h = "<h3>Repair all drives</h3>";
+	const why = `<p class="small">Why a USB drive, not the NVMe drive: the drive the repair runs from can't be repaired in that same pass, and the NVMe drive holds your games. Any spare USB stick works; nothing else on it changes.</p>`;
+	if ((!r.drive || r.drive_nvme) && !cands.length)
+		h += `<p class="vw">Plug a spare USB drive (exFAT, 1 GB free) into the MiSTer to repair the SD card, the NVMe drive and any other drives without a PC.</p>` + why;
+	else if (!r.drive || r.drive_nvme) {
+		h += `<p class="small">Windows often can't repair these drives properly. This repairs them on the MiSTer itself: choose the USB drive the repair starts from, and Phosphor puts a copy of MiSTer's Linux on it (about 400 MB). Then one restart repairs every drive while nothing is using them and starts Phosphor again.</p>` + why;
 		h += cands.map(c => btn("Use the " + name(c.path, c.model), "sr", { arg: "setup|" + c.path, off: busy })).join("");
 	} else if (!r.drive_present) {
 		const n = r.new_drive;
-		h += `<p class="vw">The repair drive (${esc(r.drive_model || "a USB drive")}) isn't plugged in.${n ? " Another drive is: make it the repair drive?" : " Plug it back in, or another USB drive to use instead."}</p>`;
+		h += `<p class="vw">The repair drive (${esc(r.drive_model || "a USB drive")}) isn't plugged in.${n ? " Another USB drive is: make it the repair drive?" : " Plug it back in, or another spare USB drive to use instead."}</p>`;
 		if (n) h += btn("Use the " + name(n.path, n.model), "sr", { p: true, arg: "setup|" + n.path, off: busy });
-		h += btn("Turn off offline repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });
+		h += btn("Turn off drive repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });
 	} else {
-		h += row("Repair drive", { value: name(r.drive_mount, r.drive_model) }) + row("At start-up", { value: r.sd_dirty_at_boot ? "Wasn't shut down safely" : "Clean", accent: r.sd_dirty_at_boot })
-			+ (r.armed ? row("Next restart", { value: "Repairs the SD card", accent: true }) : "")
-			+ `<p class="small">The TV shows the repair as it runs (about a minute in all), then Phosphor starts again and shows how it went.</p>`
-			+ btn("Restart and repair", "sr", { p: true, arg: "go", off: busy, sure: "Press again: the MiSTer restarts" })
+		const me = (r.plugged || []).find(d => d.partuuid === r.drive) || { path: r.drive_mount, model: r.drive_model };
+		h += `<p class="small">Checks and repairs the SD card${r.sd_dirty_at_boot ? " (it wasn't shut down safely)" : ""}${others.length ? ", " + others.map(d => esc(name("", d.model, d.label))).join(", ") : ""}, then the repair drive (${esc(name(me.path, me.model, me.label))}) after the restart.</p>`
+			+ (r.armed ? row("Next restart", { value: "Repairs all drives", accent: true }) : "")
+			+ `<p class="small">The TV shows the repair as it runs, then Phosphor starts again and shows how it went.</p>`
+			+ btn("Restart and repair all drives", "sr", { p: true, arg: "go", off: busy, sure: "Press again: the MiSTer restarts" })
 			+ (r.armed ? btn("Not at the next restart", "sr", { arg: "disarm", off: busy }) : "")
-			+ cands.filter(c => c.path !== r.drive_mount).map(c => btn("Use the " + name(c.path, c.model) + " instead", "sr", { arg: "setup|" + c.path, off: busy })).join("")
-			+ btn("Turn off offline repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });
+			+ cands.filter(c => c.path !== r.drive_mount).map(c => btn("Start from the " + name(c.path, c.model) + " instead", "sr", { arg: "setup|" + c.path, off: busy })).join("")
+			+ btn("Turn off drive repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });
 	}
-	if (r.last_result) h += `<p class="small">Last offline repair: ${esc(res)} · ${esc(String(r.last_at || "").slice(0, 16))}</p>`;
+	if (r.last_result) {
+		h += `<p class="small" style="margin-top:12px"><b>Last repair</b> · ${esc(String(r.last_at || "").slice(0, 16))}</p>` + row("SD card", { value: resT(r.last_result), accent: r.last_result === "errors_left" || r.last_result === "failed" })
+			+ (r.last_drives || []).map(d => row(name("", d.model, d.label), { value: resT(d.result), accent: d.result === "errors_left" || d.result === "failed" })).join("")
+			+ row("Repair drive (after)", { value: r.self_state === "running" ? "Repairing now…" : r.self_result ? resT(r.self_result) : "Not checked" });
+	}
 	if (String(l.job || "").startsWith("sdrescue-")) h += `<pre class="out">${busy ? "Copying MiSTer's Linux to the drive…" : esc(String(l.output || "").trim().split("\n").pop() || "")}</pre>`;
 	return card(h);
 }
@@ -1262,7 +1270,7 @@ PAGES.storage = { async show(c, p) {
 		const l = s && s.last;
 		if (restartAfter && l && !l.busy && l.job === "sdrescue-arm") {
 			restartAfter = false;
-			if (l.ok) { try { await call("system", { do: "reboot" }); toast("Restarting the MiSTer to repair the SD card…"); } catch (e) { toast(e.message); } }
+			if (l.ok) { try { await call("system", { do: "reboot" }); toast("Restarting the MiSTer to repair all drives…"); } catch (e) { toast(e.message); } }
 			else toast("Couldn't get the repair ready: " + (String(l.output || "").trim().split("\n").pop() || ""));
 		}
 		draw();
