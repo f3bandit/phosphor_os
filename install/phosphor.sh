@@ -94,13 +94,49 @@ check_dirty_drives() {
 		if [ "$(grep -c "^$dev " /proc/mounts)" != 1 ]; then echo "$now  $dev ($mnt)  dirty, not checked: mounted more than once" >> "$log"; continue; fi
 		sync
 		if ! umount "$mnt" 2> /dev/null; then echo "$now  $dev ($mnt)  dirty, not checked: in use" >> "$log"; continue; fi
-		out="$(timeout 300 fsck.exfat -p "$dev" 2>&1 | tail -1)"
-		if ! mount -t exfat -o "$opts" "$dev" "$mnt" 2>> "$log"; then
-			mount "$dev" "$mnt" 2>> "$log" || echo "$now  $dev ($mnt)  COULDN'T MOUNT IT AGAIN" >> "$log"
-		fi
+		out="$(timeout 300 fsck.exfat -p "$dev" < /dev/null 2>&1 | tail -1)"
+		mkdir -p "$mnt"
+		mounted=""
+		for try in 1 2 3; do
+			if mount -t exfat -o "$opts" "$dev" "$mnt" 2>> "$log" || mount "$dev" "$mnt" 2>> "$log"; then mounted=1; break; fi
+			sleep 2
+		done
+		[ -n "$mounted" ] || echo "$now  $dev ($mnt)  COULDN'T MOUNT IT AGAIN (3 tries): restart the SuperStation" >> "$log"
 		f="$(exfat_flags "$dev")"; st=clean; [ $(( ${f:-0} & 2 )) -ne 0 ] && st="still dirty"
 		echo "$now  $dev ($mnt)  was dirty, checked: $st ($out)" >> "$log"
 	done
+}
+
+# Before a restart or switching off: every USB device left idle, so none comes back stuck. A restart
+# keeps the dock powered, and its NVMe has come up "Unit Not Ready" (hardware error) after one.
+#  - USB disks: manage_shutdown on, so the kernel sends "sync your cache, stop" (START STOP UNIT) when
+#    the disk goes, here or at the restart itself
+#  - each USB device then let go by its driver (authorized 0): the drives first, the WiFi card last;
+#    hubs and USB serial ports (the dock's debug port: Phosphor Link) are left alone
+# Prints nothing (safe-stop's output is read by phosphord). PHOS_SYS: a test /sys.
+usb_quiesce() {
+	S="${PHOS_SYS:-/sys}"
+	for f in "$S"/class/scsi_disk/*/manage_shutdown "$S"/class/scsi_disk/*/manage_system_start_stop; do
+		[ -w "$f" ] && echo 1 > "$f" 2> /dev/null
+	done
+	sync
+	stor="" wifi="" rest=""
+	for d in "$S"/bus/usb/devices/*-*; do
+		n="${d##*/}"
+		case "$n" in *:*) continue ;; esac
+		[ -w "$d/authorized" ] || continue
+		[ "$(cat "$d/bDeviceClass" 2> /dev/null)" = 09 ] && continue          # a hub
+		drv=""
+		for i in "$d/$n":*; do [ -e "$i/driver" ] && drv="$drv $(basename "$(readlink "$i/driver")")"; done
+		case "$drv" in *ch341*|*ftdi*|*cp210x*|*pl2303*|*cdc_acm*) continue ;; esac   # a serial port
+		prod="$(cat "$d/product" 2> /dev/null)"
+		case "$drv $prod" in
+			*usb-storage*|*uas*) stor="$stor $d" ;;
+			*802.11*|*WLAN*|*Wireless*|*wlan*|*rtw*|*rtl88*|*mt76*) wifi="$wifi $d" ;;
+			*) rest="$rest $d" ;;
+		esac
+	done
+	for d in $stor $rest $wifi; do echo 0 > "$d/authorized" 2> /dev/null; done
 }
 
 case "${1:-status}" in
@@ -168,6 +204,7 @@ case "${1:-status}" in
 			ro=rw; grep -q " $m [^ ]* ro[, ]" /proc/mounts && ro=ro
 			echo "$m|$st|$ro"
 		done
+		usb_quiesce
 		echo done
 		;;
 	menu-core)

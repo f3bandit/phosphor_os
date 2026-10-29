@@ -146,11 +146,15 @@ static struct {
 	struct { long at; char what[64]; } ev[10];
 	int nev;
 } pw = { .warn_at = 3 };
+/* the dock's NVMe still missing after phosphord reset its port (<tmp>/dock-stuck, phantom.c): only a power
+   cut starts it over */
+static int dock_stuck;
 static void alert_refresh(void)
 {
 	if (!sb_alert) return;
 	char t[64] = "";
-	if (pw.warn) snprintf(t, sizeof(t), "Power supply problem?");
+	if (dock_stuck) snprintf(t, sizeof(t), "NVMe not responding: unplug the power 10 s");
+	else if (pw.warn) snprintf(t, sizeof(t), "Power supply problem?");
 	else if (guard_resets > 0) snprintf(t, sizeof(t), "%d setting%s reset by an update", guard_resets, guard_resets == 1 ? "" : "s");
 	if (t[0]) lv_label_set_text(sb_alert_text, t);
 	lv_obj_set_hidden(sb_alert, !t[0]);
@@ -201,6 +205,13 @@ static void status_update(void)
 {
 	sysinfo_t s;
 	sysinfo_read(&s);
+	{
+		char f[300];
+		const char *tp = getenv("PHOS_TMP");
+		snprintf(f, sizeof(f), "%s/dock-stuck", tp && *tp ? tp : "/tmp/phosphor");
+		int st = access(f, F_OK) == 0;
+		if (st != dock_stuck) { dock_stuck = st; alert_refresh(); }
+	}
 	lv_obj_set_style_text_color(sb_share, s.share ? PAL.text : PAL.icon_off, 0);
 	lv_obj_set_style_text_color(sb_eth, s.ethernet ? PAL.text : PAL.icon_off, 0);
 	if (s.wifi < 0) lv_obj_set_hidden(sb_wifi, true);
@@ -7223,17 +7234,23 @@ static void map_requests(void)
 
 /* Phosphor's releases on GitHub (phosphord upnet.c): looked at a minute after start-up and every 30 min
  * while no game runs; a newer one shows a yellow arrow in the status bar and a Download row here */
-static struct { int newer, downloaded; char latest[24], state[16], msg[200]; } upo;
+static struct { int newer, downloaded; long checked; char latest[24], state[16], msg[200], err[120]; } upo;
+static void up_recount(void);
 static void upo_apply(cJSON *r)
 {
 	cJSON *on = r ? cJSON_GetObjectItem(r, "online") : NULL;
 	if (!cJSON_IsObject(on)) return;
+	upo.checked = (long)api_num(on, "checked", 0);
+	snprintf(upo.err, sizeof(upo.err), "%s", api_str(on, "error") ? api_str(on, "error") : "");
+	/* no release in the answer (GitHub didn't answer and nothing was known yet): what was known stays */
+	if (!api_str(on, "latest")) { up_recount(); return; }
 	upo.newer = cJSON_IsTrue(cJSON_GetObjectItem(on, "newer"));
 	upo.downloaded = cJSON_IsTrue(cJSON_GetObjectItem(on, "downloaded"));
 	snprintf(upo.latest, sizeof(upo.latest), "%s", api_str(on, "latest") ? api_str(on, "latest") : "");
 	snprintf(upo.state, sizeof(upo.state), "%s", api_str(on, "state") ? api_str(on, "state") : "");
 	snprintf(upo.msg, sizeof(upo.msg), "%s", api_str(on, "msg") ? api_str(on, "msg") : "");
 	if (sb_upd) lv_obj_set_hidden(sb_upd, !upo.newer);
+	up_recount();                                     /* (the Update screen, when it's open) */
 }
 /* the Download row on top: until it's downloaded and listed as a package (then its Install row takes the
    same place; never a moment with neither) */
@@ -7249,6 +7266,19 @@ static struct {
 } up;
 static vlist_t up_list;
 static int upo_listed(void) { for (int i = 0; i < up.npk; i++) if (!strcmp(up.pk_ver[i], upo.latest)) return 1; return 0; }
+/* the Update screen's rows follow every answer (also the half-hourly one): a row count that's off would
+   put a press on the wrong row; and a confirm ("Press A again") is for the row as it was, so it goes */
+static void up_recount(void)
+{
+	if (cur != SCR_PUPD) return;
+	int n = 1 + upo_row() + up.npk + up.nrb;
+	if (n != up_list.count) {
+		if (up_list.count) up.confirm_row = -1;
+		up_list.count = n;
+		if (up_list.sel >= n) up_list.sel = n - 1;
+	}
+	vlist_refresh(&up_list);
+}
 
 /* 0.27.21 against 0.27.6: number by number */
 static int ver_cmp(const char *a, const char *b)
@@ -7306,30 +7336,31 @@ static void up_apply(cJSON *r)
 	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
 		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs, or right now with Check GitHub for updates, at the top). "
 		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too.");
-	up_list.count = 1 + upo_row() + up.npk + up.nrb;     /* Check GitHub for updates always first */
-	vlist_refresh(&up_list);
+	up_recount();                                     /* (Check GitHub for updates always first) */
 }
 
-/* Check GitHub for updates: phosphord asks in the background; its answer is read a few seconds later */
+/* Check GitHub for updates: phosphord asks GitHub in the background. Its answer is read every 2 s until
+ * it's one from after the press (checked), for up to 20 s: an older answer, or none, is never taken for
+ * "up to date" */
 static uint32_t up_checking;
+static long up_check_t0;
+static int up_check_tries;
 static void up_check_done(lv_timer_t *t)
 {
-	(void)t;
-	up_checking = 0;
 	cJSON *r = api_call("{\"cmd\":\"update\"}");
-	if (!api_ok(r)) {                                 /* (no answer: say so, not "up to date") */
-		cJSON_Delete(r);
-		if (cur == SCR_PUPD) { vlist_refresh(&up_list); toast_show("No answer from Phosphor's service: try again"); }
-		return;
-	}
-	if (cur == SCR_PUPD) {
-		up_apply(r);
-		if (upo.newer && upo_row() && up_list.sel == 0) { up_list.sel = 1; vlist_refresh(&up_list); }   /* onto its Download row */
-		toast_show(upo.newer ? "A newer Phosphor is on GitHub" : !strcmp(upo.state, "failed") ? (upo.msg[0] ? upo.msg : "Couldn't reach GitHub") : "Phosphor is up to date");
-	} else {
-		upo_apply(r);
-		cJSON_Delete(r);
-	}
+	int ok = api_ok(r);
+	if (ok) { if (cur == SCR_PUPD) up_apply(r); else { upo_apply(r); cJSON_Delete(r); } } else cJSON_Delete(r);
+	int fresh = ok && upo.checked >= up_check_t0;
+	if (!fresh && ++up_check_tries < 10) return;      /* (the timer asks again in 2 s) */
+	lv_timer_delete(t);
+	up_checking = 0;
+	if (cur != SCR_PUPD) return;
+	if (fresh && upo.newer && upo_row() && up_list.sel == 0) up_list.sel = 1;   /* onto its Download row */
+	up_recount();
+	if (!ok) toast_show("No answer from Phosphor's service: try again");
+	else if (!fresh) toast_show("GitHub didn't answer in time: try again");
+	else if (upo.err[0]) toast_show(upo.err);
+	else toast_show(upo.newer ? "A newer Phosphor is on GitHub" : "Phosphor is up to date");
 }
 
 static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -7401,10 +7432,12 @@ static void up_key(pkey_t k)
 		if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't ask GitHub"); cJSON_Delete(r); return; }
 		cJSON_Delete(r);
 		up_checking = lv_tick_get() | 1;
+		up_check_t0 = (long)time(NULL);
+		up_check_tries = 0;
+		up.confirm_row = -1;
 		toast_show("Asking GitHub...");
 		vlist_refresh(&up_list);
-		lv_timer_t *tm = lv_timer_create(up_check_done, 6000, NULL);
-		lv_timer_set_repeat_count(tm, 1);
+		lv_timer_create(up_check_done, 2000, NULL);  /* (deletes itself when it has the answer) */
 		return;
 	}
 	s--;
@@ -7412,9 +7445,11 @@ static void up_key(pkey_t k)
 		if (s == 0) {                               /* the newer release, into phosphor/updates (checked) */
 			if (!strcmp(upo.state, "working") || upo.downloaded) return;
 			cJSON *r = api_call("{\"cmd\":\"update\",\"do\":\"download\"}");
-			toast_show(api_ok(r) ? "Downloading..." : api_str(r, "error") ? api_str(r, "error") : "The download didn't start");
+			int started = api_ok(r);
+			toast_show(started ? "Downloading..." : api_str(r, "error") ? api_str(r, "error") : "The download didn't start");
 			cJSON_Delete(r);
-			snprintf(upo.state, sizeof(upo.state), "working");
+			if (started) snprintf(upo.state, sizeof(upo.state), "working");
+			up.confirm_row = -1;
 			vlist_refresh(&up_list);
 			return;
 		}
