@@ -1,7 +1,7 @@
 # Builds the Phosphor SD card image (image/build-image.sh) from a Phosphor release's
 # phosphor-<v>-armhf.tar.gz and the newest (or a chosen) MiSTer release.
 # Run by hand from the Actions tab; the image is kept as a workflow artifact, and attached to the
-# release only when "attach" is ticked. Releases themselves are made by hand.
+# release only when "attach" is ticked. A pushed release tag builds its own image (release.yml).
 name: SD card image
 on:
   workflow_dispatch:
