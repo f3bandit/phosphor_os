@@ -1182,7 +1182,7 @@ function rescueCard(s) {
 	} else {
 		h += row("Repair drive", { value: name(r.drive_mount, r.drive_model) }) + row("At start-up", { value: r.sd_dirty_at_boot ? "Wasn't shut down safely" : "Clean", accent: r.sd_dirty_at_boot })
 			+ (r.armed ? row("Next restart", { value: "Repairs the SD card", accent: true }) : "")
-			+ `<p class="small">The TV stays dark for about a minute while the SD card is repaired, then Phosphor starts again and shows how it went.</p>`
+			+ `<p class="small">The TV shows the repair as it runs (about a minute in all), then Phosphor starts again and shows how it went.</p>`
 			+ btn("Restart and repair", "sr", { p: true, arg: "go", off: busy, sure: "Press again: the MiSTer restarts" })
 			+ (r.armed ? btn("Not at the next restart", "sr", { arg: "disarm", off: busy }) : "")
 			+ cands.filter(c => c.path !== r.drive_mount).map(c => btn("Use the " + name(c.path, c.model) + " instead", "sr", { arg: "setup|" + c.path, off: busy })).join("")

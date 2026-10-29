@@ -6337,7 +6337,7 @@ static void sg_panel(void)
 			else if (!x->present)
 				lv_label_set_text(sg_note, "Plug the repair drive back in, or another USB drive (exFAT, 1 GB free) to use instead.");
 			else
-				lv_label_set_text(sg_note, "A: restart and repair the SD card. The screen stays dark for about a minute while it's repaired, then Phosphor starts again and shows how it went.");
+				lv_label_set_text(sg_note, "A: restart and repair the SD card. The TV shows the repair as it runs (under a minute), then Phosphor starts again and shows how it went.");
 		} else if (k == SG_BACKUP) {
 			sg_kv(0, "Last backup", sg.bk_last[0] ? sg.bk_last : "None yet");
 			if (sg.bk_dest[0]) sg_kv(1, "Kept in", sg.bk_dest);
@@ -6451,7 +6451,7 @@ static void sg_menu_pick(void)
 		sg.menu_n = 0;
 		sg_menu_add("Yes, restart and repair", job, "");
 		sg_menu_add("Cancel", "", "");
-		sg_menu_open("Restart now and repair the SD card? The screen stays dark for about a minute, then Phosphor starts again.");
+		sg_menu_open("Restart now and repair the SD card? It takes about a minute, then Phosphor starts again.");
 		sg.confirm = 1;
 		return;
 	}
