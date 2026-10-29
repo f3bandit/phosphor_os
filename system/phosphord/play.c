@@ -72,9 +72,9 @@ static void corename(char *buf, size_t n)
 	buf[strcspn(buf, "\r\n")] = 0;
 }
 
-/* the cores a game can start on: its system's own (and the alternatives systems.ini names), the
-   RetroAchievements one when logged in, and other systems' cores that take the same kind of file (a Game
-   Boy game on the Game Boy Color core, say). The first is the one a plain launch uses. */
+/* the cores a game can start on, all of them its own system's: the system's core (and the alternatives
+   systems.ini names), the RetroAchievements one when logged in, older versions, a test build, a dual RAM
+   build and other builds in _Other. Never another system's core. The first is the one a plain launch uses. */
 typedef struct { char rbf[96], setname[64], label[160], kind[12], date[12]; const gsys_t *sys; } core_opt_t;
 #define MAX_CORE_OPTS 16
 
@@ -170,10 +170,77 @@ static int game_file(sqlite3 *db, long long id, const gsys_t **sys, char *path, 
 	return 0;
 }
 
+#define DUAL_RAM_DIR "_Console (Dual SDRAM)"
+
+/* a core file's name without its date (PSX2XCPU_20260413 -> PSX2XCPU); 0 when it has no _YYYYMMDD */
+static int rbf_stem(const char *fname, char *out, size_t n)
+{
+	size_t l = strlen(fname);
+	if (l < 10 || fname[l - 9] != '_') return 0;
+	for (size_t i = l - 8; i < l; i++) if (fname[i] < '0' || fname[i] > '9') return 0;
+	snprintf(out, n, "%.*s", (int)(l - 9), fname);
+	return 1;
+}
+
+/* another system's core name (GBA for GB): never taken as an alternative build */
+static int is_system_base(const char *stem)
+{
+	char b[96], *save = NULL;
+	for (int i = 0; i < NSYS; i++) {
+		char r[96];
+		snprintf(r, sizeof(r), "%s", SYS[i].rbf);
+		for (char *c = strtok_r(r, "|", &save); c; c = strtok_r(NULL, "|", &save)) {
+			base_name(c, b, sizeof(b));
+			if (!strcasecmp(b, stem)) return 1;
+		}
+	}
+	return 0;
+}
+
+/* alternative builds of a core in _Other: its name, or its name with something added (Genesis, PSX2XCPU,
+   N64_80MHz), the newest of each */
+static int alt_opts(core_opt_t *o, int n, const char *base, const gsys_t *s)
+{
+	char d[600];
+	snprintf(d, sizeof(d), "%s/_Other", p_fat());
+	DIR *dd = opendir(d);
+	if (!dd) return n;
+	char best[8][96] = {{0}}, stems[8][96] = {{0}};
+	int nb = 0;
+	size_t bl = strlen(base);
+	struct dirent *e;
+	while ((e = readdir(dd))) {
+		size_t l = strlen(e->d_name);
+		if (l < 5 || strcasecmp(e->d_name + l - 4, ".rbf") || strncasecmp(e->d_name, base, bl)) continue;
+		char f[96], stem[96];
+		snprintf(f, sizeof(f), "%.*s", (int)(l - 4), e->d_name);
+		if (!rbf_stem(f, stem, sizeof(stem)) || (strlen(stem) > bl && is_system_base(stem))) continue;
+		int k = 0;
+		while (k < nb && strcasecmp(stems[k], stem)) k++;
+		if (k == nb) { if (nb == 8) continue; snprintf(stems[nb], 96, "%s", stem); nb++; }
+		if (strcmp(f, best[k]) > 0) snprintf(best[k], 96, "%s", f);
+	}
+	closedir(dd);
+	for (int k = 0; k < nb && n < MAX_CORE_OPTS; k++) {
+		const char *v = stems[k] + bl;
+		while (*v == '_' || *v == '-') v++;
+		char rbf[110], label[160];
+		snprintf(rbf, sizeof(rbf), "_Other/%s", best[k]);
+		if (*v) snprintf(label, sizeof(label), "%s (%s core)", s->name, v);
+		else snprintf(label, sizeof(label), "%s (alternative core)", s->name);
+		int j = n;
+		n = add_opt(o, n, rbf, NULL, label, s);
+		if (n > j) { snprintf(o[j].kind, sizeof(o[0].kind), "alt"); rbf_date(best[k], o[j].date, sizeof(o[0].date)); }
+	}
+	return n;
+}
+
+static int kind_rank(const char *k) { return !strcmp(k, "version") ? 1 : 0; }
+
 static int core_opts(const gsys_t *s, const char *path, core_opt_t *o)
 {
 	int n = 0;
-	char rbf[96], label[160], b[64];
+	char label[160], b[64];
 	/* the RetroAchievements core first when it's there: that's what a plain launch picks */
 	char rarbf[96], setname[64];
 	if (ra_core_for(s->id, rarbf, sizeof(rarbf), setname, sizeof(setname))) {
@@ -218,18 +285,30 @@ static int core_opts(const gsys_t *s, const char *path, core_opt_t *o)
 			if (n > k) { snprintf(o[k].kind, sizeof(o[0].kind), "unstable"); rbf_date(vers[0], o[k].date, sizeof(o[0].date)); }
 		}
 	}
-	/* other systems that take this kind of file */
-	const char *fn = strrchr(path, '/');
-	fn = fn ? fn + 1 : path;
-	for (int i = 0; i < NSYS; i++) {
-		const gsys_t *t = &SYS[i];
-		if (t == s || !strcmp(t->id, "Arcade") || !has_ext(fn, t->exts)) continue;
-		if (!system_core(t, rbf, sizeof(rbf))) continue;
-		snprintf(label, sizeof(label), "%s core", t->name);
-		int k = n;
-		n = add_opt(o, n, rbf, NULL, label, t);
-		if (n > k) snprintf(o[k].kind, sizeof(o[0].kind), "other");
+	(void)path;
+	/* the same system's core built another way: dual SDRAM builds (TheJesusFish's Dual RAM Console Cores)
+	   and the alternative builds in _Other (ajgowans' Alt Cores: PSX2XCPU, N64_80MHz, ...) */
+	snprintf(rbfs, sizeof(rbfs), "%s", s->rbf);
+	save = NULL;
+	for (char *c = strtok_r(rbfs, "|", &save); c && n < MAX_CORE_OPTS; c = strtok_r(NULL, "|", &save)) {
+		base_name(c, b, sizeof(b));
+		char vers[8][96], vr[96];
+		int nv = rbf_versions(DUAL_RAM_DIR, b, vers, 8);
+		if (nv > 0) {
+			snprintf(vr, sizeof(vr), "%s/%s", DUAL_RAM_DIR, vers[0]);
+			snprintf(label, sizeof(label), "%s (dual RAM)", s->name);
+			int k = n;
+			n = add_opt(o, n, vr, NULL, label, s);
+			if (n > k) { snprintf(o[k].kind, sizeof(o[0].kind), "dualram"); rbf_date(vers[0], o[k].date, sizeof(o[0].date)); }
+		}
+		n = alt_opts(o, n, b, s);
 	}
+	/* older versions last, so the other builds are never off the bottom of a short list (stable: the
+	   first stays the one a plain launch uses) */
+	for (int i = 1; i < n; i++)
+		for (int j = i; j > 0 && kind_rank(o[j].kind) < kind_rank(o[j - 1].kind); j--) {
+			core_opt_t t = o[j]; o[j] = o[j - 1]; o[j - 1] = t;
+		}
 	return n;
 }
 
@@ -248,7 +327,8 @@ static const char *kind_desc(const char *kind)
 	if (!strcmp(kind, "ra")) return "Unlocks achievements while you play (logged in under Settings > RetroAchievements).";
 	if (!strcmp(kind, "version")) return "An earlier build still on the SD card.";
 	if (!strcmp(kind, "unstable")) return "A newer test build from the core's developer. May have bugs.";
-	if (!strcmp(kind, "other")) return "Another system's core that takes this kind of game.";
+	if (!strcmp(kind, "dualram")) return "Built for a second SDRAM module: needs the dual RAM board.";
+	if (!strcmp(kind, "alt")) return "Another build of this system's core from its developer.";
 	return "The standard core from MiSTer's own distribution.";
 }
 
@@ -265,6 +345,8 @@ cJSON *play_cores(sqlite3 *db, long long id, char *err, size_t errn)
 			cJSON *x = cJSON_CreateObject();
 			char b[64];
 			base_name(o[i].setname[0] ? o[i].setname : o[i].rbf, b, sizeof(b));
+			char stem[64];
+			if (rbf_stem(b, stem, sizeof(stem))) snprintf(b, sizeof(b), "%s", stem);   /* (no date) */
 			cJSON_AddNumberToObject(x, "index", i);
 			cJSON_AddStringToObject(x, "name", o[i].label);
 			cJSON_AddStringToObject(x, "core", b);        /* the core's name as MiSTer shows it (CORENAME) */

@@ -622,7 +622,7 @@ static void play_id_quiet(long long id)
 }
 /* ---------- Start with: the core a game starts on, when it has more than one ----------
  * The MiSTer core, the RetroAchievements core, an older version kept on the card, a test build from
- * _Unstable, another system's core that takes the game (phosphord game_cores). Shown only when there's a
+ * _Unstable, a dual RAM build, another build in _Other: only the game's own system (phosphord game_cores). Shown only when there's a
  * choice and none was set for the system; X sets one (Always start with this: core_pref), so after that
  * games start straight away. */
 static void play_id_core(long long id, int core);
