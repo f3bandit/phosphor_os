@@ -65,6 +65,10 @@ if [ -f "$HERE/cores/menu_phosphor.rbf" ]; then
 	mkdir -p "$ROOT/cores" && cp "$HERE/cores/menu_phosphor.rbf" "$ROOT/cores/menu_phosphor.rbf.new" && mv -f "$ROOT/cores/menu_phosphor.rbf.new" "$ROOT/cores/menu_phosphor.rbf"
 fi
 cp "$HERE/phosphor.sh" "$HERE/uninstall.sh" "$ROOT/" && chmod 755 "$ROOT/phosphor.sh" "$ROOT/uninstall.sh"
+# run from the NVMe / a USB drive (off until it's set up): its script and the SD card's start-up lines
+if [ -f "$HERE/nvmeboot/nvmeboot.sh" ]; then
+	mkdir -p "$ROOT/nvmeboot" && cp "$HERE/nvmeboot/nvmeboot.sh" "$HERE/nvmeboot/u-boot.phosphor.txt" "$ROOT/nvmeboot/"
+fi
 # Phosphor's picture behind MiSTer's own menu: MiSTer's menu.png, only when there's no menu.png or
 # menu.jpg of your own (uninstall.sh takes it away again, if it's still Phosphor's)
 if [ -f "$HERE/wallpaper/phosphor-wallpaper.png" ]; then
