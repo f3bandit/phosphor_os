@@ -3,6 +3,29 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.45
+
+### Changed
+- **Check GitHub for updates is always the first row** of Settings › Update Phosphor. When it finds a newer
+  version, the selection moves onto its Download row.
+
+### Fixed
+- Check GitHub for updates no longer says "up to date" when Phosphor's service didn't answer.
+- A downloaded package that the updater can't list no longer slows the Update screen down.
+
+### From MiSTer's Main (MiSTer-devel, up to Oct 28)
+- **Force feedback from cores:** a core that sends force feedback (constant force, centring spring,
+  damper, friction, vibration) plays it on that player's wheel or pad, scaled by `wheel_force`, off with
+  `rumble=0`. The HORI FFB racing wheel (PC mode) works as a wheel.
+- **HDMI scalers** get the game's name and rotation before the core loads (early SPD infoframe), so a
+  scaler profile can switch sooner for vertical games.
+- Arcade: `.mra` files can mount disk and CD images; the loading message no longer stays up after an
+  arcade game loads.
+- CD images in computer cores: the first sector after each track is read from the right track (CHD).
+- Minimig (Amiga): CD32 and CDTV read speeds, seeks, up to 99 tracks and WAV tracks; 68020 configs
+  kept; the cartridge, HRTmon or Action Replay (AR5). Bandai Pippin support; SGI Indy Ethernet and SCSI;
+  Apple IIGS 5.25" images; PC-8801 multi-disk D88.
+
 ## 0.27.44
 
 ### New
