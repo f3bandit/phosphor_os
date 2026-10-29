@@ -20,6 +20,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
       - name: Phosphor's Main and the upstreams
         run: |
           set -e
@@ -42,7 +45,10 @@ jobs:
           gh label create upstream-watch -R "$GITHUB_REPOSITORY" -c BFD4F2 -d "New code in a Main merged into Phosphor's" 2>/dev/null || true
           for u in "mister|MiSTer's Main|MiSTer-devel/Main_MiSTer" "disc|the physical disc Main (Anime0t4ku, bonna79)|Anime0t4ku/Main_MiSTer_Physical_Disc" "ra|the RetroAchievements Main (odelot)|odelot/Main_MiSTer"; do
             r="${u%%|*}"; rest="${u#*|}"; name="${rest%%|*}"; repo="${rest#*|}"
-            n=$(git rev-list --count --no-merges origin/phosphor..$r/master)
+            # merged as a snapshot (.github/upstream-merged.txt): counted from that commit, tried by cherry-pick
+            base=$(awk -v r="$r" '$1 == r {print $2}' ../.github/upstream-merged.txt)
+            range="origin/phosphor..$r/master"; [ -n "$base" ] && range="$base..$r/master"
+            n=$(git rev-list --count --no-merges $range)
             head=$(git rev-parse --short=7 $r/master)
             echo "== $name: $n new (up to $head)"
             [ "$n" -gt 0 ] || continue
@@ -50,13 +56,15 @@ jobs:
             existing=$(gh issue list -R "$GITHUB_REPOSITORY" -l upstream-watch -s open --json number,title --jq ".[] | select(.title | contains(\"$name\")) | \"\(.number)|\(.title)\"" | head -1)
             if [ -n "$existing" ] && [ "${existing#*|}" = "$title" ]; then echo "already reported"; continue; fi
             git checkout -q -B trial origin/phosphor
-            if git merge -q --no-edit $r/master > ../merge.log 2>&1; then
+            if [ -n "$base" ]; then trial="git cherry-pick --allow-empty --keep-redundant-commits $(git rev-list --reverse --no-merges $range | tr '\n' ' ')"; abort="git cherry-pick --abort"
+            else trial="git merge -q --no-edit $r/master"; abort="git merge --abort"; fi
+            if $trial > ../merge.log 2>&1; then
               merge="clean"
               if sh phosphor_tests/run.sh > ../tests.log 2>&1 && grep -q "ALL PASSED" ../tests.log; then tests="passed"; else tests="FAILED"; fi
               if make -j4 > ../build.log 2>&1 && [ -x bin/MiSTer ]; then build="built"; else build="FAILED"; fi
             else
               merge="CONFLICTS in: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"; tests="not run"; build="not run"
-              git merge --abort
+              $abort
             fi
             {
               echo "**$name** ([$repo](https://github.com/$repo)) has **$n** commits that Phosphor's Main (phosphor-main, branch \`phosphor\`) doesn't have, up to [\`$head\`](https://github.com/$repo/commit/$(git rev-parse $r/master))."
@@ -69,7 +77,7 @@ jobs:
               echo
               echo "<details><summary>The new commits</summary>"
               echo
-              git log --no-merges --format='- [`%h`](https://github.com/'"$repo"'/commit/%H) %s (%an, %as)' origin/phosphor..$r/master | head -150
+              git log --no-merges --format='- [`%h`](https://github.com/'"$repo"'/commit/%H) %s (%an, %as)' $range | head -150
               echo
               echo "</details>"
               if [ "$tests" = "FAILED" ]; then echo; echo "<details><summary>Test output (end)</summary>"; echo; echo '```'; tail -40 ../tests.log; echo '```'; echo "</details>"; fi
