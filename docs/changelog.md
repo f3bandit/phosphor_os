@@ -45,6 +45,10 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - **Wallpapers load much faster:** the picker's previews are made in the background, a page in a few
   seconds, and the menu redraws as soon as you pick one.
 - Fixed: a hybrid ARM core (Street Fighter III 3rd Strike) could restart the SuperStation after an update.
+- Fixed: **an NVMe or USB drive stayed "marked dirty" on every start** after one restart without a clean
+  stop (Windows then asks to scan it). Linux never clears that flag on a drive that was dirty when it was
+  mounted, so Phosphor now checks such a drive (fsck.exfat) when it starts, before using it
+  (logs/drives.log). The SD card can't be checked while MiSTer runs from it: let Windows scan it once.
 
 ## 0.27.41, Phosphor for Windows 0.2.43, Phosphor for Android 0.9.8
 
