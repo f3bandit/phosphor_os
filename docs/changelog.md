@@ -3,6 +3,15 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.43
+
+### Fixed
+- **Disc games and RetroAchievements cores stay in Phosphor.** Update All's physical disc and
+  RetroAchievements options add `[A0CD-*] main=MiSTer_Physical-CD` and `[RA_*] main=MiSTer_RA` to
+  MiSTer.ini, which made a disc game or an RA core leave Phosphor for that Main: no in-game menu, no
+  Phosphor achievements, and a restart coming back. Phosphor's Main has both built in, so it now stays for
+  those two. Other cores that need their own Main (3S-ARM, Quake, Duke3D) still get it.
+
 ## 0.27.42
 
 ### New
