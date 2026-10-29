@@ -20,4 +20,8 @@ int play_load_core(sqlite3 *db, const char *system_id, char *err, size_t errn); 
 void play_track(sqlite3 *db, long long game_id);
 void play_tick(sqlite3 *db);     /* call every couple of seconds: adds play time when back in the menu */
 
+#include "cJSON.h"
+cJSON *play_folder_cores(const char *folder);          /* _Other or _Utility: [{name, file, date}] */
+int play_run_core(sqlite3 *db, const char *file, char *err, size_t errn);
+int play_core_pref(sqlite3 *db, long long id, int core, char *err, size_t errn);
 #endif

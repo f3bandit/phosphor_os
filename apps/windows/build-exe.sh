@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 SS=""
 if [ -n "$PHOSPHOR_SS_DEVID" ] && [ -n "$PHOSPHOR_SS_DEVPASSWORD" ]; then
 	SS=1
-	python3 -c 'import json,os; open("ss_secret_gen.go","w").write("package main\n\nfunc init() { ssBuiltinID, ssBuiltinPw = %s, %s }\n" % (json.dumps(os.environ["PHOSPHOR_SS_DEVID"]), json.dumps(os.environ["PHOSPHOR_SS_DEVPASSWORD"])))'
+	python3 ../../tools/secrets/ss_scramble.py go ss_secret_gen.go    # scrambled, not plain text in the exe
 	trap 'rm -f ss_secret_gen.go' EXIT
 fi
 # the open-source licences, served for Settings > About > Open-source licences (the copy isn't kept in git)

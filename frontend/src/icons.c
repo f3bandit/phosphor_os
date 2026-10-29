@@ -97,7 +97,7 @@ static void draw_cb(lv_event_t *e)
 	lv_area_t c;
 	lv_obj_get_coords(obj, &c);
 	int size = lv_area_get_width(&c);
-	int grid = id->icon <= ICON_BLUETOOTH ? 24 : 72;
+	int grid = id->icon <= ICON_UPDATE ? 24 : 72;
 	pen_t p = {
 		.layer = lv_event_get_layer(e), .x0 = c.x1, .y0 = c.y1, .k = (float)size / grid,
 		.col = lv_obj_get_style_text_color(obj, 0), .off = PAL.icon_off,
@@ -179,6 +179,10 @@ static void draw_cb(lv_event_t *e)
 		circle(&p, 31, 31, 18, 0);
 		line(&p, 44, 44, 58, 58);
 		break;
+	case ICON_UPDATE:                                    /* a down arrow into a tray: an update to get */
+		line(&p, 12, 4, 12, 15); line(&p, 7, 10, 12, 15); line(&p, 17, 10, 12, 15);
+		line(&p, 5, 15, 5, 19); line(&p, 5, 19, 19, 19); line(&p, 19, 19, 19, 15);
+		break;
 	case ICON_POWER:                                     /* the power symbol */
 		arc(&p, 36, 39, 22, 300, 240, p.col);
 		line(&p, 36, 11, 36, 34);
@@ -199,6 +203,16 @@ static void draw_cb(lv_event_t *e)
 		line(&p, 30, 52, 30, 16); line(&p, 58, 46, 58, 10);
 		line(&p, 30, 16, 58, 10); line(&p, 30, 24, 58, 18);
 		break;
+	case ICON_OTHER:                                     /* a grid of three, and a plus: more cores */
+		rect(&p, 12, 12, 20, 20, 4); rect(&p, 40, 12, 20, 20, 4); rect(&p, 12, 40, 20, 20, 4);
+		line(&p, 50, 40, 50, 60); line(&p, 40, 50, 60, 50);
+		break;
+	case ICON_UTILITY: {                                 /* a wrench */
+		const float w[] = { 46, 14, 40, 17, 36, 24, 37, 31, 16, 52, 16, 57, 20, 57, 41, 36, 48, 37, 55, 33, 58, 26 };
+		poly(&p, w, 11, 0);
+		line(&p, 58, 26, 51, 30); line(&p, 51, 30, 46, 25); line(&p, 46, 25, 46, 14);
+		break;
+	}
 	default:
 		break;
 	}

@@ -52,6 +52,7 @@ func routes(mux *http.ServeMux) {
 		writeJSON(w, map[string]any{"ok": true, "app_version": appVersion})
 	})
 	h("/api/state", apiState)
+	h("/api/app_update", apiAppUpdate) // Phosphor for Windows updating itself (appupdate.go)
 	h("/api/automatch", apiAutomatch)
 	h("/api/discover", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "found": discover()})
@@ -141,10 +142,10 @@ func routes(mux *http.ServeMux) {
 	h("/api/scrape", apiScrape)   // box art looked up on this PC
 	h("/api/sscheck", apiSSCheck) // ScreenScraper's Check login
 	h("/api/art/", apiArt)
-	h("/api/steam", apiSteam)             // Steam soundtracks on this PC, sent to the SS1's Music
+	h("/api/steam", apiSteam) // Steam soundtracks on this PC, sent to the SS1's Music
 	h("/api/steam/cover/", apiSteamCover)
-	h("/api/mcover/", apiMusicCover)      // an album's cover from the SS1
-	h("/api/shot/", apiShot)              // a screenshot from the SS1: /api/shot/thumb/<core>/<file> or /api/shot/file/... (?dl=1: save it)
+	h("/api/mcover/", apiMusicCover) // an album's cover from the SS1
+	h("/api/shot/", apiShot)         // a screenshot from the SS1: /api/shot/thumb/<core>/<file> or /api/shot/file/... (?dl=1: save it)
 }
 
 func apiState(w http.ResponseWriter, r *http.Request) {

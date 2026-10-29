@@ -33,10 +33,15 @@ void settings_load(void)
 		const char *k = line, *v = eq + 1;
 		if (!strcmp(k, "accent")) SETTINGS.accent = atoi(v);
 		else if (!strcmp(k, "clock24")) SETTINGS.clock24 = atoi(v);
+		else if (!strcmp(k, "wallpaper_on")) SETTINGS.wallpaper_on = atoi(v);
+		else if (!strcmp(k, "wall_osd")) SETTINGS.wall_osd = atoi(v);
+		else if (!strcmp(k, "wallpaper")) snprintf(SETTINGS.wallpaper, sizeof(SETTINGS.wallpaper), "%s", v);
 		else if (!strcmp(k, "texture")) { SETTINGS.texture = atoi(v); if (!texture_valid(SETTINGS.texture)) SETTINGS.texture = 0; }   /* (8-bit tiles and circles are gone) */
 		else if (!strcmp(k, "setup_done")) SETTINGS.setup_done = atoi(v);
 		else if (!strcmp(k, "saver_min")) SETTINGS.saver_min = atoi(v);
 		else if (!strcmp(k, "shot_off")) SETTINGS.shot_off = atoi(v);
+		else if (!strcmp(k, "crt_font")) { SETTINGS.crt_font = atoi(v); if (SETTINGS.crt_font < 0 || SETTINGS.crt_font > 2) SETTINGS.crt_font = 0; }
+		else if (!strcmp(k, "crt_overscan")) { SETTINGS.crt_overscan = atoi(v); if (SETTINGS.crt_overscan < 0 || SETTINGS.crt_overscan > 10) SETTINGS.crt_overscan = 0; }
 	}
 	fclose(f);
 }
@@ -60,6 +65,8 @@ void settings_save(void)
 	if (!f) { plog("can't write %s", p); return; }
 	fprintf(f, "accent=%d\nclock24=%d\ntexture=%d\nsetup_done=%d\nsaver_min=%d\nshot_off=%d\n", SETTINGS.accent, SETTINGS.clock24,
 		SETTINGS.texture, SETTINGS.setup_done, SETTINGS.saver_min, SETTINGS.shot_off);
+	fprintf(f, "wallpaper_on=%d\nwall_osd=%d\nwallpaper=%s\n", SETTINGS.wallpaper_on, SETTINGS.wall_osd, SETTINGS.wallpaper);
+	fprintf(f, "crt_font=%d\ncrt_overscan=%d\n", SETTINGS.crt_font, SETTINGS.crt_overscan);
 	fclose(f);
 	rename(tmp, p);
 }

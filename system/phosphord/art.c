@@ -27,6 +27,59 @@
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "tjpgd.h"
+
+/* a big JPEG decoded at 1/2, 1/4 or 1/8 of its size (TJpgDec's scaled decoding: at 1/8 it only reads
+ * each block's DC value), the smallest that's still at least minw x minh: a 4K wallpaper's 320 px
+ * thumbnail without decoding all 8 million pixels. RGBA; NULL when it isn't a baseline JPEG (a
+ * progressive one goes through stb_image as before) */
+struct tj_dev { FILE *f; unsigned char *px; int w; };
+static size_t tj_in(JDEC *jd, uint8_t *buf, size_t n)
+{
+	struct tj_dev *d = jd->device;
+	if (buf) return fread(buf, 1, n, d->f);
+	return fseek(d->f, (long)n, SEEK_CUR) ? 0 : n;
+}
+static int tj_out(JDEC *jd, void *bitmap, JRECT *r)
+{
+	struct tj_dev *d = jd->device;
+	const uint8_t *s = bitmap;
+	int rw = r->right - r->left + 1;
+	for (int y = r->top; y <= r->bottom; y++) {
+		unsigned char *o = d->px + ((size_t)y * d->w + r->left) * 4;
+		for (int x = 0; x < rw; x++, s += 3, o += 4) { o[0] = s[2]; o[1] = s[1]; o[2] = s[0]; o[3] = 255; }   /* (LVGL's copy gives BGR) */
+	}
+	return 1;
+}
+static unsigned char *tj_load_scaled(const char *src, int minw, int minh, int *w, int *h)
+{
+	FILE *f = fopen(src, "rb");
+	if (!f) return NULL;
+	unsigned char m[2];
+	if (fread(m, 1, 2, f) != 2 || m[0] != 0xFF || m[1] != 0xD8) { fclose(f); return NULL; }
+	rewind(f);
+	struct tj_dev d = { f, NULL, 0 };
+	JDEC jd;
+	void *pool = malloc(64 * 1024);
+	unsigned char *px = NULL;
+	if (pool && jd_prepare(&jd, tj_in, pool, 64 * 1024, &d) == JDR_OK && jd.width > 0 && jd.height > 0
+	    && (long)jd.width * jd.height <= ART_MAX_PIXELS) {
+		int sc = 0;
+		while (sc < 3 && (jd.width >> (sc + 1)) >= minw && (jd.height >> (sc + 1)) >= minh) sc++;
+		/* each scaled block is at least a pixel, so the size rounds up */
+		d.w = (jd.width + (1 << sc) - 1) >> sc;
+		int dh = (jd.height + (1 << sc) - 1) >> sc;
+		d.px = calloc((size_t)d.w * dh, 4);
+		if (d.px && jd_decomp(&jd, tj_out, (uint8_t)sc) == JDR_OK) {
+			px = d.px;
+			*w = d.w;
+			*h = dh;
+		} else free(d.px);
+	}
+	free(pool);
+	fclose(f);
+	return px;
+}
 
 static void safe_name(const char *key, char *out, size_t n)
 {
@@ -125,11 +178,14 @@ int art_store_box(const char *system_id, const char *game_key, const char *src, 
 
 int art_thumb(const char *src, const unsigned char *mem, size_t memlen, const char *out, int max)
 {
-	int w, h, n;
-	int ok = src ? stbi_info(src, &w, &h, &n) : stbi_info_from_memory(mem, (int)memlen, &w, &h, &n);
-	if (!ok || w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS) return -1;
-	unsigned char *px = src ? stbi_load(src, &w, &h, &n, 4) : stbi_load_from_memory(mem, (int)memlen, &w, &h, &n, 4);
-	if (!px) return -1;
+	int w, h, n, ok;
+	unsigned char *px = src ? tj_load_scaled(src, max, 1, &w, &h) : NULL;
+	if (!px) {
+		ok = src ? stbi_info(src, &w, &h, &n) : stbi_info_from_memory(mem, (int)memlen, &w, &h, &n);
+		if (!ok || w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS) return -1;
+		px = src ? stbi_load(src, &w, &h, &n, 4) : stbi_load_from_memory(mem, (int)memlen, &w, &h, &n, 4);
+		if (!px) return -1;
+	}
 	int nw = w, nh = h;
 	if (w > max || h > max) {
 		if (w >= h) { nw = max; nh = (int)((long)h * max / w); }
@@ -137,7 +193,7 @@ int art_thumb(const char *src, const unsigned char *mem, size_t memlen, const ch
 		if (nw < 1) nw = 1;
 		if (nh < 1) nh = 1;
 		unsigned char *s = downscale(px, w, h, nw, nh);
-		stbi_image_free(px);
+		free(px);                                   /* (stb_image's and tj_load_scaled's: plain malloc) */
 		if (!s) return -1;
 		px = s;
 	}
@@ -153,6 +209,59 @@ int art_thumb(const char *src, const unsigned char *mem, size_t memlen, const ch
 	snprintf(tmp, sizeof(tmp), "%s.tmp", out);
 	ok = stbi_write_jpg(tmp, nw, nh, 4, px, 85);
 	free(px);
+	if (!ok) { unlink(tmp); return -1; }
+	return rename(tmp, out) ? -1 : 0;
+}
+
+int art_size(const char *src, int *w, int *h)
+{
+	int n;
+	return stbi_info(src, w, h, &n) ? 0 : -1;
+}
+
+/* a wallpaper made to cover a W x H screen: scaled (down by averaging, up by nearest pixel), the middle
+ * kept, darkened by dim/255 toward the shell's background so the screen's text stays readable. JPEG. */
+int art_cover(const char *src, const char *out, int W, int H, int dim)
+{
+	int w, h, n;
+	if (W < 16 || H < 16) return -1;
+	unsigned char *px = tj_load_scaled(src, W, H, &w, &h);   /* a 4K JPEG for a 1080p screen: at 1/2 */
+	if (!px) {
+		if (!stbi_info(src, &w, &h, &n) || w < 1 || h < 1 || (long)w * h > ART_MAX_PIXELS) return -1;
+		px = stbi_load(src, &w, &h, &n, 4);
+		if (!px) return -1;
+	}
+	double sc = (double)W / w > (double)H / h ? (double)W / w : (double)H / h;
+	int sw = (int)(w * sc + 0.5), sh = (int)(h * sc + 0.5);
+	if (sw < W) sw = W;
+	if (sh < H) sh = H;
+	if (sc < 1.0) {                                     /* down: averaged, then cropped */
+		unsigned char *s = downscale(px, w, h, sw, sh);
+		free(px);
+		if (!s) return -1;
+		px = s; w = sw; h = sh;
+	}
+	unsigned char *o = malloc((size_t)W * H * 3);
+	if (!o) { free(px); return -1; }
+	int ox = (sw - W) / 2, oy = (sh - H) / 2;
+	static const int bg[3] = { 14, 14, 16 };
+	for (int y = 0; y < H; y++)
+		for (int x = 0; x < W; x++) {
+			int sx = sc < 1.0 ? x + ox : (int)((x + ox) / sc), sy = sc < 1.0 ? y + oy : (int)((y + oy) / sc);
+			if (sx >= w) sx = w - 1;
+			if (sy >= h) sy = h - 1;
+			const unsigned char *p = px + ((size_t)sy * w + sx) * 4;
+			unsigned char *q = o + ((size_t)y * W + x) * 3;
+			for (int c = 0; c < 3; c++) {
+				int v = (p[c] * p[3] + bg[c] * (255 - p[3])) / 255;
+				q[c] = (unsigned char)((v * (255 - dim) + bg[c] * dim) / 255);
+			}
+		}
+	free(px);
+	char tmp[1200];
+	snprintf(tmp, sizeof(tmp), "%s.tmp", out);
+	int ok = stbi_write_jpg(tmp, W, H, 3, o, 88);
+	free(o);
 	if (!ok) { unlink(tmp); return -1; }
 	return rename(tmp, out) ? -1 : 0;
 }
