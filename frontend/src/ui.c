@@ -10531,6 +10531,7 @@ void ui_init(int w, int h)
 	else show_welcome();
 	const char *reopen = getenv("PHOS_REOPEN");          /* started again from Settings > Video: back there */
 	if (reopen && !strcmp(reopen, "video") && SETTINGS.setup_done) show_video();
+	if (reopen && !strcmp(reopen, "update") && SETTINGS.setup_done) show_update();   /* (tests: --snapshot) */
 	unsetenv("PHOS_REOPEN");
 	static int crt_checked;
 	crt_cfg_t prev, now;
