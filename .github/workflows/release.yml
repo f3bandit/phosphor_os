@@ -1,0 +1,61 @@
+# Publishes a Phosphor release when its tag is pushed (e.g. 0.27.42-beta).
+# The release's files are staged first on the branch release-assets/<tag>:
+#   notes.md                       the release notes
+#   phosphor-<v>-armhf.tar.gz      built with install/build-release.sh (phosphord from "Secret builds")
+#   Phosphor_win_<v>.zip           Phosphor.exe from "Secret builds", THIRD_PARTY_NOTICES.md, LICENSE.md
+# This builds the SD card image from that package, writes SHA256SUMS.txt, publishes the release and
+# removes the staging branch. Published as f3bandit when the RELEASE_TOKEN secret is set (a fine-grained
+# token for this repo, Contents: read and write); otherwise as github-actions.
+name: Release
+on:
+  push:
+    tags: ["[0-9]*.[0-9]*.[0-9]*-beta", "[0-9]*.[0-9]*.[0-9]*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The staged files
+        run: |
+          set -e
+          git fetch --depth 1 origin "refs/heads/release-assets/$TAG:staged"
+          mkdir -p staged dist
+          git archive staged | tar -x -C staged
+          ls -l staged
+          V="${TAG%-beta}"
+          tarball="staged/phosphor-$V-armhf.tar.gz"
+          [ -f staged/notes.md ] || { echo "::error::no notes.md staged"; exit 1; }
+          [ -f "$tarball" ] || { echo "::error::no phosphor-$V-armhf.tar.gz staged"; exit 1; }
+          ls staged/Phosphor_win_*.zip > /dev/null || { echo "::error::no Phosphor_win_*.zip staged"; exit 1; }
+          # the package must be this version, built from the tagged commit
+          got="$(tar -xzOf "$tarball" "phosphor-$V/VERSION")"
+          case "$got" in "$V ("*")") ;; *) echo "::error::the package is $got, not $V"; exit 1 ;; esac
+          built="${got#"$V ("}"; built="${built%)}"
+          case "$(git rev-parse HEAD)" in "$built"*) ;; *) echo "::error::the package was built from $built, the tag is on $(git rev-parse --short HEAD)"; exit 1 ;; esac
+          # and complete: every file matches its checksum
+          tar -xzf "$tarball" -C dist
+          (cd "dist/phosphor-$V" && sha256sum -c --quiet SHA256SUMS)
+          rm -rf "dist/phosphor-$V"
+          cp "$tarball" staged/Phosphor_win_*.zip dist/
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q p7zip-full mtools dosfstools zip
+      - name: SD card image
+        run: image/build-image.sh dist/phosphor-*-armhf.tar.gz
+      - name: Publish
+        run: |
+          set -e
+          V="${TAG%-beta}"
+          cd dist
+          files="phosphor-$V-sdcard-*.img.zip phosphor-$V-armhf.tar.gz Phosphor_win_*.zip"
+          sha256sum $files > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          title="Phosphor $V"; case "$TAG" in *-beta) title="$title (beta)" ;; esac
+          gh release create "$TAG" --verify-tag --title "$title" --notes-file ../staged/notes.md $files SHA256SUMS.txt
+      - name: Remove the staging branch
+        if: success()
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/release-assets/$TAG" || echo "::warning::couldn't remove release-assets/$TAG"
