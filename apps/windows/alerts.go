@@ -213,19 +213,27 @@ func watchSS1() {
 				}
 				lastStorage, firstStorage = at, false
 			}
-			// the offline SD card repair: one that just ran, and another drive to use when the repair drive is gone
+			// Repair all drives: one that just ran, and another drive to use when the repair drive is gone
 			if r, ok := s["sdrescue"].(map[string]any); ok {
 				if r["fresh"] == true && str(r["last_result"]) != "" {
-					res := map[string]string{"clean": "no errors found, the card is marked clean", "repaired": "the card was repaired",
-						"errors_left": "errors are left: repair it in this app (SD card flash & health > Card health)"}[str(r["last_result"])]
-					if res == "" {
-						res = "the repair didn't run: see Settings > Storage"
+					bad := func(x string) bool { return x == "errors_left" || x == "failed" }
+					worse := bad(str(r["last_result"]))
+					if ds, ok := r["last_drives"].([]any); ok {
+						for _, d := range ds {
+							if m, ok := d.(map[string]any); ok && bad(str(m["result"])) {
+								worse = true
+							}
+						}
 					}
-					addNote("sdrescue-"+str(r["last_at"]), "info", "SD card repaired offline", "The SS1 restarted to repair its SD card: "+res+".", "settings/storage")
+					res := "every drive is fine"
+					if worse {
+						res = "some drives need a look: see Settings > Storage"
+					}
+					addNote("sdrescue-"+str(r["last_at"]), "info", "Drives repaired offline", "The SS1 restarted to repair all its drives: "+res+".", "settings/storage")
 				}
 				if nd, ok := r["new_drive"].(map[string]any); ok && r["drive_present"] != true {
-					addNote("sdrescue-new-"+str(nd["partuuid"]), "info", "A new drive for repairing the SD card",
-						"The SD card's repair drive isn't plugged in, but "+str(nd["model"])+" is. Make it the repair drive in Settings > Storage > SD card.", "settings/storage")
+					addNote("sdrescue-new-"+str(nd["partuuid"]), "info", "A new USB drive for repairing the drives",
+						"The repair drive isn't plugged in, but "+str(nd["model"])+" is. Make it the repair drive in Settings > Storage > SD card.", "settings/storage")
 				}
 			}
 		}

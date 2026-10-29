@@ -132,20 +132,15 @@ object Notes {
                     add(c, "storage-${l.at}", "warn", "A storage check found a problem", "${l.job} on ${l.target}: see Storage for what it found.", "storage")
                 Prefs.putString("storage_at", l.at.toString())
             }
-            // the offline SD card repair: one that just ran, and another drive to use when the repair drive is gone
+            // Repair all drives: one that just ran, and another USB drive to use when the repair drive is gone
             val r = s.sdRescue
             if (r.fresh && r.lastResult.isNotEmpty()) {
-                val res = when (r.lastResult) {
-                    "clean" -> "no errors found, the card is marked clean"
-                    "repaired" -> "the card was repaired"
-                    "errors_left" -> "errors are left: repair it on a PC with Phosphor for Windows"
-                    else -> "the repair didn't run: see Storage"
-                }
-                add(c, "sdrescue-${r.lastAt}", "info", "SD card repaired offline", "The MiSTer restarted to repair its SD card: $res.", "storage")
+                val res = if (r.anyBad) "some drives need a look: see Storage" else "every drive is fine"
+                add(c, "sdrescue-${r.lastAt}", "info", "Drives repaired offline", "The MiSTer restarted to repair all its drives: $res.", "storage")
             }
             if (r.drive.isNotEmpty() && !r.present && r.newDrivePartuuid.isNotEmpty())
-                add(c, "sdrescue-new-${r.newDrivePartuuid}", "info", "A new drive for repairing the SD card",
-                    "The SD card's repair drive isn't plugged in, but ${r.newDriveModel.ifEmpty { "another drive" }} is. Make it the repair drive in Storage > SD card.", "storage")
+                add(c, "sdrescue-new-${r.newDrivePartuuid}", "info", "A new USB drive for repairing the drives",
+                    "The repair drive isn't plugged in, but ${r.newDriveModel.ifEmpty { "another USB drive" }} is. Make it the repair drive in Storage > SD card.", "storage")
         }
         runCatching { api.update() }.getOrNull()?.let { u ->
             if (!u.available) return@let
