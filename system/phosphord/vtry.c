@@ -400,6 +400,25 @@ int vt_altcfg(int set)
 	return r;
 }
 
+/* S-Video / composite made by the FPGA: the video settings Main uses now (MiSTer.ini or the profile chosen)
+   have vga_mode=svideo or cvbs (the SS1's SVID profile, DIP 3 up). Only then is a Y/C build of a core any
+   use: on HDMI, RGB, component or the Sony encoder (subcarrier, as shipped) it isn't. */
+int vt_fpga_yc(void)
+{
+	int a = vt_altcfg(-1);
+	const char *name = a > 0 ? alt_file(a) : NULL;
+	char path[700];
+	snprintf(path, sizeof(path), "%s/%s", p_fat(), name ? name : "MiSTer.ini");
+	char *text = slurp(path);
+	if (!text) return 0;
+	cJSON *v = vt_read(text);
+	free(text);
+	const char *m = cJSON_GetStringValue(cJSON_GetObjectItem(cJSON_GetObjectItem(v, "vga_mode"), "value"));
+	int yc = m && (!strcasecmp(m, "svideo") || !strcasecmp(m, "cvbs"));
+	cJSON_Delete(v);
+	return yc;
+}
+
 /* ---------- trying ---------- */
 
 /* a shell command run on its own (not phosphord's child: it outlives phosphord) */
