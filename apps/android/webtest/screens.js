@@ -1,5 +1,5 @@
 // Screenshots of every screen of the app's page (assets/web), with replies the SS1 really gave (fx/) behind a stand-in PhosNative.
-// cd apps/android && ./gradlew preBuild && node webtest/screens.js   (W=360 Z=1.35: a narrow phone with large text; TRY=1 MORE=1 extras) ; Play Store: W=360 H=720 DPR=3 FULL=0 TAG=-play
+// cd apps/android && ./gradlew preBuild && node webtest/screens.js   (W=360 Z=1.35: a narrow phone with large text; TRY=1 MORE=1 extras) ; Play Store: W=360 H=640 DPR=3 FULL=0 TAG=-play
 // Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 const fs = require("fs"), path = require("path"), http = require("http");
@@ -56,7 +56,7 @@ window.PhosNative = {
 	await new Promise(r => srv.listen(8099, r));
 	const b = await chromium.launch();
 	const W = Number(process.env.W || 390), Z = Number(process.env.Z || 1);
-	const H = Number(process.env.H || 844), DPR = Number(process.env.DPR || 2), FULL = process.env.FULL !== "0";   // (Play Store shots: W=360 H=720 DPR=3 FULL=0, 1080x2160)
+	const H = Number(process.env.H || 844), DPR = Number(process.env.DPR || 2), FULL = process.env.FULL !== "0";   // (Play Store shots: W=360 H=640 DPR=3 FULL=0, 1080x2160)
 	const ctx = await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
 	await ctx.addInitScript(mock(fx));
 	if (Z !== 1) await ctx.addInitScript(`document.addEventListener("DOMContentLoaded",()=>{document.documentElement.style.fontSize="${Z * 100}%";document.body.style.zoom="${Z}"})`);
