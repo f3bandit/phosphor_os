@@ -1237,6 +1237,17 @@ static char *cmd_update(cJSON *req)
 	if (vf && fgets(line, sizeof(line), vf)) { line[strcspn(line, " \n")] = 0; cJSON_AddStringToObject(o, "version", line); }
 	if (vf) fclose(vf);
 	upnet_status(o, line[0] ? line : NULL, online_check);
+	/* a release just downloaded from GitHub is listed at once (the kept list is up to 20 s old): else its
+	   Download row would go and its Install row only come back later */
+	{
+		cJSON *on = cJSON_GetObjectItem(o, "online");
+		const char *lv = on ? cJSON_GetStringValue(cJSON_GetObjectItem(on, "latest")) : NULL;
+		if (lv && cJSON_IsTrue(cJSON_GetObjectItem(on, "downloaded"))) {
+			char want[120];
+			snprintf(want, sizeof(want), "/phosphor-%s-armhf.tar.gz|", lv);
+			if (!pk || !strstr(pk, want)) { free(pk); pk = bgcache_now(&c_upd_list); }
+		}
+	}
 	const char *keys[2] = { "packages", "rollbacks" }, *f1[2] = { "file", "version" }, *f2[2] = { "version", "date" };
 	char *txt[2] = { pk, rb };
 	for (int k = 0; k < 2; k++) {

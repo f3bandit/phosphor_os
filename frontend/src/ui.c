@@ -7235,7 +7235,10 @@ static void upo_apply(cJSON *r)
 	snprintf(upo.msg, sizeof(upo.msg), "%s", api_str(on, "msg") ? api_str(on, "msg") : "");
 	if (sb_upd) lv_obj_set_hidden(sb_upd, !upo.newer);
 }
-static int upo_row(void) { return upo.newer && !upo.downloaded ? 1 : 0; }   /* the Download row on top */
+/* the Download row on top: until it's downloaded and listed as a package (then its Install row takes the
+   same place; never a moment with neither) */
+static int upo_listed(void);
+static int upo_row(void) { return upo.newer && (!upo.downloaded || !upo_listed()) ? 1 : 0; }
 
 static struct {
 	int npk, nrb, busy;
@@ -7245,6 +7248,7 @@ static struct {
 	lv_obj_t *head, *note;
 } up;
 static vlist_t up_list;
+static int upo_listed(void) { for (int i = 0; i < up.npk; i++) if (!strcmp(up.pk_ver[i], upo.latest)) return 1; return 0; }
 
 /* 0.27.21 against 0.27.6: number by number */
 static int ver_cmp(const char *a, const char *b)
@@ -7327,10 +7331,10 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	int sure = up.confirm_row == i && lv_tick_get() - up.confirm_at < 4000;
 	if (upo_row()) {
 		if (i == 0) {
-			int dl = !strcmp(upo.state, "working");
-			snprintf(t, n, "Download Phosphor %s", upo.latest);
-			snprintf(val, vn, "%s", dl ? "Downloading..." : "From GitHub");
-			*dim = dl;
+			int dl = !strcmp(upo.state, "working"), ready = upo.downloaded;
+			snprintf(t, n, "%s Phosphor %s", ready ? "Install" : "Download", upo.latest);
+			snprintf(val, vn, "%s", ready ? "Getting it ready..." : dl ? "Downloading..." : "From GitHub");
+			*dim = dl || ready;
 			return;
 		}
 		i--;
@@ -7386,7 +7390,7 @@ static void up_key(pkey_t k)
 	int s = up_list.sel;
 	if (upo_row()) {
 		if (s == 0) {                               /* the newer release, into phosphor/updates (checked) */
-			if (!strcmp(upo.state, "working")) return;
+			if (!strcmp(upo.state, "working") || upo.downloaded) return;
 			cJSON *r = api_call("{\"cmd\":\"update\",\"do\":\"download\"}");
 			toast_show(api_ok(r) ? "Downloading..." : api_str(r, "error") ? api_str(r, "error") : "The download didn't start");
 			cJSON_Delete(r);
