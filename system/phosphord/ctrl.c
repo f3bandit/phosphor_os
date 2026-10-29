@@ -2,6 +2,7 @@
  * database lookups, button bindings and automatic layout picks, so the TV and the app draw a
  * controller the same way SS1 Tool does.
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * The controller tester (first in SS1 Tool): f3bandit's idea and design.
  *
  * MiSTer keeps button mappings in <fat>/config/inputs:
  *   input_<vid>_<pid>[_hash][_m]_v3.map           the menu's (and every core's, unless it has its own)
