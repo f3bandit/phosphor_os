@@ -161,9 +161,19 @@ cmd_copy() {
 		[ -d "$FAT/$big" ] && { mkdir -p "$t/$big"; rs --ignore-existing "$FAT/$big/" "$t/$big/" || return 1; }
 	done
 	sync
-	# checked: what's on the SD card (outside the merged folders) is the same on the drive
-	diff="$(rs -c -n --out-format='%n' --exclude=/games --exclude=/_Arcade/mame --exclude=/cheats "$FAT/" "$t/" | grep -v '/$' | head -5)"
-	[ -z "$diff" ] || { echo "FAIL these differ after the copy: $diff"; log "copy check failed: $diff"; return 1; }
+	# checked: what's on the SD card (outside the merged folders) is the same on the drive. Files that
+	# changed while it copied (a log, a settings file Phosphor saved) are copied again, up to 3 times
+	# (the whole check once; after that only the files that differed)
+	diff="$(rs -c -n --out-format='%n' --exclude=/games --exclude=/_Arcade/mame --exclude=/cheats "$FAT/" "$t/" | grep -v '/$')"
+	n=0
+	while [ -n "$diff" ]; do
+		n=$((n + 1))
+		[ "$n" -gt 3 ] && { diff="$(echo "$diff" | head -5 | tr '\n' ' ')"; echo "FAIL these differ after the copy: $diff"; log "copy check failed: $diff"; return 1; }
+		log "copy check: $(echo "$diff" | wc -l) file(s) changed while copying, copied again"
+		echo "$diff" | rs -c --files-from=- "$FAT/" "$t/" || return 1
+		sleep 2
+		diff="$(echo "$diff" | rs -c -n --out-format='%n' --files-from=- "$FAT/" "$t/" | grep -v '/$')"
+	done
 	echo "ok   copied and checked"
 }
 
