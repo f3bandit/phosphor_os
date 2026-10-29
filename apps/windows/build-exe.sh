@@ -13,6 +13,8 @@ if [ -n "$PHOSPHOR_SS_DEVID" ] && [ -n "$PHOSPHOR_SS_DEVPASSWORD" ]; then
 	python3 ../../tools/secrets/ss_scramble.py go ss_secret_gen.go    # scrambled, not plain text in the exe
 	trap 'rm -f ss_secret_gen.go' EXIT
 fi
+# exfatprogs' fsck.exfat for Windows (Card health > Check and repair), built into Phosphor.exe
+sh fsck-exfat/build.sh
 # the open-source licences, served for Settings > About > Open-source licences (the copy isn't kept in git)
 cp ../../THIRD_PARTY_NOTICES.md web/THIRD_PARTY_NOTICES.md
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/Phosphor.exe .
