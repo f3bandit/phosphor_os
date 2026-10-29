@@ -3,7 +3,8 @@
  * new version (nothing is ever overwritten): copy / move ticked saves to another card, remove saves,
  * a new blank card, rename, delete a version or a card; one save out (.mcs) or in, a whole version out
  * (.mcd). Writing to a real card stays the memcard "restore" job (a fresh backup first, every time).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * The memory card manager (first in SS1 Tool): f3bandit's idea and design. */
 #include "mccmd.h"
 #include "mcformat.h"
 #include "mclib.h"
