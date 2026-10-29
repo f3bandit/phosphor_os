@@ -7300,10 +7300,26 @@ static void up_apply(cJSON *r)
 	snprintf(h, sizeof(h), "Installed: Phosphor %s", up.ver);
 	if (up.head) lv_label_set_text(up.head, h);
 	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
-		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs). "
+		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs, or now: Check GitHub for updates). "
 		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too.");
-	up_list.count = up.npk + up.nrb + upo_row() ? up.npk + up.nrb + upo_row() : 1;
+	up_list.count = upo_row() + up.npk + up.nrb + 1;     /* (+ Check GitHub for updates, last) */
 	vlist_refresh(&up_list);
+}
+
+/* Check GitHub for updates: phosphord asks in the background; its answer is read a few seconds later */
+static uint32_t up_checking;
+static void up_check_done(lv_timer_t *t)
+{
+	(void)t;
+	up_checking = 0;
+	cJSON *r = api_call("{\"cmd\":\"update\"}");
+	if (cur == SCR_PUPD) {
+		up_apply(r);
+		toast_show(upo.newer ? "A newer Phosphor is on GitHub" : !strcmp(upo.state, "failed") ? (upo.msg[0] ? upo.msg : "Couldn't reach GitHub") : "Phosphor is up to date");
+	} else {
+		upo_apply(r);
+		cJSON_Delete(r);
+	}
 }
 
 static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -7319,7 +7335,6 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		}
 		i--;
 	}
-	if (!up.npk && !up.nrb) { *dim = 1; snprintf(t, n, "No update packages found"); return; }
 	if (i < up.npk) {
 		const char *f = strrchr(up.pk_file[i], '/');
 		char where[64];
@@ -7330,6 +7345,12 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		return;
 	}
 	i -= up.npk;
+	if (i >= up.nrb) {
+		snprintf(t, n, "Check GitHub for updates");
+		snprintf(val, vn, "%s", up_checking ? "Asking GitHub..." : upo.newer ? "Newer one found" : "GitHub");
+		*dim = up_checking != 0;
+		return;
+	}
 	snprintf(t, n, "Roll back to Phosphor %s", up.rb_ver[i]);
 	snprintf(val, vn, "%s", sure ? "Press A again to roll back" : up.rb_date[i]);
 }
@@ -7375,7 +7396,18 @@ static void up_key(pkey_t k)
 		}
 		s--;
 	}
-	if (!up.npk && !up.nrb) return;
+	if (s >= up.npk + up.nrb) {                       /* Check GitHub for updates */
+		if (up_checking) return;
+		cJSON *r = api_call("{\"cmd\":\"update\",\"do\":\"check\"}");
+		if (!api_ok(r)) { toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't ask GitHub"); cJSON_Delete(r); return; }
+		cJSON_Delete(r);
+		up_checking = lv_tick_get() | 1;
+		toast_show("Asking GitHub...");
+		vlist_refresh(&up_list);
+		lv_timer_t *tm = lv_timer_create(up_check_done, 6000, NULL);
+		lv_timer_set_repeat_count(tm, 1);
+		return;
+	}
 	if (up.confirm_row != up_list.sel || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = up_list.sel; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
 	up.confirm_row = -1;
 	/* busy from here: a second press never starts a second update (the updater turns one down too) */
