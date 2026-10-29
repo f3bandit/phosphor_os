@@ -30,6 +30,11 @@ int upnet_newer(const char *a, const char *b)
 	}
 }
 
+/* the last answer that had a release: a failed look keeps it (with the error), so a Download row or the
+   status bar's arrow doesn't go away because GitHub didn't answer once */
+static pthread_mutex_t good_lk = PTHREAD_MUTEX_INITIALIZER;
+static char *last_good;
+
 /* the newest release that has a Phosphor package: {"version","package","sums","page"} or {"error"} */
 static char *upnet_fetch(void *arg)
 {
@@ -73,9 +78,24 @@ static char *upnet_fetch(void *arg)
 		cJSON_AddStringToObject(out, "package", pkg);
 		cJSON_AddStringToObject(out, "sums", sums);
 		cJSON_AddStringToObject(out, "page", page);
-	} else cJSON_AddStringToObject(out, "error", rc == 0 ? "no release package found" : "GitHub didn't answer");
+	} else {
+		const char *err = rc == 0 ? (http == 403 || http == 429 ? "GitHub is limiting requests: try again later" : "no release package found") : "GitHub didn't answer";
+		pthread_mutex_lock(&good_lk);
+		cJSON *g = last_good ? cJSON_Parse(last_good) : NULL;
+		pthread_mutex_unlock(&good_lk);
+		if (g) { cJSON_Delete(out); out = g; }
+		cJSON_DeleteItemFromObject(out, "error");
+		cJSON_AddStringToObject(out, "error", err);
+	}
+	cJSON_DeleteItemFromObject(out, "checked");
 	cJSON_AddNumberToObject(out, "checked", (double)time(NULL));
 	char *s = cJSON_PrintUnformatted(out);
+	if (best[0] && s) {
+		pthread_mutex_lock(&good_lk);
+		free(last_good);
+		last_good = strdup(s);
+		pthread_mutex_unlock(&good_lk);
+	}
 	cJSON_Delete(out);
 	return s;
 }
@@ -193,7 +213,8 @@ void upnet_status(cJSON *o, const char *installed, int force)
 		char p[420];
 		snprintf(p, sizeof(p), "%s/phosphor/updates/phosphor-%s-armhf.tar.gz", p_fat(), v);
 		cJSON_AddBoolToObject(on, "downloaded", file_exists(p));
-	} else if (r && cJSON_GetStringValue(cJSON_GetObjectItem(r, "error")))
+	}
+	if (r && cJSON_GetStringValue(cJSON_GetObjectItem(r, "error")))
 		cJSON_AddStringToObject(on, "error", cJSON_GetStringValue(cJSON_GetObjectItem(r, "error")));
 	if (r) cJSON_AddNumberToObject(on, "checked", cJSON_GetNumberValue(cJSON_GetObjectItem(r, "checked")));
 	cJSON_Delete(r);

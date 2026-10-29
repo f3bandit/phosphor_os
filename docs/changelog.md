@@ -3,6 +3,25 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.46
+
+### Fixed
+- **USB devices are left idle before a restart or switching off**, so none comes back stuck: the dock's
+  NVMe and other USB drives are told to write their cache and stop, then each USB device is let go by its
+  driver (drives first, the WiFi card last; the hubs and the dock's debug port stay). A restart keeps the
+  dock powered, and its NVMe could come up "not ready" after one.
+- **A dock NVMe that's still missing at start-up** gets its USB port reset once after the dock's usual
+  look-again. If it still doesn't come back, the top bar says to unplug the SuperStation's power for 10 s.
+  The same for a WiFi card that has no network 2 minutes after start-up.
+- **Check GitHub for updates** waits for GitHub's answer to that press (up to 20 s) instead of reading an
+  older one, says when GitHub didn't answer or is limiting requests, and a failed check no longer hides a
+  Download row or the status bar's arrow that were already there.
+- The Update screen's rows follow every answer (also the half-hourly check), and "Press A again" is
+  cancelled when the rows change, so a press can't land on a different package.
+- A package just downloaded is listed in the background (the screen no longer waits seconds for it).
+- The start-up drive check (a USB / NVMe drive left marked dirty): the drive is mounted again with up to 3
+  tries, and its folder is made again if it was gone.
+
 ## 0.27.45
 
 ### Changed

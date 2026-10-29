@@ -15,7 +15,14 @@
  *  - the bridge with no device at all (deleted by that rule, by the minute here, or dropped): it's
  *    asked to look again, once. A real drive comes back (udev mounts it); an empty slot's phantom is
  *    deleted again a minute later, and that bridge isn't asked again.
- * Looks at /sys only, every 5 s (no USB traffic, except the one look again).
+ *  - still no disk after that look again: the bridge's USB port is reset once (turned off and on by its
+ *    hub, as unplugging it would). After a warm restart the dock keeps its power, and its NVMe can come
+ *    up stuck ("Unit Not Ready, hardware error"); a reset starts the bridge and its drive over. A drive
+ *    seen before (data/nvme-seen) still missing after that: <tmp>/dock-stuck, and the TV says to unplug
+ *    the SuperStation's power for 10 s.
+ *  - the same for the WiFi card: a USB WiFi device with no network interface 2 minutes after start-up
+ *    gets its port reset once.
+ * Looks at /sys only, every 5 s (no USB traffic, except the one look again and the one reset).
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 #include "phantom.h"
 #include "log.h"
@@ -179,6 +186,93 @@ static void klog_save(void)
 	free(b);
 }
 
+/* ---------- a USB port reset ----------
+ * "1-1.1.1" (the device) is port 1 of hub "1-1.1": <sys>/bus/usb/devices/1-1.1/1-1.1:1.0/1-1.1-port1/disable,
+ * 1 then 0 (the hub turns the port off and on again; the device comes back with a new number). In a child,
+ * like the scan: it waits about 2 s. Once per port per boot. */
+#define MAXD_RESET 8
+static char reset_done[MAXD_RESET][48];
+static int nreset;
+static int usb_port_reset(const char *usbdev, const char *why)
+{
+	char dev[48], hub[48], f[PATH_MAX];
+	snprintf(dev, sizeof(dev), "%s", usbdev);
+	char *h = strchr(dev, '#');                     /* ("<name>#<devnum>") */
+	if (h) *h = 0;
+	for (int i = 0; i < nreset; i++) if (!strcmp(reset_done[i], dev)) return 0;
+	char *dot = strrchr(dev, '.');
+	if (!dot) return 0;                             /* (a root port: not reset here) */
+	snprintf(hub, sizeof(hub), "%.*s", (int)(dot - dev), dev);
+	snprintf(f, sizeof(f), "%s/bus/usb/devices/%s/%s:1.0/%s-port%s/disable", sysfs(), hub, hub, hub, dot + 1);
+	if (access(f, W_OK)) { plog("storage: can't reset USB port %s (%s): no %s", dev, why, f); return 0; }
+	if (nreset < MAXD_RESET) snprintf(reset_done[nreset++], sizeof(reset_done[0]), "%s", dev);
+	pid_t c = fork();
+	if (c == 0) {
+		if (fork() == 0) {
+			int fd = open(f, O_WRONLY);
+			if (fd >= 0) { (void)!write(fd, "1", 1); close(fd); }
+			sleep(2);
+			fd = open(f, O_WRONLY);
+			if (fd >= 0) { (void)!write(fd, "0", 1); close(fd); }
+		}
+		_exit(0);
+	}
+	if (c > 0) waitpid(c, NULL, 0);
+	plog("storage: reset USB port %s (%s)", dev, why);
+	return 1;
+}
+
+static void seen_mark(int on)
+{
+	char p[PATH_MAX];
+	snprintf(p, sizeof(p), "%s/nvme-seen", p_data());
+	if (on && access(p, F_OK)) { FILE *f = fopen(p, "w"); if (f) { fputs("1\n", f); fclose(f); } }
+}
+static int seen_before(void)
+{
+	char p[PATH_MAX];
+	snprintf(p, sizeof(p), "%s/nvme-seen", p_data());
+	return !access(p, F_OK);
+}
+static void stuck_flag(int on)
+{
+	char p[PATH_MAX];
+	snprintf(p, sizeof(p), "%s/dock-stuck", p_tmp());
+	if (on) { FILE *f = fopen(p, "w"); if (f) { fputs("1\n", f); fclose(f); } }
+	else unlink(p);
+}
+
+/* the WiFi card: a USB device named 802.11 / WLAN / Wireless with no wlan* interface, 2 min after start-up */
+static void wifi_check(void)
+{
+	static int done;
+	if (done) return;
+	struct timespec up;
+	clock_gettime(CLOCK_BOOTTIME, &up);
+	if (up.tv_sec < 120) return;
+	done = 1;
+	char p[PATH_MAX];
+	snprintf(p, sizeof(p), "%s/class/net", sysfs());
+	DIR *d = opendir(p);
+	struct dirent *e;
+	int have = 0;
+	while (d && (e = readdir(d))) if (!strncmp(e->d_name, "wlan", 4)) have = 1;
+	if (d) closedir(d);
+	if (have) return;
+	snprintf(p, sizeof(p), "%s/bus/usb/devices", sysfs());
+	d = opendir(p);
+	while (d && (e = readdir(d))) {
+		if (e->d_name[0] == '.' || strchr(e->d_name, ':')) continue;
+		char f[PATH_MAX + 64], prod[96] = "";
+		snprintf(f, sizeof(f), "%s/%s/product", p, e->d_name);
+		if (read_str(f, prod, sizeof(prod))) continue;
+		if (strstr(prod, "802.11") || strcasestr(prod, "wlan") || strcasestr(prod, "wireless")) {
+			if (usb_port_reset(e->d_name, "the WiFi card has no network 2 minutes after start-up")) break;
+		}
+	}
+	if (d) closedir(d);
+}
+
 /* ---------- the tick ---------- */
 
 #define MAXD 8
@@ -214,6 +308,7 @@ void phantom_tick(void)
 	const char *wv = getenv("PHOS_PHANTOM_WAIT");           /* (tests) */
 	long long wait = wv ? atoll(wv) : 60;
 	if (!started) { started = 1; ss1_rule_off(); }
+	wifi_check();
 	if (last && now - last < (ev ? atoi(ev) : 5)) return;
 	klog_save();
 	last = now;
@@ -231,6 +326,8 @@ void phantom_tick(void)
 		snprintf(dev, sizeof(dev), "%s/%s/device", p, e->d_name);
 		if (!jms583_above(dev, usb, sizeof(usb))) continue;
 		if (has_disk(e->d_name)) {
+			seen_mark(1);
+			stuck_flag(0);
 			if (*watching && !strcmp(watching, usb)) {
 				rescued++;
 				plog("storage: the dock's NVMe drive is back (%s)", e->d_name);
@@ -248,7 +345,14 @@ void phantom_tick(void)
 			snprintf(f, sizeof(f), "%s/delete", dev);
 			write_path(f, "1");
 			removed++;
-			if (in(asked, nasked, usb)) add(gave_up, &ngave_up, usb);   /* asked once already: an empty slot */
+			if (in(asked, nasked, usb)) {
+				/* looked again already and still nothing: reset the bridge's port once (a stuck drive after
+				   a warm restart); after that, an empty slot. A drive seen before still missing: say so */
+				if (!usb_port_reset(usb, "the dock's NVMe drive didn't come back")) {
+					add(gave_up, &ngave_up, usb);
+					if (seen_before()) { stuck_flag(1); plog("storage: the dock's NVMe drive is still missing after a port reset: unplug the SuperStation's power for 10 s"); }
+				}
+			}
 			if (!strcmp(watching, usb)) watching[0] = 0;
 			plog("storage: removed the dock's empty-slot phantom drive (JMS583 SCSI %s, no disk after %llds)", e->d_name, now - since);
 		} else if (nkeep < MAXD) {
