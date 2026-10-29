@@ -3,6 +3,49 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.42
+
+### New
+- **Wallpapers:** Settings > Wallpapers turns them on (Background texture waits while they're on), and
+  Choose wallpaper opens a picker: L and R switch between your own (in `wallpapers_user`) and each
+  Update All creator's collection you have (Ranny Snice, Anime0t4ku, PCN Challenge, RGarciaLago), Y
+  shows 16:9, 4:3 or all, and X picks where it goes: both menus, Phosphor's, or MiSTer's menu (OSD).
+- **Online updates:** Phosphor checks GitHub for a newer release (a minute after starting, then every
+  half hour, never in a game). A yellow icon in the top bar says there's one; Settings > Updates
+  downloads it, checks it, and installs it with the usual restore point.
+- **Home > Other and Utility:** the cores in `_Other` and `_Utility` get their own cards. Utility starts
+  with **Register this SuperStation**, which opens Update All so you can sign in and Link your supporter
+  cores (Coin-Op Collection, JOTEGO and others).
+- **Start with...:** SELECT on a game lists every core that can run it (the newest, older versions,
+  unstable builds, another system's core, the RetroAchievements one); X makes your pick the default for
+  that system.
+- **Power menu > MiSTer menu (OSD)** opens MiSTer's own menu and settings.
+- **Box-art scraping uses Phosphor's own ScreenScraper developer ID**, so scraping works with just your
+  ScreenScraper account.
+- **CRT mode (Settings > Video):** Phosphor's menu on a CRT, out of the analog port at the TV's own
+  timing: 240p, 288p, 480i or 576i (15 kHz) for a TV, 480p (31 kHz) for a VGA monitor or PVM / BVM. HDMI
+  shows the same picture. A new mode goes back by itself in 20 seconds unless you keep it, and the picture
+  can be moved left, right, up and down. At 240p and 288p the menu has its own layout with bigger text,
+  in three looks (Text: Smooth, Sharp, Legible); Overscan keeps it inside a TV's visible area. In a game,
+  the in-game menu shows in MiSTer's menu window, so it's on the CRT too. Needs this release's Main and
+  menu core.
+- **4:3 screens:** at 640x480, 1024x768 and other 4:3 resolutions every screen lays itself out for the
+  narrower screen, and Phosphor starts again by itself when MiSTer.ini's video mode changes.
+- **Save a copy of a disc:** with a PlayStation, Saturn, Mega-CD or PC Engine CD disc in the drive, X on
+  the disc row saves it as .bin / .cue next to that system's games, checked against Redump's list and
+  named after it when it matches. B twice stops it.
+- **Phosphor for Windows updates itself:** it checks GitHub for a newer version, and About downloads,
+  checks and installs it. Both apps also say when there's a new Phosphor for the SuperStation, and can
+  download it.
+
+### Changed
+- **The menu button in a game opens Phosphor's in-game menu on every press;** holding it no longer opens
+  MiSTer's menu (use the in-game menu or the power menu for that).
+- RetroAchievements signs in after the game has loaded and been checked, so starting a game is quicker.
+- **Wallpapers load much faster:** the picker's previews are made in the background, a page in a few
+  seconds, and the menu redraws as soon as you pick one.
+- Fixed: a hybrid ARM core (Street Fighter III 3rd Strike) could restart the SuperStation after an update.
+
 ## 0.27.41, Phosphor for Windows 0.2.43, Phosphor for Android 0.9.8
 
 ### New

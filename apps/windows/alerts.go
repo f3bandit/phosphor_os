@@ -191,7 +191,7 @@ func watchSS1() {
 			}
 			if n > 0 {
 				addNote(fmt.Sprintf("guard-%s-%d", str(g["updated_at"]), n), "warn", fmt.Sprintf("An update reset %d setting%s", n, map[bool]string{true: "", false: "s"}[n == 1]),
-					"Your own settings can be put back from the restore point taken before it.", "settings/power/1")
+					"Your own settings can be put back from the restore point taken before it.", "settings/power/2")
 			}
 		}
 		// storage: Gen 4 drives in the dock, and a check that found a problem
@@ -212,6 +212,13 @@ func watchSS1() {
 						fmt.Sprintf("%s on %s: see Settings > Storage for what it found.", str(l["job"]), str(l["target"])), "settings/storage")
 				}
 				lastStorage, firstStorage = at, false
+			}
+		}
+		// a newer Phosphor for the SS1 on GitHub (the SS1 looks every 30 minutes; Phosphor 0.27.42 on)
+		if u := ask(`{"cmd":"update"}`); u != nil {
+			if on, ok := u["online"].(map[string]any); ok && on["newer"] == true && str(on["latest"]) != "" {
+				addNote("ss1upd-"+str(on["latest"]), "info", "Phosphor "+str(on["latest"])+" is out for "+name,
+					"It has "+str(u["version"])+". Settings > Power & updates > Update Phosphor downloads and installs it.", "settings/power/1")
 			}
 		}
 		// box art finishing (only a run this app saw going)

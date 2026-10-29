@@ -20,7 +20,7 @@ import (
 	"os"
 )
 
-const appVersion = "0.2.43"
+const appVersion = "0.2.44"
 
 //go:embed web
 var webFS embed.FS
@@ -64,7 +64,8 @@ func main() {
 	routes(mux)
 	saveInstance(url)
 	view.url = url
-	go watchSS1() // warnings from the SS1 -> notifications (in the window and from the tray)
+	go watchSS1()        // warnings from the SS1 -> notifications (in the window and from the tray)
+	go watchAppUpdates() // a newer Phosphor for Windows -> a notification; Settings > About installs it
 	if *noWindow {
 		fmt.Println(url)
 	} else {

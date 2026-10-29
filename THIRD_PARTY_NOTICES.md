@@ -8,6 +8,8 @@ Not in this list, because they are separate programs with their own source:
 
 - **MiSTer_phosphor** (Phosphor's Main) and **menu_phosphor.rbf** (Phosphor's menu core) are GPL
   builds of MiSTer's Main and Menu core; their source and licence are in SOURCE.md and licenses/.
+  The menu core's CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's
+  menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later).
 - **The SD card image** also holds MiSTer's Linux, kernel, u-boot, Main and Mr. Fusion; see
   LICENSES/SOURCES.txt on the card.
 - **achievement.wav**, the RetroAchievements unlock sound, comes with odelot's RetroAchievements
@@ -62,6 +64,26 @@ freely, subject to the following restrictions:
 
     3. This notice may not be removed or altered from any source
     distribution.
+```
+
+### TJpgDec R0.03 (from LVGL)
+
+JPEG decoding at reduced size for wallpaper thumbnails in phosphord (LVGL's copy, with scaled output
+added back by Phosphor: system/third_party/tjpgd).
+
+```
+TJpgDec - Tiny JPEG Decompressor R0.03 (C)ChaN, 2021
+
+The TJpgDec is a generic JPEG decompressor module for tiny embedded systems.
+This is a free software that opened for education, research and commercial
+developments under license policy of following terms.
+
+ Copyright (C) 2021, ChaN, all right reserved.
+
+* The TJpgDec module is a free software and there is NO WARRANTY.
+* No restriction on use. You can use, modify and redistribute it for
+  personal, non-profit or commercial products UNDER YOUR RESPONSIBILITY.
+* Redistributions of source code must retain the above copyright notice.
 ```
 
 ### cJSON 1.7.19

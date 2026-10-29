@@ -11,7 +11,12 @@
  *   game       id                           details, art (absolute path), play history, files
  *   last                                    the last game played (same shape as game), or null
  *   launch     id [core]                    start it (core: an index from "game_cores"; none: the usual one)
- *   game_cores id                           the cores it can start on: [{index, name, core}]
+ *   game_cores id                           the cores it can start on: [{index, name, core, kind, desc, date, preferred}]
+ *   disc_copy  [do: start|stop]             save a copy of the game disc in the drive (dump.c): {copy: progress}
+ *   wallpapers [category] [aspect]          Settings > Wallpapers (wallpaper.c); wallpaper_thumb, wallpaper_prefetch, wallpaper_screen, wallpaper_osd
+ *   folder_cores folder                     _Other / _Utility cores: [{name, file, date}] (+ Update All Link state)
+ *   run_core   file                         start one of those on its own
+ *   core_pref  id core                      its system starts on that core from now on (-1: the usual one)
  *   system_cores                            every installed core: [{id, name, core}]
  *   load_core  system                       that system's core, no game
  *   favorite   id on                        mark or unmark
@@ -92,6 +97,7 @@
  *                                           devices:[{id, name, created, last_seen}]} */
 #include "api.h"
 #include "disc.h"
+#include "dump.h"
 #include "ra.h"
 #include "music.h"
 #include "shot.h"
@@ -113,6 +119,8 @@
 #include "storage.h"
 #include "extras.h"
 #include "bgcache.h"
+#include "upnet.h"
+#include "wallpaper.h"
 #include "ctrl.h"
 #include "dash.h"
 #include "version.h"
@@ -1188,6 +1196,13 @@ static char *cmd_update(cJSON *req)
 	/* the packages (each one opened to read its version) take seconds: kept, refreshed in the background;
 	   an install or roll back looks again first */
 	char *pk = bgcache_get(&c_upd_list, 1), *rb = bgcache_get(&c_upd_rb, 1);
+	int online_check = d && !strcmp(d, "check");
+	if (d && !strcmp(d, "download")) {                /* the newer release from GitHub, into phosphor/updates */
+		const char *e = NULL;
+		if (upnet_download(&e) != 0) { free(pk); free(rb); cJSON_Delete(o); return fail(e); }
+		d = NULL;
+	}
+	if (online_check) d = NULL;
 	if (d && *d) {
 		const char *arg = cJSON_GetStringValue(cJSON_GetObjectItem(req, !strcmp(d, "install") ? "file" : "version"));
 		/* only what update.sh itself listed (the kept list; looked at again only when it isn't there) */
@@ -1218,8 +1233,10 @@ static char *cmd_update(cJSON *req)
 	cJSON_AddBoolToObject(o, "available", 1);
 	snprintf(cmd, sizeof(cmd), "%s/phosphor/VERSION", p_fat());
 	FILE *vf = fopen(cmd, "r");
+	line[0] = 0;
 	if (vf && fgets(line, sizeof(line), vf)) { line[strcspn(line, " \n")] = 0; cJSON_AddStringToObject(o, "version", line); }
 	if (vf) fclose(vf);
+	upnet_status(o, line[0] ? line : NULL, online_check);
 	const char *keys[2] = { "packages", "rollbacks" }, *f1[2] = { "file", "version" }, *f2[2] = { "version", "date" };
 	char *txt[2] = { pk, rb };
 	for (int k = 0; k < 2; k++) {
@@ -1764,7 +1781,24 @@ char *api_handle(sqlite3 *db, const char *request)
 		/* the dock's CD/DVD drive (disc.c): what's in it, named, with box art and whether it plays */
 		cJSON *d = disc_json(db);
 		if (!d) out = fail("this Main doesn't read discs");
-		else { cJSON *o = ok(); cJSON_AddItemToObject(o, "disc", d); out = reply(o); }
+		else {
+			const char *st = cJSON_GetStringValue(cJSON_GetObjectItem(d, "state"));
+			cJSON_AddBoolToObject(d, "copyable", st && !strcmp(st, "ready") && dump_supported(cJSON_GetStringValue(cJSON_GetObjectItem(d, "type"))));
+			cJSON_AddItemToObject(d, "copy", dump_status());
+			cJSON *o = ok();
+			cJSON_AddItemToObject(o, "disc", d);
+			out = reply(o);
+		}
+	} else if (!strcmp(c->valuestring, "disc_copy")) {   /* Save a copy (dump.c): {do: start|stop}, or the progress */
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+		char err[300];
+		if (d && !strcmp(d, "start") && dump_start(db, err, sizeof(err))) out = fail(err);
+		else {
+			if (d && !strcmp(d, "stop")) dump_stop();
+			cJSON *o = ok();
+			cJSON_AddItemToObject(o, "copy", dump_status());
+			out = reply(o);
+		}
 	} else if (!strcmp(c->valuestring, "disc_play")) {
 		char err[300];
 		out = disc_play(db, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
@@ -1865,6 +1899,45 @@ char *api_handle(sqlite3 *db, const char *request)
 	} else if (!strcmp(c->valuestring, "load_core")) {      /* a system's core, no game */
 		char err[300];
 		out = play_load_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "system")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "wallpapers")) {     /* Settings > Wallpapers: {category, aspect} */
+		cJSON *o = wallpaper_list(cJSON_GetStringValue(cJSON_GetObjectItem(req, "category")), cJSON_GetStringValue(cJSON_GetObjectItem(req, "aspect")),
+		                          cJSON_GetStringValue(cJSON_GetObjectItem(req, "current")));
+		cJSON_AddBoolToObject(o, "ok", 1);
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "wallpaper_thumb") || !strcmp(c->valuestring, "wallpaper_screen")) {
+		char p[700];
+		const char *f = cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"));
+		int thumb = !strcmp(c->valuestring, "wallpaper_thumb");
+		int r = thumb ? wallpaper_thumb(f, p, sizeof(p))
+		              : wallpaper_screen(f, (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "w")), (int)cJSON_GetNumberValue(cJSON_GetObjectItem(req, "h")), p, sizeof(p));
+		if (r < 0) out = fail("Couldn't read that picture");
+		else if (r > 0) { cJSON *o = ok(); cJSON_AddBoolToObject(o, "pending", 1); out = reply(o); }
+		else { cJSON *o = ok(); cJSON_AddStringToObject(o, thumb ? "thumb" : "screen", p); out = reply(o); }
+	} else if (!strcmp(c->valuestring, "wallpaper_prefetch")) {   /* the picker's page, then the next */
+		wallpaper_prefetch(cJSON_GetObjectItem(req, "files"));
+		out = reply(ok());
+	} else if (!strcmp(c->valuestring, "wallpaper_osd")) {  /* behind MiSTer's own menu ("" : MiSTer's usual) */
+		out = wallpaper_osd(cJSON_GetStringValue(cJSON_GetObjectItem(req, "file"))) == 0 ? reply(ok()) : fail("Couldn't use that picture");
+	} else if (!strcmp(c->valuestring, "folder_cores")) {   /* the Other and Utility cards: {folder: _Other|_Utility} */
+		const char *fo = cJSON_GetStringValue(cJSON_GetObjectItem(req, "folder"));
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, "cores", play_folder_cores(fo));
+		if (fo && !strcmp(fo, "_Utility")) {           /* registering for supporter cores: Update All's account and Link */
+			char p1[600], p2[600];
+			snprintf(p1, sizeof(p1), "%s/Scripts/update_all.sh", p_fat());
+			snprintf(p2, sizeof(p2), "%s/Scripts/.config/retroaccount/verified_chip_id", p_fat());
+			cJSON_AddBoolToObject(o, "update_all", file_exists(p1));
+			cJSON_AddStringToObject(o, "update_all_script", p1);
+			cJSON_AddBoolToObject(o, "linked", file_exists(p2));
+		}
+		out = reply(o);
+	} else if (!strcmp(c->valuestring, "run_core")) {       /* a core from _Other or _Utility, on its own */
+		char err[300];
+		out = play_run_core(db, cJSON_GetStringValue(cJSON_GetObjectItem(req, "file")), err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
+	} else if (!strcmp(c->valuestring, "core_pref")) {      /* Always start with this: {id, core (index; -1 clears)} */
+		char err[300];
+		cJSON *cv = cJSON_GetObjectItem(req, "core");
+		out = play_core_pref(db, req_id(req), cJSON_IsNumber(cv) ? (int)cv->valuedouble : -1, err, sizeof(err)) == 0 ? reply(ok()) : fail(err);
 	} else if (!strcmp(c->valuestring, "game_cores")) {     /* the cores a game can start on (the in-game menu) */
 		char err[300];
 		cJSON *a = play_cores(db, req_id(req), err, sizeof(err));
