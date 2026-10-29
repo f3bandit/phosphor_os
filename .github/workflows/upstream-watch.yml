@@ -1,0 +1,85 @@
+# Watches the Mains merged into Phosphor's Main (f3bandit/phosphor-main, branch phosphor):
+#   MiSTer-devel/Main_MiSTer            MiSTer's own Main
+#   Anime0t4ku/Main_MiSTer_Physical_Disc the dock's CD drive (Anime0t4ku, bonna79)
+#   odelot/Main_MiSTer                  RetroAchievements (odelot)
+# Once a day: for each one with commits Phosphor's Main doesn't have, a trial merge in a throwaway
+# copy, Phosphor's tests and an ARM build, and one issue here per upstream saying what changed and how
+# the trial went (GitHub emails it). It never pushes or merges anything: that's reviewed by hand and goes
+# into a release (the same rule as the MiSTer Linux update watcher).
+name: Upstream watch (Phosphor's Main)
+on:
+  schedule:
+    - cron: "17 13 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Phosphor's Main and the upstreams
+        run: |
+          set -e
+          git clone -q --branch phosphor https://github.com/f3bandit/phosphor-main main
+          cd main
+          git config user.name "upstream-watch"; git config user.email "upstream-watch@users.noreply.github.com"
+          git remote add mister https://github.com/MiSTer-devel/Main_MiSTer
+          git remote add disc https://github.com/Anime0t4ku/Main_MiSTer_Physical_Disc
+          git remote add ra https://github.com/odelot/Main_MiSTer
+          git fetch -q mister master; git fetch -q disc master; git fetch -q ra master
+      - name: ARM toolchain (GNU 10.2-2020.11, as phosphor-main's own build)
+        run: |
+          curl -fsSL -o tc.tar.xz https://developer.arm.com/-/media/Files/downloads/gnu-a/10.2-2020.11/binrel/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf.tar.xz
+          tar -xf tc.tar.xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gcc-arm-10.2-2020.11-x86_64-arm-none-linux-gnueabihf/bin" >> "$GITHUB_PATH"
+      - name: Trial merges and the issues
+        run: |
+          set -u
+          cd main
+          gh label create upstream-watch -R "$GITHUB_REPOSITORY" -c BFD4F2 -d "New code in a Main merged into Phosphor's" 2>/dev/null || true
+          for u in "mister|MiSTer's Main|MiSTer-devel/Main_MiSTer" "disc|the physical disc Main (Anime0t4ku, bonna79)|Anime0t4ku/Main_MiSTer_Physical_Disc" "ra|the RetroAchievements Main (odelot)|odelot/Main_MiSTer"; do
+            r="${u%%|*}"; rest="${u#*|}"; name="${rest%%|*}"; repo="${rest#*|}"
+            n=$(git rev-list --count --no-merges origin/phosphor..$r/master)
+            head=$(git rev-parse --short=7 $r/master)
+            echo "== $name: $n new (up to $head)"
+            [ "$n" -gt 0 ] || continue
+            title="Upstream: $name has $n new commits (up to $head)"
+            existing=$(gh issue list -R "$GITHUB_REPOSITORY" -l upstream-watch -s open --json number,title --jq ".[] | select(.title | contains(\"$name\")) | \"\(.number)|\(.title)\"" | head -1)
+            if [ -n "$existing" ] && [ "${existing#*|}" = "$title" ]; then echo "already reported"; continue; fi
+            git checkout -q -B trial origin/phosphor
+            if git merge -q --no-edit $r/master > ../merge.log 2>&1; then
+              merge="clean"
+              if sh phosphor_tests/run.sh > ../tests.log 2>&1 && grep -q "ALL PASSED" ../tests.log; then tests="passed"; else tests="FAILED"; fi
+              if make -j4 > ../build.log 2>&1 && [ -x bin/MiSTer ]; then build="built"; else build="FAILED"; fi
+            else
+              merge="CONFLICTS in: $(git diff --name-only --diff-filter=U | tr '\n' ' ')"; tests="not run"; build="not run"
+              git merge --abort
+            fi
+            {
+              echo "**$name** ([$repo](https://github.com/$repo)) has **$n** commits that Phosphor's Main (phosphor-main, branch \`phosphor\`) doesn't have, up to [\`$head\`](https://github.com/$repo/commit/$(git rev-parse $r/master))."
+              echo
+              echo "| Trial merge | Phosphor's tests | ARM build |"
+              echo "|---|---|---|"
+              echo "| $merge | $tests | $build |"
+              echo
+              echo "Nothing was merged or pushed: review, merge by hand, and it goes into the next release."
+              echo
+              echo "<details><summary>The new commits</summary>"
+              echo
+              git log --no-merges --format='- [`%h`](https://github.com/'"$repo"'/commit/%H) %s (%an, %as)' origin/phosphor..$r/master | head -150
+              echo
+              echo "</details>"
+              if [ "$tests" = "FAILED" ]; then echo; echo "<details><summary>Test output (end)</summary>"; echo; echo '```'; tail -40 ../tests.log; echo '```'; echo "</details>"; fi
+              if [ "$build" = "FAILED" ]; then echo; echo "<details><summary>Build output (end)</summary>"; echo; echo '```'; tail -40 ../build.log; echo '```'; echo "</details>"; fi
+            } > ../body.md
+            if [ -n "$existing" ]; then
+              gh issue edit "${existing%%|*}" -R "$GITHUB_REPOSITORY" --title "$title" --body-file ../body.md
+              gh issue comment "${existing%%|*}" -R "$GITHUB_REPOSITORY" --body "Updated: now $n new commits (up to $head). Merge: $merge; tests: $tests; build: $build."
+            else
+              gh issue create -R "$GITHUB_REPOSITORY" -l upstream-watch --title "$title" --body-file ../body.md
+            fi
+            git checkout -q origin/phosphor 2>/dev/null; make clean > /dev/null 2>&1 || true
+          done
