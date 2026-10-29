@@ -74,7 +74,7 @@ static void corename(char *buf, size_t n)
 
 /* the cores a game can start on, all of them its own system's: the system's core (and the alternatives
    systems.ini names), the RetroAchievements one when logged in, older versions, a test build, a dual RAM
-   build and other builds in _Other. Never another system's core. The first is the one a plain launch uses. */
+   build, other builds in _Other and Y/C builds (S-Video / composite). Never another system's core. The first is the one a plain launch uses. */
 typedef struct { char rbf[96], setname[64], label[160], kind[12], date[12]; const gsys_t *sys; } core_opt_t;
 #define MAX_CORE_OPTS 16
 
@@ -197,12 +197,28 @@ static int is_system_base(const char *stem)
 	return 0;
 }
 
-/* alternative builds of a core in _Other: its name, or its name with something added (Genesis, PSX2XCPU,
-   N64_80MHz), the newest of each */
-static int alt_opts(core_opt_t *o, int n, const char *base, const gsys_t *s)
+/* other builds of a core in one folder: its name, or its name with something added, the newest of each.
+   _Other: alternative builds (ajgowans' Alt Cores: Genesis, PSX2XCPU, N64_80MHz).
+   _YCConsole / _YCComputer: Y/C builds, S-Video and composite made by the core (MikeS11's Y/C Builds:
+   PSXYC2, PSX2XYC, NES_NativeCVBS). */
+static void alt_label(const char *v, int yc, const gsys_t *s, char *out, size_t n)
+{
+	if (!yc) {
+		if (*v) snprintf(out, n, "%s (%s core)", s->name, v);
+		else snprintf(out, n, "%s (alternative core)", s->name);
+		return;
+	}
+	const char *y = strstr(v, "YC");
+	int digits = y && y > v && strspn(v, "0123456789") == (size_t)(y - v);
+	if (digits) snprintf(out, n, "%s (%s%.*s, S-Video / composite)", s->name, s->id, (int)(y - v), v);   /* MSX1 */
+	else if (y && y > v) snprintf(out, n, "%s (%.*s, S-Video / composite)", s->name, (int)(y - v), v);       /* 2X */
+	else if (strstr(v, "CVBS")) snprintf(out, n, "%s (native composite)", s->name);
+	else snprintf(out, n, "%s (S-Video / composite)", s->name);
+}
+static int alt_opts(core_opt_t *o, int n, const char *base, const gsys_t *s, const char *dir, int yc)
 {
 	char d[600];
-	snprintf(d, sizeof(d), "%s/_Other", p_fat());
+	snprintf(d, sizeof(d), "%s/%s", p_fat(), dir);
 	DIR *dd = opendir(d);
 	if (!dd) return n;
 	char best[8][96] = {{0}}, stems[8][96] = {{0}};
@@ -214,7 +230,12 @@ static int alt_opts(core_opt_t *o, int n, const char *base, const gsys_t *s)
 		if (l < 5 || strcasecmp(e->d_name + l - 4, ".rbf") || strncasecmp(e->d_name, base, bl)) continue;
 		char f[96], stem[96];
 		snprintf(f, sizeof(f), "%.*s", (int)(l - 4), e->d_name);
-		if (!rbf_stem(f, stem, sizeof(stem)) || (strlen(stem) > bl && is_system_base(stem))) continue;
+		if (!rbf_stem(f, stem, sizeof(stem))) {
+			if (!yc) continue;                          /* (a Y/C build without a date: NES_NativeCVBS) */
+			snprintf(stem, sizeof(stem), "%s", f);
+		}
+		if (strlen(stem) > bl && is_system_base(stem)) continue;
+		if (yc && !strstr(stem + bl, "YC") && !strstr(stem + bl, "CVBS")) continue;
 		int k = 0;
 		while (k < nb && strcasecmp(stems[k], stem)) k++;
 		if (k == nb) { if (nb == 8) continue; snprintf(stems[nb], 96, "%s", stem); nb++; }
@@ -224,13 +245,12 @@ static int alt_opts(core_opt_t *o, int n, const char *base, const gsys_t *s)
 	for (int k = 0; k < nb && n < MAX_CORE_OPTS; k++) {
 		const char *v = stems[k] + bl;
 		while (*v == '_' || *v == '-') v++;
-		char rbf[110], label[160];
-		snprintf(rbf, sizeof(rbf), "_Other/%s", best[k]);
-		if (*v) snprintf(label, sizeof(label), "%s (%s core)", s->name, v);
-		else snprintf(label, sizeof(label), "%s (alternative core)", s->name);
+		char rbf[130], label[160];
+		snprintf(rbf, sizeof(rbf), "%s/%s", dir, best[k]);
+		alt_label(v, yc, s, label, sizeof(label));
 		int j = n;
 		n = add_opt(o, n, rbf, NULL, label, s);
-		if (n > j) { snprintf(o[j].kind, sizeof(o[0].kind), "alt"); rbf_date(best[k], o[j].date, sizeof(o[0].date)); }
+		if (n > j) { snprintf(o[j].kind, sizeof(o[0].kind), yc ? "yc" : "alt"); rbf_date(best[k], o[j].date, sizeof(o[0].date)); }
 	}
 	return n;
 }
@@ -301,7 +321,9 @@ static int core_opts(const gsys_t *s, const char *path, core_opt_t *o)
 			n = add_opt(o, n, vr, NULL, label, s);
 			if (n > k) { snprintf(o[k].kind, sizeof(o[0].kind), "dualram"); rbf_date(vers[0], o[k].date, sizeof(o[0].date)); }
 		}
-		n = alt_opts(o, n, b, s);
+		n = alt_opts(o, n, b, s, "_Other", 0);
+		n = alt_opts(o, n, b, s, "_YCConsole", 1);
+		n = alt_opts(o, n, b, s, "_YCComputer", 1);
 	}
 	/* older versions last, so the other builds are never off the bottom of a short list (stable: the
 	   first stays the one a plain launch uses) */
@@ -329,6 +351,7 @@ static const char *kind_desc(const char *kind)
 	if (!strcmp(kind, "unstable")) return "A newer test build from the core's developer. May have bugs.";
 	if (!strcmp(kind, "dualram")) return "Built for a second SDRAM module: needs the dual RAM board.";
 	if (!strcmp(kind, "alt")) return "Another build of this system's core from its developer.";
+	if (!strcmp(kind, "yc")) return "Makes S-Video and composite itself, for a CRT on those inputs (needs a Y/C cable).";
 	return "The standard core from MiSTer's own distribution.";
 }
 
