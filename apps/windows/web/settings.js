@@ -1515,7 +1515,7 @@ class AppSettings {
 	/* ---------- SD card flash & health: a card in this PC's reader ---------- */
 	sdBar(st) {
 		const pct = st.total ? Math.min(100, Math.round(100 * st.done / st.total)) : 0;
-		const ph = { download: "Downloading", prepare: "Getting ready", write: "Writing", verify: "Checking what was written", read: "Reading the card", done: "Done", failed: "Didn't finish", ready: "Ready" }[st.phase] || st.phase || "";
+		const ph = { download: "Downloading", prepare: "Getting ready", write: "Writing", verify: "Checking what was written", read: "Reading the card", check: "Checking the file system", done: "Done", failed: "Didn't finish", ready: "Ready" }[st.phase] || st.phase || "";
 		return `<div class="sub" style="margin-top:1.2rem">${spaced(ph)}${st.running && st.total ? ` · ${pct}%` : ""}${st.mbps ? ` · ${st.mbps.toFixed(0)} MB/s` : ""}</div>
 			${st.running ? `<div class="mbar" style="margin:.5rem 0"><i style="width:${pct}%"></i></div>` : ""}
 			${st.message ? `<p class="note">${esc(st.message)}</p>` : ""}${st.error ? `<p class="note bad">${esc(st.error)}</p>` : ""}`;
@@ -1561,7 +1561,7 @@ class AppSettings {
 				const j = await api("/api/sd/state").catch(() => null);
 				if (!alive() || !j) break;
 				const st = j.state;
-				$("#fl_st").innerHTML = st.job && st.job !== "readtest" ? me.sdBar(st) : "";
+				$("#fl_st").innerHTML = st.job === "flash" || st.job === "download" ? me.sdBar(st) : "";
 				if (st.job === "download" && st.phase === "ready" && st.image) { F.image = st.image; showImg(); }
 				if (!st.running) { if (st.job === "download") imgs(); break; }
 				await new Promise(r => setTimeout(r, 700));
@@ -1593,9 +1593,12 @@ class AppSettings {
 			<div class="mcard"><h3>Cards in this PC</h3><div id="ch_d"><span class="muted">Looking…</span></div>
 				<div class="mrow" style="margin-top:.6rem"><button class="btn" id="ch_re" data-nav>Look again</button></div></div>
 			<div class="mcard"><h3>Read test</h3><p class="muted" style="margin:0 0 .6rem">Reads every part of the chosen card once and times it. Nothing is written. A 64 GB card takes a few minutes.</p>
-				<div class="mrow"><button class="btn primary" id="ch_go" data-nav>Test the chosen card</button></div><div id="ch_st"></div></div></div>
+				<div class="mrow"><button class="btn primary" id="ch_go" data-nav>Test the chosen card</button></div><div id="ch_st"></div></div>
+			<div class="mcard"><h3>Check and repair</h3><p class="muted" style="margin:0 0 .6rem">The card's exFAT file system, checked and repaired the way Linux does it (exfatprogs' fsck.exfat), not Windows' scan: no FOUND.000 folders, and the dirty mark is cleared once the card is fixed. Close any window showing the card's files first.</p>
+				<div class="mrow"><button class="btn" id="fk_check" data-nav>Check (changes nothing)</button><button class="btn primary" id="fk_repair" data-nav>Repair</button><button class="btn" id="fk_deep" data-nav>Deep repair…</button></div><div id="fk_st"></div></div></div>
 			<div class="panel"><h2>Card health</h2><p class="note">For an SD card in this PC's card reader: what Windows says about it, and a read test that finds parts of the card that can't be read, and cards that are much slower than they should be (worn or fake).</p>
-				<p class="note">The SD card in the SuperStation is checked from Storage › SD card, without taking it out.</p></div></div>`));
+				<p class="note">The SD card in the SuperStation is checked from Storage › SD card, without taking it out.</p>
+				<p class="note">Repair fixes what's safe to fix without asking, which is almost always enough (a card pulled out or switched off mid-write). Deep repair fixes everything it finds: files whose entries are broken are deleted, so back up anything you can read first.</p></div></div>`));
 		let pick = null;
 		const disks = async () => {
 			const j = await api("/api/sd/disks?all=1");
@@ -1614,12 +1617,25 @@ class AppSettings {
 				if (!alive() || !j) break;
 				const st = j.state;
 				$("#ch_st").innerHTML = st.job === "readtest" ? me.sdBar(st) + ((st.bad || []).length ? `<p class="note bad">Couldn't read at: ${st.bad.slice(0, 20).map(x => x + " MB").join(", ")}${st.bad.length > 20 ? "…" : ""}</p>` : "") : "";
+				const mark = { clean: '<span class="mpill good">clean</span>', dirty: '<span class="mpill bad">marked dirty</span>', "media-failure": '<span class="mpill bad">media failure</span>' };
+				$("#fk_st").innerHTML = st.job === "fsck" ? me.sdBar(st)
+					+ (st.dirty ? `<p class="note">Before: ${mark[st.dirty] || esc(st.dirty)}${st.dirty_after ? ` · After: ${mark[st.dirty_after] || esc(st.dirty_after)}` : ""}${!st.running && st.dirty === "dirty" && st.dirty_after === "dirty" ? " · Repair clears the mark" : ""}</p>` : "")
+					+ ((st.log || []).length ? `<pre class="out">${resultHTML(st.log.join("\n"))}</pre>` : "") : "";
 				if (!st.running) break;
 				await new Promise(r => setTimeout(r, 700));
 			}
 			me.chPolling = false;
 		};
 		$("#ch_re").onclick = disks;
+		const fsck = async mode => {
+			if (pick === null) return toast("Choose a card first");
+			const r = await api("/api/sd/start", { job: "fsck", disk: pick, mode });
+			if (!r.ok) return toast(r.error);
+			poll();
+		};
+		$("#fk_check").onclick = () => fsck("check");
+		$("#fk_repair").onclick = () => fsck("repair");
+		twice($("#fk_deep"), "Press again: broken files are deleted", () => fsck("deep"));
 		$("#ch_go").onclick = async () => {
 			if (pick === null) return toast("Choose a card first");
 			const r = await api("/api/sd/start", { job: "readtest", disk: pick });
