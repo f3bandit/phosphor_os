@@ -11,6 +11,8 @@
  *   phosphor --log-serial [dev]      also log to the serial console (default /dev/ttyS0)
  *   phosphor --snapshot out.ppm [--keys right,a,wait,...] [--size 1280x720]   (wait: 1 s for background work)
  *                                    render without a screen, press the keys, save a picture
+ *   phosphor --sdrepair STATE        only the offline SD card repair's screen (sdrepair.c), in the repair
+ *                                    copy of MiSTer's Linux: no phosphord, no input; with --snapshot too
  *
  * While a game runs (MiSTer's /tmp/CORENAME is not MENU) the frontend sleeps and ignores input. */
 #include "input.h"
@@ -22,6 +24,7 @@
 #include "theme.h"
 #include "jpeg.h"
 #include "ui.h"
+#include "sdrepair.h"
 #include "lvgl.h"
 #include <signal.h>
 #include <stdio.h>
@@ -39,6 +42,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+
+static const char *sdrepair_state;          /* --sdrepair: the repair's screen only */
 
 static uint32_t mono_ms(void)
 {
@@ -81,6 +86,13 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 	lv_display_set_buffers(d, malloc(bsz), NULL, bsz, LV_DISPLAY_RENDER_MODE_FULL);
 	lv_display_set_flush_cb(d, shot_flush);
 
+	if (sdrepair_state) {
+		sdrepair_build(w, h, sdrepair_state);
+		advance(1500);
+		lv_refr_now(d);
+		keys = NULL;
+		goto save;
+	}
 	/* wait for phosphord to finish its first scan, so counts are real */
 	for (int i = 0; i < 100; i++) {
 		cJSON *r = api_call("{\"cmd\":\"status\"}");
@@ -116,7 +128,7 @@ static int run_snapshot(const char *out, const char *keys, int w, int h)
 	}
 	advance(400);
 	lv_refr_now(d);
-
+save:;
 	FILE *f = fopen(out, "wb");
 	if (!f) { perror(out); return 1; }
 	fprintf(f, "P6\n%d %d\n255\n", w, h);
@@ -296,6 +308,21 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		}
 		plog("crt: CRT mode off (couldn't show it)");
 	}
+	if (sdrepair_state) {
+		/* the repair's screen: no input, no phosphord; the repair step restarts the SuperStation */
+		sdrepair_build(w, h, sdrepair_state);
+		for (;;) {
+			if (mainlink_poll() && have_mode) {
+				char cmd[64], err[256];
+				snprintf(cmd, sizeof(cmd), "fb_cmd1 8888 %d %d %d\n", fb_rb, mw, mh);
+				if (mister_cmd(cmd, err, sizeof(err)) != 0) plog("%s", err);
+				console_quiet();
+				lv_obj_invalidate(lv_screen_active());
+			}
+			uint32_t wait = lv_timer_handler();
+			usleep((wait > 33 ? 33 : wait) * 1000);
+		}
+	}
 	input_init();
 	ui_init(w, h);
 
@@ -401,6 +428,7 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "--fb-rb") && i + 1 < argc) fb_rb = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "--log-serial")) serial = (i + 1 < argc && argv[i + 1][0] == '/') ? argv[++i] : "/dev/ttyS0";
 		else if (!strcmp(argv[i], "--version")) { puts(PHOS_VERSION); return 0; }
+		else if (!strcmp(argv[i], "--sdrepair") && i + 1 < argc) sdrepair_state = argv[++i];
 		else { fprintf(stderr, "usage: phosphor [--fb DEV] [--fb-mode WxH|none] [--fb-rb 0|1] [--log-serial [DEV]]\n"
 			                "       phosphor --snapshot OUT.ppm [--keys k,k] [--size WxH]\n"); return 2; }
 	}
