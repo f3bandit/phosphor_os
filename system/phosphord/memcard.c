@@ -1,5 +1,6 @@
 /* phosphord: the SuperStation One's front ports (controllers, memory cards) through phosphor-main.
  * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * The controller tester and memory card manager (first in SS1 Tool): f3bandit's idea and design.
  *
  * phosphor-main relays the Phosphor menu core's front ports (SNAC) on its socket (ports, pads,
  * pad_analog, card_read, card_write; see phosphor-main's PHOSPHOR.md). phosphord keeps one

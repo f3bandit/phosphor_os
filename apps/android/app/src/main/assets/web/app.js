@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
 /* Phosphor for Android: the screens. A web page in the app's WebView (SS1 Tool for Android's layout,
    Phosphor's look). Everything the MiSTer does goes through PhosNative.call (the app sends it to
    phosphord's remote access with this phone's key); what only the phone does (pairing, box art
