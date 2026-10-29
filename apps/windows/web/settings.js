@@ -650,7 +650,7 @@ class AppSettings {
 			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off offline repair</button>`;
 		} else {
 			body = `<dl class="kv"><dt>Repair drive</dt><dd>${esc(name(r.drive_mount, r.drive_model))}</dd><dt>At start-up</dt><dd>${r.sd_dirty_at_boot ? "Wasn't shut down safely" : "Clean"}</dd>${r.armed ? "<dt>Next restart</dt><dd>Repairs the SD card</dd>" : ""}</dl>
-				<p class="note${r.sd_dirty_at_boot ? " warn" : ""}">Restart and repair: the TV stays dark for about a minute while the SD card is repaired, then Phosphor starts again and shows how it went.</p>`;
+				<p class="note${r.sd_dirty_at_boot ? " warn" : ""}">Restart and repair: the TV shows the repair as it runs, then Phosphor starts again and shows how it went (about a minute in all).</p>`;
 			acts = `<button class="btn primary" data-nav data-sr="go"${busy ? " disabled" : ""}>Restart and repair</button>`;
 			if (r.armed) acts += `<button class="btn" data-nav data-sr="disarm"${busy ? " disabled" : ""}>Not at the next restart</button>`;
 			for (const c of cands) if (c.path !== r.drive_mount) acts += `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Use the ${esc(name(c.path, c.model))} instead</button>`;
