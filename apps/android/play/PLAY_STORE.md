@@ -56,8 +56,8 @@ Phosphor OS is an unofficial, independent project by F3 Digital Systems. It is n
 - App icon: `graphics/icon-512.png` (512×512)
 - Feature graphic: `graphics/feature-graphic-1024x500.png`
 - Phone screenshots (in this order): `phone-1-home.png`, `phone-2-library.png`, `phone-3-video.png`,
-  `phone-4-saves_cards.png`, `phone-5-power_update.png`, `phone-6-boxart_sources.png` (1080×2160; made with
-  `W=360 H=720 DPR=3 FULL=0 TAG=-play node webtest/screens.js`, no real box art in them)
+  `phone-4-saves_cards.png`, `phone-5-power_update.png`, `phone-6-boxart_sources.png` (1080×1920, 9:16 as Play requires; made with
+  `W=360 H=640 DPR=3 FULL=0 TAG=-play node webtest/screens.js`, no real box art in them)
 
 ---
 
