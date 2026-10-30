@@ -187,9 +187,9 @@ static void draw_cb(lv_event_t *e)
 		arc(&p, 36, 39, 22, 300, 240, p.col);
 		line(&p, 36, 11, 36, 34);
 		break;
-	case ICON_RESTART:                                   /* a circle arrow */
-		arc(&p, 36, 37, 22, 20, 300, p.col);
-		line(&p, 47, 18, 58, 16); line(&p, 47, 18, 50, 28);
+	case ICON_RESTART:                                   /* a circle arrow, anticlockwise: its head at the top left */
+		arc(&p, 36, 37, 22, 239, 197, p.col);
+		line(&p, 24.7f, 18.1f, 32.7f, 9.2f); line(&p, 24.7f, 18.1f, 35.5f, 23.4f);
 		break;
 	case ICON_SCREEN:                                    /* a screen with a stand */
 		rect(&p, 9, 13, 54, 36, 5);
