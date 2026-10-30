@@ -11,6 +11,9 @@
 #   update.sh rollbacks               versions kept to go back to, one per line: version|date
 #   update.sh rollback <version>      put that version back the same way
 #   update.sh state                   the last run: state=idle|working|done|failed, version, restart, msg
+#   update.sh old                     packages in phosphor/updates no newer than the installed version:
+#                                     count|kilobytes (what clean removes)
+#   update.sh clean                   removes them (a newer one waiting to be installed stays)
 #
 # Kept as they are: the library, box art, settings, logs, controller mappings, everything outside
 # phosphor/bin, phosphor/modules and phosphor/cores. The installed version is backed up first to
@@ -40,12 +43,54 @@ pkg_version() { # the version inside a package, without unpacking it
 	tar -xzOf "$1" "$(tar -tzf "$1" 2>/dev/null | head -1 | cut -d/ -f1)/VERSION" 2>/dev/null | head -1 | cut -d' ' -f1
 }
 
+# the version a package's name says (phosphor-0.27.51-armhf.tar.gz): listing reads names only, opening each
+# package took seconds (15 s and more with many kept); install checks the version inside matches
+name_version() { local b="${1##*/}"; b="${b#phosphor-}"; b="${b%-armhf.tar.gz}"; case "$b" in [0-9]*.[0-9]*) echo "$b" ;; esac; }
+
 list() {
 	local f v
 	for f in "$ROOT"/updates/phosphor-*-armhf.tar.gz "$FAT"/phosphor-*-armhf.tar.gz /media/usb[0-9]*/phosphor-*-armhf.tar.gz; do
 		[ -f "$f" ] || continue
-		v="$(pkg_version "$f")"
+		v="$(name_version "$f")"
+		[ -n "$v" ] || v="$(pkg_version "$f")"           # (renamed by hand: then opened)
 		[ -n "$v" ] && echo "$f|$v"
+	done
+}
+
+# a is older than or the same as b (0.27.6 < 0.27.21)
+not_newer() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$2" ]; }
+
+# packages in phosphor/updates no newer than what's installed (and phosphor/updates/old): kept from
+# earlier updates, never needed again (a roll back uses phosphor/backup/versions)
+old_pkgs() {
+	local f v cur; cur="$(installed_version)"
+	[ -n "$cur" ] || return 0
+	for f in "$ROOT"/updates/phosphor-*-armhf.tar.gz; do
+		[ -f "$f" ] || continue
+		v="$(name_version "$f")"; [ -n "$v" ] || continue
+		not_newer "$v" "$cur" && echo "$f"
+	done
+	[ -d "$ROOT/updates/old" ] && find "$ROOT/updates/old" -type f 2> /dev/null
+}
+old_count() {
+	local n=0 kb=0 f s
+	while read -r f; do [ -n "$f" ] || continue; n=$((n + 1)); s=$(du -k "$f" 2> /dev/null | cut -f1); kb=$((kb + ${s:-0})); done < <(old_pkgs)
+	echo "$n|$kb"
+}
+clean_old() {
+	local f n=0
+	while read -r f; do [ -n "$f" ] && rm -f "$f" && n=$((n + 1)); done < <(old_pkgs)
+	rmdir "$ROOT/updates/old" 2> /dev/null
+	sync
+	echo "$(date '+%Y-%m-%d %H:%M:%S')  removed $n old update file(s)" >> "$LOG"
+	echo "removed $n old update file(s)"
+}
+# after an update: the newest KEEP packages in phosphor/updates stay, older ones go
+prune_pkgs() {
+	local f
+	ls -1 "$ROOT"/updates/phosphor-*-armhf.tar.gz 2> /dev/null | while read -r f; do echo "$(name_version "$f")|$f"; done |
+		grep -v '^|' | sort -t'|' -k1,1 -V -r | tail -n +$((KEEP + 1)) | cut -d'|' -f2- | while read -r f; do
+		rm -f "$f" && echo "$(date '+%Y-%m-%d %H:%M:%S')  removed the old package ${f##*/}" >> "$LOG"
 	done
 }
 
@@ -106,7 +151,7 @@ running() {
 }
 
 install_pkg() {
-	local pkg="$1" w="$TMPD/update-unpack" dir v old main_before modules m
+	local pkg="$1" w="$TMPD/update-unpack" dir v nv old main_before modules m
 	JOB=install STEP=check FROM="$(installed_version)"
 	[ -f "$pkg" ] || { state failed "no such package: $pkg"; return 1; }
 	state working "Checking the package..." "" 0
@@ -118,6 +163,9 @@ install_pkg() {
 		(cd "$dir" && sha256sum -c SHA256SUMS > /dev/null 2>>"$LOG") || { state failed "The package is damaged (a file doesn't match its checksum)"; return 1; }
 	fi
 	v="$(cut -d' ' -f1 "$dir/VERSION")"
+	# named one version, another inside: not installed (the list goes by the name)
+	nv="$(name_version "$pkg")"
+	[ -z "$nv" ] || [ "$nv" = "$v" ] || { state failed "That package is named $nv but has Phosphor $v inside: not installed"; return 1; }
 	old="$(installed_version)"
 	STEP=backup
 	state working "Keeping a copy of Phosphor $old..." "$v" 0
@@ -147,6 +195,7 @@ install_pkg() {
 	[ "$(md5 "$ROOT/bin/MiSTer_phosphor")" != "$main_before" ] && restart=1
 	start_after_update
 	rm -rf "$w"
+	prune_pkgs
 	STEP=restart
 	state done "Updated to Phosphor $v" "$v" 1
 }
@@ -185,6 +234,8 @@ case "${1:-}" in
 	list) list ;;
 	rollbacks) rollbacks ;;
 	state) cat "$STATE" 2>/dev/null || echo "state=idle" ;;
+	old) old_count ;;
+	clean) clean_old ;;
 	# install and rollback stop Phosphor on the way: run on their own, so they finish whoever asked
 	install|rollback)
 		[ -n "${2:-}" ] || { echo "$1 <package|version>" >&2; exit 2; }
