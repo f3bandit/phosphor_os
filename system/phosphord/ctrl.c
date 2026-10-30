@@ -49,6 +49,7 @@ typedef struct {
 	char ev[16], name[128], db_name[128], where[16];
 	unsigned bus, vid, pid, ver;
 	int nkeys, keys[96], nabs, abs[24];
+	unsigned long long at_edge;    /* axes resting at one end when the controller was looked at: triggers, not sticks */
 	int db_user;
 	bind_t b[C_N];
 } pad_t;
@@ -205,7 +206,15 @@ static void linux_binds(pad_t *d)
 	} else if (has_abs(d, ABS_X) && has_abs(d, ABS_Y)) {
 		d->b[C_LSX] = (bind_t){ 'a', ABS_X, 0, 0 }; d->b[C_LSY] = (bind_t){ 'a', ABS_Y, 0, 0 };
 	}
-	if (has_abs(d, ABS_RX) && has_abs(d, ABS_RY)) {          /* Xbox style: right stick on RX/RY, triggers on Z/RZ */
+	/* Xbox style: right stick on RX/RY, triggers on Z/RZ. Some HID pads have all four the other way round
+	   (TinyUSB's gamepad, MC BlueBridge: right stick on Z/RZ, triggers on RX/RY): a trigger rests at one end
+	   of its range, a stick in the middle, so the pair resting at an end is the triggers */
+	int rx_trig = (d->at_edge >> ABS_RX & 1) || (d->at_edge >> ABS_RY & 1);
+	int z_trig = (d->at_edge >> ABS_Z & 1) || (d->at_edge >> ABS_RZ & 1);
+	if (has_abs(d, ABS_RX) && has_abs(d, ABS_RY) && has_abs(d, ABS_Z) && has_abs(d, ABS_RZ) && rx_trig && !z_trig) {
+		d->b[C_RSX] = (bind_t){ 'a', ABS_Z, 0, 0 }; d->b[C_RSY] = (bind_t){ 'a', ABS_RZ, 0, 0 };
+		d->b[C_L2] = (bind_t){ 'a', ABS_RX, 0, 0 }; d->b[C_R2] = (bind_t){ 'a', ABS_RY, 0, 0 };
+	} else if (has_abs(d, ABS_RX) && has_abs(d, ABS_RY)) {
 		d->b[C_RSX] = (bind_t){ 'a', ABS_RX, 0, 0 }; d->b[C_RSY] = (bind_t){ 'a', ABS_RY, 0, 0 };
 		if (has_abs(d, ABS_Z)) d->b[C_L2] = (bind_t){ 'a', ABS_Z, 0, 0 };
 		if (has_abs(d, ABS_RZ)) d->b[C_R2] = (bind_t){ 'a', ABS_RZ, 0, 0 };
@@ -266,6 +275,12 @@ static int pads(pad_t *out, int max)
 		int nk = read_bits(fd, EV_KEY, KEY_MAX, k, 768);
 		for (int j = 0; j < nk && d->nkeys < 96; j++) if (k[j] >= BTN_MISC) d->keys[d->nkeys++] = k[j];
 		d->nabs = read_bits(fd, EV_ABS, ABS_MAX, d->abs, 24);
+		for (int j = 0; j < d->nabs; j++) {
+			struct input_absinfo ai;
+			if (d->abs[j] >= 64 || ioctl(fd, EVIOCGABS(d->abs[j]), &ai) < 0 || ai.maximum - ai.minimum < 8) continue;
+			int span = ai.maximum - ai.minimum;
+			if (ai.value - ai.minimum < span / 8 || ai.maximum - ai.value < span / 8) d->at_edge |= 1ull << d->abs[j];
+		}
 		close(fd);
 		if (!db_find(d)) linux_binds(d);
 		n++;
