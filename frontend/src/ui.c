@@ -10875,8 +10875,7 @@ int ui_max_sleep(void)
 
 static uint32_t mono_ms_ui(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (uint32_t)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u); }
 /* ---------- the column cards ----------
- * Every screen (but Home, whose tiles are cards themselves) sits on one or two cards: what's on the left half
- * on one, what's on the right on the other. Both start and end at the same height (under the title card,
+ * Every screen (but Home, whose tiles are cards themselves) sits on one big card with everything on it. Both start and end at the same height (under the title card,
  * above the button hints, further only if something reaches past), with the same 14 (design) padding, the
  * same rounding and the screen's margin on the outer side; each is as wide as what's on it. A screen's own
  * panels become part of their column (their own fill and border off), so there's never a card on a card.
@@ -10960,7 +10959,9 @@ static void body_cards(void)
 	if (have[0] && have[1]) {
 		int small1 = lv_area_get_height(&u[1]) < (bottom - top) / 4, small0 = lv_area_get_height(&u[0]) < (bottom - top) / 4;
 		/* (the controller test: its info and its drawing on one big card) */
-		if (u[0].x2 + 2 * pad + S(12) > u[1].x1 || small1 || small0 || cur == SCR_CTEST || cur == SCR_GAMES || cur == SCR_SYSTEMS || cur == SCR_GUARD) {
+		/* always one card: deciding by what's showing flipped between one and two as text came and went */
+		(void)small0; (void)small1;
+		{
 			u[0].x1 = LV_MIN(u[0].x1, u[1].x1); u[0].y1 = LV_MIN(u[0].y1, u[1].y1);
 			u[0].x2 = LV_MAX(u[0].x2, u[1].x2); u[0].y2 = LV_MAX(u[0].y2, u[1].y2);
 			have[1] = 0;
