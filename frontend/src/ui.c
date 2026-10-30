@@ -7218,7 +7218,7 @@ static void show_ctest(int idx)
 		lv_label_set_long_mode(tw.v[i], LV_LABEL_LONG_MODE_DOTS);
 		lv_obj_set_pos(tw.v[i], S(190), S(360 + 30 * i));
 	}
-	tw.pv = padview_create(body, SX(520), S(196), SW(704));
+	tw.pv = padview_create(body, SX(556), S(226), SW(668));   /* (a little right of and below the middle: away from the info) */
 	padview_layout(tw.pv, tw.style);
 	footer_set(TW_HINTS);
 	tw_poll();
