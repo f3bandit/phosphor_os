@@ -94,16 +94,22 @@ static void status_bar(void)
 	lv_obj_set_style_bg_opa(bar, LV_OPA_TRANSP, 0);
 	lv_obj_align(bar, LV_ALIGN_TOP_LEFT, 0, 0);
 
-	lv_obj_t *word = mk_label(bar, FONT_WORD, PAL.acc, "PHOSPHOR");
+	/* the wordmark and the status icons each on a card (see-through: theme_card_opa) */
+	lv_obj_t *wcard = mk_box(bar, LV_SIZE_CONTENT, LV_SIZE_CONTENT, PAL.panel, lr ? L(4) : S(12));
+	lv_obj_set_style_pad_hor(wcard, lr ? L(4) : S(14), 0);
+	lv_obj_set_style_pad_ver(wcard, lr ? L(1) : S(6), 0);
+	lv_obj_align(wcard, LV_ALIGN_LEFT_MID, lr ? L(12) : S(42), lr ? L(2) : 0);
+	lv_obj_t *word = mk_label(wcard, FONT_WORD, PAL.acc, "PHOSPHOR");
 	lv_obj_set_style_text_letter_space(word, lr ? 2 : S(3), 0);
-	lv_obj_align(word, LV_ALIGN_LEFT_MID, lr ? L(16) : S(56), lr ? L(2) : 0);
 
-	lv_obj_t *right = mk_box(bar, LV_SIZE_CONTENT, lr ? L(14) : S(30), PAL.bg, 0);
-	lv_obj_set_style_bg_opa(right, LV_OPA_TRANSP, 0);
+	lv_obj_t *right = mk_box(bar, LV_SIZE_CONTENT, lr ? L(14) : S(30), PAL.panel, lr ? L(4) : S(12));
+	lv_obj_set_height(right, LV_SIZE_CONTENT);
+	lv_obj_set_style_pad_hor(right, lr ? L(4) : S(14), 0);
+	lv_obj_set_style_pad_ver(right, lr ? L(1) : S(6), 0);
 	lv_obj_set_flex_flow(right, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(right, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 	lv_obj_set_style_pad_column(right, lr ? L(6) : S(22), 0);
-	lv_obj_align(right, LV_ALIGN_RIGHT_MID, lr ? -L(16) : -S(56), lr ? L(2) : 0);
+	lv_obj_align(right, LV_ALIGN_RIGHT_MID, lr ? -L(12) : -S(42), lr ? L(2) : 0);
 
 	/* the notification area: shown only when there's something to look at (Settings > Updates) */
 	sb_alert = mk_box(right, LV_SIZE_CONTENT, S(30), PAL.panel_on, S(15));
@@ -250,6 +256,8 @@ static void footer_set(const char *const *hints)
 	if (hints == footer_now && lv_obj_get_child_count(footer)) return;     /* the same: nothing to redraw */
 	footer_now = hints;
 	lv_obj_clean(footer);
+	lv_obj_set_hidden(footer, !hints || !hints[0]);     /* (a card: none when there's nothing on it) */
+	if (!hints || !hints[0]) return;
 	if (theme_lr) {                                     /* 240p / 288p: the button's letter in bold, then what it does */
 		for (int i = 0; hints[i]; i += 2) {
 			lv_obj_t *item = mk_box(footer, LV_SIZE_CONTENT, L(14), PAL.bg, 0);
@@ -397,6 +405,10 @@ static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int 
 	v->row_h = theme_lr ? L(19) : S(46);
 	v->row_w = w - (theme_lr ? L(4) : S(10));
 	v->vis = LV_MIN(h / v->row_h, VL_MAX_ROWS);
+	if (parent == body && !theme_lr) {                  /* a card behind the list (see-through) */
+		lv_obj_t *c = mk_box(parent, w + S(18), v->vis * v->row_h + S(18), PAL.panel, S(16));
+		lv_obj_set_pos(c, x - S(9), y - S(9));
+	}
 	v->box = mk_box(parent, w, v->vis * v->row_h, PAL.bg, 0);
 	lv_obj_set_style_bg_opa(v->box, LV_OPA_TRANSP, 0);
 	lv_obj_set_pos(v->box, x, y);
@@ -412,7 +424,7 @@ static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int 
 		/* one line: long text ends in ... (240p: what the value leaves, the value's own width found when filled) */
 		lv_obj_set_size(v->lab[r], lr ? w - L(60) : w - S(200), lr ? lv_font_get_line_height(FONT_BODY) : S(26));
 		lv_obj_align(v->lab[r], LV_ALIGN_LEFT_MID, lr ? L(7) : S(24), 0);
-		v->val[r] = mk_label(row, FONT_SMALL, PAL.faint, "");
+		v->val[r] = mk_label(row, FONT_SMALL, PAL.dim, "");
 		lv_obj_align(v->val[r], LV_ALIGN_RIGHT_MID, lr ? -L(5) : -S(18), 0);
 		v->rows[r] = row;
 		v->shown[r] = -1;
@@ -454,7 +466,7 @@ static void vlist_refresh(vlist_t *v)
 			lv_obj_set_style_bg_opa(v->rows[r], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
 			lv_obj_set_style_bg_color(v->rows[r], PAL.panel_on, 0);
 			lv_obj_set_style_text_color(v->lab[r], on ? PAL.text : dim ? PAL.faint : PAL.dim, 0);
-			lv_obj_set_style_text_color(v->val[r], on ? PAL.acc : PAL.faint, 0);
+			lv_obj_set_style_text_color(v->val[r], on ? PAL.acc : PAL.dim, 0);
 			lv_obj_set_hidden(v->bar[r], !on);
 		}
 	}
@@ -1100,6 +1112,18 @@ static void sys_detail(void)
 
 static void screen_title(const char *label, const char *title)
 {
+	if (!theme_lr) {                                    /* a card behind the title (see-through) */
+		lv_obj_t *c = mk_box(body, LV_SIZE_CONTENT, LV_SIZE_CONTENT, PAL.panel, S(14));
+		lv_obj_set_style_pad_hor(c, S(14), 0);
+		lv_obj_set_style_pad_ver(c, S(8), 0);
+		lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_style_pad_row(c, S(4), 0);
+		lv_obj_set_pos(c, S(42), S(88));
+		lv_obj_t *sec = mk_label(c, FONT_LABEL, PAL.dim, label);
+		lv_obj_set_style_text_letter_space(sec, S(3), 0);
+		mk_label(c, FONT_HEADING, PAL.text, title);
+		return;
+	}
 	lv_obj_t *sec = mk_label(body, FONT_LABEL, PAL.dim, label);
 	lv_obj_set_style_text_letter_space(sec, theme_lr ? 2 : S(3), 0);
 	lv_obj_set_pos(sec, theme_lr ? L(16) : S(56), theme_lr ? L(26) : S(96));
@@ -10865,12 +10889,13 @@ void ui_init(int w, int h)
 	body = mk_box(root, w, h, PAL.bg, 0);
 	lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
 	lv_obj_move_background(body);
-	footer = mk_box(root, theme_lr ? w - L(32) : w - S(112), theme_lr ? L(22) : S(64), PAL.bg, 0);
-	lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, 0);
+	footer = mk_box(root, LV_SIZE_CONTENT, theme_lr ? L(22) : S(48), PAL.panel, theme_lr ? L(4) : S(14));
+	lv_obj_set_style_max_width(footer, theme_lr ? w - L(32) : w - S(112), 0);   /* (a card: as wide as its hints) */
+	lv_obj_set_style_pad_hor(footer, theme_lr ? L(6) : S(16), 0);
 	lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
 	lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 	lv_obj_set_style_pad_column(footer, theme_lr ? L(10) : S(28), 0);
-	lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, theme_lr ? L(16) : S(56), 0);
+	lv_obj_align(footer, LV_ALIGN_BOTTOM_LEFT, theme_lr ? L(12) : S(42), theme_lr ? 0 : -S(8));
 
 	if (toast_timer) { lv_timer_delete(toast_timer); toast_timer = NULL; }   /* (a rebuild: the old toast's) */
 	toast = mk_box(root, LV_SIZE_CONTENT, theme_lr ? L(20) : S(44), lv_color_hex(0x1f1f25), theme_lr ? L(4) : S(12));

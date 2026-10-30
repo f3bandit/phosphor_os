@@ -86,10 +86,19 @@ lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius)
 	lv_obj_remove_style_all(o);
 	lv_obj_set_size(o, w, h);
 	lv_obj_set_style_bg_color(o, bg, 0);
-	lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+	lv_obj_set_style_bg_opa(o, lv_color_eq(bg, PAL.panel) ? theme_card_opa() : LV_OPA_COVER, 0);
 	lv_obj_set_style_radius(o, radius, 0);
 	lv_obj_set_scrollable(o, false);
 	return o;
+}
+
+lv_opa_t theme_card_opa(void) { return theme_lr ? LV_OPA_COVER : (lv_opa_t)230; }   /* (90 %) */
+
+void theme_card_style(lv_obj_t *o, int radius)
+{
+	lv_obj_set_style_bg_color(o, PAL.panel, 0);
+	lv_obj_set_style_bg_opa(o, theme_card_opa(), 0);
+	lv_obj_set_style_radius(o, radius, 0);
 }
 
 void spaced_caps(char *dst, size_t n, const char *src)
