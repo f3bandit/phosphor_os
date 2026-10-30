@@ -691,6 +691,7 @@ static void *thread(void *arg)
 		}
 		ss_run_reset();
 		running = 1;
+		net_set_cancel(&stop_now);          /* Stop cuts off the request in progress too */
 		while (!stop_now && menu_up() && !pc_active()) {
 			sqlite3_stmt *st;
 			if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) { plog("scrape: %s", sqlite3_errmsg(db)); break; }
@@ -724,6 +725,7 @@ static void *thread(void *arg)
 			else if (r) pg.found++;
 			else pg.not_found++;
 			pthread_mutex_unlock(&lk);
+			if (stop_now) break;            /* (stopped in the middle of this game: it's looked up next time) */
 			if (r < 0) {
 				/* one source unreachable: this game later; several in a row: stop, the user can ask again */
 				mark(db, g.id, "later");
@@ -736,6 +738,7 @@ static void *thread(void *arg)
 			worked++;
 		}
 		running = 0;
+		net_set_cancel(NULL);
 		if (worked) plog("looked up %d game(s)", worked);
 		if (pc_active()) { /* the app took over: its status stands */ }
 		else if (cut) scrape_status("No connection: stopped (choose Get box art to try again)");

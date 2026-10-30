@@ -62,7 +62,8 @@ const char *input_notice(void)
 }
 
 static pkey_t queue[32];
-static unsigned char queue_app[32], last_app;   /* a key the Windows app sent (Remote control) */
+static unsigned char queue_app[32], last_app;   /* where a key came from: 1 the apps' Remote control, 2 another
+                                                   remote (Phosphor Link), 3 a keyboard; 0 a controller */
 static int push_app;
 static int qh, qt;
 static pkey_t held = KEY_NONE_;
@@ -150,7 +151,7 @@ static void fifo_poll(void)
 			char w[160];
 			snprintf(w, sizeof(w), "%s%s", fifo_buf, k == KEY_NONE_ ? " (unknown)" : "");
 			input_watch("remote", w);
-			if (k != KEY_NONE_) { push_app = app; input_push(k); push_app = 0; }
+			if (k != KEY_NONE_) { push_app = app ? 1 : 2; input_push(k); push_app = 0; }
 		}
 	}
 }
@@ -441,8 +442,10 @@ pkey_t input_poll(unsigned now)
 				         ev.code != BTN_MODE && ev.code != BTN_SELECT) k = KEY_NONE_;  /* Main passes these on */
 				else k = map_key(ev.code);
 				if (k == KEY_NONE_) continue;
+				if (!d->pad && !d->virt) push_app = 3;         /* (a keyboard) */
 				if (ev.value == 1) press(k, d->slot, now);
 				else if (ev.value == 0) release(k, d->slot, now);
+				push_app = 0;
 			} else if (ev.type == EV_ABS) {
 				axis(&devs[i], ev.code, ev.value, now);
 			}
@@ -484,4 +487,5 @@ pkey_t key_from_name(const char *n)
 	return KEY_NONE_;
 }
 
-int input_from_app(void) { return last_app; }
+int input_from_app(void) { return last_app == 1; }
+int input_not_controller(void) { return last_app != 0; }
