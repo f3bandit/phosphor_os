@@ -3,6 +3,44 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.54
+
+### New
+- **The SS1's Bluetooth button opens Phosphor's own pairing.** Holding it used to open MiSTer's pairing
+  screen behind Phosphor's, where the controller couldn't reach Finish. Now Settings › Bluetooth opens and
+  starts looking; MiSTer's own pairing still opens in a game or in MiSTer's menu.
+- **Bluetooth screen:** what's happening, big and centred (looking, with a countdown; paired; didn't work)
+  and how to put 8BitDo, Xbox, PlayStation and Switch Pro controllers in pairing mode. **X deletes** a paired
+  controller (press twice), and **Delete all pairings** is at the end of the list.
+- **Library:** each system's side shows a big icon, its games, and who made it, when, how many sold and what
+  it's remembered for.
+- **Every drive carries an ID** (phosphor/drive.id). When a drive comes up under another number (a USB
+  stick plugged in first moves the NVMe drive from usb0 to usb2), the library follows it: its games,
+  play history, favourites and box art stay with them, with no new scan.
+
+### Fixed
+- **Menu buttons match what's printed on the controller.** A, B, X and Y come from the controller itself,
+  by its layout (Xbox, PlayStation or Nintendo: from its driver and name, or the drawing picked in
+  Settings › Controllers), never moved by mapping it or resetting mappings. Each press counts once.
+- **Repair all drives** no longer copies Linux to the stick every time: the copy carries its own ID and
+  is used as it is, only the repair step updated in place (2 s) after a Phosphor update, or copied again
+  (now 44 s, not 10+ minutes, which ran into a time limit and failed) after a MiSTer Linux update.
+- **The repair stick is never a games drive:** an empty games folder on it could hide the NVMe drive's
+  games from MiSTer, and disc copies never go onto it.
+- **Controller test:** MC BlueBridge's X and R1 no longer also light C and Z; every drawing fits the card,
+  sized and centred the same way; Switch's Minus, Plus and Home are named; Esc on a keyboard closes it.
+- Diagnostics reports include what the menu got from each controller and the controllers' mappings.
+
+### Changed
+- **Menus over wallpapers:** every screen sits on one see-through card (solid on a 240p/288p CRT), with
+  cards behind the title, the status icons and the button hints; text is solid, every card has the same
+  rounding, and no black boxes are left on them. Settings' side panel shows every item the same way.
+- **Controllers:** the drawing is bigger and centred, the description at the bottom.
+- A new **Restart** icon.
+
+### Thanks
+Thanks to **n00dlez** for testing with MC BlueBridge adapters and an 8BitDo Ultimate 2C.
+
 ## 0.27.53
 
 ### Fixed
