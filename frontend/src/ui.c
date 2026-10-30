@@ -3647,7 +3647,7 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_UPDLOG] = { "The downloader's log from the last update, to see what changed or what went wrong.", NULL },
 	[SET_DIAG] = { "Checks the network, drives, temperature and services, and makes a report to share when something isn't working.",
 	               "Also counts times the power went in the middle of an update or other heavy work: three means the power adapter needs a look." },
-	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu (the OSD), for MiSTer's own settings. Launch Phosphor, in its System page, comes back here.", NULL },
+	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu, the OSD, and MiSTer's own settings. Launch Phosphor in its System page to come back here.", NULL },
 	[SET_CTRL] = { "Your USB and Bluetooth controllers: map their buttons for MiSTer's menu and every core, see them work live, or put them back to automatic.",
 	               "Every change is backed up first, and can be put back from Backups there." },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
@@ -3867,7 +3867,13 @@ static void si_update(void)
 		if (i >= n) continue;
 		si_set(si.k[i], k[i]);
 		si_set(si.v[i], v[i]);
-		lv_obj_set_style_text_color(si.v[i], i == hi ? PAL.acc : PAL.text, 0);
+		lv_obj_set_style_text_color(si.v[i], PAL.text, 0);   /* (every value the same: none picked out) */
+		(void)hi;
+		/* the value one line, in what the name leaves (a long one ends in ..., never wraps) */
+		lv_text_attributes_t ta;
+		lv_text_attributes_init(&ta);
+		int kw = lv_text_get_width(k[i], strlen(k[i]), FONT_BODY, &ta), iw = lv_obj_get_width(si.pair[i]);
+		lv_obj_set_size(si.v[i], LV_MAX(S(60), iw - kw - S(16)), lv_font_get_line_height(FONT_BODY));
 	}
 	/* the texture: a piece of the real tile */
 	int sw = (row == SET_TEXTURE && SETTINGS.texture) || row == SET_ACCENT;
@@ -3879,7 +3885,7 @@ static void si_update(void)
 		lv_obj_set_style_bg_image_tiled(si.swatch, tile != NULL, 0);
 		lv_obj_set_height(si.swatch, row == SET_ACCENT ? S(14) : S(84));
 	}
-	lv_obj_set_hidden(si.rule, n == 0 && !sw);
+	lv_obj_set_hidden(si.rule, false);                 /* (every row the same: name, details, a line, then what it does) */
 	si_set(si.about, SI_TEXT[row][0] ? SI_TEXT[row][0] : "");
 	si_set(si.tip, SI_TEXT[row][1] ? SI_TEXT[row][1] : "");
 	lv_obj_set_hidden(si.tip, !SI_TEXT[row][1]);
