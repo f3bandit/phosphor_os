@@ -405,14 +405,7 @@ static void vlist_create(vlist_t *v, lv_obj_t *parent, int x, int y, int w, int 
 	v->row_h = theme_lr ? L(19) : S(46);
 	v->row_w = w - (theme_lr ? L(4) : S(10));
 	v->vis = LV_MIN(h / v->row_h, VL_MAX_ROWS);
-	if (parent == body && !theme_lr) {                  /* a card behind the list (see-through) */
-		/* the rows inside the same 14 (design) all round as on every card: a row's slot has 4 below it */
-		lv_obj_t *c = mk_box(parent, w + S(18), v->vis * v->row_h + S(24), PAL.panel, S(16));
-		lv_obj_set_pos(c, x - S(14), y - S(14));        /* (its left edge with the title's and the hints') */
-		lv_obj_add_flag(c, LV_OBJ_FLAG_USER_3);        /* (a list's card: text right above or below joins it) */
-	}
-	v->box = mk_box(parent, w, v->vis * v->row_h, PAL.bg, 0);
-	lv_obj_add_flag(v->box, LV_OBJ_FLAG_USER_1);        /* (has its own card: body_cards leaves it) */
+	v->box = mk_box(parent, w, v->vis * v->row_h, PAL.bg, 0);   /* (on its column's card: body_cards) */
 	lv_obj_set_style_bg_opa(v->box, LV_OPA_TRANSP, 0);
 	lv_obj_set_pos(v->box, x, y);
 	for (int r = 0; r < v->vis; r++) {
@@ -1124,6 +1117,7 @@ static void screen_title(const char *label, const char *title)
 		lv_obj_set_flex_flow(c, LV_FLEX_FLOW_COLUMN);
 		lv_obj_set_style_pad_row(c, S(2), 0);
 		lv_obj_set_pos(c, S(42), S(76));                  /* (ends a little above the cards under it) */
+		lv_obj_add_flag(c, LV_OBJ_FLAG_USER_1);        /* (not part of a column: body_cards) */
 		lv_obj_t *sec = mk_label(c, FONT_LABEL, PAL.dim, label);
 		lv_obj_set_style_text_letter_space(sec, S(3), 0);
 		mk_label(c, FONT_HEADING, PAL.text, title);
@@ -10763,14 +10757,15 @@ int ui_max_sleep(void)
 }
 
 static uint32_t mono_ms_ui(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (uint32_t)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u); }
-/* ---------- cards behind whatever sits straight on the background ----------
- * A screen's labels, pictures and bars that aren't on a card get one. Things close together (one above
- * the other, on the same half of the screen) share a card, as big as what's on it: a label as wide as its
- * text, a holder (a grid of thumbnails) as big as what's in it. A card stops short of the cards already
- * there (a list's, a panel, the title), so cards never sit on cards. Kept up to date as things show, hide
- * or change size. */
+/* ---------- the column cards ----------
+ * Every screen (but Home, whose tiles are cards themselves) sits on one or two cards: what's on the left half
+ * on one, what's on the right on the other. Both start and end at the same height (under the title card,
+ * above the button hints, further only if something reaches past), with the same 14 (design) padding, the
+ * same rounding and the screen's margin on the outer side; each is as wide as what's on it. A screen's own
+ * panels become part of their column (their own fill and border off), so there's never a card on a card.
+ * A few lines on one side next to a big column (a label by a row of tabs) go on the big one instead. Kept up
+ * to date as things show, hide or change size. */
 #define BC_FLAG LV_OBJ_FLAG_USER_2
-#define BC_MAX 8
 #define BC_ITEMS 64
 typedef struct { lv_area_t a; int side; } bc_item_t;
 static int bc_is_card(lv_obj_t *o)
@@ -10782,29 +10777,35 @@ static int bc_is_card(lv_obj_t *o)
 static int bc_collect(lv_obj_t *o, bc_item_t *it, int n, int depth)
 {
 	if (n >= BC_ITEMS || lv_obj_is_hidden(o) || lv_obj_has_flag(o, LV_OBJ_FLAG_USER_1) || lv_obj_has_flag(o, BC_FLAG)) return n;
-	if (bc_is_card(o)) return n;                         /* (a card or panel of its own) */
-	uint32_t nc = lv_obj_get_child_count(o);
-	if (nc && depth < 2 && !lv_obj_check_type(o, &lv_label_class) && lv_obj_get_style_bg_opa(o, 0) == LV_OPA_TRANSP &&
-	    lv_obj_get_style_border_width(o, 0) == 0) {
-		for (uint32_t i = 0; i < nc; i++) n = bc_collect(lv_obj_get_child(o, (int32_t)i), it, n, depth + 1);
-		return n;                                          /* (a holder: what's in it) */
-	}
 	lv_area_t a;
 	lv_obj_get_coords(o, &a);
 	if (lv_area_get_width(&a) <= 1 || lv_area_get_height(&a) <= 1) return n;
-	if (lv_obj_check_type(o, &lv_label_class)) {        /* a label: just its text (a label's box is often bigger) */
-		const char *t = lv_label_get_text(o);
-		if (!t || !t[0]) return n;
-		lv_point_t sz;
-		int ow = lv_area_get_width(&a);
-		lv_text_get_size(&sz, t, lv_obj_get_style_text_font(o, 0), lv_obj_get_style_text_letter_space(o, 0),
-		                 lv_obj_get_style_text_line_space(o, 0), lv_label_get_long_mode(o) == LV_LABEL_LONG_MODE_WRAP ? ow : LV_COORD_MAX, LV_TEXT_FLAG_NONE);
-		int tw = LV_MIN(sz.x, ow), th = LV_MIN(sz.y, lv_area_get_height(&a));
-		lv_text_align_t al = lv_obj_get_style_text_align(o, 0);
-		if (al == LV_TEXT_ALIGN_RIGHT) a.x1 = a.x2 - tw + 1;
-		else if (al == LV_TEXT_ALIGN_CENTER) { int m = (a.x1 + a.x2) / 2; a.x1 = m - tw / 2; a.x2 = a.x1 + tw - 1; }
-		else a.x2 = a.x1 + tw - 1;
-		a.y2 = a.y1 + th - 1;
+	if (depth == 0 && bc_is_card(o) && lv_color_eq(lv_obj_get_style_bg_color(o, 0), PAL.panel)) {
+		/* a screen's own panel: part of its column from now on */
+		lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
+		lv_obj_set_style_border_width(o, 0, 0);
+		lv_obj_set_style_shadow_width(o, 0, 0);
+	} else if (!bc_is_card(o)) {
+		uint32_t nc = lv_obj_get_child_count(o);
+		if (nc && depth < 2 && !lv_obj_check_type(o, &lv_label_class) && lv_obj_get_style_bg_opa(o, 0) == LV_OPA_TRANSP &&
+		    lv_obj_get_style_border_width(o, 0) == 0) {
+			for (uint32_t i = 0; i < nc; i++) n = bc_collect(lv_obj_get_child(o, (int32_t)i), it, n, depth + 1);
+			return n;                                      /* (a holder: what's in it) */
+		}
+		if (lv_obj_check_type(o, &lv_label_class)) {    /* a label: just its text (its box is often bigger) */
+			const char *t = lv_label_get_text(o);
+			if (!t || !t[0]) return n;
+			lv_point_t sz;
+			int ow = lv_area_get_width(&a);
+			lv_text_get_size(&sz, t, lv_obj_get_style_text_font(o, 0), lv_obj_get_style_text_letter_space(o, 0),
+			                 lv_obj_get_style_text_line_space(o, 0), lv_label_get_long_mode(o) == LV_LABEL_LONG_MODE_WRAP ? ow : LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+			int tw = LV_MIN(sz.x, ow), th = LV_MIN(sz.y, lv_area_get_height(&a));
+			lv_text_align_t al = lv_obj_get_style_text_align(o, 0);
+			if (al == LV_TEXT_ALIGN_RIGHT) a.x1 = a.x2 - tw + 1;
+			else if (al == LV_TEXT_ALIGN_CENTER) { int m = (a.x1 + a.x2) / 2; a.x1 = m - tw / 2; a.x2 = a.x1 + tw - 1; }
+			else a.x2 = a.x1 + tw - 1;
+			a.y2 = a.y1 + th - 1;
+		}
 	}
 	it[n].a = a;
 	it[n].side = (a.x1 + a.x2) / 2 >= W / 2;
@@ -10812,111 +10813,54 @@ static int bc_collect(lv_obj_t *o, bc_item_t *it, int n, int depth)
 }
 static void body_cards(void)
 {
-	if (!body || theme_lr) return;
-	bc_item_t it[BC_ITEMS];
-	lv_area_t obst[24], grow[24];
-	lv_obj_t *obo[24];
-	int n = 0, no = 0;
-	lv_obj_t *pool[BC_MAX];
-	int np = 0;
-	/* a list's card grown over the text right above or below it: its own size kept here (by object) */
-	static struct { lv_obj_t *o; lv_area_t a, set; } orig[8];
-	static lv_obj_t *orig_body_first;
-	lv_obj_t *first = lv_obj_get_child_count(body) ? lv_obj_get_child(body, 0) : NULL;
-	if (first != orig_body_first) { memset(orig, 0, sizeof(orig)); orig_body_first = first; }   /* (a new screen) */
+	if (!body) return;
+	lv_obj_t *card[2] = { NULL, NULL };
 	uint32_t nc = lv_obj_get_child_count(body);
 	for (uint32_t i = 0; i < nc; i++) {
 		lv_obj_t *o = lv_obj_get_child(body, (int32_t)i);
-		if (lv_obj_has_flag(o, BC_FLAG)) { if (np < BC_MAX) pool[np++] = o; continue; }
-		if (!lv_obj_is_hidden(o) && bc_is_card(o) && no < 24) {
-			lv_obj_get_coords(o, &obst[no]);
-			if (lv_obj_has_flag(o, LV_OBJ_FLAG_USER_3)) {
-				int f = -1, e = -1;
-				for (int k = 0; k < 8; k++) { if (orig[k].o == o) f = k; else if (!orig[k].o && e < 0) e = k; }
-				/* (seen before: its own size, unless it was made again or moved since: then what it is now) */
-				if (f >= 0 && (lv_area_is_equal(&obst[no], &orig[f].a) || lv_area_is_equal(&obst[no], &orig[f].set))) obst[no] = orig[f].a;
-				else if (f >= 0) { orig[f].a = obst[no]; orig[f].set = obst[no]; }
-				else if (e >= 0) { orig[e].o = o; orig[e].a = obst[no]; }
-			}
-			grow[no] = obst[no];
-			obo[no++] = o;
-		}
-		n = bc_collect(o, it, n, 0);
+		if (lv_obj_has_flag(o, BC_FLAG)) { int sd = (int)(intptr_t)lv_obj_get_user_data(o); if (sd == 0 || sd == 1) card[sd] = o; }
 	}
-	/* groups: same half, each within a short gap below the last */
-	int gap = S(30), used = 0;
-	int done[BC_ITEMS] = { 0 };
+	if (theme_lr || cur == SCR_HOME) { for (int k = 0; k < 2; k++) if (card[k]) lv_obj_set_hidden(card[k], true); return; }
+	bc_item_t it[BC_ITEMS];
+	int n = 0;
+	for (uint32_t i = 0; i < nc; i++) n = bc_collect(lv_obj_get_child(body, (int32_t)i), it, n, 0);
+	lv_area_t u[2];
+	int have[2] = { 0, 0 };
+	for (int i = 0; i < n; i++) {
+		int sd = it[i].side;
+		lv_area_t *b = &it[i].a;
+		if (!have[sd]) { u[sd] = *b; have[sd] = 1; continue; }
+		u[sd].x1 = LV_MIN(u[sd].x1, b->x1); u[sd].y1 = LV_MIN(u[sd].y1, b->y1);
+		u[sd].x2 = LV_MAX(u[sd].x2, b->x2); u[sd].y2 = LV_MAX(u[sd].y2, b->y2);
+	}
 	lv_area_t bc;
 	lv_obj_get_coords(body, &bc);
-	for (int i = 0; i < n; i++) {
-		if (done[i]) continue;
-		lv_area_t u = it[i].a;
-		done[i] = 1;
-		for (int grew = 1; grew;) {
-			grew = 0;
-			for (int j = 0; j < n; j++) {
-				if (done[j] || it[j].side != it[i].side) continue;
-				lv_area_t b = it[j].a;
-				if (b.y1 > u.y2 + gap || b.y2 < u.y1 - gap) continue;
-				u.x1 = LV_MIN(u.x1, b.x1); u.y1 = LV_MIN(u.y1, b.y1); u.x2 = LV_MAX(u.x2, b.x2); u.y2 = LV_MAX(u.y2, b.y2);
-				done[j] = 1; grew = 1;
-			}
+	int pad = S(14), top = bc.y1 + S(162), bottom = bc.y1 + H - S(68);
+	/* the two halves touch or cross (a wide list), or one is just a few lines: one card */
+	if (have[0] && have[1]) {
+		int small1 = lv_area_get_height(&u[1]) < (bottom - top) / 4, small0 = lv_area_get_height(&u[0]) < (bottom - top) / 4;
+		if (u[0].x2 + 2 * pad + S(12) > u[1].x1 || small1 || small0) {
+			u[0].x1 = LV_MIN(u[0].x1, u[1].x1); u[0].y1 = LV_MIN(u[0].y1, u[1].y1);
+			u[0].x2 = LV_MAX(u[0].x2, u[1].x2); u[0].y2 = LV_MAX(u[0].y2, u[1].y2);
+			have[1] = 0;
 		}
-		int pad = S(14);                                     /* (the same all round, as the other cards) */
-		lv_area_t c = { u.x1 - pad, u.y1 - pad, u.x2 + pad, u.y2 + pad };
-		{   /* text right above or below a list (a heading, a note): on the list's card, not a card of its own */
-			int joined = 0;
-			for (int k = 0; k < no && !joined; k++) {
-				if (!lv_obj_has_flag(obo[k], LV_OBJ_FLAG_USER_3)) continue;
-				lv_area_t *ob = &obst[k];
-				if (ob->x2 < u.x1 || ob->x1 > u.x2) continue;
-				if (!((u.y2 < ob->y1 && ob->y1 - u.y2 <= S(48)) || (u.y1 > ob->y2 && u.y1 - ob->y2 <= S(48)))) continue;
-				grow[k].x1 = LV_MIN(grow[k].x1, c.x1); grow[k].x2 = LV_MAX(grow[k].x2, c.x2);
-				grow[k].y1 = LV_MIN(grow[k].y1, c.y1); grow[k].y2 = LV_MAX(grow[k].y2, c.y2);
-				joined = 1;
-			}
-			if (joined) continue;
+	} else if (have[1] && !have[0]) { u[0] = u[1]; have[0] = 1; have[1] = 0; }
+	for (int k = 0; k < 2; k++) if (have[k]) { top = LV_MIN(top, u[k].y1 - pad); bottom = LV_MAX(bottom, u[k].y2 + pad); }
+	for (int k = 0; k < 2; k++) {
+		if (!have[k]) { if (card[k]) lv_obj_set_hidden(card[k], true); continue; }
+		if (!card[k]) {
+			card[k] = mk_box(body, 10, 10, PAL.panel, S(16));
+			lv_obj_add_flag(card[k], BC_FLAG);
+			lv_obj_set_user_data(card[k], (void *)(intptr_t)k);
+			lv_obj_move_background(card[k]);
 		}
-		for (int k = 0; k < no; k++) {                     /* short of the cards already there */
-			lv_area_t *ob = &obst[k];
-			if (ob->x2 < c.x1 || ob->x1 > c.x2 || ob->y2 < c.y1 || ob->y1 > c.y2) continue;
-			if (ob->y1 >= u.y2) c.y2 = LV_MAX(LV_MIN(c.y2, ob->y1 - S(8)), u.y2 + S(4));
-			else if (ob->y2 <= u.y1) c.y1 = LV_MIN(LV_MAX(c.y1, ob->y2 + S(8)), u.y1 - S(4));
-		}
-		/* the same edges as the cards next to it: the screen's margin on the outer side, and the inner side
-		   as far as a card just above or below goes (a list under a heading: one width) */
-		int margin = S(42);
-		if (it[i].side == 0) c.x1 = bc.x1 + margin; else c.x2 = bc.x1 + W - margin - 1;
-		for (int k = 0; k < no; k++) {
-			lv_area_t *ob = &obst[k];
-			if (ob->y1 > c.y2 + S(40) || ob->y2 < c.y1 - S(40)) continue;     /* (not next to it) */
-			/* as wide as that card (a little text past its edge still fits in the padding) */
-			if (it[i].side == 0 && ob->x1 <= c.x1 + S(30) && c.x2 <= ob->x2 + S(24)) c.x2 = ob->x2;
-			if (it[i].side == 1 && ob->x2 >= c.x2 - S(30) && c.x1 >= ob->x1 - S(24)) c.x1 = ob->x1;
-		}
-		if (c.y2 - c.y1 < lv_area_get_height(&u) + S(8) || used >= BC_MAX) continue;   /* (no room for one: none) */
-		lv_obj_t *card;
-		if (used < np) card = pool[used];
-		else {
-			card = mk_box(body, 10, 10, PAL.panel, S(16));
-			lv_obj_add_flag(card, BC_FLAG);
-			lv_obj_move_background(card);
-			pool[np++] = card;
-		}
-		used++;
-		int x = c.x1 - bc.x1, y = c.y1 - bc.y1, w = lv_area_get_width(&c), h = lv_area_get_height(&c);
-		if (lv_obj_get_x(card) != x || lv_obj_get_y(card) != y) lv_obj_set_pos(card, x, y);
-		if (lv_obj_get_width(card) != w || lv_obj_get_height(card) != h) lv_obj_set_size(card, w, h);
-		lv_obj_set_hidden(card, false);
-	}
-	for (int k = used; k < np; k++) lv_obj_set_hidden(pool[k], true);
-	for (int k = 0; k < no; k++) {                         /* the lists' cards, grown or back to their size */
-		if (!lv_obj_has_flag(obo[k], LV_OBJ_FLAG_USER_3)) continue;
-		int x = grow[k].x1 - bc.x1, y = grow[k].y1 - bc.y1, w = lv_area_get_width(&grow[k]), h = lv_area_get_height(&grow[k]);
-		if (lv_obj_get_x(obo[k]) != x || lv_obj_get_y(obo[k]) != y) lv_obj_set_pos(obo[k], x, y);
-		if (lv_obj_get_width(obo[k]) != w || lv_obj_get_height(obo[k]) != h) lv_obj_set_size(obo[k], w, h);
-		if (!lv_area_is_equal(&grow[k], &obst[k]) && lv_obj_get_index(obo[k]) != 0) lv_obj_move_background(obo[k]);   /* (under the text it took in) */
-		for (int j = 0; j < 8; j++) if (orig[j].o == obo[k]) orig[j].set = grow[k];
+		int x1 = k == 0 ? LV_MIN(bc.x1 + S(42), u[k].x1 - pad) : u[k].x1 - pad;
+		int x2 = k == 1 || u[k].x2 + pad > bc.x1 + W - S(42) - S(60) ? bc.x1 + W - S(42) - 1 : u[k].x2 + pad;
+		if (k == 0 && !have[1] && u[k].x2 + pad > bc.x1 + W * 3 / 4) x2 = bc.x1 + W - S(42) - 1;
+		int x = x1 - bc.x1, y = top - bc.y1, w = x2 - x1 + 1, h = bottom - top + 1;
+		if (lv_obj_get_x(card[k]) != x || lv_obj_get_y(card[k]) != y) lv_obj_set_pos(card[k], x, y);
+		if (lv_obj_get_width(card[k]) != w || lv_obj_get_height(card[k]) != h) lv_obj_set_size(card[k], w, h);
+		lv_obj_set_hidden(card[k], false);
 	}
 }
 
