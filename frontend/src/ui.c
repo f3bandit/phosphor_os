@@ -10692,10 +10692,15 @@ int ui_max_sleep(void)
 	return 500;                                               /* status bar, clock, spinners: twice a second */
 }
 
+static uint32_t mono_ms_ui(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (uint32_t)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u); }
 void ui_tick(void)
 {
 	uint32_t now = lv_tick_get();
+	/* where a slow pass went (for the log: the menu not answering the controller) */
+	static const char *tn[16]; static uint32_t tt[16]; int ti = 0; uint32_t tlast = mono_ms_ui(), tstart = tlast;
+#define TT(name) do { uint32_t t_ = mono_ms_ui(); if (ti < 16) { tn[ti] = (name); tt[ti++] = t_ - tlast; } tlast = t_; } while (0)
 	{ static uint32_t lu; if (now - lu >= 500) { lu = now; upd_poll(); } }
+	TT("upd");
 	if (us.shown) { ui_activity(); return; }        /* an update has the screen: nothing else asks phosphord */
 	if (cur == SCR_SCAN) { ui_activity(); scan_tick(now); }   /* (no screensaver over it) */
 	if (cur == SCR_ART) { ui_activity(); art_tick(now); }
@@ -10708,19 +10713,24 @@ void ui_tick(void)
 		if (now - lr >= 2000) { lr = now; ct_refresh(api_call("{\"cmd\":\"controllers\"}")); }   /* plugged in, switched on */
 	}
 	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
+	TT("screen");
 	/* the dock's drive changed; the menu button in a game; Main took the in-game screen back */
 	if (mainlink_disc_changed()) disc_refresh();
 	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_refresh(); } }
 	ui_game_events();
+	TT("maps");
 	vk_check(0);
+	TT("events");
 	vk_tick();
 	if (si_pending()) si_update();
+	TT("vk");
 	/* the alerts, once after start-up: one at a time, 1.5 s apart (each asks phosphord, and the menu waits
 	   for its answer: all four at once froze it for seconds at a busy start-up) */
 	{ static int step; static uint32_t next = 5000;
 	  if (step < 4 && now > next) { switch (step++) { case 0: guard_check(); break; case 1: power_check(); break; case 2: update_check(); break; default: sdrescue_check(); } next = now + 1500; } }
 	{ static int wall_done; if (!wall_done && now > 3000) { wall_done = 1; if (SETTINGS.wallpaper_on) bg_apply(root); } }   /* (phosphord up by now) */
 	wall_tick();
+	TT("info+alerts+wall");
 	/* Phosphor's releases on GitHub: a minute after start-up, then every 30 min, never while a game runs
 	   (phosphord asks in the background; its answer is read 20 s later) */
 	{
@@ -10733,10 +10743,13 @@ void ui_tick(void)
 		if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}"); upo_apply(r); cJSON_Delete(r); }
 	}
 	saver_tick(now);
+	TT("updcheck");
 	const char *note = input_notice();
 	if (note) toast_show(note);
 	if (now - last_status > 2000 || last_status == 0) { status_update(); last_status = now ? now : 1; }
+	TT("saver");
 	/* the controllers on the front ports, live */
+	TT("status");
 	static uint32_t last_pads;
 	if (cur == SCR_PORTS && pt.available && now - last_pads >= 100) { last_pads = now; pt_pads(); }
 	/* a card job: the map fills in as it goes */
@@ -10745,6 +10758,7 @@ void ui_tick(void)
 	if (cur == SCR_MCARDS && ms.pending && now - last_mc >= 250) { last_mc = now; ms_poll(); }
 	if (cur == SCR_PADTEST && now - last_pads >= 50) { last_pads = now; padtest_poll(); }
 	/* the library changed (a scan finished): refresh what's on screen */
+	TT("ports");
 	if (now - last_poll >= 1000 || last_poll == 0) {
 		last_poll = now ? now : 1;
 		power_requests();
@@ -10766,6 +10780,13 @@ void ui_tick(void)
 		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
 		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
 	}
+	TT("polls");
+	if (tlast - tstart >= 100) {
+		char b[300]; size_t o = 0;
+		for (int i = 0; i < ti && o < sizeof(b) - 40; i++) if (tt[i] >= 20) o += (size_t)snprintf(b + o, sizeof(b) - o, " %s %u", tn[i], tt[i]);
+		plog("slow: timers %u ms:%s (screen %d)", tlast - tstart, b, (int)cur);
+	}
+#undef TT
 }
 
 void ui_init(int w, int h)
