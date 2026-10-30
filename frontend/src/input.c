@@ -79,6 +79,7 @@ static unsigned slots_used;
  * keyboard): one press however many report it. */
 enum { CB_SELECT, CB_START };
 #define SRC_MAIN (1u << 31)
+#define MAIN_SLOT 29                        /* Main's X and Y in holders[] (press/release: a slot no device has) */
 #define SRC_LOCAL (1u << 30)                /* keyboards and controllers read here (holders[] already merges them) */
 static unsigned cb_down[2];             /* which sources hold each one */
 static long long mute_dirs_until;       /* after a screenshot: held directions' late repeats are dropped */
@@ -160,15 +161,15 @@ static void fifo_poll(void)
 
 static int main_pads;           /* Main sends the controller buttons: don't read controllers here */
 
-/* a real controller (not Main's virtual one) is read here */
-static int have_pad(void);
-
 /* buttons read from a real controller even when Main sends the rest: Select and Start (Main doesn't
    pass them on reliably) and X and Y (Main sends them as "select" and "start") */
 static int own_button(int code)
 {
 	return code == BTN_SELECT || code == BTN_START || code == BTN_NORTH || code == BTN_WEST;
 }
+
+static void press(pkey_t k, int src, unsigned now);
+static void release(pkey_t k, int src, unsigned now);
 
 void input_main_pad(const char *b, int p)
 {
@@ -178,15 +179,20 @@ void input_main_pad(const char *b, int p)
 	};
 	char w[48];
 	int centre = !strcmp(b, "select") || !strcmp(b, "start");
-	/* With a controller read here (a real one, see raw_pad), its own Select, Start, X and Y are used, not
-	   Main's (they'd come twice). Plain HID pads (BlueBridge) get all four from Main, mapped as in MiSTer. */
-	int own = (centre || !strcmp(b, "x") || !strcmp(b, "y")) && have_pad();
-	snprintf(w, sizeof(w), "%s %s%s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up", own ? " ignored: read from the controller" : "");
+	snprintf(w, sizeof(w), "%s %s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up");
 	input_watch("main", w);
-	if (own) return;
+	/* Select, Start, X and Y can come twice: from Main (every controller, as mapped in MiSTer) and read
+	   here from a controller with its own driver. Both count as one: a button held from two places is
+	   pressed once (centre_press and press go by who holds it), so nothing is dropped, whichever
+	   controllers are plugged in together, and nothing comes twice */
 	if (centre) {                                     /* the centre buttons (see centre_press) */
 		int w = b[1] == 'e' ? CB_SELECT : CB_START;
 		if (p == 1) centre_press(w, SRC_MAIN); else if (p == 0) centre_release(w, SRC_MAIN);
+		return;
+	}
+	if (!strcmp(b, "x") || !strcmp(b, "y")) {
+		pkey_t k = b[0] == 'x' ? K_X : K_Y;
+		if (p == 1) press(k, MAIN_SLOT, mono_now_ms()); else if (p == 0) release(k, MAIN_SLOT, mono_now_ms());
 		return;
 	}
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
@@ -204,11 +210,6 @@ void input_flush(void)
 /* a controller whose own Select, Start, X and Y can be read here: a real one, with a driver that names its
    buttons (xpad, hid-playstation, hid-nintendo...), not hid-generic's buttons in order */
 static int raw_pad(const dev_t_ *d) { return d->pad && !d->virt && !d->generic; }
-static int have_pad(void)
-{
-	for (int i = 0; i < ndev; i++) if (raw_pad(&devs[i])) return 1;
-	return 0;
-}
 
 static int have_virt(void)
 {
