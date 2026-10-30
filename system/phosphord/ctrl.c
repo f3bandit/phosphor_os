@@ -739,7 +739,21 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 	}
 	cJSON *o = cJSON_CreateObject();
 	if (lv) {                                      /* what's pressed now on one controller */
-		int n = pads(P, MAXDEV);
+		/* the controller test and the mapping window ask 10-16 times a second: the controllers are looked
+		   up again (every input device opened, the controller database searched, about 0.5 s on the SS1)
+		   only when the set of input devices changes or every 3 s, else the last look is used (the menu
+		   waited for each answer, and lagged) */
+		static int ln = -1;
+		static time_t lat;
+		static char lsig[512];
+		char sig[512] = "";
+		glob_t g;
+		if (!glob("/dev/input/event*", 0, NULL, &g)) {
+			for (size_t i = 0; i < g.gl_pathc; i++) { strncat(sig, g.gl_pathv[i] + 11, sizeof(sig) - strlen(sig) - 2); strcat(sig, " "); }
+			globfree(&g);
+		}
+		if (ln < 0 || time(NULL) - lat >= 3 || strcmp(sig, lsig)) { ln = pads(P, MAXDEV); lat = time(NULL); snprintf(lsig, sizeof(lsig), "%s", sig); }
+		int n = ln;
 		for (int i = 0; i < n; i++)
 			if (!strcmp(P[i].ev, lv)) { cJSON *s = live(&P[i]); if (s) cJSON_AddItemToObject(o, "live", s); }
 		map_state(o);
