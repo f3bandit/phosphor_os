@@ -3,6 +3,25 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.53
+
+### Fixed
+- **The menu no longer stalls while it waits for Phosphor's service.** The checks screens repeat (a
+  controller live in the test and the mapping window, the controller list, box art and sharing state in
+  Settings) run in the background now, so the cursor never stops for them. The music player's look at the
+  dock's drive has its own thread (it held everything up every 2 s while Phosphor's Main was busy: the
+  controller test stalled), and a controller is worked out once, when it connects, disconnects or is
+  switched on, not looked up again and again.
+- **Mapping a controller:** A, B, X and Y are asked by the name on the button the ring shows (MiSTer names
+  them as on a SNES pad, so on an Xbox-style pad MiSTer's A is the button printed B: "Press B"). The D-pad
+  lights only the direction to press, and a button held as the window opened isn't shown as mapped.
+- **The start-up checks go one at a time,** so the menu doesn't freeze for seconds after a restart.
+
+### Changed
+- **Update Phosphor:** packages are listed by their file names (instant; it used to open each one, which
+  took over 15 s with many kept), the newest 3 are kept after an update, and **Remove old update files**
+  (right under Check GitHub for updates) clears the rest, showing how much space they take.
+
 ## 0.27.52
 
 ### Fixed
