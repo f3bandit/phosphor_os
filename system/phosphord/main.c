@@ -139,6 +139,7 @@ int main(int argc, char **argv)
 	music_init();
 	remote_start();
 	storage_prime();                          /* the drive list, in the background */
+	api_prime_updates();                      /* the update packages too */
 	memcard_start();
 	wifi_start();
 	{ /* the heartbeat log (a testing aid until 0.27.30) is gone: its files go too */

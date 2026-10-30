@@ -20,7 +20,7 @@ typedef struct bgcache {
 #define BGCACHE(f, a, t) { PTHREAD_MUTEX_INITIALIZER, NULL, 0, 0, 0, (t), (f), (a) }
 
 /* a copy of the last answer (caller frees; NULL when none). Older than ttl: refreshed in the background.
-   wait: with no answer yet, work it out now (once, the first time) */
+   wait: with no answer yet, wait for it up to 1.2 s (then NULL: the next get has it) */
 char *bgcache_get(bgcache_t *c, int wait);
 /* the answer is out of date (a drive mounted, a package arrived): refreshed on the next get */
 void bgcache_stale(bgcache_t *c);
