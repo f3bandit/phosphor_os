@@ -16,10 +16,14 @@
  *    asked to look again, once. A real drive comes back (udev mounts it); an empty slot's phantom is
  *    deleted again a minute later, and that bridge isn't asked again.
  *  - still no disk after that look again: the bridge's USB port is reset once (turned off and on by its
- *    hub, as unplugging it would). After a warm restart the dock keeps its power, and its NVMe can come
- *    up stuck ("Unit Not Ready, hardware error"); a reset starts the bridge and its drive over. A drive
- *    seen before (data/nvme-seen) still missing after that: <tmp>/dock-stuck, and the TV says to unplug
- *    the SuperStation's power for 10 s.
+ *    hub, as unplugging it would).
+ *  - a drive seen before (data/nvme-seen) that's missing is gone after for longer: after a restart the
+ *    dock keeps its power, and its NVMe can come up stuck ("Unit Not Ready", sense 4/44/81), and Linux
+ *    doesn't look at it again. So while it's missing: every 30 s the bridge's driver is let go and taken
+ *    up again (USB authorized 0 then 1: Linux looks at the drive from scratch), every third time its port
+ *    is reset instead, six times (3 minutes). It stops the moment the drive is there, and never touches a
+ *    bridge with a drive on it. Still missing after that: <tmp>/dock-stuck, and the TV says to unplug the
+ *    SuperStation's power for 10 s.
  *  - the same for the WiFi card: a USB WiFi device with no network interface 2 minutes after start-up
  *    gets its port reset once.
  * Looks at /sys only, every 5 s (no USB traffic, except the one look again and the one reset).
@@ -193,13 +197,13 @@ static void klog_save(void)
 #define MAXD_RESET 8
 static char reset_done[MAXD_RESET][48];
 static int nreset;
-static int usb_port_reset(const char *usbdev, const char *why)
+static int usb_port_reset(const char *usbdev, const char *why, int again)
 {
 	char dev[48], hub[48], f[PATH_MAX];
 	snprintf(dev, sizeof(dev), "%s", usbdev);
 	char *h = strchr(dev, '#');                     /* ("<name>#<devnum>") */
 	if (h) *h = 0;
-	for (int i = 0; i < nreset; i++) if (!strcmp(reset_done[i], dev)) return 0;
+	if (!again) for (int i = 0; i < nreset; i++) if (!strcmp(reset_done[i], dev)) return 0;
 	char *dot = strrchr(dev, '.');
 	if (!dot) return 0;                             /* (a root port: not reset here) */
 	snprintf(hub, sizeof(hub), "%.*s", (int)(dot - dev), dev);
@@ -267,10 +271,150 @@ static void wifi_check(void)
 		snprintf(f, sizeof(f), "%s/%s/product", p, e->d_name);
 		if (read_str(f, prod, sizeof(prod))) continue;
 		if (strstr(prod, "802.11") || strcasestr(prod, "wlan") || strcasestr(prod, "wireless")) {
-			if (usb_port_reset(e->d_name, "the WiFi card has no network 2 minutes after start-up")) break;
+			if (usb_port_reset(e->d_name, "the WiFi card has no network 2 minutes after start-up", 0)) break;
 		}
 	}
 	if (d) closedir(d);
+}
+
+/* ---------- a drive seen before, missing: look for it again until it's there ---------- */
+
+/* the USB device's driver let go and taken up again: Linux looks at the drive from scratch (in a child:
+ * letting go of a stuck drive can take a while) */
+static void usb_rebind(const char *dev)
+{
+	char f[PATH_MAX];
+	snprintf(f, sizeof(f), "%s/bus/usb/devices/%s/authorized", sysfs(), dev);
+	if (access(f, W_OK)) { plog("storage: can't look for the dock's NVMe drive again: no %s", f); return; }
+	pid_t c = fork();
+	if (c == 0) {
+		if (fork() == 0) {
+			int fd = open(f, O_WRONLY);
+			if (fd >= 0) { (void)!write(fd, "0", 1); close(fd); }
+			sleep(2);
+			fd = open(f, O_WRONLY);
+			if (fd >= 0) { (void)!write(fd, "1", 1); close(fd); }
+		}
+		_exit(0);
+	}
+	if (c > 0) waitpid(c, NULL, 0);
+}
+
+static int removed, rescued;
+
+#define RECOVER_FIRST 20     /* s missing before the first try (phosphord itself starts ~45 s into a boot) */
+#define RECOVER_EVERY 30
+#define RECOVER_TRIES 6
+static struct { char dev[48]; long long since, next; int tries, done; } rec[4];
+static int nrec;
+
+/* the JMS583 bridges on USB ("1-1.1.1"), and whether each has a disk */
+static int bridges(char dev[][48], int *disk, int max)
+{
+	int n = 0;
+	char p[PATH_MAX];
+	snprintf(p, sizeof(p), "%s/bus/usb/devices", sysfs());
+	DIR *d = opendir(p);
+	struct dirent *e;
+	while (d && (e = readdir(d)) && n < max) {
+		if (e->d_name[0] == '.' || strchr(e->d_name, ':') || strlen(e->d_name) >= 48) continue;
+		char f[PATH_MAX + 64], v[16] = "", pr[16] = "";
+		snprintf(f, sizeof(f), "%s/%s/idVendor", p, e->d_name);
+		if (read_str(f, v, sizeof(v)) || strcmp(v, "152d")) continue;
+		snprintf(f, sizeof(f), "%s/%s/idProduct", p, e->d_name);
+		if (read_str(f, pr, sizeof(pr)) || strcmp(pr, "0583")) continue;
+		snprintf(dev[n], 48, "%s", e->d_name);
+		disk[n++] = 0;
+	}
+	if (d) closedir(d);
+	snprintf(p, sizeof(p), "%s/class/scsi_device", sysfs());
+	d = opendir(p);
+	while (d && (e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		char dv[PATH_MAX], usb[64];
+		snprintf(dv, sizeof(dv), "%s/%s/device", p, e->d_name);
+		if (!jms583_above(dv, usb, sizeof(usb)) || !has_disk(e->d_name)) continue;
+		char *h = strchr(usb, '#');
+		if (h) *h = 0;
+		for (int i = 0; i < n; i++) if (!strcmp(dev[i], usb)) disk[i] = 1;
+	}
+	if (d) closedir(d);
+	return n;
+}
+
+/* the phantom device left on a bridge given up on: deleted (it stalls the SCSI shutdown) */
+static void phantom_delete_on(const char *dev)
+{
+	char p[PATH_MAX];
+	snprintf(p, sizeof(p), "%s/class/scsi_device", sysfs());
+	DIR *d = opendir(p);
+	struct dirent *e;
+	while (d && (e = readdir(d))) {
+		if (e->d_name[0] == '.') continue;
+		char dv[PATH_MAX], usb[64], f[PATH_MAX + 16];
+		snprintf(dv, sizeof(dv), "%s/%s/device", p, e->d_name);
+		if (!jms583_above(dv, usb, sizeof(usb)) || has_disk(e->d_name)) continue;
+		char *h = strchr(usb, '#');
+		if (h) *h = 0;
+		if (strcmp(usb, dev)) continue;
+		snprintf(f, sizeof(f), "%s/state", dv);
+		write_path(f, "offline");
+		snprintf(f, sizeof(f), "%s/delete", dv);
+		write_path(f, "1");
+		removed++;
+	}
+	if (d) closedir(d);
+}
+
+/* 1 when the drive was seen before (the slow look-again here takes over from the minute's wait) */
+static int recover_tick(long long now)
+{
+	if (!seen_before()) return 0;
+	const char *ev = getenv("PHOS_RECOVER_EVERY");           /* (tests) */
+	long long first = ev ? atoll(ev) : RECOVER_FIRST, every = ev ? atoll(ev) : RECOVER_EVERY;
+	char dev[4][48];
+	int disk[4];
+	int n = bridges(dev, disk, 4);
+	for (int i = 0; i < n; i++) {
+		int r = -1;
+		for (int j = 0; j < nrec; j++) if (!strcmp(rec[j].dev, dev[i])) r = j;
+		if (disk[i]) {
+			if (r >= 0 && rec[r].tries && !rec[r].done) {
+				rescued++;
+				plog("storage: the dock's NVMe drive is back (%s, after %d %s)", dev[i], rec[r].tries, rec[r].tries == 1 ? "try" : "tries");
+			}
+			if (r >= 0) { rec[r] = rec[--nrec]; stuck_flag(0); }
+			continue;
+		}
+		if (r < 0) {
+			if (nrec >= 4) continue;
+			r = nrec++;
+			memset(&rec[r], 0, sizeof(rec[r]));
+			snprintf(rec[r].dev, sizeof(rec[r].dev), "%s", dev[i]);
+			rec[r].since = now;
+			rec[r].next = now + first;
+		}
+		if (rec[r].done || now < rec[r].next) continue;
+		if (rec[r].tries >= RECOVER_TRIES) {
+			rec[r].done = 1;
+			phantom_delete_on(dev[i]);
+			stuck_flag(1);
+			plog("storage: the dock's NVMe drive is still missing after %d tries (%llds): unplug the SuperStation's power for 10 s", rec[r].tries, now - rec[r].since);
+			continue;
+		}
+		rec[r].tries++;
+		rec[r].next = now + every;
+		if (rec[r].tries % 3 == 0) {
+			char why[96];
+			snprintf(why, sizeof(why), "the dock's NVMe drive is missing, %llds: %d of %d", now - rec[r].since, rec[r].tries, RECOVER_TRIES);
+			usb_port_reset(dev[i], why, 1);
+		}
+		else {
+			usb_rebind(dev[i]);
+			plog("storage: the dock's NVMe drive is missing (%s, %llds): looking for it again (%d of %d)", dev[i], now - rec[r].since, rec[r].tries, RECOVER_TRIES);
+		}
+	}
+	return 1;
 }
 
 /* ---------- the tick ---------- */
@@ -282,7 +426,6 @@ static char asked[MAXD][64];     /* bridges asked to look again (once each) */
 static int nasked;
 static char gave_up[MAXD][64];   /* bridges whose phantom was deleted: not asked again */
 static int ngave_up;
-static int removed, rescued;
 static char watching[64];         /* a bridge asked to look again: say when its drive is back */
 
 int phantom_removed(void) { return removed; }
@@ -312,6 +455,7 @@ void phantom_tick(void)
 	if (last && now - last < (ev ? atoi(ev) : 5)) return;
 	klog_save();
 	last = now;
+	if (recover_tick(now)) return;             /* a drive seen before: looked for until it's there */
 
 	/* devices on the bridge: a disk, or how long without one */
 	char p[PATH_MAX];
@@ -348,7 +492,7 @@ void phantom_tick(void)
 			if (in(asked, nasked, usb)) {
 				/* looked again already and still nothing: reset the bridge's port once (a stuck drive after
 				   a warm restart); after that, an empty slot. A drive seen before still missing: say so */
-				if (!usb_port_reset(usb, "the dock's NVMe drive didn't come back")) {
+				if (!usb_port_reset(usb, "the dock's NVMe drive didn't come back", 0)) {
 					add(gave_up, &ngave_up, usb);
 					if (seen_before()) { stuck_flag(1); plog("storage: the dock's NVMe drive is still missing after a port reset: unplug the SuperStation's power for 10 s"); }
 				}
