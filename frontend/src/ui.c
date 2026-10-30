@@ -7622,7 +7622,7 @@ static void up_check_done(lv_timer_t *t)
 	lv_timer_delete(t);
 	up_checking = 0;
 	if (cur != SCR_PUPD) return;
-	if (fresh && upo.newer && upo_row() && up_list.sel == 0) up_list.sel = 1;   /* onto its Download row */
+	if (fresh && upo.newer && upo_row() && up_list.sel == 0) up_list.sel = 1 + (up.old_files > 0);   /* onto its Download row (under Remove old update files when that shows) */
 	up_recount();
 	if (!ok) toast_show("No answer from Phosphor's service: try again");
 	else if (!fresh) toast_show("GitHub didn't answer in time: try again");
@@ -7640,6 +7640,15 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		return;
 	}
 	i--;
+	if (up.old_files > 0) {                           /* (right under it) the packages earlier updates left */
+		if (i == 0) {
+			snprintf(t, n, "Remove old update files");
+			if (sure) snprintf(val, vn, "Press A again to remove");
+			else snprintf(val, vn, "%d file%s, %.0f MB", up.old_files, up.old_files == 1 ? "" : "s", up.old_kb / 1024 < 1 ? 1 : up.old_kb / 1024);
+			return;
+		}
+		i--;
+	}
 	if (upo_row()) {
 		if (i == 0) {
 			int dl = !strcmp(upo.state, "working"), ready = upo.downloaded;
@@ -7660,12 +7669,6 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		return;
 	}
 	i -= up.npk;
-	if (i >= up.nrb) {                                /* (last) the packages earlier updates left behind */
-		snprintf(t, n, "Remove old update files");
-		if (sure) snprintf(val, vn, "Press A again to remove");
-		else snprintf(val, vn, "%d file%s, %.0f MB", up.old_files, up.old_files == 1 ? "" : "s", up.old_kb / 1024 < 1 ? 1 : up.old_kb / 1024);
-		return;
-	}
 	snprintf(t, n, "Roll back to Phosphor %s", up.rb_ver[i]);
 	snprintf(val, vn, "%s", sure ? "Press A again to roll back" : up.rb_date[i]);
 }
@@ -7714,6 +7717,18 @@ static void up_key(pkey_t k)
 		return;
 	}
 	s--;
+	if (up.old_files > 0) {
+		if (s == 0) {                               /* Remove old update files: not an update, nothing restarts */
+			if (up.confirm_row != up_list.sel || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = up_list.sel; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
+			up.confirm_row = -1;
+			cJSON *r = api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"clean\"}");
+			int ok = api_ok(r);
+			toast_show(ok ? "Old update files removed" : r && api_str(r, "error") ? api_str(r, "error") : "Couldn't remove them");
+			if (ok) up_apply(r); else cJSON_Delete(r);
+			return;
+		}
+		s--;
+	}
 	if (upo_row()) {
 		if (s == 0) {                               /* the newer release, into phosphor/updates (checked) */
 			if (!strcmp(upo.state, "working") || upo.downloaded) return;
@@ -7730,13 +7745,6 @@ static void up_key(pkey_t k)
 	}
 	if (up.confirm_row != up_list.sel || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = up_list.sel; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
 	up.confirm_row = -1;
-	if (s >= up.npk + up.nrb) {                       /* Remove old update files: not an update, nothing restarts */
-		cJSON *r = api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"clean\"}");
-		int ok = api_ok(r);
-		toast_show(ok ? "Old update files removed" : r && api_str(r, "error") ? api_str(r, "error") : "Couldn't remove them");
-		if (ok) up_apply(r); else cJSON_Delete(r);
-		return;
-	}
 	/* busy from here: a second press never starts a second update (the updater turns one down too) */
 	up.busy = 1;
 	cJSON *r = s < up.npk ? api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"install\",\"file\":\"%s\"}", up.pk_file[s])
