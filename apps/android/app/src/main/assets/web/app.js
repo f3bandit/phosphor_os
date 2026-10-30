@@ -1167,7 +1167,10 @@ function checksFor(d) {
    the SD card and every other drive at a restart; the repair drive itself after it */
 function rescueCard(s) {
 	const r = s.sdrescue || {}, l = s.last || {}, cands = r.candidates || [], busy = l.busy;
-	const name = (p, m, lb) => m === "NVMe drive" ? "NVMe drive" : (lb ? `USB drive "${lb}"` : "USB drive" + (m ? " · " + m : "")) + (p ? ` (${String(p).split("/").pop()})` : "");
+	const name = (p, m, lb) => m === "NVMe drive" ? "NVMe drive" : (lb ? `USB drive "${lb}"` : "USB drive" + (m ? " · " + m : "")) + (p && p !== "/media/repair" ? ` (${String(p).split("/").pop()})` : "");
+	// the games drive what isn't a repair copy goes to: the NVMe drive, else a USB drive, else the SD card
+	const gd = (s.drives || []).filter(d => d.mounted !== false), extra = r.extra || [];
+	const games = (gd.find(d => d.kind === "nvme") || gd.find(d => d.kind && d.kind !== "sd") || { path: "/media/fat" }).path;
 	const resT = x => ({ clean: "No errors", repaired: "Repaired", errors_left: "Errors left: repair it on a PC", skipped: "Not checked here" }[x] || "Not repaired");
 	const others = (r.plugged || []).filter(d => d.partuuid !== r.drive);
 	let h = "<h3>Repair all drives</h3>";
@@ -1187,7 +1190,9 @@ function rescueCard(s) {
 		h += `<p class="small">Checks and repairs the SD card${r.sd_dirty_at_boot ? " (it wasn't shut down safely)" : ""}${others.length ? ", " + others.map(d => esc(name("", d.model, d.label))).join(", ") : ""}, then the repair drive (${esc(name(me.path, me.model, me.label))}) after the restart.</p>`
 			+ (r.armed ? row("Next restart", { value: "Repairs all drives", accent: true }) : "")
 			+ `<p class="small">The TV shows the repair as it runs, then Phosphor starts again and shows how it went.</p>`
+			+ (extra.length ? `<p class="vw">Something else put files on the repair drive (${esc(extra.join(", "))}): MiSTer's downloader puts games folders on the first USB drive it finds. It should only hold repair copies.</p>` : "")
 			+ btn("Restart and repair all drives", "sr", { p: true, arg: "go", off: busy, sure: "Press again: the MiSTer restarts" })
+			+ (extra.length ? btn("Move them to the games drive", "sr", { arg: "tidy|" + games, off: busy }) : "")
 			+ (r.armed ? btn("Not at the next restart", "sr", { arg: "disarm", off: busy }) : "")
 			+ cands.filter(c => c.path !== r.drive_mount).map(c => btn("Start from the " + name(c.path, c.model) + " instead", "sr", { arg: "setup|" + c.path, off: busy })).join("")
 			+ btn("Turn off drive repair", "sr", { arg: "remove", off: busy, sure: "Press again to turn it off" });

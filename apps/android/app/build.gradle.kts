@@ -14,8 +14,8 @@ android {
         applicationId = "com.f3bandit.phosphor"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "0.9.10"
+        versionCode = 21
+        versionName = "0.9.11"
         // Phosphor's own ScreenScraper developer login: a build secret (PHOSPHOR_SS_DEVID / PHOSPHOR_SS_DEVPASSWORD
         // in the environment), never in the repo; empty without it. Scrambled (XOR with a fresh random key each
         // build, stored as hex) so it isn't plain text in the APK; SsLogin.kt unscrambles it.

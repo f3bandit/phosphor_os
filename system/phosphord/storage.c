@@ -25,7 +25,7 @@ static bgcache_t c_rescue = BGCACHE(run_rescue, NULL, 30);
 static int valid_target(const char *t)
 {
 	if (!t || !*t || strstr(t, "..")) return 0;
-	if (!strcmp(t, "/media/fat")) return 1;
+	if (!strcmp(t, "/media/fat") || !strcmp(t, "/media/repair")) return 1;   /* (the repair drive: hidden there) */
 	if (strncmp(t, "/media/usb", 10)) return 0;
 	for (const char *p = t + 10; *p; p++) if (*p < '0' || *p > '9') return 0;
 	return t[10] != 0;
@@ -49,10 +49,13 @@ int storage_start(const char *test, const char *target)
 	   disarm, remove. Setup and arm copy Linux to the drive (~400 MB) when it isn't there or is out of date */
 	if (!strncmp(test, "sdrescue-", 9)) {
 		const char *c = test + 9;
-		if (strcmp(c, "setup") && strcmp(c, "arm") && strcmp(c, "disarm") && strcmp(c, "remove")) return -2;
+		if (strcmp(c, "setup") && strcmp(c, "arm") && strcmp(c, "disarm") && strcmp(c, "remove") && strcmp(c, "tidy")) return -2;
 		argv[0] = "sdrescue"; argv[1] = c; argv[2] = NULL;
-		if (!strcmp(c, "setup")) {
-			if (!target || !valid_target(target) || !strcmp(target, "/media/fat")) return -2;
+		/* setup: the drive to make the repair drive; tidy: the games drive what isn't a repair copy goes to */
+		if (!strcmp(c, "setup") || !strcmp(c, "tidy")) {
+			if (!target || !valid_target(target)) return -2;
+			if (!strcmp(c, "setup") && !strcmp(target, "/media/fat")) return -2;
+			if (!strcmp(c, "tidy") && !strcmp(target, "/media/repair")) return -2;
 			argv[2] = target; argv[3] = NULL;
 		}
 		snprintf(last_target, sizeof(last_target), "/media/fat");

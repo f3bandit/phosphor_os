@@ -636,7 +636,10 @@ class AppSettings {
 		const r = s.sdrescue || {}, L = s.last || {};
 		const busy = L.busy, mine = (L.job || "").startsWith("sdrescue-");
 		const cands = r.candidates || [];
-		const name = (p, m, lb) => (m === "NVMe drive" ? "NVMe drive" : lb ? `USB drive "${lb}"` : "USB drive" + (m ? " · " + m : "")) + (p ? ` (${p.split("/").pop()})` : "");
+		const name = (p, m, lb) => (m === "NVMe drive" ? "NVMe drive" : lb ? `USB drive "${lb}"` : "USB drive" + (m ? " · " + m : "")) + (p && p !== "/media/repair" ? ` (${p.split("/").pop()})` : "");
+		// the games drive what isn't a repair copy goes to: the NVMe drive, else a USB drive, else the SD card
+		const gd = (s.drives || []).filter(d => d.mounted !== false);
+		const games = (gd.find(d => d.kind === "nvme") || gd.find(d => d.kind && d.kind !== "sd") || { path: "/media/fat" }).path;
 		const resT = x => ({ clean: "No errors", repaired: "Repaired", errors_left: "Errors left: repair it in this app (SD card flash & health › Card health)", skipped: "Not checked there" }[x] || "Not repaired");
 		const others = (r.plugged || []).filter(d => d.partuuid !== r.drive);
 		const why = `<p class="note">Why a USB drive, not the NVMe drive: the drive the repair runs from can't be repaired in that same pass, and the NVMe drive holds your games. Any spare USB stick works; nothing else on it changes.</p>`;
@@ -655,7 +658,9 @@ class AppSettings {
 			const me = (r.plugged || []).find(d => d.partuuid === r.drive) || { path: r.drive_mount, model: r.drive_model };
 			body = `<p class="note">Checks and repairs:</p><ul class="note" style="margin:.2rem 0 .6rem 1.2rem"><li>SD card${r.sd_dirty_at_boot ? " · wasn't shut down safely" : ""}</li>${others.map(d => `<li>${esc(name("", d.model, d.label))}</li>`).join("")}<li>${esc(name(me.path, me.model, me.label))} · after the restart, since repair mode runs from it</li></ul>${r.armed ? `<dl class="kv"><dt>Next restart</dt><dd>Repairs all drives</dd></dl>` : ""}
 				<p class="note${r.sd_dirty_at_boot ? " warn" : ""}">The TV shows the repair as it runs, then Phosphor starts again and shows how it went.</p>`;
+			if ((r.extra || []).length) body += `<p class="note warn">Something else put files on the repair drive (${esc(r.extra.join(", "))}): MiSTer's downloader puts games folders on the first USB drive it finds. It should only hold repair copies.</p>`;
 			acts = `<button class="btn primary" data-nav data-sr="go"${busy ? " disabled" : ""}>Restart and repair all drives</button>`;
+			if ((r.extra || []).length) acts += `<button class="btn" data-nav data-sr="tidy" data-t="${esc(games)}"${busy ? " disabled" : ""}>Move them to the games drive</button>`;
 			if (r.armed) acts += `<button class="btn" data-nav data-sr="disarm"${busy ? " disabled" : ""}>Not at the next restart</button>`;
 			for (const c of cands) if (c.path !== r.drive_mount) acts += `<button class="btn" data-nav data-sr="setup" data-t="${esc(c.path)}"${busy ? " disabled" : ""}>Start from the ${esc(name(c.path, c.model))} instead</button>`;
 			acts += `<button class="btn" data-nav data-sr="remove"${busy ? " disabled" : ""}>Turn off drive repair</button>`;
@@ -682,7 +687,7 @@ class AppSettings {
 			if (w === "go") twice(btn, "Press again: the SS1 restarts", () => { this.srRestart = true; toast("Getting the repair ready…"); return run("arm"); });
 			else if (w === "remove") twice(btn, "Press again to turn it off", () => run("remove"));
 			else if (w === "setup") btn.onclick = () => { toast("Copying MiSTer's Linux to the drive…"); run("setup", t); };
-			else btn.onclick = () => run(w);
+			else btn.onclick = () => run(w, t);
 		});
 	}
 	async tSD(b) {

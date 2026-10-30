@@ -37,7 +37,8 @@
  *   dashboard  [kernel]                     live numbers: temps, cpu, load, uptime, mem, disks, io, ips, net,
  *                                           procs, core; kernel: the kernel log's last lines (read only)
  *   storage    [do: check (test, target) | mount (target /dev/sdXN) | overlap-remove | overlap-undo |
- *              sdrescue-setup (target /media/usbN) | sdrescue-arm | sdrescue-disarm | sdrescue-remove]
+ *              sdrescue-setup (target /media/usbN) | sdrescue-arm | sdrescue-disarm | sdrescue-remove |
+ *              sdrescue-tidy (target /media/usbN: the games drive what isn't a repair copy goes to)]
  *                                           drives {path,kind,fs,size_kb,free_kb,model,gen,watts,mounted},
  *                                           overlap_tool [paths], last {job,target,busy,ok,at,output}
  *   controllers [live: eventN] [do: style (vidpid, style|auto) | reset (vidpid) | backup [name] |
@@ -1120,7 +1121,7 @@ static char *cmd_storage(cJSON *req)
 	if (d && *d) {
 		const char *test = !strcmp(d, "check") ? cJSON_GetStringValue(cJSON_GetObjectItem(req, "test")) : d;
 		int r = test ? storage_start(test, cJSON_GetStringValue(cJSON_GetObjectItem(req, "target"))) : -2;
-		if (r == -2) return fail("do: check (test, target), mount (target /dev/sdXN), overlap-remove, overlap-undo, sdrescue-setup (target /media/usbN), sdrescue-arm, sdrescue-disarm or sdrescue-remove");
+		if (r == -2) return fail("do: check (test, target), mount (target /dev/sdXN), overlap-remove, overlap-undo, sdrescue-setup (target /media/usbN), sdrescue-arm, sdrescue-disarm, sdrescue-remove or sdrescue-tidy (target /media/usbN)");
 		if (r == 1) return fail("A check is already running; try again when it's done");
 		if (r < 0) return fail("The storage module isn't installed");
 	}
@@ -1159,6 +1160,7 @@ static char *cmd_storage(cJSON *req)
 	cJSON *cands = cJSON_AddArrayToObject(sr, "candidates");
 	cJSON *plugged = cJSON_AddArrayToObject(sr, "plugged");      /* every drive plugged in: what a repair repairs */
 	cJSON *lastd = cJSON_AddArrayToObject(sr, "last_drives");    /* the other drives the last repair repaired */
+	cJSON *extra = cJSON_AddArrayToObject(sr, "extra");          /* on the repair drive, not a repair copy (sdrescue-tidy) */
 	save = NULL;
 	for (char *line = ss.rescue ? strtok_r(ss.rescue, "\n", &save) : NULL; line; line = strtok_r(NULL, "\n", &save)) {
 		char *eq = strchr(line, '=');
@@ -1199,7 +1201,8 @@ static char *cmd_storage(cJSON *req)
 				cJSON_AddStringToObject(x, "summary", f[5] ? f[5] : "");
 				cJSON_AddItemToArray(lastd, x);
 			}
-		} else if (!strcmp(k, "drive_present") || !strcmp(k, "armed") || !strcmp(k, "sd_dirty_at_boot") || !strcmp(k, "fresh") || !strcmp(k, "drive_nvme"))
+		} else if (!strcmp(k, "drive_extra")) cJSON_AddItemToArray(extra, cJSON_CreateString(v));
+		else if (!strcmp(k, "drive_present") || !strcmp(k, "armed") || !strcmp(k, "sd_dirty_at_boot") || !strcmp(k, "fresh") || !strcmp(k, "drive_nvme") || !strcmp(k, "drive_hidden"))
 			cJSON_AddBoolToObject(sr, k, !strcmp(v, "1"));
 		else if (!cJSON_GetObjectItem(sr, k)) cJSON_AddStringToObject(sr, k, v);
 	}
