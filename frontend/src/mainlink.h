@@ -36,6 +36,7 @@ int mainlink_ingame_text(void);        /* the in-game menu as OSD text (CRT mode
 int mainlink_osdmenu(int sel, const char *title, const char *text);
 int mainlink_has_ingame(void);
 int mainlink_in_game(void);           /* a game core is running */
+int mainlink_bt_pair(void);           /* 1 once: the SS1's Bluetooth button was held (open pairing) */
 int mainlink_disc_changed(void);      /* 1 once after the drive changed (ask phosphord "disc") */
 int mainlink_menu_button(void);       /* 1 once: the menu button was pressed briefly in a game */
 int mainlink_ingame_ended(void);      /* 1 once: Main took the in-game screen back */
