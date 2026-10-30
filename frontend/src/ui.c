@@ -7051,14 +7051,18 @@ static void show_ctrl(void)
 	ct_list.count = 0;
 	ct.mode = 0;
 	ct.confirm_row = -1;
+	/* the right side: the drawing's name at the top, the drawing as big as the side allows and in its
+	   middle, what the mapping does at the bottom of the card (the card ends 68 above the screen's bottom) */
+	int rx = SX(740), rw = W - S(56) - rx, ph = rw * 345 / 600;
 	ct.style_lab = mk_label(body, FONT_SMALL, PAL.text, "");
-	lv_obj_set_pos(ct.style_lab, SX(752), S(186));
-	ct.pv = padview_create(body, SX(752), S(214), SW(472));
+	lv_obj_set_pos(ct.style_lab, rx, S(176));
 	ct.desc = mk_label(body, FONT_SMALL, PAL.dim, "");
-	LR_HIDE(ct.desc); LR_HIDE(ct.style_lab); LR_HIDE(padview_obj(ct.pv));
-	lv_obj_set_width(ct.desc, SW(472));
+	lv_obj_set_width(ct.desc, rw);
 	lv_label_set_long_mode(ct.desc, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_pos(ct.desc, SX(752), S(500));
+	lv_obj_align(ct.desc, LV_ALIGN_BOTTOM_LEFT, rx, -S(82));
+	int top = S(206), bot = H - S(82) - S(72);            /* (room for three lines of it) */
+	ct.pv = padview_create(body, rx, top + LV_MAX(0, (bot - top - ph) / 2), rw);
+	LR_HIDE(ct.desc); LR_HIDE(ct.style_lab); LR_HIDE(padview_obj(ct.pv));
 	ct.empty = mk_label(body, FONT_BODY, PAL.dim, "No USB or Bluetooth controller found. Plug one in or switch it on: it shows up here by itself.");
 	lv_obj_set_width(ct.empty, SW(660));
 	lv_label_set_long_mode(ct.empty, LV_LABEL_LONG_MODE_WRAP);
