@@ -12,6 +12,7 @@
  * Remote keys (Phosphor Link's press) come in on a FIFO, and everything is noted in the input watch
  * log in RAM (input_watch). A key held from several places still counts as one press, and a second press of the
  * same key within a few milliseconds of letting go (some pads bounce) is dropped. */
+#define _GNU_SOURCE                                         /* strcasestr */
 #include "input.h"
 #include "log.h"
 #include "mainlink.h"
@@ -43,6 +44,10 @@ typedef struct {
 	int slot;            /* source bit, stable while the device is there */
 	int virt;            /* MiSTer Main's virtual input (controllers as keys) */
 	int pad;             /* a controller (has gamepad or joystick buttons) */
+	char drv[24];        /* Linux's driver for it */
+	int xpad;            /* on Linux's Xbox driver: its BTN_X (BTN_NORTH's number) is the left button, BTN_Y the top */
+	int layout;          /* what's printed on its face buttons: LAYOUT_XBOX, _NINTENDO or _PS (see pad_layout) */
+	unsigned short vid, pid;
 	int generic;         /* on Linux's plain HID driver (hid-generic): its button codes are just its buttons in
 	                        order (BTN_TL2 can be its Select), so only Main's mapping says what they are */
 } dev_t_;
@@ -161,15 +166,94 @@ static void fifo_poll(void)
 
 static int main_pads;           /* Main sends the controller buttons: don't read controllers here */
 
-/* buttons read from a real controller even when Main sends the rest: Select and Start (Main doesn't
-   pass them on reliably) and X and Y (Main sends them as "select" and "start") */
+/* buttons read from a controller with its own driver even when Main sends the rest: Select and Start
+   (Main doesn't pass them on reliably) and the four face buttons, so the menu's A, B, X and Y are the ones
+   printed on that controller, whatever its MiSTer mapping (mapping it, or mappings reset to defaults,
+   never moves them) */
 static int own_button(int code)
 {
-	return code == BTN_SELECT || code == BTN_START || code == BTN_NORTH || code == BTN_WEST;
+	return code == BTN_SELECT || code == BTN_START || code == BTN_SOUTH || code == BTN_EAST ||
+	       code == BTN_NORTH || code == BTN_WEST;
 }
+
+/* The controller's layout: what's printed where. Found once, when it's connected, from the controller
+ * itself (never from its mapping): the drawing picked for it in Settings > Controllers if one was (by its
+ * USB ID, phosphord's controller-styles.txt), else Linux's driver for it, then its name; a plain
+ * controller Linux can't tell apart is taken as Xbox (most are).
+ *   Xbox, PlayStation: A (Cross) bottom, B (Circle) right, X (Square) left, Y (Triangle) top
+ *   Nintendo:          A right, B bottom, X top, Y left */
+enum { LAYOUT_XBOX, LAYOUT_NINTENDO, LAYOUT_PS };
+#define STYLES_FILE "/media/fat/phosphor/data/controller-styles.txt"
+static int layout_of_style(const char *st)
+{
+	static const char *const NIN[] = { "switchpro", "snes", "nes", "n64", "gamecube", "pce", NULL };
+	for (int i = 0; NIN[i]; i++) if (!strcmp(st, NIN[i])) return LAYOUT_NINTENDO;
+	if (!strcmp(st, "dualshock") || !strcmp(st, "psx")) return LAYOUT_PS;
+	return LAYOUT_XBOX;
+}
+static int layout_set_for(unsigned short vid, unsigned short pid)
+{
+	FILE *f = fopen(STYLES_FILE, "r");
+	if (!f) return -1;
+	char l[96], want[16];
+	int r = -1;
+	snprintf(want, sizeof(want), "%04x:%04x ", vid, pid);
+	while (fgets(l, sizeof(l), f)) {
+		if (strncasecmp(l, want, 10)) continue;
+		l[strcspn(l, "\r\n")] = 0;
+		r = layout_of_style(l + 10);
+	}
+	fclose(f);
+	return r;
+}
+static int pad_layout(const char *drv, const char *name, unsigned short vid, unsigned short pid)
+{
+	int set = layout_set_for(vid, pid);
+	if (set >= 0) return set;
+	if (!strcmp(drv, "hid-nintendo")) return LAYOUT_NINTENDO;
+	if (!strcmp(drv, "hid-playstation") || !strcmp(drv, "hid-sony")) return LAYOUT_PS;
+	if (!strcmp(drv, "xpad")) return LAYOUT_XBOX;
+	static const char *const NIN[] = { "nintendo", "switch", "joy-con", "joycon", "pro controller", "snes", "famicom", "n64", "gamecube" };
+	static const char *const PS[] = { "playstation", "dualshock", "dualsense", "sony", "ps3", "ps4", "ps5" };
+	for (size_t i = 0; i < sizeof(NIN) / sizeof(NIN[0]); i++) if (strcasestr(name, NIN[i])) return LAYOUT_NINTENDO;
+	for (size_t i = 0; i < sizeof(PS) / sizeof(PS[0]); i++) if (strcasestr(name, PS[i])) return LAYOUT_PS;
+	if (vid == 0x057e) return LAYOUT_NINTENDO;
+	if (vid == 0x054c) return LAYOUT_PS;
+	return LAYOUT_XBOX;
+}
+
+/* a face button's code to the menu's A, B, X or Y, by where it sits and what that controller prints there */
+static pkey_t face_key(const dev_t_ *d, int code)
+{
+	enum { S, E, N, W } at;
+	if (code == BTN_SOUTH) at = S;
+	else if (code == BTN_EAST) at = E;
+	else if (code == BTN_NORTH) at = d->xpad ? W : N;      /* (xpad names Xbox's X BTN_X, BTN_NORTH's number) */
+	else if (code == BTN_WEST) at = d->xpad ? N : W;
+	else return KEY_NONE_;
+	static const pkey_t L[3][4] = {
+		[LAYOUT_XBOX]     = { [S] = K_A, [E] = K_B, [W] = K_X, [N] = K_Y },
+		[LAYOUT_NINTENDO] = { [E] = K_A, [S] = K_B, [N] = K_X, [W] = K_Y },
+		[LAYOUT_PS]       = { [S] = K_A, [E] = K_B, [W] = K_X, [N] = K_Y },
+	};
+	return L[d->layout][at];
+}
+
+/* Main's A, B, X and Y for a controller read here too come twice (Main's, as mapped in MiSTer, and this
+ * controller's own, as printed). Main's copy comes after, anything up to half a second later (more when
+ * Main is busy): every press of a face button here owes one of Main's, which is dropped when it comes
+ * (within FACE_OWED_MS). Main's that nothing here owes are held back FACE_WINDOW_MS in case the press
+ * here is just behind, then sent: plain HID controllers (only Main knows their buttons) work beside them */
+#define FACE_WINDOW_MS 120
+#define FACE_OWED_MS 1500
+static int face_owed;                   /* Main's copies still to come, for presses read here */
+static long long raw_face_at;           /* a controller read here last pressed a face button */
+static pkey_t main_face_k;              /* Main's face button waiting, and since when */
+static long long main_face_at;
 
 static void press(pkey_t k, int src, unsigned now);
 static void release(pkey_t k, int src, unsigned now);
+static int have_raw_pad(void);
 
 void input_main_pad(const char *b, int p)
 {
@@ -190,9 +274,15 @@ void input_main_pad(const char *b, int p)
 		if (p == 1) centre_press(w, SRC_MAIN); else if (p == 0) centre_release(w, SRC_MAIN);
 		return;
 	}
-	if (!strcmp(b, "x") || !strcmp(b, "y")) {
-		pkey_t k = b[0] == 'x' ? K_X : K_Y;
-		if (p == 1) press(k, MAIN_SLOT, mono_now_ms()); else if (p == 0) release(k, MAIN_SLOT, mono_now_ms());
+	if (!strcmp(b, "a") || !strcmp(b, "b") || !strcmp(b, "x") || !strcmp(b, "y")) {
+		pkey_t k = b[0] == 'a' ? K_A : b[0] == 'b' ? K_B : b[0] == 'x' ? K_X : K_Y;
+		if (p != 1) return;                          /* (taps: the menu only acts on the press) */
+		if (!have_raw_pad()) { input_push(k); return; }
+		long long now = mono_now_ms();
+		if (face_owed && now - raw_face_at > FACE_OWED_MS) face_owed = 0;  /* (Main didn't send those) */
+		if (face_owed) { face_owed--; return; }      /* that controller's own, already counted */
+		if (main_face_k != KEY_NONE_) input_push(main_face_k);
+		main_face_k = k; main_face_at = now;         /* sent in input_poll unless a controller's comes */
 		return;
 	}
 	if (!p) return;                       /* a release: nothing to do (Main repeats held directions) */
@@ -210,6 +300,11 @@ void input_flush(void)
 /* a controller whose own Select, Start, X and Y can be read here: a real one, with a driver that names its
    buttons (xpad, hid-playstation, hid-nintendo...), not hid-generic's buttons in order */
 static int raw_pad(const dev_t_ *d) { return d->pad && !d->virt && !d->generic; }
+static int have_raw_pad(void)
+{
+	for (int i = 0; i < ndev; i++) if (raw_pad(&devs[i])) return 1;
+	return 0;
+}
 
 static int have_virt(void)
 {
@@ -272,9 +367,23 @@ static void open_dev(const char *name)
 	char sp[160], drv[256] = "";
 	snprintf(sp, sizeof(sp), "/sys/class/input/%s/device/device/driver", name);
 	ssize_t dl = readlink(sp, drv, sizeof(drv) - 1);
-	if (dl > 0) { drv[dl] = 0; d->generic = !strcmp(strrchr(drv, '/') ? strrchr(drv, '/') + 1 : drv, "hid-generic"); }
-	plog("input: %s (%s)", name, dname);
+	const char *dn = "";
+	if (dl > 0) { drv[dl] = 0; dn = strrchr(drv, '/') ? strrchr(drv, '/') + 1 : drv; }
+	d->generic = !strcmp(dn, "hid-generic");
+	d->xpad = !strcmp(dn, "xpad");
+	snprintf(d->drv, sizeof(d->drv), "%s", dn);
+	struct input_id id;
+	if (ioctl(fd, EVIOCGID, &id) == 0) { d->vid = id.vendor; d->pid = id.product; }
+	d->layout = pad_layout(dn, dname, d->vid, d->pid);
+	plog("input: %s (%s, %s, %04x:%04x%s)", name, dname, dn[0] ? dn : "?", d->vid, d->pid,
+	     d->pad && !d->virt ? (d->layout == LAYOUT_NINTENDO ? ", Nintendo layout" : d->layout == LAYOUT_PS ? ", PlayStation layout" : ", Xbox layout") : "");
 	if (started && newsworthy(d->label)) snprintf(notice, sizeof(notice), "Connected: %.80s", d->label);
+}
+
+/* the drawing was changed in Settings > Controllers: the layouts again */
+void input_relayout(void)
+{
+	for (int i = 0; i < ndev; i++) devs[i].layout = pad_layout(devs[i].drv, devs[i].label, devs[i].vid, devs[i].pid);
 }
 
 static void scan_devs(void)
@@ -396,7 +505,7 @@ int input_pollfds(struct pollfd *p, int max)
 	return n;
 }
 
-int input_held(void) { return held != KEY_NONE_ || qh != qt; }
+int input_held(void) { return held != KEY_NONE_ || qh != qt || main_face_k != KEY_NONE_; }
 
 pkey_t input_poll(unsigned now)
 {
@@ -416,6 +525,7 @@ pkey_t input_poll(unsigned now)
 		}
 	}
 	fifo_poll();
+	if (main_face_k != KEY_NONE_ && mono_now_ms() - main_face_at > FACE_WINDOW_MS) { input_push(main_face_k); main_face_k = KEY_NONE_; }
 	for (int i = 0; i < ndev; i++) {
 		/* many events per read: a controller polled at 1000 Hz with a jittery stick (8BitDo Ultimate 2 in
 		   its wired PC mode) sends ~4000 a second, and one read() each kept the shell busy (menu lag) */
@@ -438,9 +548,13 @@ pkey_t input_poll(unsigned now)
 						if (ev.value == 1) centre_press(w, 1u << devs[i].slot);
 						else if (ev.value == 0) centre_release(w, 1u << devs[i].slot);
 					} else {
-						pkey_t k = map_key(ev.code);
-						if (ev.value == 1) press(k, devs[i].slot, now);
-						else if (ev.value == 0) release(k, devs[i].slot, now);
+						pkey_t k = face_key(&devs[i], ev.code);
+						if (ev.value == 1) {
+							raw_face_at = mono_now_ms();
+							if (main_face_k != KEY_NONE_ && raw_face_at - main_face_at <= FACE_WINDOW_MS) main_face_k = KEY_NONE_;   /* Main's copy of it, early */
+							else if (face_owed < 8) face_owed++;    /* Main's copy is still to come */
+							press(k, devs[i].slot, now);
+						} else if (ev.value == 0) release(k, devs[i].slot, now);
 					}
 				}
 				continue;
@@ -451,6 +565,7 @@ pkey_t input_poll(unsigned now)
 				if (d->virt) k = map_virt(ev.code);
 				else if (d->pad && virt_feeds() && ev.code >= BTN_MISC && ev.code != BTN_START &&
 				         ev.code != BTN_MODE && ev.code != BTN_SELECT) k = KEY_NONE_;  /* Main passes these on */
+				else if (d->pad && own_button(ev.code) && ev.code != BTN_SELECT && ev.code != BTN_START) k = face_key(d, ev.code);
 				else k = map_key(ev.code);
 				if (k == KEY_NONE_) continue;
 				if (!d->pad && !d->virt) push_app = 3;         /* (a keyboard) */

@@ -31,6 +31,8 @@ int input_not_controller(void);
 void input_push(pkey_t k);
 /* drop the presses waiting (after something slow, e.g. a screenshot, held directions piled up) */
 void input_flush(void);
+/* a controller's drawing was changed: which of its buttons are A, B, X and Y again */
+void input_relayout(void);
 /* a controller button from MiSTer Main ("up", "a", "start"...; p 1 pressed, 2 held/repeat, 0 released).
  * From the first one on, controllers are only taken from Main, like MiSTer's own menu */
 void input_main_pad(const char *button, int p);
