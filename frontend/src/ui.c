@@ -1022,7 +1022,32 @@ static sys_item_t sys_items[64];
 static int nsys;
 static category_t sys_cat;
 static vlist_t sys_list;
-static lv_obj_t *sys_detail_name, *sys_detail_count, *sys_detail_core, *sys_detail_ic, *sys_detail_art;
+static lv_obj_t *sys_detail_name, *sys_detail_count, *sys_detail_core, *sys_detail_ic, *sys_detail_art, *sys_detail_about, *sys_detail_fact;
+
+/* a few lines about each system for the Library's side: who made it, when, how many sold, and one thing
+   it's remembered for (sales: the makers' lifetime figures as usually cited) */
+static const struct { const char *id, *about, *fact; } SYS_ABOUT[] = {
+	{ "PSX", "Sony  \xC2\xB7  1994  \xC2\xB7  102 million sold", "The first console to sell over 100 million. CD games made 3D worlds and full-motion video the norm." },
+	{ "Saturn", "Sega  \xC2\xB7  1994  \xC2\xB7  9 million sold", "Two Hitachi SH-2 processors. A hit in Japan, and home to some of the best 2D arcade ports." },
+	{ "MegaCD", "Sega  \xC2\xB7  1991  \xC2\xB7  2.2 million sold", "A CD drive under the Mega Drive: CD-quality music, full-motion video and Sonic CD." },
+	{ "TGFX16CD", "NEC / Hudson  \xC2\xB7  1988", "The first CD-ROM drive for a home console, two years before anyone else's." },
+	{ "NES", "Nintendo  \xC2\xB7  1983  \xC2\xB7  62 million sold", "The Famicom brought home video games back in North America after the 1983 crash." },
+	{ "SNES", "Nintendo  \xC2\xB7  1990  \xC2\xB7  49 million sold", "Mode 7 scaling and rotation, and a library from Super Mario World to Chrono Trigger." },
+	{ "Genesis", "Sega  \xC2\xB7  1988  \xC2\xB7  31 million sold", "Sega's 16-bit console: blast processing, Sonic, and the console war with Nintendo." },
+	{ "N64", "Nintendo  \xC2\xB7  1996  \xC2\xB7  33 million sold", "Its analog stick set how 3D games are played, starting with Super Mario 64." },
+	{ "SMS", "Sega  \xC2\xB7  1985  \xC2\xB7  13 million sold", "Second to the NES in America, but a long-time favourite in Europe and Brazil." },
+	{ "TGFX16", "NEC / Hudson  \xC2\xB7  1987  \xC2\xB7  10 million sold", "Games on HuCards the size of a credit card. Known in America as the TurboGrafx-16." },
+	{ "ATARI7800", "Atari  \xC2\xB7  2600: 1977, 7800: 1986", "The 2600 (30 million sold) made cartridges the norm. The 7800 plays its games too." },
+	{ "GAMEBOY", "Nintendo  \xC2\xB7  1989  \xC2\xB7  119 million sold", "Game Boy and Game Boy Color together, with Tetris and Pok\xC3\xA9mon among their best sellers." },
+	{ "GBA", "Nintendo  \xC2\xB7  2001  \xC2\xB7  82 million sold", "A pocket SNES and then some, and it plays Game Boy and Game Boy Color games too." },
+	{ "GameGear", "Sega  \xC2\xB7  1990  \xC2\xB7  11 million sold", "A backlit colour screen against the Game Boy, with a Master System inside." },
+	{ "WonderSwan", "Bandai  \xC2\xB7  1999  \xC2\xB7  3.5 million sold", "Japan only. Designed with Gunpei Yokoi, the creator of the Game Boy." },
+	{ "AtariLynx", "Atari  \xC2\xB7  1989", "The first handheld with a colour screen, designed by Epyx. It can be turned upside down for left-handed play." },
+	{ "Arcade", "Arcade boards", "The arcade games themselves, each core rebuilding the original board in the FPGA." },
+	{ "C64", "Commodore  \xC2\xB7  1982  \xC2\xB7  12 to 17 million sold", "The best-selling single computer model ever, and its SID chip is still loved for its music." },
+	{ "MSX", "Microsoft / ASCII  \xC2\xB7  1983", "A standard built by Sony, Panasonic, Philips and many more. Metal Gear started on the MSX2." },
+	{ "Atari800", "Atari  \xC2\xB7  1979", "Designed by the team behind the 2600, with graphics chips that later inspired the Amiga. Star Raiders." },
+};
 static char sys_art_src[720];
 
 static void load_systems(category_t c)
@@ -1087,6 +1112,9 @@ static void sys_detail(void)
 	static const char *const hints_drive_off_copy[] = { "X", "Save a copy", "Y", "Eject", "B", "Back", NULL };
 	footer_set(!s->drive ? hints_sys : dk.playable ? (dk.copyable ? hints_drive_copy : hints_drive)
 	                                               : (dk.copyable ? hints_drive_off_copy : hints_drive_off));
+	if (sys_detail_about) lv_obj_set_hidden(sys_detail_about, true);
+	if (sys_detail_fact) lv_obj_set_hidden(sys_detail_fact, true);
+	lv_obj_set_hidden(sys_detail_core, false);
 	if (s->drive) {
 		lv_label_set_text(sys_detail_name, disc_line());
 		char t[160];
@@ -1105,6 +1133,12 @@ static void sys_detail(void)
 	snprintf(t, sizeof(t), "%d game%s", s->games, s->games == 1 ? "" : "s");
 	lv_label_set_text(sys_detail_count, t);
 	lv_label_set_text(sys_detail_core, s->core ? "" : "Core not installed");
+	lv_obj_set_hidden(sys_detail_core, s->core);
+	const char *ab = "", *fa = "";
+	for (size_t i = 0; i < sizeof(SYS_ABOUT) / sizeof(SYS_ABOUT[0]); i++)
+		if (!strcmp(SYS_ABOUT[i].id, s->id)) { ab = SYS_ABOUT[i].about; fa = SYS_ABOUT[i].fact; }
+	if (sys_detail_about) { lv_label_set_text(sys_detail_about, ab); lv_obj_set_hidden(sys_detail_about, !ab[0]); }
+	if (sys_detail_fact) { lv_label_set_text(sys_detail_fact, fa); lv_obj_set_hidden(sys_detail_fact, !fa[0]); }
 }
 
 static void screen_title(const char *label, const char *title)
@@ -1147,28 +1181,45 @@ static void show_systems(category_t c)
 	sys_list.sel = 0;
 	sys_list.top = 0;
 
-	lv_obj_t *panel = mk_box(body, SW(470), S(300), PAL.panel, S(16));
-	lv_obj_set_style_border_width(panel, LV_MAX(1, S(1)), 0);
-	lv_obj_set_style_border_color(panel, PAL.line, 0);
-	lv_obj_set_pos(panel, W - S(56) - SW(470), S(176));
+	/* the side: the system's icon (or the disc's box art), name and games, big and in the middle of the
+	   room right of the list (the screen's card under it: body_cards) */
+	int px = S(56) + SW(640) + S(24), pw = W - S(56) - px;
+	lv_obj_t *panel = mk_box(body, pw, H - S(82) - S(176), PAL.bg, 0);
+	lv_obj_set_style_bg_opa(panel, LV_OPA_TRANSP, 0);
+	lv_obj_set_pos(panel, px, S(176));
+	lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_flex_align(panel, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_row(panel, S(10), 0);
 	if (theme_lr) lv_obj_set_hidden(panel, true);      /* 240p: the list says it (the counts on the right) */
-	lv_obj_t *ic = icon_create(panel, CAT_ICON[c], S(64));
+	lv_obj_t *ic = icon_create(panel, CAT_ICON[c], S(128));
 	lv_obj_set_style_text_color(ic, PAL.acc, 0);
-	lv_obj_set_pos(ic, S(28), S(28));
+	lv_obj_set_style_margin_bottom(ic, S(12), 0);
 	sys_detail_ic = ic;
 	sys_detail_art = lv_image_create(panel);           /* the disc's box art, in the icon's place */
-	lv_obj_set_size(sys_detail_art, S(72), S(72));
+	lv_obj_set_size(sys_detail_art, S(180), S(180));
 	lv_image_set_inner_align(sys_detail_art, LV_IMAGE_ALIGN_CONTAIN);
-	lv_obj_set_pos(sys_detail_art, S(28), S(24));
 	lv_obj_set_hidden(sys_detail_art, true);
-	sys_detail_name = mk_label(panel, FONT_TITLE, PAL.text, "");
-	lv_obj_set_pos(sys_detail_name, S(28), S(116));
-	sys_detail_count = mk_label(panel, FONT_BODY, PAL.dim, "");
+	sys_detail_name = mk_label(panel, FONT_HEADING, PAL.text, "");
+	lv_obj_set_width(sys_detail_name, pw - S(24));
+	lv_obj_set_style_text_align(sys_detail_name, LV_TEXT_ALIGN_CENTER, 0);
+	lv_label_set_long_mode(sys_detail_name, LV_LABEL_LONG_MODE_WRAP);
+	sys_detail_count = mk_label(panel, FONT_NAME, PAL.dim, "");
 	lv_label_set_long_mode(sys_detail_count, LV_LABEL_LONG_MODE_WRAP);
-	lv_obj_set_width(sys_detail_count, S(414));
-	lv_obj_set_pos(sys_detail_count, S(28), S(152));
-	sys_detail_core = mk_label(panel, FONT_SMALL, PAL.acc, "");
-	lv_obj_set_pos(sys_detail_core, S(28), S(184));
+	lv_obj_set_width(sys_detail_count, pw - S(24));
+	lv_obj_set_style_text_align(sys_detail_count, LV_TEXT_ALIGN_CENTER, 0);
+	sys_detail_core = mk_label(panel, FONT_BODY, PAL.acc, "");
+	lv_obj_set_style_text_align(sys_detail_core, LV_TEXT_ALIGN_CENTER, 0);
+	sys_detail_about = mk_label(panel, FONT_BODY, PAL.acc, "");
+	lv_obj_set_width(sys_detail_about, pw - S(24));
+	lv_obj_set_style_text_align(sys_detail_about, LV_TEXT_ALIGN_CENTER, 0);
+	lv_label_set_long_mode(sys_detail_about, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_style_margin_top(sys_detail_about, S(8), 0);
+	sys_detail_fact = mk_label(panel, FONT_BODY, PAL.dim, "");
+	lv_obj_set_width(sys_detail_fact, LV_MIN(pw - S(24), S(420)));
+	lv_obj_set_style_text_align(sys_detail_fact, LV_TEXT_ALIGN_CENTER, 0);
+	lv_label_set_long_mode(sys_detail_fact, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_hidden(sys_detail_about, true);
+	lv_obj_set_hidden(sys_detail_fact, true);
 
 	vlist_refresh(&sys_list);
 	sys_detail();
@@ -10899,7 +10950,7 @@ static void body_cards(void)
 	if (have[0] && have[1]) {
 		int small1 = lv_area_get_height(&u[1]) < (bottom - top) / 4, small0 = lv_area_get_height(&u[0]) < (bottom - top) / 4;
 		/* (the controller test: its info and its drawing on one big card) */
-		if (u[0].x2 + 2 * pad + S(12) > u[1].x1 || small1 || small0 || cur == SCR_CTEST) {
+		if (u[0].x2 + 2 * pad + S(12) > u[1].x1 || small1 || small0 || cur == SCR_CTEST || cur == SCR_GAMES || cur == SCR_SYSTEMS) {
 			u[0].x1 = LV_MIN(u[0].x1, u[1].x1); u[0].y1 = LV_MIN(u[0].y1, u[1].y1);
 			u[0].x2 = LV_MAX(u[0].x2, u[1].x2); u[0].y2 = LV_MAX(u[0].y2, u[1].y2);
 			have[1] = 0;
