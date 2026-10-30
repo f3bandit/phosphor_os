@@ -460,7 +460,7 @@ func formatPorts(ps []PortInfo) string {
 // sshReboot: the reboot tool when the debug port isn't answering. Reboots over SSH and waits for SSH to
 // answer again, so the next call doesn't land on a MiSTer that's half-way through booting.
 func (m *mcpServer) sshReboot(l Link, timeout time.Duration, why error) (string, bool, bool) {
-	_, _, _ = l.Run("sync; reboot", 5*time.Second) // the connection drops as it goes down
+	_, _, _ = l.Run(safeReboot, 35*time.Second) // the connection drops as it goes down
 	m.sess.drop()
 	time.Sleep(20 * time.Second)
 	end := time.Now().Add(timeout)

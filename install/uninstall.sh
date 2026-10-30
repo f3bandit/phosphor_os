@@ -39,6 +39,17 @@ if [ -f "$RULES/60-jms583-phantom.rules.off" ] && [ ! -e "$RULES/60-jms583-phant
 	mv "$RULES/60-jms583-phantom.rules.off" "$RULES/60-jms583-phantom.rules" && echo "the SS1's dock rule put back"
 	[ "$ro" = 1 ] && mount -o remount,ro / 2>/dev/null
 fi
+# the repair drive's hook (phosphor.sh repair-hook): off; a repair drive at /media/repair stays there
+# until it's plugged in again (MiSTer mounts it at a /media/usbN then)
+UMD="${PHOS_USBMOUNT:-/etc/usbmount}"
+if [ -f "$UMD/mount.d/00-phosphor-repair" ] || [ -f "$RULES/99-phosphor-repair.rules" ]; then
+	ro=0
+	[ -z "${PHOS_UDEV_RULES:-}" ] && grep -q " / [^ ]* ro[, ]" /proc/mounts && ro=1 && mount -o remount,rw / 2>/dev/null
+	rm -f "$UMD/mount.d/00-phosphor-repair" "$UMD/phosphor-repair-remove" "$RULES/99-phosphor-repair.rules" && echo "the repair drive's hook removed"
+	[ "$ro" = 1 ] && mount -o remount,ro / 2>/dev/null
+	[ -z "${PHOS_UDEV_RULES:-}" ] && udevadm control --reload > /dev/null 2>&1
+	if grep -q " /media/repair " /proc/mounts; then mount -o remount,rw /media/repair 2>/dev/null; fi
+fi
 ENTRY="$FAT/Scripts/phosphor.sh"
 if [ -f "$ENTRY" ] && grep -q "^# phosphor: menu entry" "$ENTRY"; then rm -f "$ENTRY" && echo "menu entry removed"; fi
 if [ -f "$STARTUP" ] && grep -q "^# $TAG: BEGIN" "$STARTUP"; then

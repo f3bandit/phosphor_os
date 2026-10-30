@@ -118,9 +118,10 @@ if [ "$BOOT" != 0 ]; then
 	awk -v t="$TAG" '$0 == "# " t ": BEGIN" {skip=1} !skip {print} $0 == "# " t ": END" {skip=0}' "$STARTUP" > "$tmp"
 	# S99user also runs user-startup.sh with "stop" at shutdown: start only on start; on stop (any
 	# restart that goes through init, the downloader's after an update included), Phosphor's menu core
-	# goes back in as menu.rbf so the restart shows Phosphor's loading screen, not MiSTer's static
+	# goes back in as menu.rbf so the restart shows Phosphor's loading screen, not MiSTer's static, and
+	# the drives are made read-only and the USB devices let go (phosphor.sh shutdown: safe-stop)
 	WHAT=service; [ "$BOOT" = 2 ] && WHAT=boot
-	printf '# %s: BEGIN\n[ "${1:-start}" = start ] && %s/phosphor.sh %s > /dev/null 2>&1 &\n[ "$1" = stop ] && %s/phosphor.sh menu-core > /dev/null 2>&1 || :\n# %s: END\n' "$TAG" "$RUNROOT" "$WHAT" "$RUNROOT" "$TAG" >> "$tmp"
+	printf '# %s: BEGIN\n[ "${1:-start}" = start ] && %s/phosphor.sh %s > /dev/null 2>&1 &\n[ "$1" = stop ] && %s/phosphor.sh shutdown > /dev/null 2>&1 || :\n# %s: END\n' "$TAG" "$RUNROOT" "$WHAT" "$RUNROOT" "$TAG" >> "$tmp"
 	cat "$tmp" > "$STARTUP" && rm -f "$tmp" && chmod +x "$STARTUP"
 	if [ "$BOOT" = 2 ]; then echo "boots into Phosphor (block \"$TAG\" in $STARTUP)"
 	else echo "phosphord will start at boot (block \"$TAG\" in $STARTUP)"; fi

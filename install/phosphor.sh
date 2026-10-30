@@ -10,6 +10,11 @@
 #   phosphor.sh safe-stop      before power off / restart: modules stopped, drives flushed and read-only
 #                              (exFAT marked clean, so Windows doesn't ask to scan), each drive's state
 #   phosphor.sh menu-core      put Phosphor's menu core back as menu.rbf (at shutdown, after updates)
+#   phosphor.sh shutdown       Linux shutting down (user-startup.sh stop: a restart from anywhere, Update All's
+#                              included): the menu core back, then safe-stop unless it ran already
+#   phosphor.sh repair-hook    the repair drive at /media/repair, read-only, never a /media/usbN (the hook
+#                              MiSTer's USB mounting runs, put back if a Linux update took it); one at a
+#                              /media/usbN already moved there
 #   phosphor.sh reload         restart the shell (Settings > Reload, the PC app); phosphord keeps running
 #   phosphor.sh stop           stop both
 #   phosphor.sh status         what's running, versions, the library
@@ -141,12 +146,87 @@ usb_quiesce() {
 	for d in $stor $rest $wifi; do echo 0 > "$d/authorized" 2> /dev/null; done
 }
 
+# ---------- the repair drive: /media/repair, read-only, never a /media/usbN ----------
+# MiSTer mounts every USB drive at the next free /media/usbN, and anything looking for games or room
+# (MiSTer's Main, Update All's downloader with prefer_external, other tools) looks there: the repair stick
+# got the downloader's games folders once. So the drive with a repair copy of Linux on it (Phosphor's
+# phosphor/rescue/os.img or SS1 Tool's ss1tool/rescue/os.img; never the dock's NVMe drive) is moved to
+# /media/repair as soon as MiSTer mounts it, before the next drive is mounted (the NVMe drive keeps
+# usb0), and made read-only. The repair tools make it writable only while they write their own files.
+# The hook is on Linux's own file system (/etc/usbmount/mount.d): a MiSTer Linux update takes it away,
+# so it's checked at every boot.
+REPAIR_MNT=/media/repair
+HOOK_DIR="${PHOS_USBMOUNT:-/etc/usbmount}"
+HOOK="$HOOK_DIR/mount.d/00-phosphor-repair"
+HOOK_RM="$HOOK_DIR/phosphor-repair-remove"
+HOOK_RULE="${PHOS_UDEV_RULES:-/etc/udev/rules.d}/99-phosphor-repair.rules"
+hook_body() {
+	cat << 'EOF'
+#!/bin/sh
+# Phosphor (phosphor.sh repair-hook; uninstall.sh removes it): a repair drive goes to /media/repair,
+# read-only, never a /media/usbN, so nothing that looks for games or room on /media/usb* uses it.
+# MiSTer's usbmount runs this after mounting a drive (UM_MOUNTPOINT, UM_DEVICE).
+m="$UM_MOUNTPOINT"; d="$UM_DEVICE"; R=/media/repair
+[ -n "$m" ] && [ -n "$d" ] && [ "$m" != "$R" ] || exit 0
+[ -f "$m/phosphor/rescue/os.img" ] || [ -f "$m/ss1tool/rescue/os.img" ] || exit 0
+# never the dock's NVMe drive (an older Phosphor put its repair copy there)
+n="$(basename "$(readlink -f "/sys/class/block/${d##*/}/.." 2> /dev/null)")"
+grep -qi jmicron "/sys/block/$n/device/vendor" 2> /dev/null && exit 0
+# Phosphor's copy names the drive it was made on: one that came along on another drive isn't a repair drive
+if [ -f "$m/phosphor/rescue/os.id" ] && [ ! -f "$m/ss1tool/rescue/os.img" ]; then
+	w="$(sed -n 's/^drive=//p' "$m/phosphor/rescue/os.id" | head -1)"
+	[ -n "$w" ] && [ "$w" != "$(blkid -s PARTUUID -o value "$d" 2> /dev/null)" ] && exit 0
+fi
+if grep -q " $R " /proc/mounts; then
+	# MiSTer mounts a drive twice now and then: the second one goes
+	awk -v d="$d" -v r="$R" '$1 == d && $2 == r {f=1} END {exit !f}' /proc/mounts && umount "$m" 2> /dev/null
+	exit 0
+fi
+mkdir -p "$R" && mount --move "$m" "$R" && mount -o remount,ro "$R" &&
+	echo "$(date '+%Y-%m-%d %H:%M:%S')  the repair drive ($d) at $R, read-only (not $m)" >> /media/fat/phosphor/logs/drives.log
+exit 0
+EOF
+}
+hook_rm_body() {
+	cat << 'EOF'
+#!/bin/sh
+# Phosphor: the repair drive unplugged: /media/repair let go (MiSTer's usbmount only unmounts /media/usbN)
+awk -v d="$DEVNAME" '$1 == d && $2 == "/media/repair" {f=1} END {exit !f}' /proc/mounts && umount -l /media/repair
+exit 0
+EOF
+}
+repair_hook() {
+	[ -d "$HOOK_DIR/mount.d" ] || return 0               # (not MiSTer's Linux)
+	local ro=0 want_rule changed=0
+	want_rule="KERNEL==\"sd*\", ACTION==\"remove\", RUN+=\"$HOOK_RM\""
+	if [ "$(hook_body)" != "$(cat "$HOOK" 2> /dev/null)" ] || [ "$(hook_rm_body)" != "$(cat "$HOOK_RM" 2> /dev/null)" ] ||
+		[ "$want_rule" != "$(cat "$HOOK_RULE" 2> /dev/null)" ] || [ ! -d "$REPAIR_MNT" ]; then
+		[ -z "${PHOS_USBMOUNT:-}" ] && grep -q " / [^ ]* ro[, ]" /proc/mounts && ro=1 && mount -o remount,rw / 2> /dev/null
+		hook_body > "$HOOK" && chmod 755 "$HOOK"
+		hook_rm_body > "$HOOK_RM" && chmod 755 "$HOOK_RM"
+		echo "$want_rule" > "$HOOK_RULE" && chmod 644 "$HOOK_RULE"
+		mkdir -p "${PHOS_REPAIR_MNT:-$REPAIR_MNT}"
+		sync; changed=1
+		[ "$ro" = 1 ] && mount -o remount,ro / 2> /dev/null
+		[ -z "${PHOS_USBMOUNT:-}" ] && udevadm control --reload > /dev/null 2>&1
+		echo "$(date '+%Y-%m-%d %H:%M:%S')  the repair drive's hook put in (/media/repair)" >> "$ROOT/logs/drives.log"
+	fi
+	# a repair drive mounted before the hook was there: moved now (the NVMe drive keeps the number it got)
+	local dev mnt
+	while read -r dev mnt _; do
+		case "$mnt" in /media/usb[0-9]*) UM_MOUNTPOINT="$mnt" UM_DEVICE="$dev" sh "$HOOK" ;; esac
+	done < <(grep ' /media/usb[0-9]' /proc/mounts)
+	return 0
+}
+
 case "${1:-status}" in
 	boot)
 		# a line a boot (with the uptime), to tell restarts apart from Main's (logs/main-reboots.log)
 		echo "$(date '+%Y-%m-%d %H:%M:%S')  boot  up $(cut -d' ' -f1 /proc/uptime 2>/dev/null)s" >> "$ROOT/logs/boots.log"
 		# running from the NVMe / a USB drive (nvmeboot/): the restart word, the drive's second mount gone
 		[ -f "$ROOT/nvmeboot/nvmeboot.sh" ] && sh "$ROOT/nvmeboot/nvmeboot.sh" boot
+		# the repair drive off /media/usbN (the hook back after a MiSTer Linux update, a drive already moved)
+		repair_hook
 		# before anything of Phosphor's opens files on them
 		command -v fsck.exfat > /dev/null && check_dirty_drives
 		# restarted from the offline SD card repair (storage module): its result, left on the repair drive
@@ -192,10 +272,11 @@ case "${1:-status}" in
 		# Windows asks to scan for). A plain remount is refused while anything has a file open for writing
 		# (Linux itself runs from linux.img on the card), so then the kernel's emergency remount does it.
 		# Prints one line per drive, path|clean, path|DIRTY, path|n/a; then "done". Nothing is written after.
-		/media/fat/linux/user-startup.sh stop > /dev/null 2>&1
+		# (PHOS_SAFE_STOP: the stop step's own "shutdown" below doesn't run this again)
+		PHOS_SAFE_STOP=1 /media/fat/linux/user-startup.sh stop > /dev/null 2>&1
 		sync
 		mounts=""
-		for m in /media/usb[0-9]* /media/fat/cifs /media/fat; do mountpoint -q "$m" 2>/dev/null && mounts="$mounts $m"; done
+		for m in /media/usb[0-9]* $REPAIR_MNT /media/fat/cifs /media/fat; do mountpoint -q "$m" 2>/dev/null && mounts="$mounts $m"; done
 		for m in $mounts; do mount -o remount,ro "$m" 2> /dev/null; done
 		sync
 		if grep -E ' /media/(fat|usb[0-9]+) ' /proc/mounts | grep -q ' rw,'; then
@@ -223,7 +304,20 @@ case "${1:-status}" in
 			echo "$m|$st|$ro"
 		done
 		usb_quiesce
+		: > "$TMP/safe-stopped"
 		echo done
+		;;
+	shutdown)
+		# Linux shutting down (S99user runs user-startup.sh stop): whatever started it (Phosphor's power
+		# window already did safe-stop; a restart from MiSTer's menu, Update All, the downloader or a
+		# terminal didn't), the drives end read-only and the USB devices let go, so the SD card isn't left
+		# "not shut down safely" and the dock's NVMe drive starts clean
+		"$0" menu-core
+		[ -n "${PHOS_SAFE_STOP:-}" ] || [ -f "$TMP/safe-stopped" ] || "$0" safe-stop > /dev/null 2>&1
+		;;
+	repair-hook)
+		repair_hook
+		grep " $REPAIR_MNT " /proc/mounts || echo "no repair drive at $REPAIR_MNT"
 		;;
 	menu-core)
 		# Phosphor's menu core as menu.rbf again (MiSTer's downloader puts its own back on updates);
