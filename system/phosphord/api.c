@@ -1235,6 +1235,9 @@ static char *upd_run(void *what)
 	return run_out(cmd);
 }
 static bgcache_t c_upd_list = BGCACHE(upd_run, "list", 20), c_upd_rb = BGCACHE(upd_run, "rollbacks", 60);
+/* at start, in the background: listing the packages opens each one, which took over 15 s at a busy start-up,
+   and phosphord answers one request at a time (the shell's start-up checks then waited, and the menu froze) */
+void api_prime_updates(void) { free(bgcache_get(&c_upd_list, 0)); free(bgcache_get(&c_upd_rb, 0)); }
 
 static char *cmd_update(cJSON *req)
 {
@@ -1245,7 +1248,10 @@ static char *cmd_update(cJSON *req)
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 	/* the packages (each one opened to read its version) take seconds: kept, refreshed in the background;
 	   an install or roll back looks again first */
-	char *pk = bgcache_get(&c_upd_list, 1), *rb = bgcache_get(&c_upd_rb, 1);
+	/* never waited for here (only an install or roll back lists them now, below): not listed yet, the reply
+	   says so ("listing") and the list comes in the next answer */
+	char *pk = bgcache_get(&c_upd_list, 0), *rb = bgcache_get(&c_upd_rb, 0);
+	if (!pk || !rb) cJSON_AddBoolToObject(o, "listing", 1);
 	int online_check = d && !strcmp(d, "check");
 	if (d && !strcmp(d, "download")) {                /* the newer release from GitHub, into phosphor/updates */
 		const char *e = NULL;

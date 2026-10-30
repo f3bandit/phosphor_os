@@ -8,4 +8,6 @@
 /* returns a malloc'd JSON reply (one line, no newline) */
 char *api_handle(sqlite3 *db, const char *request);
 
+void api_prime_updates(void);   /* at start: the update packages listed in the background */
+
 #endif
