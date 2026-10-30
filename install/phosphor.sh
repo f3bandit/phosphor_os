@@ -182,8 +182,13 @@ if grep -q " $R " /proc/mounts; then
 	awk -v d="$d" -v r="$R" '$1 == d && $2 == r {f=1} END {exit !f}' /proc/mounts && umount "$m" 2> /dev/null
 	exit 0
 fi
-mkdir -p "$R" && mount --move "$m" "$R" && mount -o remount,ro "$R" &&
-	echo "$(date '+%Y-%m-%d %H:%M:%S')  the repair drive ($d) at $R, read-only (not $m)" >> /media/fat/phosphor/logs/drives.log
+mkdir -p "$R" && mount --move "$m" "$R" && mount -o remount,ro "$R" || exit 0
+# MiSTer's next hook names the drive in /var/run/usbmount (Vendor_Model_N -> its mount): named here first,
+# pointing at /media/repair, so that one keeps it (it skips a name that's there) instead of the old usbN
+v="$(echo "$UM_VENDOR" | sed 's/ /_/g; s/[^0-9A-Za-z._-]//g')"; o="$(echo "$UM_MODEL" | sed 's/ /_/g; s/[^0-9A-Za-z._-]//g')"
+n="${v}${v:+${o:+_}}$o"; p="$(echo "$d" | sed 's/^.*[^0-9]\([0-9]*\)/\1/')"
+[ -n "$n" ] && mkdir -p /var/run/usbmount && ln -sfn "$R" "/var/run/usbmount/$n${p:+_$p}"
+echo "$(date '+%Y-%m-%d %H:%M:%S')  the repair drive ($d) at $R, read-only (not $m)" >> /media/fat/phosphor/logs/drives.log
 exit 0
 EOF
 }
@@ -191,7 +196,9 @@ hook_rm_body() {
 	cat << 'EOF'
 #!/bin/sh
 # Phosphor: the repair drive unplugged: /media/repair let go (MiSTer's usbmount only unmounts /media/usbN)
-awk -v d="$DEVNAME" '$1 == d && $2 == "/media/repair" {f=1} END {exit !f}' /proc/mounts && umount -l /media/repair
+awk -v d="$DEVNAME" '$1 == d && $2 == "/media/repair" {f=1} END {exit !f}' /proc/mounts || exit 0
+umount -l /media/repair
+for l in /var/run/usbmount/*; do [ "$(readlink "$l")" = /media/repair ] && rm -f "$l"; done
 exit 0
 EOF
 }
