@@ -57,6 +57,13 @@ int L(int px);
 /* helpers */
 lv_obj_t *mk_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text);
 lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius);
+/* how see-through cards (boxes in PAL.panel) are: the wallpaper or texture shows through a little. Text
+ * on them is always solid. Solid on a low-resolution CRT (240p / 288p), where blending looks poor: the one
+ * place to change it for CRTs */
+lv_opa_t theme_card_opa(void);
+/* a card behind things that sit straight on the background (a list, the title, the status icons, the
+   button hints): in the panel colour, as see-through as the rest */
+void theme_card_style(lv_obj_t *o, int radius);
 void spaced_caps(char *dst, size_t n, const char *src);   /* "Library" -> "L I B R A R Y" style tracking */
 
 #endif
