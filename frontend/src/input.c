@@ -43,6 +43,8 @@ typedef struct {
 	int slot;            /* source bit, stable while the device is there */
 	int virt;            /* MiSTer Main's virtual input (controllers as keys) */
 	int pad;             /* a controller (has gamepad or joystick buttons) */
+	int generic;         /* on Linux's plain HID driver (hid-generic): its button codes are just its buttons in
+	                        order (BTN_TL2 can be its Select), so only Main's mapping says what they are */
 } dev_t_;
 
 static dev_t_ devs[MAX_DEV];
@@ -198,9 +200,12 @@ void input_flush(void)
 	mute_dirs_until = mono_now_ms() + 500;        /* repeats Main sent meanwhile are still on their way */
 }
 
+/* a controller whose own Select, Start, X and Y can be read here: a real one, with a driver that names its
+   buttons (xpad, hid-playstation, hid-nintendo...), not hid-generic's buttons in order */
+static int raw_pad(const dev_t_ *d) { return d->pad && !d->virt && !d->generic; }
 static int have_pad(void)
 {
-	for (int i = 0; i < ndev; i++) if (devs[i].pad && !devs[i].virt) return 1;
+	for (int i = 0; i < ndev; i++) if (raw_pad(&devs[i])) return 1;
 	return 0;
 }
 
@@ -262,6 +267,10 @@ static void open_dev(const char *name)
 	ioctl(fd, EVIOCGNAME(sizeof(dname)), dname);
 	snprintf(d->label, sizeof(d->label), "%.63s", dname);
 	d->virt = strstr(dname, "MiSTer virtual input") != NULL;
+	char sp[160], drv[256] = "";
+	snprintf(sp, sizeof(sp), "/sys/class/input/%s/device/device/driver", name);
+	ssize_t dl = readlink(sp, drv, sizeof(drv) - 1);
+	if (dl > 0) { drv[dl] = 0; d->generic = !strcmp(strrchr(drv, '/') ? strrchr(drv, '/') + 1 : drv, "hid-generic"); }
 	plog("input: %s (%s)", name, dname);
 	if (started && newsworthy(d->label)) snprintf(notice, sizeof(notice), "Connected: %.80s", d->label);
 }
@@ -416,12 +425,12 @@ pkey_t input_poll(unsigned now)
 			if (ev.type == EV_KEY && ev.value != 2) {
 				char w[120];
 				snprintf(w, sizeof(w), "%s key %d %s (%.40s)%s", devs[i].name, ev.code, ev.value ? "down" : "up",
-				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(devs[i].pad && !devs[i].virt && own_button(ev.code)) ? " ignored: Main sends it" : "");
+				         devs[i].label, main_pads && (devs[i].virt || devs[i].pad) && !(raw_pad(&devs[i]) && own_button(ev.code)) ? " ignored: Main sends it" : "");
 				input_watch("evdev", w);
 			}
 			if (main_pads && (devs[i].virt || devs[i].pad)) {             /* Main has the controllers... */
 				/* ...but not Select, Start, X and Y as they are (see own_button): read here */
-				if (devs[i].pad && !devs[i].virt && ev.type == EV_KEY && own_button(ev.code)) {
+				if (raw_pad(&devs[i]) && ev.type == EV_KEY && own_button(ev.code)) {
 					if (ev.code == BTN_SELECT || ev.code == BTN_START) {
 						int w = ev.code == BTN_SELECT ? CB_SELECT : CB_START;
 						if (ev.value == 1) centre_press(w, 1u << devs[i].slot);
