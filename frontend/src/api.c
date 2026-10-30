@@ -138,8 +138,12 @@ cJSON *api_call(const char *fmt, ...)
 			clock_gettime(CLOCK_MONOTONIC, &t1);
 			long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
 			if (attempt == 0 && ms < 50) continue;
+			plog("slow: phosphord didn't answer in %ld ms: %.80s", ms, req);
 			return NULL;
 		}
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		long ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+		if (ms >= 300) plog("slow: phosphord took %ld ms for %.80s", ms, req);   /* (the screen waits meanwhile) */
 		cJSON *r = cJSON_Parse(line);
 		free(line);
 		return r;
