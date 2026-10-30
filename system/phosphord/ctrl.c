@@ -805,7 +805,9 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 	cJSON *arr = cJSON_AddArrayToObject(o, "controllers");
 	char sig[512];
 	ev_sig(sig, sizeof(sig));
-	pads_look(P, sig);                            /* (the live view goes on from this look) */
+	/* looked up again only when a controller came or went, after a change made here (a mapping, a style),
+	   or once a minute: the list is asked for every 2 s, and each look takes about 0.5 s */
+	if (pads_n < 0 || (d && *d) || time(NULL) - pads_at >= 60 || strcmp(sig, pads_sig)) pads_look(P, sig);
 	int n = pads_n;
 	for (int i = 0; i < n; i++) add_pad(arr, &P[i], files);
 	free(files);
