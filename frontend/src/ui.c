@@ -2254,6 +2254,7 @@ static void gd_draw(void)
 		cJSON *p = gd_point(i);
 		int focus = gd.side == 1 && gd.sel[1] == i;
 		lv_obj_t *row = mk_box(gd.right, S(540), S(50), focus ? PAL.panel_on : PAL.panel, S(7));
+		if (!focus) lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);   /* (only the chosen one picked out, as in lists) */
 		lv_obj_set_pos(row, -S(8), y - S(6));
 		gd_check(gd.right, 0, y + S(6), gd.tick_p[i], focus);
 		char when[40];
@@ -3876,7 +3877,7 @@ static void si_update(void)
 		lv_obj_set_size(si.v[i], LV_MAX(S(60), iw - kw - S(16)), lv_font_get_line_height(FONT_BODY));
 	}
 	/* the texture: a piece of the real tile */
-	int sw = (row == SET_TEXTURE && SETTINGS.texture) || row == SET_ACCENT;
+	int sw = row == SET_ACCENT;                        /* (the accent's colour bar; no texture box) */
 	lv_obj_set_hidden(si.swatch, !sw);
 	if (sw) {
 		const void *tile = row == SET_TEXTURE ? texture_tile() : NULL;
@@ -10896,6 +10897,9 @@ static int bc_collect(lv_obj_t *o, bc_item_t *it, int n, int depth)
 	lv_area_t a;
 	lv_obj_get_coords(o, &a);
 	if (lv_area_get_width(&a) <= 1 || lv_area_get_height(&a) <= 1) return n;
+	if (lv_obj_get_style_bg_opa(o, 0) > LV_OPA_50 && lv_color_eq(lv_obj_get_style_bg_color(o, 0), PAL.bg) &&
+	    !lv_obj_check_type(o, &lv_label_class) && !lv_obj_check_type(o, &lv_image_class))
+		lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);    /* (a black box on the card: the card shows through) */
 	if (depth == 0 && bc_is_card(o) && lv_color_eq(lv_obj_get_style_bg_color(o, 0), PAL.panel)) {
 		/* a screen's own panel: part of its column from now on */
 		lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
