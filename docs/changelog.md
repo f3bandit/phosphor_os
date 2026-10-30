@@ -3,6 +3,23 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.56
+
+### Fixed
+- **Every restart is a safe one.** Restarting from MiSTer's own menu, Update All or the downloader, a
+  terminal, a core that couldn't load or the keyboard's reset keys used to skip Phosphor's safe stop, and
+  could leave the SD card "not shut down safely" (and the dock's NVMe drive coming back stuck). Linux's
+  shutdown and Phosphor's Main now run it too: the drives are made read-only and the USB devices let go first.
+
+### Changed
+- **The repair drive is hidden.** The USB stick Repair all drives starts from (Phosphor's or SS1 Tool's
+  repair copy on it) goes to /media/repair, read-only, the moment it's plugged in, and never gets a
+  /media/usbN. Nothing that looks for games or room there uses it any more (Update All's downloader had put
+  its games folders on it), and the dock's NVMe drive keeps usb0. The repair tools make it writable only
+  while they write their own files.
+- Anything else on the repair drive is shown in Settings > Storage > Repair all drives (and Phosphor for
+  Windows, the phone app), with **Move them to the games drive**.
+
 ## 0.27.55
 
 ### Fixed
