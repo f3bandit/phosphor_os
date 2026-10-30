@@ -3,6 +3,16 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.51
+
+### Fixed
+- **Start, Select and the Select + Start menu on plain USB controllers** (Linux's generic HID driver: MC
+  BlueBridge, many USB pads). Their buttons come numbered in order, so Start could arrive as R2 and Select
+  as L2, and Start never opened the menu whatever was mapped; L1 could act as X. Select, Start, X and Y
+  now come from the controller's MiSTer mapping for these. Controllers with their own driver (Xbox,
+  PlayStation, Switch, 8BitDo X-input) are read as before.
+- The controller test shows MC BlueBridge's buttons by their real names.
+
 ## 0.27.50
 
 ### Fixed
