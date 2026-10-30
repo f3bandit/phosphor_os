@@ -14,6 +14,7 @@
 #include "paths.h"
 #include "systems.h"
 #include <dirent.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -157,6 +158,128 @@ static void walk(scan_t *s, const char *dir, int depth)
 	closedir(d);
 }
 
+/* Every drive Phosphor keeps games on carries its own ID: phosphor/drive.id (id=, role=: "sd" for the
+ * SD card, "games" for a USB or NVMe drive with a games folder), written the first time it's seen. The
+ * library remembers where each ID was mounted (meta drive_at.<id>). A drive's number moves when another
+ * USB drive is plugged in first (a repair stick took usb0, and the NVMe drive came up as usb2): its ID says
+ * which drive it is, and its games are moved to its new /media/usb<n> in the library (play history,
+ * favourites and art stay with the games). A drive without an ID yet (older Phosphor) is recognised by its
+ * games instead: none where the library has them, all of the ones looked at under another root. */
+static int mounted(const char *m)
+{
+	FILE *f = fopen("/proc/mounts", "r");
+	if (!f) return 0;
+	char l[512], a[256], b[256];
+	int r = 0;
+	while (!r && fgets(l, sizeof(l), f)) if (sscanf(l, "%255s %255s", a, b) == 2 && !strcmp(b, m)) r = 1;
+	fclose(f);
+	return r;
+}
+static void drive_id(const char *m, char *out, size_t n)
+{
+	char p[300], l[128];
+	out[0] = 0;
+	snprintf(p, sizeof(p), "%s/phosphor/drive.id", m);
+	FILE *f = fopen(p, "r");
+	if (f) {
+		while (fgets(l, sizeof(l), f)) if (!strncmp(l, "id=", 3)) { snprintf(out, n, "%s", l + 3); out[strcspn(out, "\r\n")] = 0; }
+		fclose(f);
+		if (out[0]) return;
+	}
+	int sd = !strcmp(m, p_fat());
+	char g[300];
+	snprintf(g, sizeof(g), "%s/games", m);
+	if (!sd && !dir_exists(g)) return;                     /* (only drives with games get one) */
+	unsigned char r[8];
+	int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+	if (fd < 0 || read(fd, r, sizeof(r)) != (ssize_t)sizeof(r)) { if (fd >= 0) close(fd); return; }
+	close(fd);
+	snprintf(out, n, "%02x%02x%02x%02x%02x%02x%02x%02x", r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+	snprintf(g, sizeof(g), "%s/phosphor", m);
+	mkdir(g, 0755);
+	char tmp[310];
+	snprintf(tmp, sizeof(tmp), "%s.new", p);
+	if (!(f = fopen(tmp, "w"))) { out[0] = 0; return; }
+	time_t t = time(NULL);
+	fprintf(f, "# This drive, for Phosphor: which drive it is, whatever /media/usb<n> it comes up as\nid=%s\nrole=%s\nmade=%ld\n", out, sd ? "sd" : "games", (long)t);
+	if (fclose(f) || rename(tmp, p)) { unlink(tmp); out[0] = 0; return; }
+	plog("library: %s gets the drive ID %s", m, out);
+}
+
+int indexer_relocate(sqlite3 *db)
+{
+	int from[8], to[8], nm = 0, known[8] = { 0 };
+	char ids[8][40], k[64], was[64];
+	{ char sd[40]; drive_id(p_fat(), sd, sizeof(sd)); }
+	/* by ID: where was each drive that's here now */
+	for (int n = 0; n < 8; n++) {
+		char m[32];
+		snprintf(m, sizeof(m), "/media/usb%d", n);
+		ids[n][0] = 0;
+		if (!mounted(m) || p_repair_drive(n)) continue;
+		drive_id(m, ids[n], sizeof(ids[n]));
+		if (!ids[n][0]) continue;
+		snprintf(k, sizeof(k), "drive_at.%s", ids[n]);
+		int o;
+		if (db_meta_get(db, k, was, sizeof(was)) && sscanf(was, "/media/usb%d", &o) == 1 && o != n && o >= 0 && o < 8) {
+			from[nm] = o; to[nm] = n; nm++;
+			known[o] = 1;
+		}
+		known[n] = 1;
+	}
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "SELECT path FROM files WHERE root=? LIMIT 6", -1, &st, NULL) != SQLITE_OK) return 0;
+	/* without an ID yet: by its games */
+	for (int n = 0; n < 8; n++) {
+		if (known[n]) continue;
+		char root[40], paths[6][1024];
+		int np = 0, here = 0;
+		snprintf(root, sizeof(root), "/media/usb%d/games", n);
+		sqlite3_reset(st);
+		sqlite3_bind_text(st, 1, root, -1, SQLITE_TRANSIENT);
+		while (np < 6 && sqlite3_step(st) == SQLITE_ROW) snprintf(paths[np++], sizeof(paths[0]), "%s", sqlite3_column_text(st, 0));
+		if (!np) continue;
+		for (int i = 0; i < np; i++) here += access(paths[i], F_OK) == 0;
+		if (here) continue;                                 /* (that drive's still there) */
+		for (int m = 0; m < 8; m++) {
+			if (m == n || p_repair_drive(m)) continue;
+			int found = 0;
+			for (int i = 0; i < np; i++) {
+				char q[1100];
+				snprintf(q, sizeof(q), "/media/usb%d%s", m, paths[i] + strlen("/media/usb0"));
+				found += access(q, F_OK) == 0;
+			}
+			if (found == np) { from[nm] = n; to[nm] = m; nm++; break; }
+		}
+	}
+	sqlite3_finalize(st);
+	for (int n = 0; n < 8; n++) {
+		if (!ids[n][0]) continue;
+		char m[32];
+		snprintf(k, sizeof(k), "drive_at.%s", ids[n]);
+		snprintf(m, sizeof(m), "/media/usb%d", n);
+		if (!db_meta_get(db, k, was, sizeof(was)) || strcmp(was, m)) db_meta_set(db, k, m);
+	}
+	if (!nm) return 0;
+	/* (in two steps, through a name no drive has, so two drives that swapped numbers both move) */
+	db_exec(db, "BEGIN");
+	for (int step = 0; step < 2; step++)
+		for (int i = 0; i < nm; i++) {
+			char a[40], b[40];
+			if (step == 0) { snprintf(a, sizeof(a), "/media/usb%d/", from[i]); snprintf(b, sizeof(b), "/media/usb-moving%d/", to[i]); }
+			else { snprintf(a, sizeof(a), "/media/usb-moving%d/", to[i]); snprintf(b, sizeof(b), "/media/usb%d/", to[i]); }
+			char where[48];
+			snprintf(where, sizeof(where), "%sgames", a);
+			char *sql = sqlite3_mprintf("UPDATE OR IGNORE files SET path=%Q || substr(path, %d), root=%Q || substr(root, %d), online=1 "
+			                            "WHERE root=%Q", b, (int)strlen(a) + 1, b, (int)strlen(a) + 1, where);
+			db_exec(db, sql);
+			sqlite3_free(sql);
+		}
+	db_exec(db, "COMMIT");
+	for (int i = 0; i < nm; i++) plog("library: the games on /media/usb%d are on /media/usb%d now: moved there", from[i], to[i]);
+	return nm;
+}
+
 static void scan(sqlite3 *db)
 {
 	time_t t0 = time(NULL);
@@ -165,6 +288,7 @@ static void scan(sqlite3 *db)
 	db_meta_get(db, "scan_gen", buf, sizeof(buf));
 	if (buf[0]) gen = atoi(buf) + 1;
 
+	indexer_relocate(db);                   /* (drives that came up under another number, before anything's gone) */
 	scan_t s = { .db = db, .gen = gen };
 	prep(db, &s.find_file, "SELECT id, size, mtime FROM files WHERE path=?");
 	prep(db, &s.touch_file, "UPDATE files SET seen=?, online=1 WHERE id=?");

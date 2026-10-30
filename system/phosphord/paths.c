@@ -4,8 +4,10 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 
 static const char *env_or(const char *name, const char *def)
@@ -35,6 +37,30 @@ const char *p_data(void) { pthread_once(&built, build); return data_b; }
 const char *p_config(void) { pthread_once(&built, build); return config_b; }
 const char *p_socket(void) { pthread_once(&built, build); return socket_b; }
 
+int p_repair_drive(int usb)
+{
+	/* the drive Repair all drives uses now: its copy of Linux carries the drive's ID (phosphor/rescue/os.id,
+	   drive=<PARTUUID>), the same one Phosphor keeps in state/sdrescue.state. A drive that was the repair
+	   drive once (an old copy left on the NVMe drive) isn't */
+	char p[96], want[64] = "", have[64] = "", l[128];
+	FILE *f = fopen("/media/fat/phosphor/state/sdrescue.state", "r");
+	if (!f) return 0;
+	while (fgets(l, sizeof(l), f)) if (!strncmp(l, "partuuid=", 9)) { snprintf(want, sizeof(want), "%s", l + 9); want[strcspn(want, "\r\n")] = 0; }
+	fclose(f);
+	if (!want[0]) return 0;
+	snprintf(p, sizeof(p), "/media/usb%d/phosphor/rescue/os.id", usb);
+	if (!(f = fopen(p, "r"))) return 0;
+	while (fgets(l, sizeof(l), f)) if (!strncmp(l, "drive=", 6)) { snprintf(have, sizeof(have), "%s", l + 6); have[strcspn(have, "\r\n")] = 0; }
+	fclose(f);
+	return !strcasecmp(want, have);
+}
+
+int p_root_is_repair(const char *root)
+{
+	int u;
+	return sscanf(root, "/media/usb%d/", &u) == 1 && p_repair_drive(u);
+}
+
 int p_roots(char out[][256], int max)
 {
 	int n = 0;
@@ -46,7 +72,10 @@ int p_roots(char out[][256], int max)
 			snprintf(out[n++], 256, "%s", t);
 		return n;
 	}
-	for (int i = 0; i < 8 && n < max; i++) snprintf(out[n++], 256, "/media/usb%d/games", i);
+	/* a drive set up for Repair all drives is never a games drive, as in Phosphor's Main (an empty games/PSX
+	   on the repair stick, usb0 when it's plugged in first, doesn't hide the NVMe drive's games) */
+	for (int i = 0; i < 8 && n < max; i++)
+		if (!p_repair_drive(i)) snprintf(out[n++], 256, "/media/usb%d/games", i);
 	if (n < max) snprintf(out[n++], 256, "%s/cifs/games", p_fat());
 	if (n < max) snprintf(out[n++], 256, "%s/games", p_fat());
 	return n;

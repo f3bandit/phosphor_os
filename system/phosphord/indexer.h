@@ -20,5 +20,8 @@ void indexer_progress(indexer_progress_t *p);
 int indexer_identifying(void);     /* working out what game files are */
 int indexer_generation(void);      /* bumps after each finished scan */
 void indexer_start(void);          /* background thread */
+#include <sqlite3.h>
+/* games whose drive came up under another /media/usb<n>: moved there in the library (how many drives) */
+int indexer_relocate(sqlite3 *db);
 
 #endif

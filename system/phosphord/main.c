@@ -153,6 +153,7 @@ int main(int argc, char **argv)
 	for (int i = 0; i < MAX_CLIENTS; i++) cl[i].fd = -1;
 	busy_init();
 	dump_cleanup();                 /* (before the library looks: half-copied discs never get listed) */
+	indexer_relocate(db);                    /* (a drive that came up under another number since last time) */
 	indexer_start();
 	scraper_start();
 	ra_init();
@@ -170,13 +171,24 @@ int main(int argc, char **argv)
 
 	plog("ready on %s", p_socket());
 	{ pthread_t t; if (pthread_create(&t, NULL, disc_watch, NULL) == 0) pthread_detach(t); }
+	/* a drive mounted or unmounted: the kernel says so on /proc/self/mounts (no polling). A drive that came
+	   up under another /media/usb<n> (a stick plugged in first) has its games moved there in the library */
+	int mfd = open("/proc/self/mounts", O_RDONLY | O_CLOEXEC);
 	for (;;) {
-		struct pollfd p[MAX_CLIENTS + 1];
+		struct pollfd p[MAX_CLIENTS + 2];
 		int n = 0, idx[MAX_CLIENTS];
 		p[n++] = (struct pollfd){ lfd, POLLIN, 0 };
 		for (int i = 0; i < MAX_CLIENTS; i++)
 			if (cl[i].fd >= 0) { idx[n - 1] = i; p[n++] = (struct pollfd){ cl[i].fd, POLLIN, 0 }; }
+		int mi = -1;
+		if (mfd >= 0) { mi = n; p[n++] = (struct pollfd){ mfd, POLLPRI, 0 }; }
 		int r = poll(p, (nfds_t)n, 2000);   /* wakes every 2 s only to keep play time */
+		if (mi >= 0 && (p[mi].revents & (POLLPRI | POLLERR))) {
+			char b[4096];
+			lseek(mfd, 0, SEEK_SET);
+			while (read(mfd, b, sizeof(b)) > 0) {}  /* (read through: the next change is signalled again) */
+			indexer_relocate(db);
+		}
 		/* (the ticks run between requests: one that takes long holds every request up; logged) */
 		struct timespec tk0, tk1, tk2, tk3;
 		clock_gettime(CLOCK_MONOTONIC, &tk0);
@@ -218,6 +230,6 @@ int main(int argc, char **argv)
 			}
 		}
 		for (int k = 1; k < n; k++)
-			if (p[k].revents & (POLLIN | POLLHUP | POLLERR)) serve(db, &cl[idx[k - 1]]);
+			if (k != mi && (p[k].revents & (POLLIN | POLLHUP | POLLERR))) serve(db, &cl[idx[k - 1]]);
 	}
 }
