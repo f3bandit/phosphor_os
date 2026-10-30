@@ -187,10 +187,26 @@ static void draw_cb(lv_event_t *e)
 		arc(&p, 36, 39, 22, 300, 240, p.col);
 		line(&p, 36, 11, 36, 34);
 		break;
-	case ICON_RESTART:                                   /* a circle arrow, anticlockwise: its head at the top left */
-		arc(&p, 36, 37, 22, 239, 197, p.col);
-		line(&p, 24.7f, 18.1f, 32.7f, 9.2f); line(&p, 24.7f, 18.1f, 35.5f, 23.4f);
+	case ICON_RESTART: {                                 /* a thick circle arrow, clockwise, its solid, sharp head at
+	                                                        the top left pointing up and right; the gap at the top */
+		lv_draw_arc_dsc_t a;
+		lv_draw_arc_dsc_init(&a);
+		a.color = p.col;
+		a.width = (int32_t)(10 * p.k);
+		a.center.x = (int32_t)(p.x0 + 36 * p.k);
+		a.center.y = (int32_t)(p.y0 + 38 * p.k);
+		a.radius = (uint16_t)(30 * p.k);           /* (the outer edge) */
+		a.start_angle = 314;
+		a.end_angle = 228;
+		lv_draw_arc(p.layer, &a);
+		lv_draw_triangle_dsc_t t;
+		lv_draw_triangle_dsc_init(&t);
+		t.color = p.col;
+		t.opa = LV_OPA_COVER;
+		t.p[0] = P(&p, 9.6f, 11.6f); t.p[1] = P(&p, 27.0f, 29.0f); t.p[2] = P(&p, 28.1f, 10.5f);
+		lv_draw_triangle(p.layer, &t);
 		break;
+	}
 	case ICON_SCREEN:                                    /* a screen with a stand */
 		rect(&p, 9, 13, 54, 36, 5);
 		line(&p, 36, 49, 36, 58); line(&p, 24, 59, 48, 59);
