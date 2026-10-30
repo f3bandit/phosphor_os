@@ -393,11 +393,17 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 			redraw_at = now + 700;
 		}
 		pkey_t k;
+		uint32_t t_a = mono_ms();
 		while ((k = input_poll(now)) != KEY_NONE_) ui_key(k);
+		uint32_t t_b = mono_ms();
 		ui_tick();
+		uint32_t t_c = mono_ms();
 		/* sleep until input (controllers through Main, keyboards, remote keys) or the next screen timer:
 		   at idle that's up to half a second, not 60 wake-ups a second */
 		uint32_t wait = lv_timer_handler();
+		uint32_t t_d = mono_ms();
+		/* a stall (the menu not answering the controller): what it was busy with, for the log */
+		if (t_d - t_a >= 250) plog("slow: %u ms (keys %u, timers %u, drawing %u)", t_d - t_a, t_b - t_a, t_c - t_b, t_d - t_c);
 		uint32_t cap = (uint32_t)ui_max_sleep();
 		if (input_held() || redraw_at) cap = 16;
 		if (crt_flip_waiting()) cap = 10;
