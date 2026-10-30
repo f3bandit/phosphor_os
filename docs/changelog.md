@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.57
+
+### Fixed
+- **Tidier phosphord.** Two lists (box art match choices, the memory card library) were sorted even when
+  they were empty, which C doesn't allow. It never crashed, but a strict build flagged it; empty lists are
+  now skipped. Found in a full check of Phosphor, its apps and SS1 Tool (memory-checked runs of phosphord
+  and the TV menus, Main's tests, the scripts, the Go and Android apps): nothing else turned up.
+
 ## 0.27.56
 
 ### Fixed
