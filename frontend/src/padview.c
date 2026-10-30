@@ -217,12 +217,12 @@ void padview_state(padview_t *p, const padstate_t *s)
 		int has = 1, on = 0, tgt = 0, done = 0;
 		if (!strcmp(e->id, "dpad")) {
 			if (s->nhas >= 0) has = in(s->has, s->nhas, "up") || in(s->has, s->nhas, "left");
+			/* each arm by itself: pressed (full), the one to press (half), mapped already (faint); never the
+			   whole pad's outline */
 			for (int k = 0; k < 4; k++) {
-				int o = in(s->on, s->non, dirs[k]);
-				lv_obj_set_hidden(e->arm[k], !o && !(s->target && !strcmp(s->target, dirs[k])));
-				lv_obj_set_style_bg_opa(e->arm[k], o ? LV_OPA_COVER : LV_OPA_40, 0);
-				tgt |= s->target && !strcmp(s->target, dirs[k]);
-				done |= in(s->done, s->ndone, dirs[k]);
+				int o = in(s->on, s->non, dirs[k]), t = s->target && !strcmp(s->target, dirs[k]), dn = in(s->done, s->ndone, dirs[k]);
+				lv_obj_set_hidden(e->arm[k], !o && !t && !dn);
+				lv_obj_set_style_bg_opa(e->arm[k], o ? LV_OPA_COVER : t ? LV_OPA_50 : LV_OPA_20, 0);
 			}
 		} else if (!strcmp(e->id, "lever")) {
 			float x = (in(s->on, s->non, "right") ? 1.f : 0) - (in(s->on, s->non, "left") ? 1.f : 0);
