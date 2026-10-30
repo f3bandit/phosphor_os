@@ -211,6 +211,9 @@ static void linux_binds(pad_t *d)
 	   of its range, a stick in the middle, so the pair resting at an end is the triggers */
 	int rx_trig = (d->at_edge >> ABS_RX & 1) || (d->at_edge >> ABS_RY & 1);
 	int z_trig = (d->at_edge >> ABS_Z & 1) || (d->at_edge >> ABS_RZ & 1);
+	/* MC BlueBridge (Raspberry Pi's 2e8a) in its MiSTer modes (one controller: b0xx, two: 10b3) always has
+	   that layout, whatever is held when it's looked at; its Generic HID and X-Input modes have the usual one */
+	if (d->vid == 0x2e8a && strstr(d->name, "BlueBridge") && (d->pid == 0x10b3 || (d->pid & 0xf000) == 0xb000)) { rx_trig = 1; z_trig = 0; }
 	if (has_abs(d, ABS_RX) && has_abs(d, ABS_RY) && has_abs(d, ABS_Z) && has_abs(d, ABS_RZ) && rx_trig && !z_trig) {
 		d->b[C_RSX] = (bind_t){ 'a', ABS_Z, 0, 0 }; d->b[C_RSY] = (bind_t){ 'a', ABS_RZ, 0, 0 };
 		d->b[C_L2] = (bind_t){ 'a', ABS_RX, 0, 0 }; d->b[C_R2] = (bind_t){ 'a', ABS_RY, 0, 0 };
