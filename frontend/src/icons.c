@@ -102,7 +102,7 @@ static void draw_cb(lv_event_t *e)
 		.layer = lv_event_get_layer(e), .x0 = c.x1, .y0 = c.y1, .k = (float)size / grid,
 		.col = lv_obj_get_style_text_color(obj, 0), .off = PAL.icon_off,
 	};
-	p.w = grid == 24 ? (size >= 22 ? 2 : 1) : LV_MAX(2, size / 30);
+	p.w = grid == 24 ? LV_MAX(size >= 22 ? 2 : 1, size / 16) : LV_MAX(2, size / 30);   /* (a big one drawn as boldly as the small ones look) */
 
 	switch (id->icon) {
 	case ICON_SHARE: { /* folder */

@@ -6831,8 +6831,16 @@ static struct {
 } bt;
 static vlist_t bt_list;
 static lv_obj_t *bt_head, *bt_sub;
+/* the side: a big Bluetooth sign and what's happening, centred; how to put controllers in pairing mode */
+static lv_obj_t *bt_ring, *bt_ic, *bt_title, *bt_note, *bt_tips;
+static uint32_t bt_started;                     /* when Pair was pressed (the 90 s it looks for) */
+static char bt_paired[64];                      /* a controller that just paired: shown until the next try */
+#define BT_LOOK_S 90
 static const char *const BT_HINTS[] = { "A", "Choose", "B", "Back", NULL };
-static const char *const BT_ACTION_HINTS[] = { "A", "Disconnect", "X", "Forget", "B", "Cancel", NULL };
+static const char *const BT_ACTION_HINTS[] = { "A", "Disconnect", "X", "Delete", "B", "Cancel", NULL };
+static const char *const BT_DEV_HINTS[] = { "A", "Options", "X", "Delete", "B", "Back", NULL };
+static uint32_t bt_confirm_at;                  /* X (or Delete all) pressed once: again within 4 s deletes */
+static int bt_confirm_row = -1;
 
 static void bt_apply(cJSON *r)
 {
@@ -6859,8 +6867,36 @@ static void bt_apply(cJSON *r)
 		bt.input[i] = cJSON_IsTrue(cJSON_GetObjectItem(it, "input"));
 	}
 	cJSON_Delete(r);
-	if (was && !bt.busy && bt.at != bt.seen_at) { bt.seen_at = bt.at; toast_show(bt.message); }
+	if (was && !bt.busy && bt.at != bt.seen_at) {
+		bt.seen_at = bt.at;
+		if (bt.ok) snprintf(bt_paired, sizeof(bt_paired), "%s", bt.found[0] ? bt.found : "The controller");
+		else toast_show(bt.message);
+	}
 	if (!bt_head) return;
+	if (bt_title) {                                    /* the side */
+		lv_color_t c = bt.busy ? PAL.acc : bt_paired[0] ? lv_color_hex(0x5cf08a) : !bt.present ? PAL.dim : PAL.acc;
+		lv_obj_set_style_border_color(bt_ring, c, 0);
+		lv_obj_set_style_text_color(bt_ic, c, 0);
+		if (!bt.present) {
+			lv_label_set_text(bt_title, "No Bluetooth adapter");
+			lv_label_set_text(bt_note, "Plug one in: it shows up here by itself.");
+		} else if (bt.busy) {
+			lv_label_set_text(bt_title, "Looking for controllers");
+			lv_label_set_text(bt_note, "Put the controller in pairing mode now.");
+		} else if (bt_paired[0]) {
+			char t[96];
+			snprintf(t, sizeof(t), "%s paired", bt_paired);
+			lv_label_set_text(bt_title, t);
+			lv_label_set_text(bt_note, "It connects by itself from now on.\nCheck its buttons in Settings \xE2\x80\xBA Controllers.");
+		} else if (bt.seen_at && !bt.ok && bt.message[0]) {
+			lv_label_set_text(bt_title, "Pairing didn't work");
+			lv_label_set_text(bt_note, "Put it in pairing mode again, then Pair a controller.");
+		} else {
+			lv_label_set_text(bt_title, "Pair a controller");
+			lv_label_set_text(bt_note, "Put the controller in pairing mode, then press A.");
+		}
+		lv_obj_set_hidden(bt_tips, !bt.present || (bt_paired[0] && !bt.busy));
+	}
 	int nc = 0;
 	for (int i = 0; i < bt.ndev; i++) nc += bt.conn[i];
 	char h[200], sub[260];
@@ -6878,11 +6914,11 @@ static void bt_apply(cJSON *r)
 		else snprintf(sub, sizeof(sub), "%s", bt.message);
 	}
 	if (bt.mode == BT_ACTION && bt.pick < bt.ndev)
-		snprintf(sub, sizeof(sub), "%s: A disconnects it (it reconnects when you turn it on), X forgets it.", bt.name[bt.pick]);
+		snprintf(sub, sizeof(sub), "%s: A disconnects it (it reconnects when you turn it on), X deletes it.", bt.name[bt.pick]);
 	lv_label_set_text(bt_head, h);
 	lv_label_set_text(bt_sub, sub);
-	bt_list.count = bt.present ? 1 + bt.ndev : 0;
-	footer_set(bt.mode == BT_ACTION ? BT_ACTION_HINTS : BT_HINTS);
+	bt_list.count = bt.present ? 1 + bt.ndev + (bt.ndev ? 1 : 0) : 0;    /* (Delete all pairings last) */
+	footer_set(bt.mode == BT_ACTION ? BT_ACTION_HINTS : bt_list.sel >= 1 && bt_list.sel <= bt.ndev ? BT_DEV_HINTS : BT_HINTS);
 	vlist_refresh(&bt_list);
 }
 
@@ -6890,12 +6926,20 @@ static void bt_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
 	if (i == 0) {
 		snprintf(t, n, "%s", bt.busy ? "Stop looking" : "Pair a controller");
-		snprintf(val, vn, "%s", bt.busy ? "Looking..." : ">");
+		int left = BT_LOOK_S - (int)((lv_tick_get() - bt_started) / 1000);
+		if (bt.busy && bt_started && left > 0) snprintf(val, vn, "Searching...  %d s", left);
+		else snprintf(val, vn, "%s", bt.busy ? "Searching..." : ">");
+		return;
+	}
+	int confirming = bt_confirm_row == i && lv_tick_get() - bt_confirm_at < 4000;
+	if (i == bt.ndev + 1) {
+		snprintf(t, n, "Delete all pairings");
+		snprintf(val, vn, "%s", confirming ? "Press A again to delete them all" : "");
 		return;
 	}
 	i--;
 	snprintf(t, n, "%s", bt.name[i]);
-	snprintf(val, vn, "%s", bt.conn[i] ? "Connected" : "Not connected");
+	snprintf(val, vn, "%s", confirming ? "Press X again to delete" : bt.conn[i] ? "Connected" : "Not connected");
 	*dim = !bt.conn[i];
 }
 
@@ -6906,7 +6950,7 @@ static void bt_do(const char *what, const char *mac)
 	else snprintf(q, sizeof(q), "{\"cmd\":\"bluetooth\",\"do\":\"%s\"}", what);
 	cJSON *r = api_call("%s", q);
 	if (!api_ok(r)) { toast_show(r && api_str(r, "error") ? api_str(r, "error") : "That didn't work"); cJSON_Delete(r); return; }
-	if (!strcmp(what, "pair")) bt.busy = 1;
+	if (!strcmp(what, "pair")) { bt.busy = 1; bt_started = lv_tick_get(); bt_paired[0] = 0; }
 	bt_apply(r);
 }
 
@@ -6914,6 +6958,7 @@ static void show_bt(void)
 {
 	cur = SCR_BT;
 	lv_obj_clean(body);
+	bt_paired[0] = 0;
 	screen_title("SETTINGS", "Bluetooth");
 	bt_head = mk_label(body, FONT_BODY, PAL.text, "");
 	lv_label_set_long_mode(bt_head, LV_LABEL_LONG_MODE_DOTS);
@@ -6924,8 +6969,51 @@ static void show_bt(void)
 	lv_obj_set_size(bt_sub, W - S(112), S(22));
 	lv_obj_set_pos(bt_sub, S(56), S(208));
 	lr_head_sub(bt_head, bt_sub);
-	vlist_create(&bt_list, body, S(56), S(244), SW(900), S(380));
+	vlist_create(&bt_list, body, S(56), S(244), SW(600), S(380));
 	bt_list.fill = bt_fill;
+	{
+		int px = S(56) + SW(600) + S(24), pw = W - S(56) - px;
+		lv_obj_t *side = mk_box(body, pw, H - S(82) - S(176), PAL.bg, 0);
+		lv_obj_set_style_bg_opa(side, LV_OPA_TRANSP, 0);
+		lv_obj_set_pos(side, px, S(176));
+		lv_obj_set_flex_flow(side, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_flex_align(side, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+		lv_obj_set_style_pad_top(side, S(28), 0);
+		lv_obj_set_style_pad_row(side, S(8), 0);
+		if (theme_lr) lv_obj_set_hidden(side, true);
+		bt_ring = mk_box(side, S(108), S(108), PAL.bg, LV_RADIUS_CIRCLE);
+		lv_obj_set_style_bg_opa(bt_ring, LV_OPA_TRANSP, 0);
+		lv_obj_set_style_border_width(bt_ring, LV_MAX(2, S(4)), 0);
+		lv_obj_set_style_margin_bottom(bt_ring, S(16), 0);
+		bt_ic = icon_create(bt_ring, ICON_BLUETOOTH, S(68));
+		lv_obj_center(bt_ic);
+		bt_title = mk_label(side, FONT_HEADING, PAL.text, "");
+		lv_obj_set_width(bt_title, pw - S(24));
+		lv_obj_set_style_text_align(bt_title, LV_TEXT_ALIGN_CENTER, 0);
+		lv_label_set_long_mode(bt_title, LV_LABEL_LONG_MODE_WRAP);
+		bt_note = mk_label(side, FONT_BODY, PAL.dim, "");
+		lv_obj_set_width(bt_note, pw - S(24));
+		lv_obj_set_style_text_align(bt_note, LV_TEXT_ALIGN_CENTER, 0);
+		lv_label_set_long_mode(bt_note, LV_LABEL_LONG_MODE_WRAP);
+		lv_obj_set_style_text_line_space(bt_note, S(6), 0);
+		bt_tips = mk_box(side, pw - S(24), LV_SIZE_CONTENT, PAL.bg, 0);
+		lv_obj_set_style_bg_opa(bt_tips, LV_OPA_TRANSP, 0);
+		lv_obj_set_flex_flow(bt_tips, LV_FLEX_FLOW_COLUMN);
+		lv_obj_set_flex_align(bt_tips, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+		lv_obj_set_style_pad_top(bt_tips, S(20), 0);
+		lv_obj_set_style_pad_row(bt_tips, S(2), 0);
+		static const char *const TIPS[][2] = {
+			{ "8BitDo", "Start + Y (Switch mode) or Start + X (X-input)" },
+			{ "Xbox", "hold the pair button on top" },
+			{ "PlayStation", "hold Share + PS until the light flashes" },
+			{ "Switch Pro", "hold the sync button on top" },
+		};
+		for (int i = 0; i < 4; i++) {
+			lv_obj_t *a = mk_label(bt_tips, FONT_NAME, PAL.text, TIPS[i][0]);
+			lv_obj_set_style_margin_top(a, i ? S(12) : 0, 0);
+			mk_label(bt_tips, FONT_SMALL, PAL.dim, TIPS[i][1]);
+		}
+	}
 	bt_list.sel = 0;
 	bt_list.top = 0;
 	bt_list.count = 0;
@@ -6935,7 +7023,12 @@ static void show_bt(void)
 
 static void bt_key(pkey_t k)
 {
-	if (vlist_key(&bt_list, k)) { if (bt.mode == BT_ACTION) { bt.mode = BT_MAIN; bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); } return; }
+	if (vlist_key(&bt_list, k)) {
+		bt_confirm_row = -1;
+		if (bt.mode == BT_ACTION) { bt.mode = BT_MAIN; bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
+		else footer_set(bt_list.sel >= 1 && bt_list.sel <= bt.ndev ? BT_DEV_HINTS : BT_HINTS);
+		return;
+	}
 	if (k == K_B || k == K_MENU) {
 		if (bt.mode == BT_ACTION) { bt.mode = BT_MAIN; bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); return; }
 		back_to_settings(SET_BT);
@@ -6947,11 +7040,35 @@ static void bt_key(pkey_t k)
 			snprintf(mac, sizeof(mac), "%s", bt.mac[bt.pick]);
 			bt.mode = BT_MAIN;
 			bt_do(k == K_A ? "disconnect" : "forget", mac);
-			if (k == K_X) toast_show("Forgotten: pair it again to use it");
+			if (k == K_X) toast_show("Deleted: pair it again to use it");
 		}
 		return;
 	}
-	if (k != K_A || !bt.present) return;
+	if (!bt.present) return;
+	int sel = bt_list.sel, dev = sel >= 1 && sel <= bt.ndev;
+	if (k == K_X && dev) {                             /* delete (forget) this one: X twice */
+		if (bt_confirm_row == sel && lv_tick_get() - bt_confirm_at < 4000) {
+			char mac[18];
+			snprintf(mac, sizeof(mac), "%s", bt.mac[sel - 1]);
+			bt_confirm_row = -1;
+			bt_do("forget", mac);
+			toast_show("Deleted: pair it again to use it");
+		} else { bt_confirm_row = sel; bt_confirm_at = lv_tick_get(); vlist_refresh(&bt_list); }
+		return;
+	}
+	if (k != K_A) return;
+	if (sel == bt.ndev + 1 && bt.ndev) {               /* Delete all pairings: A twice */
+		if (bt_confirm_row == sel && lv_tick_get() - bt_confirm_at < 4000) {
+			bt_confirm_row = -1;
+			char macs[24][18];
+			int n = bt.ndev;
+			for (int i = 0; i < n; i++) snprintf(macs[i], sizeof(macs[0]), "%s", bt.mac[i]);
+			for (int i = 0; i < n; i++) bt_do("forget", macs[i]);
+			bt_list.sel = 0;
+			toast_show("All pairings deleted");
+		} else { bt_confirm_row = sel; bt_confirm_at = lv_tick_get(); vlist_refresh(&bt_list); }
+		return;
+	}
 	if (bt_list.sel == 0) { bt_do(bt.busy ? "cancel" : "pair", NULL); return; }
 	if (bt.busy) { toast_show("Busy: wait for pairing or stop it"); return; }
 	bt.pick = bt_list.sel - 1;
