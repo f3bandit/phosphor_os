@@ -3,6 +3,21 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.50
+
+### Fixed
+- **Menu lag and freezes with some controllers:** a controller that sends a flood of reports (the 8BitDo
+  Ultimate 2 over its dongle: 1000 a second, from the tiny jitter of sticks at rest) kept the shell busy.
+  It's read in batches now.
+- **MC BlueBridge adapters** (and other controllers with the right stick on Z/RZ and the triggers on
+  RX/RY): the right stick read as the triggers, half pressed all the time, so there were phantom presses on
+  every screen. Phosphor and its Main now tell the triggers from the stick by where they rest (a trigger at
+  one end, a stick in the middle), and know BlueBridge's MiSTer modes by name.
+- **Get box art: B twice stops it straight away.** It used to wait for the game being looked up, which
+  could take minutes when a source was slow, so it looked stuck on the first title.
+- **The controller test and the mapping window** also close with B on a keyboard or the phone or PC app's
+  Remote control, for a controller whose buttons come through wrong and can't press Select + Start together.
+
 ## 0.27.49
 
 ### Changed
