@@ -5,6 +5,7 @@
  * ("load_core <file>" on /dev/MiSTer_cmd); arcade .mra files are loaded directly. When MiSTer's
  * running core goes back to MENU, the time since the launch is added to the game's play time. */
 #include "play.h"
+#include "indexer.h"
 #include "ra.h"
 #include "music.h"
 #include "db.h"
@@ -162,6 +163,15 @@ static int game_file(sqlite3 *db, long long id, const gsys_t **sys, char *path, 
 	snprintf(sys_id, sizeof(sys_id), "%s", sqlite3_column_text(st, 0));
 	snprintf(path, pn, "%s", sqlite3_column_text(st, 1));
 	sqlite3_finalize(st);
+	if (!file_exists(path) && !strncmp(path, "/media/usb", 10) && indexer_relocate(db)) {
+		/* its drive came up under another number (a stick plugged in first): moved in the library, again */
+		sqlite3_stmt *again;
+		if (sqlite3_prepare_v2(db, "SELECT f.path FROM files f WHERE f.game_id=? AND f.online=1 ORDER BY f.id LIMIT 1", -1, &again, NULL) == SQLITE_OK) {
+			sqlite3_bind_int64(again, 1, id);
+			if (sqlite3_step(again) == SQLITE_ROW) snprintf(path, pn, "%s", sqlite3_column_text(again, 0));
+			sqlite3_finalize(again);
+		}
+	}
 	if (!file_exists(path)) {
 		snprintf(err, errn, "%s isn't there any more", path);
 		return -1;

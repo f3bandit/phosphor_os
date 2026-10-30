@@ -22,6 +22,9 @@ const char *p_corename(void);
 
 /* games roots in MiSTer's own order (USB drives, the share, the SD card) */
 int p_roots(char out[][256], int max);
+/* /media/usb<n> is set up for Repair all drives (phosphor/rescue or SS1 Tool's ss1tool/rescue) */
+int p_repair_drive(int usb);
+int p_root_is_repair(const char *root);
 
 int mkdirs(const char *dir);      /* mkdir -p */
 int file_exists(const char *path);

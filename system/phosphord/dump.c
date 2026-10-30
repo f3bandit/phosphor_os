@@ -303,6 +303,7 @@ static int pick_root(const char *folder, long long need, char *out, size_t n)
 	for (int r = 0; r < nr; r++) {
 		struct stat st;
 		if (stat(roots[r], &st) || !S_ISDIR(st.st_mode)) continue;
+		if (p_root_is_repair(roots[r])) continue;          /* (never onto the repair stick) */
 		long long fr = free_bytes(roots[r]);
 		if (fr < need) continue;
 		char d[600];
