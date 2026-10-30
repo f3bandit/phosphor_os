@@ -204,3 +204,120 @@ cJSON *api_call_slow(int ms, const char *fmt, ...)
 
 /* a fresh connection for the next request (phosphord was restarted under us, by an update) */
 void api_reset(void) { hang_up(); }
+
+/* ---------- requests in the background (api_bg_ask / api_bg_take) ----------
+ * Polls the screens make again and again (a controller live, the controller list, box art and sharing
+ * state) go through a thread of their own with its own connection, so the menu never waits for them:
+ * phosphord answers one request at a time, and while it works one out the menu used to stand still (the
+ * cursor stopped, then the presses came all at once). The newest reply per key is kept for the screen to
+ * take on its next pass; a request asked again before it was sent is replaced, not queued twice. */
+#include <pthread.h>
+#define BG_SLOTS 16
+static struct { char key[40]; char *req; cJSON *reply; int fresh; } bg[BG_SLOTS];
+static pthread_mutex_t bg_lk = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t bg_cv = PTHREAD_COND_INITIALIZER;
+static int bg_started;
+
+static cJSON *bg_request(int *bfd, const char *req)
+{
+	for (int attempt = 0; attempt < 2; attempt++) {
+		if (*bfd < 0) *bfd = try_connect();
+		if (*bfd < 0) return NULL;                       /* (the menu's own requests start phosphord) */
+		size_t n = strlen(req), off = 0;
+		while (off < n) { ssize_t w = send(*bfd, req + off, n - off, MSG_NOSIGNAL); if (w <= 0) break; off += (size_t)w; }
+		if (off < n) { close(*bfd); *bfd = -1; continue; }
+		char *buf = NULL;
+		size_t len = 0;
+		for (;;) {
+			struct pollfd p = { *bfd, POLLIN, 0 };
+			if (poll(&p, 1, 8000) <= 0) break;
+			char tmp[16384];
+			ssize_t r = read(*bfd, tmp, sizeof(tmp));
+			if (r <= 0) break;
+			buf = realloc(buf, len + (size_t)r + 1);
+			memcpy(buf + len, tmp, (size_t)r);
+			len += (size_t)r;
+			buf[len] = 0;
+			if (memchr(buf, '\n', len)) break;
+		}
+		char *nl = buf ? memchr(buf, '\n', len) : NULL;
+		if (!nl) { free(buf); close(*bfd); *bfd = -1; if (attempt == 0 && len == 0) continue; return NULL; }
+		*nl = 0;
+		cJSON *r = cJSON_Parse(buf);
+		free(buf);
+		return r;
+	}
+	return NULL;
+}
+
+static void *bg_thread(void *u)
+{
+	(void)u;
+	int bfd = -1;
+	for (;;) {
+		pthread_mutex_lock(&bg_lk);
+		int i;
+		for (;;) {
+			for (i = 0; i < BG_SLOTS && !(bg[i].key[0] && bg[i].req); i++) {}
+			if (i < BG_SLOTS) break;
+			pthread_cond_wait(&bg_cv, &bg_lk);
+		}
+		char *req = bg[i].req, key[40];
+		bg[i].req = NULL;
+		snprintf(key, sizeof(key), "%s", bg[i].key);
+		pthread_mutex_unlock(&bg_lk);
+		cJSON *r = bg_request(&bfd, req);
+		free(req);
+		pthread_mutex_lock(&bg_lk);
+		for (i = 0; i < BG_SLOTS; i++) if (!strcmp(bg[i].key, key)) break;
+		if (i < BG_SLOTS) { cJSON_Delete(bg[i].reply); bg[i].reply = r; bg[i].fresh = 1; } else cJSON_Delete(r);
+		pthread_mutex_unlock(&bg_lk);
+	}
+	return NULL;
+}
+
+void api_bg_ask(const char *key, const char *fmt, ...)
+{
+	char req[2048];
+	va_list ap;
+	va_start(ap, fmt);
+	int n = vsnprintf(req, sizeof(req) - 2, fmt, ap);
+	va_end(ap);
+	if (n < 0 || n >= (int)sizeof(req) - 2) return;
+	req[n++] = '\n';
+	req[n] = 0;
+	pthread_mutex_lock(&bg_lk);
+	if (!bg_started) {
+		pthread_t t;
+		if (pthread_create(&t, NULL, bg_thread, NULL) == 0) { pthread_detach(t); bg_started = 1; }
+	}
+	int i, freei = -1;
+	for (i = 0; i < BG_SLOTS && strcmp(bg[i].key, key); i++) if (!bg[i].key[0] && freei < 0) freei = i;
+	if (i == BG_SLOTS) i = freei;
+	if (i >= 0) {
+		snprintf(bg[i].key, sizeof(bg[i].key), "%s", key);
+		free(bg[i].req);
+		bg[i].req = strdup(req);
+		pthread_cond_signal(&bg_cv);
+	}
+	pthread_mutex_unlock(&bg_lk);
+}
+
+cJSON *api_bg_take(const char *key)
+{
+	cJSON *r = NULL;
+	pthread_mutex_lock(&bg_lk);
+	for (int i = 0; i < BG_SLOTS; i++)
+		if (!strcmp(bg[i].key, key) && bg[i].fresh) { r = bg[i].reply; bg[i].reply = NULL; bg[i].fresh = 0; break; }
+	pthread_mutex_unlock(&bg_lk);
+	return r;
+}
+
+int api_bg_waiting(const char *key)
+{
+	int w = 0;
+	pthread_mutex_lock(&bg_lk);
+	for (int i = 0; i < BG_SLOTS; i++) if (!strcmp(bg[i].key, key)) w = bg[i].req != NULL;
+	pthread_mutex_unlock(&bg_lk);
+	return w;
+}
