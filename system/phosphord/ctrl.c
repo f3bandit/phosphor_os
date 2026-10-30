@@ -755,11 +755,11 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 	if (lv) {                                      /* what's pressed now on one controller */
 		/* the controller test and the mapping window ask 10-16 times a second: the controllers are looked
 		   up again (every input device opened, the controller database searched, about 0.5 s on the SS1)
-		   only when the set of input devices changes (or once a minute), else the last look is used (the menu
+		   only when the set of input devices changes, else the last look is used (the menu
 		   waited for each answer, and lagged) */
 		char sig[512];
 		ev_sig(sig, sizeof(sig));
-		if (pads_n < 0 || time(NULL) - pads_at >= 60 || strcmp(sig, pads_sig)) pads_look(P, sig);
+		if (pads_n < 0 || strcmp(sig, pads_sig)) pads_look(P, sig);
 		int n = pads_n;
 		for (int i = 0; i < n; i++)
 			if (!strcmp(P[i].ev, lv)) { cJSON *s = live(&P[i]); if (s) cJSON_AddItemToObject(o, "live", s); }
@@ -805,9 +805,9 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 	cJSON *arr = cJSON_AddArrayToObject(o, "controllers");
 	char sig[512];
 	ev_sig(sig, sizeof(sig));
-	/* looked up again only when a controller came or went, after a change made here (a mapping, a style),
-	   or once a minute: the list is asked for every 2 s, and each look takes about 0.5 s */
-	if (pads_n < 0 || (d && *d) || time(NULL) - pads_at >= 60 || strcmp(sig, pads_sig)) pads_look(P, sig);
+	/* a controller is worked out once, when it comes: looked up again only when one comes or goes, or after
+	   a change made here (a mapping, a style). The list is asked for every 2 s, and a look takes 0.5 s */
+	if (pads_n < 0 || (d && *d) || strcmp(sig, pads_sig)) pads_look(P, sig);
 	int n = pads_n;
 	for (int i = 0; i < n; i++) add_pad(arr, &P[i], files);
 	free(files);
