@@ -10843,7 +10843,8 @@ static void body_cards(void)
 	/* the two halves touch or cross (a wide list), or one is just a few lines: one card */
 	if (have[0] && have[1]) {
 		int small1 = lv_area_get_height(&u[1]) < (bottom - top) / 4, small0 = lv_area_get_height(&u[0]) < (bottom - top) / 4;
-		if (u[0].x2 + 2 * pad + S(12) > u[1].x1 || small1 || small0) {
+		/* (the controller test: its info and its drawing on one big card) */
+		if (u[0].x2 + 2 * pad + S(12) > u[1].x1 || small1 || small0 || cur == SCR_CTEST) {
 			u[0].x1 = LV_MIN(u[0].x1, u[1].x1); u[0].y1 = LV_MIN(u[0].y1, u[1].y1);
 			u[0].x2 = LV_MAX(u[0].x2, u[1].x2); u[0].y2 = LV_MAX(u[0].y2, u[1].y2);
 			have[1] = 0;
