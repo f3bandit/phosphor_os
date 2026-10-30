@@ -1583,7 +1583,7 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 	screen_title(label, sys_name);
 	int lr = theme_lr, lpw = L(84);                     /* 240p: the list, and the box art beside it */
 	if (lr) { vlist_lr_own = 1; vlist_create(&game_list, body, L(12), L(60), W - L(28) - lpw - L(8), H - L(60) - L(24)); }
-	else vlist_create(&game_list, body, S(56), S(176), SW(560), S(440));
+	else vlist_create(&game_list, body, S(56), S(206), SW(560), S(412));   /* (the count above it, on the card) */
 	game_list.count = ngames;
 	game_list.fill = game_fill;
 	game_list.sel = 0;
@@ -1641,7 +1641,7 @@ static void show_games(const char *sys_id, const char *sys_name, int cat)
 	lv_obj_t *c = mk_label(body, FONT_SMALL, PAL.dim, cnt);
 	lv_obj_update_layout(c);
 	if (lr) lv_obj_set_pos(c, W - L(16) - lv_obj_get_width(c), L(26));
-	else lv_obj_set_pos(c, S(56) + SW(560) - S(10) - lv_obj_get_width(c), S(134));
+	else lv_obj_set_pos(c, S(56) + SW(560) - S(10) - lv_obj_get_width(c), S(176));
 
 	vlist_refresh(&game_list);
 	game_detail();
@@ -10906,6 +10906,13 @@ static void body_cards(void)
 		}
 	} else if (have[1] && !have[0]) { u[0] = u[1]; have[0] = 1; have[1] = 0; }
 	for (int k = 0; k < 2; k++) if (have[k]) { top = LV_MIN(top, u[k].y1 - pad); bottom = LV_MAX(bottom, u[k].y2 + pad); }
+	for (uint32_t i = 0; i < nc; i++) {                  /* (never up into the title's card) */
+		lv_obj_t *o = lv_obj_get_child(body, (int32_t)i);
+		if (!lv_obj_has_flag(o, LV_OBJ_FLAG_USER_1) || lv_obj_is_hidden(o)) continue;
+		lv_area_t ta;
+		lv_obj_get_coords(o, &ta);
+		top = LV_MAX(top, ta.y2 + S(10));
+	}
 	for (int k = 0; k < 2; k++) {
 		if (!have[k]) { if (card[k]) lv_obj_set_hidden(card[k], true); continue; }
 		if (!card[k]) {
@@ -10916,7 +10923,7 @@ static void body_cards(void)
 		}
 		int x1 = k == 0 ? LV_MIN(bc.x1 + S(42), u[k].x1 - pad) : u[k].x1 - pad;
 		int x2 = k == 1 || u[k].x2 + pad > bc.x1 + W - S(42) - S(60) ? bc.x1 + W - S(42) - 1 : u[k].x2 + pad;
-		if (k == 0 && !have[1] && u[k].x2 + pad > bc.x1 + W * 3 / 4) x2 = bc.x1 + W - S(42) - 1;
+		if (k == 0 && !have[1]) x2 = bc.x1 + W - S(42) - 1;   /* (one card: the screen's width, as on every screen) */
 		int x = x1 - bc.x1, y = top - bc.y1, w = x2 - x1 + 1, h = bottom - top + 1;
 		if (lv_obj_get_x(card[k]) != x || lv_obj_get_y(card[k]) != y) lv_obj_set_pos(card[k], x, y);
 		if (lv_obj_get_width(card[k]) != w || lv_obj_get_height(card[k]) != h) lv_obj_set_size(card[k], w, h);
