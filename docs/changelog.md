@@ -3,6 +3,14 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.55
+
+### Fixed
+- **The dock's NVMe drive missing after a restart:** a restart keeps the dock powered, and its NVMe can come
+  up stuck. Phosphor now looks for a drive it has seen before again every 30 s (a USB port reset every third
+  time) for 3 minutes, stopping the moment it's there; it used to give up after one try. Only then does the
+  TV say to unplug the SuperStation's power for 10 s.
+
 ## 0.27.54
 
 ### New
