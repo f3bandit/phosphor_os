@@ -580,8 +580,11 @@ static cJSON *live(const pad_t *d)
 		if (c[i].has && c[i].v > ((i == C_L2 || i == C_R2) && d->b[i].kind == 'a' ? 0.3 : 0.5)) cJSON_AddItemToArray(on, cJSON_CreateString(CTL[i]));
 	}
 	/* C and Z on 6-button pads, when the database gave those buttons no other name */
-	if (has_key(d, BTN_C) && TESTBIT(BTN_C, keys)) cJSON_AddItemToArray(on, cJSON_CreateString("c"));
-	if (has_key(d, BTN_Z) && TESTBIT(BTN_Z, keys)) cJSON_AddItemToArray(on, cJSON_CreateString("z"));
+	/* (not when C or Z is already another button's code: MC BlueBridge's X is BTN_C, its R1 BTN_Z) */
+	int c_used = 0, z_used = 0;
+	for (int i = 0; i < C_N; i++) if (d->b[i].kind == 'b') { c_used |= d->b[i].code == BTN_C; z_used |= d->b[i].code == BTN_Z; }
+	if (!c_used && has_key(d, BTN_C) && TESTBIT(BTN_C, keys)) cJSON_AddItemToArray(on, cJSON_CreateString("c"));
+	if (!z_used && has_key(d, BTN_Z) && TESTBIT(BTN_Z, keys)) cJSON_AddItemToArray(on, cJSON_CreateString("z"));
 	const char *st[2] = { "ls", "rs" };
 	for (int s = 0; s < 2; s++) {
 		int ix = s ? C_RSX : C_LSX;

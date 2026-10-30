@@ -43,7 +43,10 @@ const char *padview_label(const char *key, const char *id)
 	if (li < 0) li = padview_index("generic");
 	const char *lab = NULL;
 	for (int i = 0; li >= 0 && i < PLAYOUTS[li].n; i++) if (!strcmp(PLAYOUTS[li].it[i].id, id)) lab = PLAYOUTS[li].it[i].lab;
-	if (lab && (unsigned char)lab[0] >= 0x80) {          /* PlayStation's symbols: the font has no such glyphs */
+	if (lab && (unsigned char)lab[0] >= 0x80) {          /* symbols the text font has no glyphs for */
+		if (!strcmp(id, "back")) return "Minus";         /* (Switch's − and ⌂) */
+		if (!strcmp(id, "start")) return "Plus";
+		if (!strcmp(id, "guide")) return "Home";
 		if (!strcmp(id, "y")) return "Triangle";
 		if (!strcmp(id, "b")) return "Circle";
 		if (!strcmp(id, "a")) return "Cross";
