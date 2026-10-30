@@ -719,13 +719,13 @@ static void *thread(void *arg)
 			pg.source[0] = 0;
 			pthread_mutex_unlock(&lk);
 			int r = scrape_one(db, &g);
+			if (stop_now) break;            /* (stopped in the middle of this game: it's looked up next time) */
 			pthread_mutex_lock(&lk);
 			pg.done++;
 			if (r < 0) pg.later++;
 			else if (r) pg.found++;
 			else pg.not_found++;
 			pthread_mutex_unlock(&lk);
-			if (stop_now) break;            /* (stopped in the middle of this game: it's looked up next time) */
 			if (r < 0) {
 				/* one source unreachable: this game later; several in a row: stop, the user can ask again */
 				mark(db, g.id, "later");
