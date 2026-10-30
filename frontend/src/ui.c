@@ -7283,7 +7283,7 @@ static struct {
 	int idx, step, finished, from_app;
 	uint32_t end_at, started;
 	char vp[16], ev[16], name[96], style[24];
-	char done[40][8], seen[40][8];
+	char done[40][8], seen[40][8], ask_now[64];
 	int ndone, nseen;
 	lv_obj_t *what, *ask, *hint, *bar, *note;
 	padview_t *pv;
@@ -7300,7 +7300,7 @@ static void map_state_file(const char *extra)
 	int i = -1;
 	for (int k = 0; k < MSTEP_N; k++) if (MSTEPS[k].step == mw.step) i = k;
 	fprintf(f, "{\"on\":%s,\"dev\":\"%s\",\"name\":\"%s\",\"step\":%d,\"n\":%d,\"of\":%d,\"ask\":\"%s\",\"target\":\"%s\"%s}\n",
-	        mw.finished ? "false" : "true", mw.vp, mw.name, mw.step, i + 1, MSTEP_N, i >= 0 ? MSTEPS[i].ask : "", i >= 0 ? MSTEPS[i].target : "", extra ? extra : "");
+	        mw.finished ? "false" : "true", mw.vp, mw.name, mw.step, i + 1, MSTEP_N, i >= 0 ? (mw.ask_now[0] ? mw.ask_now : MSTEPS[i].ask) : "", i >= 0 ? MSTEPS[i].target : "", extra ? extra : "");
 	fclose(f);
 	rename(t, p);
 }
@@ -7314,8 +7314,23 @@ static void map_show_step(void)
 	snprintf(b, sizeof(b), "%s  \xC2\xB7  %d OF %d", MSTEPS[i].what, i + 1, MSTEP_N);
 	for (char *c = b; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
 	lv_label_set_text(mw.what, b);
-	lv_label_set_text(mw.ask, MSTEPS[i].ask);
-	lv_label_set_text(mw.hint, MSTEPS[i].hint ? MSTEPS[i].hint : "");
+	/* MiSTer's A, B, X and Y are a SNES pad's: A is the right-hand face button. Asked by the name this
+	   controller has on the button the ring shows, so "Press A" never points at a button printed B */
+	const char *mn = mw.step == 4 ? "A" : mw.step == 5 ? "B" : mw.step == 6 ? "X" : mw.step == 7 ? "Y" : NULL;
+	const char *lab = mn ? padview_label(mw.style, MSTEPS[i].target) : NULL;
+	if (mn && lab && *lab && strcmp(lab, mn)) {
+		char ask[64], hint[200];
+		snprintf(ask, sizeof(ask), "Press %s", lab);
+		snprintf(hint, sizeof(hint), "MiSTer's %s button: MiSTer names them as on a SNES pad, so on this controller that's %s (the ring shows it).%s",
+			mn, lab, mw.step >= 6 ? " Not on this controller? Press a button you've already used." : " Any button works.");
+		lv_label_set_text(mw.ask, ask);
+		lv_label_set_text(mw.hint, hint);
+		snprintf(mw.ask_now, sizeof(mw.ask_now), "%s", ask);
+	} else {
+		mw.ask_now[0] = 0;
+		lv_label_set_text(mw.ask, MSTEPS[i].ask);
+		lv_label_set_text(mw.hint, MSTEPS[i].hint ? MSTEPS[i].hint : "");
+	}
 	lv_bar_set_value(mw.bar, (i * 100) / MSTEP_N, LV_ANIM_OFF);
 	map_state_file(NULL);
 }
