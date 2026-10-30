@@ -10700,7 +10700,10 @@ void ui_tick(void)
 	vk_check(0);
 	vk_tick();
 	if (si_pending()) si_update();
-	{ static int asked; if (!asked && now > 5000) { asked = 1; guard_check(); power_check(); update_check(); sdrescue_check(); } }   /* the alerts, once after start-up */
+	/* the alerts, once after start-up: one at a time, 1.5 s apart (each asks phosphord, and the menu waits
+	   for its answer: all four at once froze it for seconds at a busy start-up) */
+	{ static int step; static uint32_t next = 5000;
+	  if (step < 4 && now > next) { switch (step++) { case 0: guard_check(); break; case 1: power_check(); break; case 2: update_check(); break; default: sdrescue_check(); } next = now + 1500; } }
 	{ static int wall_done; if (!wall_done && now > 3000) { wall_done = 1; if (SETTINGS.wallpaper_on) bg_apply(root); } }   /* (phosphord up by now) */
 	wall_tick();
 	/* Phosphor's releases on GitHub: a minute after start-up, then every 30 min, never while a game runs
