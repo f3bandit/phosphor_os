@@ -7425,7 +7425,8 @@ static void map_tick(void)
 	if (!on && !done && lv_tick_get() - mw.started > 3000) { map_finish(0, "Phosphor's Main didn't start the mapping"); return; }
 	if (step != mw.step && step != -100) {
 		/* what was pressed for the step that just ended: lit as mapped from here on */
-		for (int i = 0; i < mw.nseen && mw.ndone < 40; i++) snprintf(mw.done[mw.ndone++], 8, "%s", mw.seen[i]);
+		/* (not before the first step: what was held as the window opened, A or Start, isn't mapped) */
+		if (mw.step != -100) for (int i = 0; i < mw.nseen && mw.ndone < 40; i++) snprintf(mw.done[mw.ndone++], 8, "%s", mw.seen[i]);
 		mw.nseen = 0;
 		mw.step = step;
 		map_show_step();
