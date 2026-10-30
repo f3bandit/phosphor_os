@@ -719,6 +719,20 @@ static int parse_vidpid(cJSON *req, unsigned *vid, unsigned *pid)
 	return v && sscanf(v, "%4x:%4x", vid, pid) == 2;
 }
 
+/* the input devices there are now ("event0 event3 ..."): the controllers are looked up again when it changes */
+static void ev_sig(char *sig, size_t n)
+{
+	glob_t g;
+	sig[0] = 0;
+	if (glob("/dev/input/event*", 0, NULL, &g)) return;
+	for (size_t i = 0; i < g.gl_pathc; i++) { strncat(sig, g.gl_pathv[i] + 11, n - strlen(sig) - 2); strncat(sig, " ", n - strlen(sig) - 1); }
+	globfree(&g);
+}
+static int pads_n = -1;
+static time_t pads_at;
+static char pads_sig[512];
+static void pads_look(pad_t *P, const char *sig) { pads_n = pads(P, MAXDEV); pads_at = time(NULL); snprintf(pads_sig, sizeof(pads_sig), "%s", sig); }
+
 cJSON *ctrl_command(cJSON *req, const char **err)
 {
 	static pad_t P[MAXDEV];
@@ -743,17 +757,10 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 		   up again (every input device opened, the controller database searched, about 0.5 s on the SS1)
 		   only when the set of input devices changes (or once a minute), else the last look is used (the menu
 		   waited for each answer, and lagged) */
-		static int ln = -1;
-		static time_t lat;
-		static char lsig[512];
-		char sig[512] = "";
-		glob_t g;
-		if (!glob("/dev/input/event*", 0, NULL, &g)) {
-			for (size_t i = 0; i < g.gl_pathc; i++) { strncat(sig, g.gl_pathv[i] + 11, sizeof(sig) - strlen(sig) - 2); strcat(sig, " "); }
-			globfree(&g);
-		}
-		if (ln < 0 || time(NULL) - lat >= 60 || strcmp(sig, lsig)) { ln = pads(P, MAXDEV); lat = time(NULL); snprintf(lsig, sizeof(lsig), "%s", sig); }
-		int n = ln;
+		char sig[512];
+		ev_sig(sig, sizeof(sig));
+		if (pads_n < 0 || time(NULL) - pads_at >= 60 || strcmp(sig, pads_sig)) pads_look(P, sig);
+		int n = pads_n;
 		for (int i = 0; i < n; i++)
 			if (!strcmp(P[i].ev, lv)) { cJSON *s = live(&P[i]); if (s) cJSON_AddItemToObject(o, "live", s); }
 		map_state(o);
@@ -796,7 +803,10 @@ cJSON *ctrl_command(cJSON *req, const char **err)
 	}
 	char *files = list_files(o);
 	cJSON *arr = cJSON_AddArrayToObject(o, "controllers");
-	int n = pads(P, MAXDEV);
+	char sig[512];
+	ev_sig(sig, sizeof(sig));
+	pads_look(P, sig);                            /* (the live view goes on from this look) */
+	int n = pads_n;
 	for (int i = 0; i < n; i++) add_pad(arr, &P[i], files);
 	free(files);
 	list_backups(o);

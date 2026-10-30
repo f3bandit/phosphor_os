@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,6 +112,25 @@ static void serve(sqlite3 *db, client_t *c)
 	if (c->len > LINE_MAX_) drop(c);
 }
 
+static pthread_mutex_t dw_lk = PTHREAD_MUTEX_INITIALIZER;
+static char dw_key[96];
+static int dw_audio;
+static void *disc_watch(void *u)
+{
+	(void)u;
+	for (;;) {
+		char key[96];
+		int audio;
+		disc_brief(key, sizeof(key), &audio);
+		pthread_mutex_lock(&dw_lk);
+		snprintf(dw_key, sizeof(dw_key), "%s", key);
+		dw_audio = audio;
+		pthread_mutex_unlock(&dw_lk);
+		sleep(2);
+	}
+	return NULL;
+}
+
 int main(int argc, char **argv)
 {
 	const char *serial = NULL;
@@ -149,6 +169,7 @@ int main(int argc, char **argv)
 	}
 
 	plog("ready on %s", p_socket());
+	{ pthread_t t; if (pthread_create(&t, NULL, disc_watch, NULL) == 0) pthread_detach(t); }
 	for (;;) {
 		struct pollfd p[MAX_CLIENTS + 1];
 		int n = 0, idx[MAX_CLIENTS];
@@ -156,18 +177,36 @@ int main(int argc, char **argv)
 		for (int i = 0; i < MAX_CLIENTS; i++)
 			if (cl[i].fd >= 0) { idx[n - 1] = i; p[n++] = (struct pollfd){ cl[i].fd, POLLIN, 0 }; }
 		int r = poll(p, (nfds_t)n, 2000);   /* wakes every 2 s only to keep play time */
+		/* (the ticks run between requests: one that takes long holds every request up; logged) */
+		struct timespec tk0, tk1, tk2, tk3;
+		clock_gettime(CLOCK_MONOTONIC, &tk0);
 		play_tick(db);
+		clock_gettime(CLOCK_MONOTONIC, &tk1);
 		{   /* the music player: a game started (it stops), a music CD in or out */
+			/* the dock's drive, from Phosphor's Main, in its own thread (disc_watch): asking here took up to
+			   0.5 s while Main was busy (the controller test), and phosphord answers one request at a time,
+			   so every request waited behind it */
 			static time_t mt;
 			if (time(NULL) - mt >= 2) {
 				mt = time(NULL);
 				char key[96];
 				int audio;
-				disc_brief(key, sizeof(key), &audio);
+				pthread_mutex_lock(&dw_lk);
+				snprintf(key, sizeof(key), "%s", dw_key);
+				audio = dw_audio;
+				pthread_mutex_unlock(&dw_lk);
 				music_tick(key, audio);
 			}
 		}
+		clock_gettime(CLOCK_MONOTONIC, &tk2);
 		phantom_tick();
+		clock_gettime(CLOCK_MONOTONIC, &tk3);
+		{
+#define MSD(a, b) ((long)(((b).tv_sec - (a).tv_sec) * 1000 + ((b).tv_nsec - (a).tv_nsec) / 1000000))
+			long all = MSD(tk0, tk3);
+			if (all >= 150) plog("slow tick: %ld ms (play %ld, music %ld, phantom %ld)", all, MSD(tk0, tk1), MSD(tk1, tk2), MSD(tk2, tk3));
+#undef MSD
+		}
 		if (r <= 0) continue;
 		if (p[0].revents & POLLIN) {
 			int fd = accept4(lfd, NULL, NULL, SOCK_CLOEXEC);
