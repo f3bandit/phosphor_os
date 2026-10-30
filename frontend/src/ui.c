@@ -7521,7 +7521,8 @@ static int upo_listed(void);
 static int upo_row(void) { return upo.newer && (!upo.downloaded || !upo_listed()) ? 1 : 0; }
 
 static struct {
-	int npk, nrb, busy;
+	int npk, nrb, busy, old_files;
+	double old_kb;
 	char ver[24], pk_file[8][300], pk_ver[8][24], rb_ver[6][24], rb_date[6][24], msg[200];
 	uint32_t confirm_at;
 	int confirm_row;
@@ -7534,7 +7535,7 @@ static int upo_listed(void) { for (int i = 0; i < up.npk; i++) if (!strcmp(up.pk
 static void up_recount(void)
 {
 	if (cur != SCR_PUPD) return;
-	int n = 1 + upo_row() + up.npk + up.nrb;
+	int n = 1 + upo_row() + up.npk + up.nrb + (up.old_files > 0);
 	if (n != up_list.count) {
 		if (up_list.count) up.confirm_row = -1;
 		up_list.count = n;
@@ -7589,6 +7590,8 @@ static void up_apply(cJSON *r)
 		snprintf(up.rb_ver[up.nrb], sizeof(up.rb_ver[0]), "%s", v ? v : "");
 		snprintf(up.rb_date[up.nrb++], sizeof(up.rb_date[0]), "%s", api_str(x, "date") ? api_str(x, "date") : "");
 	}
+	up.old_files = (int)api_num(r, "old_files", 0);
+	up.old_kb = api_num(r, "old_kb", 0);
 	cJSON *st = cJSON_GetObjectItem(r, "state");
 	up.busy = st && api_str(st, "state") && !strcmp(api_str(st, "state"), "working");
 	snprintf(up.msg, sizeof(up.msg), "%s", st && api_str(st, "msg") ? api_str(st, "msg") : "");
@@ -7598,7 +7601,8 @@ static void up_apply(cJSON *r)
 	if (up.head) lv_label_set_text(up.head, h);
 	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
 		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs, or right now with Check GitHub for updates, at the top). "
-		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too.");
+		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too. "
+		"The newest 3 packages are kept after an update.");
 	up_recount();                                     /* (Check GitHub for updates always first) */
 }
 
@@ -7656,6 +7660,12 @@ static void up_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 		return;
 	}
 	i -= up.npk;
+	if (i >= up.nrb) {                                /* (last) the packages earlier updates left behind */
+		snprintf(t, n, "Remove old update files");
+		if (sure) snprintf(val, vn, "Press A again to remove");
+		else snprintf(val, vn, "%d file%s, %.0f MB", up.old_files, up.old_files == 1 ? "" : "s", up.old_kb / 1024 < 1 ? 1 : up.old_kb / 1024);
+		return;
+	}
 	snprintf(t, n, "Roll back to Phosphor %s", up.rb_ver[i]);
 	snprintf(val, vn, "%s", sure ? "Press A again to roll back" : up.rb_date[i]);
 }
@@ -7720,6 +7730,13 @@ static void up_key(pkey_t k)
 	}
 	if (up.confirm_row != up_list.sel || lv_tick_get() - up.confirm_at > 4000) { up.confirm_row = up_list.sel; up.confirm_at = lv_tick_get(); vlist_refresh(&up_list); return; }
 	up.confirm_row = -1;
+	if (s >= up.npk + up.nrb) {                       /* Remove old update files: not an update, nothing restarts */
+		cJSON *r = api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"clean\"}");
+		int ok = api_ok(r);
+		toast_show(ok ? "Old update files removed" : r && api_str(r, "error") ? api_str(r, "error") : "Couldn't remove them");
+		if (ok) up_apply(r); else cJSON_Delete(r);
+		return;
+	}
 	/* busy from here: a second press never starts a second update (the updater turns one down too) */
 	up.busy = 1;
 	cJSON *r = s < up.npk ? api_call_slow(30000, "{\"cmd\":\"update\",\"do\":\"install\",\"file\":\"%s\"}", up.pk_file[s])

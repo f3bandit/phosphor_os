@@ -1234,10 +1234,11 @@ static char *upd_run(void *what)
 	snprintf(cmd, sizeof(cmd), "'%s/phosphor/update.sh' %s 2>/dev/null", p_fat(), (const char *)what);
 	return run_out(cmd);
 }
-static bgcache_t c_upd_list = BGCACHE(upd_run, "list", 20), c_upd_rb = BGCACHE(upd_run, "rollbacks", 60);
+static bgcache_t c_upd_list = BGCACHE(upd_run, "list", 20), c_upd_rb = BGCACHE(upd_run, "rollbacks", 60),
+	c_upd_old = BGCACHE(upd_run, "old", 30);          /* old packages kept in phosphor/updates: count|KB */
 /* at start, in the background: listing the packages opens each one, which took over 15 s at a busy start-up,
    and phosphord answers one request at a time (the shell's start-up checks then waited, and the menu froze) */
-void api_prime_updates(void) { free(bgcache_get(&c_upd_list, 0)); free(bgcache_get(&c_upd_rb, 0)); }
+void api_prime_updates(void) { free(bgcache_get(&c_upd_list, 0)); free(bgcache_get(&c_upd_rb, 0)); free(bgcache_get(&c_upd_old, 0)); }
 
 static char *cmd_update(cJSON *req)
 {
@@ -1253,6 +1254,16 @@ static char *cmd_update(cJSON *req)
 	char *pk = bgcache_get(&c_upd_list, 0), *rb = bgcache_get(&c_upd_rb, 0);
 	if (!pk || !rb) cJSON_AddBoolToObject(o, "listing", 1);
 	int online_check = d && !strcmp(d, "check");
+	if (d && !strcmp(d, "clean")) {                   /* Remove old update files (a second or two) */
+		char c2[700];
+		snprintf(c2, sizeof(c2), "'%s' clean > /dev/null 2>&1", up);
+		int rc = system(c2);
+		bgcache_stale(&c_upd_list); bgcache_stale(&c_upd_old);
+		free(pk); pk = bgcache_now(&c_upd_list);
+		free(bgcache_now(&c_upd_old));
+		if (rc != 0) { free(pk); free(rb); cJSON_Delete(o); return fail("Couldn't remove the old update files"); }
+		d = NULL;
+	}
 	if (d && !strcmp(d, "download")) {                /* the newer release from GitHub, into phosphor/updates */
 		const char *e = NULL;
 		if (upnet_download(&e) != 0) { free(pk); free(rb); cJSON_Delete(o); return fail(e); }
@@ -1284,7 +1295,7 @@ static char *cmd_update(cJSON *req)
 			free(pk); free(rb); cJSON_Delete(o);
 			return fail(WIFEXITED(rc) && WEXITSTATUS(rc) == 3 ? "An update is already running: wait for it to finish" : "the updater didn't start");
 		}
-		bgcache_stale(&c_upd_list); bgcache_stale(&c_upd_rb);
+		bgcache_stale(&c_upd_list); bgcache_stale(&c_upd_rb); bgcache_stale(&c_upd_old);
 	}
 	cJSON_AddBoolToObject(o, "available", 1);
 	snprintf(cmd, sizeof(cmd), "%s/phosphor/VERSION", p_fat());
@@ -1293,6 +1304,16 @@ static char *cmd_update(cJSON *req)
 	if (vf && fgets(line, sizeof(line), vf)) { line[strcspn(line, " \n")] = 0; cJSON_AddStringToObject(o, "version", line); }
 	if (vf) fclose(vf);
 	upnet_status(o, line[0] ? line : NULL, online_check);
+	{
+		char *od = bgcache_get(&c_upd_old, 0);
+		if (od) {
+			int nf = atoi(od);
+			const char *bar = strchr(od, '|');
+			cJSON_AddNumberToObject(o, "old_files", nf);
+			cJSON_AddNumberToObject(o, "old_kb", bar ? atof(bar + 1) : 0);
+			free(od);
+		}
+	}
 	/* a release just downloaded from GitHub: the kept package list (up to 20 s old) is looked at again in the
 	   background, so its Install row comes within a few seconds (never re-listed here: that takes seconds,
 	   and phosphord answers one request at a time) */
