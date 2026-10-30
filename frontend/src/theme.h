@@ -61,6 +61,7 @@ lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius);
  * on them is always solid. Solid on a low-resolution CRT (240p / 288p), where blending looks poor: the one
  * place to change it for CRTs */
 lv_opa_t theme_card_opa(void);
+int theme_card_radius(void);      /* every card's rounding */
 /* a card behind things that sit straight on the background (a list, the title, the status icons, the
    button hints): in the panel colour, as see-through as the rest */
 void theme_card_style(lv_obj_t *o, int radius);

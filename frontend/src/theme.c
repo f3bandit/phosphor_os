@@ -86,12 +86,15 @@ lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius)
 	lv_obj_remove_style_all(o);
 	lv_obj_set_size(o, w, h);
 	lv_obj_set_style_bg_color(o, bg, 0);
-	lv_obj_set_style_bg_opa(o, lv_color_eq(bg, PAL.panel) ? theme_card_opa() : LV_OPA_COVER, 0);
-	lv_obj_set_style_radius(o, radius, 0);
+	int card = lv_color_eq(bg, PAL.panel);
+	lv_obj_set_style_bg_opa(o, card ? theme_card_opa() : LV_OPA_COVER, 0);
+	/* every card the same rounding (a row inside a list, radius 0 or a circle keep theirs) */
+	lv_obj_set_style_radius(o, card && radius >= S(12) && radius != LV_RADIUS_CIRCLE && !theme_lr ? theme_card_radius() : radius, 0);
 	lv_obj_set_scrollable(o, false);
 	return o;
 }
 
+int theme_card_radius(void) { return S(16); }
 lv_opa_t theme_card_opa(void) { return theme_lr ? LV_OPA_COVER : (lv_opa_t)230; }   /* (90 %) */
 
 void theme_card_style(lv_obj_t *o, int radius)
