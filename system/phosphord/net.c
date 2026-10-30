@@ -46,6 +46,7 @@ void net_set_cancel(volatile int *flag) { cancel_flag = flag; }
 /* runs curl; its stdout goes to *out (when out) — with -o, stdout carries only the status code */
 static int run_curl(const char *const *args, const char *body, char **out, size_t *outlen)
 {
+	if (cancel_flag && *cancel_flag) return -1;           /* (stopped: no more requests) */
 	const char *curl = getenv("PHOS_CURL") ? getenv("PHOS_CURL") : "curl";
 	const char *ca = getenv("PHOS_CACERT");
 	if (!ca && file_exists("/etc/ssl/certs/cacert.pem")) ca = "/etc/ssl/certs/cacert.pem";
