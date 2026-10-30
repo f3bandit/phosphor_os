@@ -178,11 +178,12 @@ void input_main_pad(const char *b, int p)
 	};
 	char w[48];
 	int centre = !strcmp(b, "select") || !strcmp(b, "start");
-	/* Main's "select" and "start" are whatever its menu mapping put there: on the SS1's 8BitDo pads,
-	   the X and Y buttons. With a controller read here, its own Select, Start, X and Y are used. */
-	snprintf(w, sizeof(w), "%s %s%s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up", centre && have_pad() ? " ignored: read from the controller" : "");
+	/* With a controller read here (a real one, see raw_pad), its own Select, Start, X and Y are used, not
+	   Main's (they'd come twice). Plain HID pads (BlueBridge) get all four from Main, mapped as in MiSTer. */
+	int own = (centre || !strcmp(b, "x") || !strcmp(b, "y")) && have_pad();
+	snprintf(w, sizeof(w), "%s %s%s", b, p == 1 ? "down" : p == 2 ? "repeat" : "up", own ? " ignored: read from the controller" : "");
 	input_watch("main", w);
-	if (centre && have_pad()) return;
+	if (own) return;
 	if (centre) {                                     /* the centre buttons (see centre_press) */
 		int w = b[1] == 'e' ? CB_SELECT : CB_START;
 		if (p == 1) centre_press(w, SRC_MAIN); else if (p == 0) centre_release(w, SRC_MAIN);
