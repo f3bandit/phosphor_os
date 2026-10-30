@@ -566,7 +566,7 @@ static char *cmd_candidates(sqlite3 *db, cJSON *req)
 		n++;
 	}
 	sqlite3_finalize(st);
-	qsort(c, (size_t)n, sizeof(*c), cand_cmp);
+	if (n) qsort(c, (size_t)n, sizeof(*c), cand_cmp);
 	cJSON *o = ok();
 	cJSON_AddNumberToObject(o, "total", n);
 	if (cur_base >= 0) cJSON_AddNumberToObject(o, "current", (double)cur_base);
