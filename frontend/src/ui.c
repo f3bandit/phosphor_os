@@ -7246,9 +7246,23 @@ static void show_ctest(int idx)
 				int fw = (cx2 - cx1 - 2 * pad) * 1000 / LV_MAX(1, dw), fh = (cy2 - cy1 - 2 * pad) * 1000 / LV_MAX(1, dh);
 				pw = pw * LV_MIN(fw, fh) / 1000;
 			} else {
+				/* across: in the middle of the room right of the info's text (to the card's right edge);
+				   up and down: in the middle of the card */
 				lv_area_t bc;
 				lv_obj_get_coords(body, &bc);
-				int dx = (cx1 + cx2) / 2 - ((u.x1 + u.x2) / 2 - bc.x1), dy = (cy1 + cy2) / 2 - ((u.y1 + u.y2) / 2 - bc.y1);
+				int ir = S(56);
+				lv_obj_t *info[] = { tw.what, tw.ask, tw.hint, tw.k[0], tw.k[1], tw.k[2], tw.k[3], tw.k[4], tw.v[0], tw.v[1], tw.v[2], tw.v[3], tw.v[4] };
+				for (size_t i = 0; i < sizeof(info) / sizeof(info[0]); i++) {
+					if (!info[i]) continue;
+					lv_obj_update_layout(info[i]);
+					const char *t = lv_label_get_text(info[i]);
+					lv_point_t sz;
+					int ow = lv_obj_get_width(info[i]);
+					lv_text_get_size(&sz, t, lv_obj_get_style_text_font(info[i], 0), lv_obj_get_style_text_letter_space(info[i], 0), 0,
+					                 lv_label_get_long_mode(info[i]) == LV_LABEL_LONG_MODE_WRAP ? ow : LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+					ir = LV_MAX(ir, lv_obj_get_x(info[i]) + LV_MIN(sz.x, ow));
+				}
+				int dx = (ir + cx2) / 2 - ((u.x1 + u.x2) / 2 - bc.x1), dy = (cy1 + cy2) / 2 - ((u.y1 + u.y2) / 2 - bc.y1);
 				lv_obj_set_pos(box, lv_obj_get_x(box) + dx, lv_obj_get_y(box) + dy);
 			}
 		}
