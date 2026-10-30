@@ -7083,7 +7083,7 @@ static struct {
 	char got[8][12];
 	int ngot;
 } tw;
-static const char *const TW_HINTS[] = { "Select + Start", "Close (or B on a keyboard or the app's Remote)", NULL };
+static const char *const TW_HINTS[] = { "Select + Start", "Close (or Esc on a keyboard, B on the app's Remote)", NULL };
 
 static void tw_poll(void)
 {
@@ -7348,7 +7348,7 @@ static void map_show_step(void)
 	map_state_file(NULL);
 }
 
-static const char *const MAP_HINTS[] = { "Select + Start", "Cancel, nothing saved (or B on a keyboard or the app's Remote)", NULL };
+static const char *const MAP_HINTS[] = { "Select + Start", "Cancel, nothing saved (or Esc on a keyboard, B on the app's Remote)", NULL };
 
 static void show_map(int idx)
 {
