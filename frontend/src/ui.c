@@ -6995,6 +6995,7 @@ static void ct_side(void)
 			"Uses its own button mapping in MiSTer's menu and every core. Map buttons to change it; Reset to automatic goes back to MiSTer's controller list." :
 			!strcmp(ct.uses[s], "database") ? "MiSTer knows this controller and maps it by itself. Map buttons to set it up your way." :
 			"MiSTer doesn't know this controller yet: map its buttons once and it works in the menu and every core.");
+		/* (the drawing also says which face buttons are A, B, X and Y in Phosphor's menu) */
 	} else if (ct.mode == 1) {
 		lv_label_set_text(ct.desc, "Every backup holds all the mapping files and your controller profiles as they were. Restoring one backs up the current ones first.");
 	} else {
@@ -7227,6 +7228,7 @@ static void ct_key(pkey_t k)
 			if (i >= padview_count()) i = -1;
 			if (i < -1) i = padview_count() - 1;
 			cJSON_Delete(api_call("{\"cmd\":\"controllers\",\"do\":\"style\",\"vidpid\":\"%s\",\"style\":\"%s\"}", ct.vp[s], i < 0 ? "auto" : padview_key(i)));
+			input_relayout();                               /* (Nintendo drawings: A right, B bottom in the menu) */
 			ct_refresh(api_call("{\"cmd\":\"controllers\"}"));
 		} else if (k == K_A) {
 			show_map(s);
