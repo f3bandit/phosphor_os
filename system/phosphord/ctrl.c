@@ -226,6 +226,15 @@ static void linux_binds(pad_t *d)
 	}
 	if (!d->b[C_L2].kind) { if (has_abs(d, ABS_BRAKE)) d->b[C_L2] = (bind_t){ 'a', ABS_BRAKE, 0, 0 }; else if (has_key(d, BTN_TL2)) d->b[C_L2] = (bind_t){ 'b', BTN_TL2, 0, 0 }; }
 	if (!d->b[C_R2].kind) { if (has_abs(d, ABS_GAS)) d->b[C_R2] = (bind_t){ 'a', ABS_GAS, 0, 0 }; else if (has_key(d, BTN_TR2)) d->b[C_R2] = (bind_t){ 'b', BTN_TR2, 0, 0 }; }
+	/* MC BlueBridge's MiSTer modes: its buttons go out in its own order (South, East, West, North, L1, R1, L2,
+	   R2, Select, Start, L3, R3, Home), and Linux's plain HID driver numbers them from BTN_SOUTH on, so the
+	   names it gives are off from West on (West is BTN_C, Start BTN_TR2...) */
+	if (d->vid == 0x2e8a && strstr(d->name, "BlueBridge") && (d->pid == 0x10b3 || (d->pid & 0xf000) == 0xb000)) {
+		static const struct { int c, k; } BB[] = { { C_A, BTN_SOUTH }, { C_B, BTN_EAST }, { C_X, BTN_C }, { C_Y, BTN_NORTH },
+			{ C_L1, BTN_WEST }, { C_R1, BTN_Z }, { C_BACK, BTN_TL2 }, { C_START, BTN_TR2 }, { C_L3, BTN_SELECT },
+			{ C_R3, BTN_START }, { C_GUIDE, BTN_MODE } };
+		for (size_t i = 0; i < sizeof(BB) / sizeof(BB[0]); i++) d->b[BB[i].c] = has_key(d, BB[i].k) ? (bind_t){ 'b', BB[i].k, 0, 0 } : (bind_t){ 0 };
+	}
 	if (!d->b[C_UP].kind && has_abs(d, ABS_HAT0X) && has_abs(d, ABS_HAT0Y)) {
 		d->b[C_UP] = (bind_t){ 'h', ABS_HAT0X, 1, 0 }; d->b[C_RIGHT] = (bind_t){ 'h', ABS_HAT0X, 2, 0 };
 		d->b[C_DOWN] = (bind_t){ 'h', ABS_HAT0X, 4, 0 }; d->b[C_LEFT] = (bind_t){ 'h', ABS_HAT0X, 8, 0 };
