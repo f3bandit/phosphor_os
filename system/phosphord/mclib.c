@@ -245,7 +245,7 @@ char *mclib_list(void)
 		}
 	}
 	if (d) closedir(d);
-	qsort(e, n, sizeof(*e), by_time);
+	if (n) qsort(e, n, sizeof(*e), by_time);
 	char *out = malloc(n * 240 + 1);
 	if (out) {
 		size_t k = 0;
