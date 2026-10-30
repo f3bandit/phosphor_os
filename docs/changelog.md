@@ -3,6 +3,22 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.52
+
+### Fixed
+- **X, Y, Start and Select on plain USB controllers (MC BlueBridge and others).** Phosphor's Main named the
+  menu buttons the way cores number them, not the way MiSTer passes them to the menu: X came as Start and Y
+  as Select, and Start and Select never came at all. Controllers read directly (Xbox-style, PlayStation,
+  Switch, 8BitDo) had been working around it; now every controller gets the right buttons from its MiSTer
+  mapping.
+- **The menu froze for seconds after a restart.** Phosphor's service answers one request at a time, and its
+  first answers (the update packages kept in phosphor/updates, cloud-sync, box art, backups, drives) were
+  worked out on the spot, up to 15 s: the menu waited, and the controller presses all came at once after.
+  They're worked out in the background now, the menu waits 1.2 s at most, and the start-up checks go one
+  at a time.
+
+Thanks to n00dlez for testing with MC BlueBridge adapters and an 8BitDo Ultimate 2C.
+
 ## 0.27.51
 
 ### Fixed
