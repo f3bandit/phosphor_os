@@ -11018,6 +11018,13 @@ void ui_tick(void)
 	TT("screen");
 	/* the dock's drive changed; the menu button in a game; Main took the in-game screen back */
 	if (mainlink_disc_changed()) disc_refresh();
+	if (mainlink_bt_pair()) {                            /* the SS1's Bluetooth button: Phosphor's own pairing */
+		saver_hide();
+		if (pm.open) pm_close();
+		show_bt();
+		if (bt.present && !bt.busy) bt_do("pair", NULL);
+		else if (!bt.present) toast_show("No Bluetooth adapter found");
+	}
 	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_refresh(); } }
 	ui_game_events();
 	TT("maps");

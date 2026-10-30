@@ -20,7 +20,7 @@
 
 static int fd = -1, ever = 0, hidden = 0, pads = 0, scripts = 0, mapping = 0;
 /* API 5: the dock's drive (disc events) and Phosphor's in-game menu (ingame) */
-static int crt_api, ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, disc_want = 1, shot_want = 1;
+static int crt_api, ra_api, disc_api, ingame_api, in_game, disc_changed, menu_btn, ingame_ended, bt_pair_req, disc_want = 1, shot_want = 1;
 /* a controller mapping Main runs for the shell (its steps come as events) */
 static struct { int on, pending, step, done, saved; char dev[16], err[96]; } mp;
 static int script_on, script_done_status = -1;   /* a script running through Main; its result once done */
@@ -159,6 +159,7 @@ char *mainlink_query(const char *cmd)
 }
 static int take_flag(int *f) { int v = *f; *f = 0; return v; }
 int mainlink_disc_changed(void) { return take_flag(&disc_changed); }
+int mainlink_bt_pair(void) { return take_flag(&bt_pair_req); }
 int mainlink_menu_button(void) { return take_flag(&menu_btn); }
 int mainlink_ingame_ended(void) { return take_flag(&ingame_ended); }
 
@@ -268,6 +269,7 @@ static int handle_line(const char *l)
 	   button in a game (Phosphor's in-game menu); Main took the in-game screen back */
 	if (strstr(l, "\"event\":\"disc\"")) { disc_changed = 1; return 0; }
 	if (strstr(l, "\"event\":\"shot\"")) { input_push(K_SHOT); return 0; }      /* both sticks in, on Phosphor's screens */
+	if (strstr(l, "\"event\":\"bt_pair\"")) { bt_pair_req = 1; return 0; }   /* the SS1's Bluetooth button held */
 	if (strstr(l, "\"event\":\"core\"")) { in_game = strstr(l, "\"menu\":false") != NULL; return 0; }
 	if (strstr(l, "\"event\":\"menu_button\"")) { if (in_game) menu_btn = 1; return 0; }
 	if (strstr(l, "\"event\":\"ingame\"")) { ingame_ended = 1; return 0; }
