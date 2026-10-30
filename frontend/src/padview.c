@@ -147,7 +147,11 @@ void padview_layout(padview_t *p, const char *key)
 		case 'c':
 			e->shape = shape(p, x - a, y - a, 2 * a, 2 * a, LV_RADIUS_CIRCLE);
 			if ((e->sym = ps_symbol(p, it->lab, x, y, a))) break;
-			if (it->lab[0]) e->lab = label(p, it->lab, x, it->a < 14 ? y + a + sc(p, 12) : y, small || it->a < 14);
+			/* a small button, or a word too long for its circle (Guide, Home): the name under it */
+			if (it->lab[0]) {
+				int under = it->a < 14 || (small && (int)strlen(it->lab) * 6 > it->a * 2 - 4);
+				e->lab = label(p, it->lab, x, under ? y + a + sc(p, 12) : y, small || under);
+			}
 			break;
 		case 'r':
 			e->shape = shape(p, x, y, a, b, LV_MIN(b / 2, sc(p, 9)));
