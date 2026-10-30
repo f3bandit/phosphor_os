@@ -16,6 +16,13 @@ cJSON *api_call(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void api_reset(void);   /* a new connection for the next request */
 cJSON *api_call_slow(int ms, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
+/* a request made in the background (its own thread and connection): the menu never waits for it. Ask
+ * again and again (polls); take gives the newest reply that came since the last take (free it), or NULL.
+ * The same key asked again before it was sent replaces the earlier ask. */
+void api_bg_ask(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+cJSON *api_bg_take(const char *key);
+int api_bg_waiting(const char *key);   /* asked and not sent yet */
+
 /* reply helpers */
 int api_ok(const cJSON *r);
 const char *api_str(const cJSON *o, const char *key);      /* NULL if missing or null */

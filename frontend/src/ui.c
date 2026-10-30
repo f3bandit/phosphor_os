@@ -1849,11 +1849,11 @@ static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
 static int samba_b(const char *k) { return samba_st && cJSON_IsTrue(cJSON_GetObjectItem(samba_st, k)); }
 static void my_ip(char *out, size_t n);
-static void samba_refresh(void)
+static void samba_take(cJSON *x)
 {
 	int was = samba_b("busy");
 	cJSON_Delete(samba_st);
-	samba_st = api_call("{\"cmd\":\"samba\"}");
+	samba_st = x;
 	if (!was || samba_b("busy") || !api_ok(samba_st)) return;
 	/* just finished: say what happened */
 	char msg[200], ip[64];
@@ -1877,11 +1877,15 @@ static void my_ip(char *out, size_t n)
 	freeifaddrs(ifs);
 }
 
+/* (once a second while Settings is open: in the background, the replies taken as they come) */
 static void scrape_refresh(void)
 {
-	cJSON_Delete(scrape_state);
-	scrape_state = api_call("{\"cmd\":\"scrape\"}");
-	samba_refresh();
+	api_bg_ask("scrape", "{\"cmd\":\"scrape\"}");
+	api_bg_ask("samba", "{\"cmd\":\"samba\"}");
+	cJSON *x = api_bg_take("scrape");
+	if (x) { cJSON_Delete(scrape_state); scrape_state = x; }
+	x = api_bg_take("samba");
+	if (x) samba_take(x);
 }
 
 static void set_fill(int row, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -7042,8 +7046,13 @@ static void show_ctrl(void)
 static char ct_live_on[40][8];
 static void ct_live(padview_t *pv, const char *ev, int idx, const char *target, char done[][8], int ndone)
 {
-	cJSON *r = api_call("{\"cmd\":\"controllers\",\"live\":\"%s\"}", ev);
-	cJSON *l = r ? cJSON_GetObjectItem(r, "live") : NULL;
+	/* in the background (api_bg_ask): the newest reply that came, drawn; none yet, the drawing stays */
+	char key[40];
+	snprintf(key, sizeof(key), "live:%.30s", ev);
+	api_bg_ask(key, "{\"cmd\":\"controllers\",\"live\":\"%s\"}", ev);
+	cJSON *r = api_bg_take(key);
+	if (!r) return;
+	cJSON *l = cJSON_GetObjectItem(r, "live");
 	padstate_t s;
 	memset(&s, 0, sizeof(s));
 	s.nhas = idx >= 0 ? ct.nhas[idx] : -1;
@@ -7078,8 +7087,12 @@ static const char *const TW_HINTS[] = { "Select + Start", "Close (or B on a keyb
 
 static void tw_poll(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"controllers\",\"live\":\"%s\"}", tw.ev);
-	cJSON *l = r ? cJSON_GetObjectItem(r, "live") : NULL;
+	char key[40];
+	snprintf(key, sizeof(key), "live:%.30s", tw.ev);
+	api_bg_ask(key, "{\"cmd\":\"controllers\",\"live\":\"%s\"}", tw.ev);
+	cJSON *r = api_bg_take(key);              /* (in the background: none yet, the screen stays as it is) */
+	if (!r) return;
+	cJSON *l = cJSON_GetObjectItem(r, "live");
 	padstate_t s;
 	memset(&s, 0, sizeof(s));
 	s.nhas = tw.idx >= 0 && tw.idx < ct.n ? ct.nhas[tw.idx] : -1;
@@ -10710,7 +10723,8 @@ void ui_tick(void)
 	if (cur == SCR_CTRL) {
 		static uint32_t lc, lr;
 		if (now - lc >= 100 && ct.mode == 0 && ct_list.sel < ct.n) { lc = now; ct_live(ct.pv, ct.ev[ct_list.sel], ct_list.sel, NULL, NULL, 0); }
-		if (now - lr >= 2000) { lr = now; ct_refresh(api_call("{\"cmd\":\"controllers\"}")); }   /* plugged in, switched on */
+		if (now - lr >= 2000) { lr = now; api_bg_ask("ctrls", "{\"cmd\":\"controllers\"}"); }   /* plugged in, switched on */
+		{ cJSON *cr_ = api_bg_take("ctrls"); if (cr_) ct_refresh(cr_); }
 	}
 	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
 	TT("screen");
