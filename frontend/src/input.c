@@ -405,9 +405,13 @@ pkey_t input_poll(unsigned now)
 	}
 	fifo_poll();
 	for (int i = 0; i < ndev; i++) {
-		struct input_event ev;
+		/* many events per read: a controller polled at 1000 Hz with a jittery stick (8BitDo Ultimate 2 in
+		   its wired PC mode) sends ~4000 a second, and one read() each kept the shell busy (menu lag) */
+		struct input_event evs[64];
 		ssize_t r;
-		while ((r = read(devs[i].fd, &ev, sizeof(ev))) == (ssize_t)sizeof(ev)) {
+		while ((r = read(devs[i].fd, evs, sizeof(evs))) >= (ssize_t)sizeof(evs[0])) {
+		for (ssize_t e = 0; e < r / (ssize_t)sizeof(evs[0]); e++) {
+			struct input_event ev = evs[e];
 			if (ev.type == EV_KEY && ev.value != 2) {
 				char w[120];
 				snprintf(w, sizeof(w), "%s key %d %s (%.40s)%s", devs[i].name, ev.code, ev.value ? "down" : "up",
@@ -442,6 +446,8 @@ pkey_t input_poll(unsigned now)
 			} else if (ev.type == EV_ABS) {
 				axis(&devs[i], ev.code, ev.value, now);
 			}
+		}
+		if (r < (ssize_t)sizeof(evs)) break;               /* (drained) */
 		}
 		if (r < 0 && errno == ENODEV) {
 			plog("input: %s gone", devs[i].name);
