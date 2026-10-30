@@ -7225,7 +7225,9 @@ static void show_ctest(int idx)
 		int cx1 = W / 2, cx2 = W - S(42), cy1 = S(162), cy2 = H - S(68), pad = S(24);
 		int pw = LV_MIN(cx2 - cx1 - 2 * pad, (cy2 - cy1 - 2 * pad) * 600 / 345);
 		lv_area_t u = { 0 };
-		for (int pass = 0; pass < 2; pass++) {
+		/* sized again until what's drawn fits (labels don't grow with the drawing: a bigger one can switch
+		   to the bigger font), then centred */
+		for (int pass = 0, fitted = 0; pass < 6; pass++) {
 			if (tw.pv) { padview_delete(tw.pv); tw.pv = NULL; }
 			tw.pv = padview_create(body, cx1, cy1, pw);
 			padview_layout(tw.pv, tw.style);
@@ -7241,17 +7243,22 @@ static void show_ctest(int idx)
 				u.x1 = LV_MIN(u.x1, a.x1); u.y1 = LV_MIN(u.y1, a.y1); u.x2 = LV_MAX(u.x2, a.x2); u.y2 = LV_MAX(u.y2, a.y2);
 			}
 			if (!have) break;
-			if (pass == 0) {                               /* then as big as the drawing itself fits */
+			if (!fitted) {                                 /* as big as the drawing itself fits */
 				int dw = lv_area_get_width(&u), dh = lv_area_get_height(&u);
 				int fw = (cx2 - cx1 - 2 * pad) * 1000 / LV_MAX(1, dw), fh = (cy2 - cy1 - 2 * pad) * 1000 / LV_MAX(1, dh);
-				pw = pw * LV_MIN(fw, fh) / 1000;
-			} else {
+				int f = LV_MIN(fw, fh);
+				if (f >= 980 && f <= 1020) fitted = 1;      /* (within 2 %: this size) */
+				else { pw = pw * f / 1000; if (pass == 4) fitted = 1; continue; }
+			}
+			{
 				/* across: in the middle of the room right of the info's text (to the card's right edge);
 				   up and down: in the middle of the card */
 				lv_area_t bc;
 				lv_obj_get_coords(body, &bc);
 				int ir = S(56);
-				lv_obj_t *info[] = { tw.what, tw.ask, tw.hint, tw.k[0], tw.k[1], tw.k[2], tw.k[3], tw.k[4], tw.v[0], tw.v[1], tw.v[2], tw.v[3], tw.v[4] };
+				/* (not the LIVE · drawing · mapping line above: a long drawing name runs far right, over
+				   the drawing's top, which is lower) */
+				lv_obj_t *info[] = { tw.ask, tw.hint, tw.k[0], tw.k[1], tw.k[2], tw.k[3], tw.k[4], tw.v[0], tw.v[1], tw.v[2], tw.v[3], tw.v[4] };
 				for (size_t i = 0; i < sizeof(info) / sizeof(info[0]); i++) {
 					if (!info[i]) continue;
 					lv_obj_update_layout(info[i]);
@@ -7264,6 +7271,7 @@ static void show_ctest(int idx)
 				}
 				int dx = (ir + cx2) / 2 - ((u.x1 + u.x2) / 2 - bc.x1), dy = (cy1 + cy2) / 2 - ((u.y1 + u.y2) / 2 - bc.y1);
 				lv_obj_set_pos(box, lv_obj_get_x(box) + dx, lv_obj_get_y(box) + dy);
+				break;
 			}
 		}
 	}
