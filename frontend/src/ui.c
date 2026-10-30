@@ -7218,8 +7218,31 @@ static void show_ctest(int idx)
 		lv_label_set_long_mode(tw.v[i], LV_LABEL_LONG_MODE_DOTS);
 		lv_obj_set_pos(tw.v[i], S(190), S(360 + 30 * i));
 	}
-	tw.pv = padview_create(body, SX(556), S(226), SW(668));   /* (a little right of and below the middle: away from the info) */
-	padview_layout(tw.pv, tw.style);
+	/* the drawing in the middle of the card's right half (the card: under the title to above the hints,
+	   the screen's margins at the sides; body_cards), as big as fits: by what's drawn, not its box */
+	{
+		int cx1 = W / 2, cx2 = W - S(42), cy1 = S(162), cy2 = H - S(68), pad = S(28);
+		int pw = LV_MIN(cx2 - cx1 - 2 * pad, (cy2 - cy1 - 2 * pad) * 600 / 345);
+		tw.pv = padview_create(body, cx1 + pad, cy1 + pad, pw);
+		padview_layout(tw.pv, tw.style);
+		lv_obj_t *box = padview_obj(tw.pv);
+		lv_obj_update_layout(box);
+		lv_area_t u = { 0 }, a;
+		int have = 0;
+		for (uint32_t i = 0; i < lv_obj_get_child_count(box); i++) {
+			lv_obj_t *c = lv_obj_get_child(box, (int32_t)i);
+			if (lv_obj_is_hidden(c)) continue;
+			lv_obj_get_coords(c, &a);
+			if (!have) { u = a; have = 1; continue; }
+			u.x1 = LV_MIN(u.x1, a.x1); u.y1 = LV_MIN(u.y1, a.y1); u.x2 = LV_MAX(u.x2, a.x2); u.y2 = LV_MAX(u.y2, a.y2);
+		}
+		if (have) {
+			lv_area_t bc;
+			lv_obj_get_coords(body, &bc);
+			int dx = (cx1 + cx2) / 2 - ((u.x1 + u.x2) / 2 - bc.x1), dy = (cy1 + cy2) / 2 - ((u.y1 + u.y2) / 2 - bc.y1);
+			lv_obj_set_pos(box, lv_obj_get_x(box) + dx, lv_obj_get_y(box) + dy);
+		}
+	}
 	footer_set(TW_HINTS);
 	tw_poll();
 	plog("controllers: testing %s", tw.name);
