@@ -11135,7 +11135,8 @@ void ui_tick(void)
 	TT("screen");
 	/* the dock's drive changed; the menu button in a game; Main took the in-game screen back */
 	if (mainlink_disc_changed()) disc_refresh();
-	if (mainlink_bt_pair()) {                            /* the SS1's Bluetooth button: Phosphor's own pairing */
+	if (mainlink_bt_pair() && cur != SCR_MAP) {          /* the SS1's Bluetooth button: Phosphor's own pairing (not over a
+	                                                        mapping in progress: MiSTer's Main is in the middle of it) */
 		saver_hide();
 		if (pm.open) pm_close();
 		show_bt();
