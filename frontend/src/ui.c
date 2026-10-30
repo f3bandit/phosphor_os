@@ -7074,7 +7074,7 @@ static struct {
 	char got[8][12];
 	int ngot;
 } tw;
-static const char *const TW_HINTS[] = { "Select + Start", "Close", NULL };
+static const char *const TW_HINTS[] = { "Select + Start", "Close (or B on a keyboard or the app's Remote)", NULL };
 
 static void tw_poll(void)
 {
@@ -7134,7 +7134,9 @@ static void tw_got(pkey_t k)
 static void show_ctrl(void);
 static void tw_key(pkey_t k)
 {
-	if (k == K_POWER) { padview_delete(tw.pv); tw.pv = NULL; show_ctrl(); return; }    /* Select + Start */
+	/* Select + Start; or B from a keyboard or a remote (the phone or PC app's Remote control): a controller
+	   whose buttons come through wrong can't always press Select + Start together */
+	if (k == K_POWER || (k == K_B && input_not_controller())) { padview_delete(tw.pv); tw.pv = NULL; show_ctrl(); return; }
 	tw_got(k);
 }
 
@@ -7318,7 +7320,7 @@ static void map_show_step(void)
 	map_state_file(NULL);
 }
 
-static const char *const MAP_HINTS[] = { "Select + Start", "Cancel, nothing saved", NULL };
+static const char *const MAP_HINTS[] = { "Select + Start", "Cancel, nothing saved (or B on a keyboard or the app's Remote)", NULL };
 
 static void show_map(int idx)
 {
@@ -7414,7 +7416,7 @@ static void map_tick(void)
 static void map_key(pkey_t k)
 {
 	if (mw.finished) { if (k == K_A || k == K_B) show_ctrl(); return; }
-	if (k == K_POWER) mainlink_map("cancel");
+	if (k == K_POWER || (k == K_B && input_not_controller())) mainlink_map("cancel");   /* (B: a keyboard or a remote) */
 }
 
 /* the app asks through phosphord: <tmp>/map-request ("start VVVV:PPPP", "skip", "cancel") */

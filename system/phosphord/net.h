@@ -18,4 +18,8 @@ int net_request(const char *method, const char *url, const char *const *headers,
 
 void net_escape(const char *in, char *out, size_t n);   /* URL query/path escaping */
 
+/* this thread's requests are cut off (curl stopped, -1 returned) as soon as *flag is set; NULL: never.
+ * The scraper's Stop works within a moment this way, not after a slow source has answered. */
+void net_set_cancel(volatile int *flag);
+
 #endif

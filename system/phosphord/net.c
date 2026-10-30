@@ -10,6 +10,8 @@
 #include "version.h"
 #include <ctype.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +39,9 @@ static int result_of(int ok, int http)
 	if (http == 401 || http == 403) return 2;
 	return -1;
 }
+
+static __thread volatile int *cancel_flag;
+void net_set_cancel(volatile int *flag) { cancel_flag = flag; }
 
 /* runs curl; its stdout goes to *out (when out) — with -o, stdout carries only the status code */
 static int run_curl(const char *const *args, const char *body, char **out, size_t *outlen)
@@ -86,7 +91,11 @@ static int run_curl(const char *const *args, const char *body, char **out, size_
 	}
 	size_t cap = 4096, len = 0;
 	char *buf = malloc(cap);
+	int cancelled = 0;
 	for (;;) {
+		if (cancel_flag && *cancel_flag) { kill(pid, SIGTERM); cancelled = 1; break; }
+		struct pollfd pf = { po[0], POLLIN, 0 };
+		if (poll(&pf, 1, 200) == 0) continue;           /* (a look at the cancel flag 5 times a second) */
 		if (len + 4096 > cap) { cap *= 2; buf = realloc(buf, cap); }
 		ssize_t r = read(po[0], buf + len, cap - len - 1);
 		if (r <= 0) break;
@@ -96,6 +105,7 @@ static int run_curl(const char *const *args, const char *body, char **out, size_
 	close(po[0]);
 	int st;
 	waitpid(pid, &st, 0);
+	if (cancelled) { *out = buf; if (outlen) *outlen = len; return -1; }
 	*out = buf;
 	if (outlen) *outlen = len;
 	return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
