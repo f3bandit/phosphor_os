@@ -652,7 +652,7 @@ func (s *SerialLink) Reboot(timeout time.Duration) (string, error) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	from := s.pos()
-	_ = s.write("sync; reboot\r")
+	_ = s.write(safeReboot + "\r")
 	_, txt, err := s.waitFor(from, regexp.MustCompile(`login:`), timeout)
 	if err != nil {
 		return txt, fmt.Errorf("no login prompt within %s", timeout)
@@ -682,3 +682,7 @@ func (s *SerialLink) Close() error {
 	}
 	return s.port.Close()
 }
+
+// safeReboot: Phosphor's safe stop first (the drives read-only, the USB devices let go), as Phosphor's own
+// power window does, so a restart from here doesn't leave the SD card "not shut down safely"
+const safeReboot = `[ -x /media/fat/phosphor/phosphor.sh ] && timeout 25 /media/fat/phosphor/phosphor.sh safe-stop > /dev/null 2>&1; sync; reboot`
