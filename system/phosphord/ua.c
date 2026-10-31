@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -34,6 +35,34 @@ static int loading, busy;                                  /* starting it / unin
 static char job_title[200], *job_result;
 static char load_error[300];
 static time_t used_at;
+static void bridge_path(char *o, size_t n);
+static time_t pyz_at;                           /* when the list was read: Update All's code, the notes */
+
+static void pyz_path(char *o, size_t n)
+{
+	const char *z = getenv("UA_PYZ");
+	if (z && *z) snprintf(o, n, "%s", z);
+	else snprintf(o, n, "%s/Scripts/.config/update_all/update_all.pyz", p_fat());
+}
+static time_t mtime_of(const char *p)
+{
+	struct stat sb;
+	return stat(p, &sb) ? 0 : sb.st_mtime;
+}
+/* Update All updated itself (from anywhere: the Scripts menu too), or Phosphor's notes changed:
+   its code is loaded again and the list read again, so new items appear */
+static int stale_locked(void)
+{
+	char z[600], st[600];
+	pyz_path(z, sizeof(z));
+	char b[600];
+	bridge_path(b, sizeof(b));
+	snprintf(st, sizeof(st), "%.*s/status.json", (int)(strrchr(b, '/') ? strrchr(b, '/') - b : 0), b);
+	time_t a = mtime_of(z) + mtime_of(st);
+	if (a == pyz_at) return 0;
+	pyz_at = a;
+	return list_json != NULL;
+}
 
 static void bridge_path(char *o, size_t n)
 {
@@ -207,6 +236,15 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 	if (!strcmp(d, "list") || !strcmp(d, "status")) {
 		int fresh = cJSON_IsTrue(cJSON_GetObjectItem(req, "fresh"));
 		pthread_mutex_lock(&lk);
+		if (!loading && !busy && stale_locked()) {
+			free(list_json);
+			list_json = NULL;
+			pthread_mutex_unlock(&lk);
+			pthread_mutex_lock(&io);
+			stop_locked();                            /* the old code out: the new one loads */
+			pthread_mutex_unlock(&io);
+			pthread_mutex_lock(&lk);
+		}
 		int start = (!list_json || fresh) && !loading;
 		if (start) loading = 1;
 		cJSON *o = cJSON_CreateObject();
@@ -226,7 +264,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		if (start) start_thread(loader, NULL);
 		return o;
 	}
-	if (!strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview")) {
+	if (!strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview") || !strcmp(d, "leftovers") || !strcmp(d, "clean_ao")) {
 		pthread_mutex_lock(&lk);
 		int b = busy;
 		pthread_mutex_unlock(&lk);
@@ -240,7 +278,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON *o = cJSON_Parse(r);
 		free(r);
 		if (!o) { *err = "Update All's settings answered something unreadable"; return NULL; }
-		if (strcmp(d, "preview")) refresh_list();     /* values or the guard changed */
+		if (strcmp(d, "preview") && strcmp(d, "leftovers")) refresh_list();     /* values or the guard changed */
 		return o;
 	}
 	if (!strcmp(d, "run")) {
@@ -290,7 +328,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON_AddBoolToObject(o, "busy", 1);
 		return o;
 	}
-	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), run";
+	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), leftovers, clean_ao, run";
 	return NULL;
 }
 

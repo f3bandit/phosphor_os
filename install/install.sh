@@ -60,6 +60,16 @@ fi
 if [ -f "$HERE/bin/MiSTer_phosphor" ]; then
 	cp "$HERE/bin/MiSTer_phosphor" "$ROOT/bin/MiSTer_phosphor.new" && chmod 755 "$ROOT/bin/MiSTer_phosphor.new" && mv -f "$ROOT/bin/MiSTer_phosphor.new" "$ROOT/bin/MiSTer_phosphor"
 fi
+# the game ports' Mains (3S-ARM, Sonic Mania): only kept here; Phosphor's Main switches to one for the tested game
+for pm in MiSTer_3S-ARM MiSTer_SonicMania; do
+	if [ -f "$HERE/bin/$pm" ]; then
+		cp "$HERE/bin/$pm" "$ROOT/bin/$pm.new" && chmod 755 "$ROOT/bin/$pm.new" && mv -f "$ROOT/bin/$pm.new" "$ROOT/bin/$pm"
+	fi
+done
+# Settings > Update All: the bridge and Phosphor's notes (phosphord starts the bridge when the page opens)
+if [ -d "$HERE/ua" ]; then
+	mkdir -p "$ROOT/ua" && cp "$HERE"/ua/* "$ROOT/ua/"
+fi
 # the Phosphor menu core (front ports): only kept here; Phosphor loads it, menu.rbf is never replaced
 if [ -f "$HERE/cores/menu_phosphor.rbf" ]; then
 	mkdir -p "$ROOT/cores" && cp "$HERE/cores/menu_phosphor.rbf" "$ROOT/cores/menu_phosphor.rbf.new" && mv -f "$ROOT/cores/menu_phosphor.rbf.new" "$ROOT/cores/menu_phosphor.rbf"

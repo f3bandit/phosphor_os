@@ -2613,6 +2613,8 @@ static struct {
 	int idx;
 	cJSON *db_ids;
 	char title[160];
+	cJSON *left;                       /* the Clean up row's leftovers (do:leftovers), once looked for */
+	int cact[4];                       /* the Clean up dialog's buttons: 0 keep, 1 remove leftovers, 2 organizer */
 } ua;
 
 static const char *ua_menu_id(void) { return ua.depth > 0 ? ua.stack[ua.depth - 1] : api_str(ua.list, "root"); }
@@ -2623,6 +2625,9 @@ static cJSON *ua_entries(void)
 	return m ? cJSON_GetObjectItem(cJSON_GetObjectItem(menus, m), "entries") : NULL;
 }
 static cJSON *ua_cur(void) { return cJSON_GetArrayItem(ua_entries(), ua_vl.sel); }
+/* the main menu ends with Phosphor's Clean up row */
+static int ua_count(void) { return cJSON_GetArraySize(ua_entries()) + (ua.depth == 0 && ua.list ? 1 : 0); }
+static int ua_is_clean(void) { return ua.depth == 0 && ua.list && ua_vl.sel == cJSON_GetArraySize(ua_entries()); }
 
 static const char *ua_status(cJSON *e) { cJSON *s = cJSON_GetObjectItem(e, "status"); const char *v = api_str(s, "status_now"); return v ? v : api_str(s, "status") ? api_str(s, "status") : "untested"; }
 static const char *ua_status_word(const char *s)
@@ -2659,6 +2664,12 @@ static int ua_acts(cJSON *e)
 
 static void ua_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
+	if (ua.depth == 0 && i == cJSON_GetArraySize(ua_entries())) {
+		snprintf(t, n, "Clean up");
+		snprintf(val, vn, ">");
+		*dim = 0;
+		return;
+	}
 	cJSON *e = cJSON_GetArrayItem(ua_entries(), i);
 	snprintf(t, n, "%s", api_str(e, "title") ? api_str(e, "title") : "");
 	const char *st = ua_status_word(ua_status(e)), *v = api_str(e, "value");
@@ -2671,9 +2682,38 @@ static void ua_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 	else snprintf(val, vn, "%s", st);
 }
 
+static void ua_size(char *o, size_t n, double b);
 static void ua_detail(void)
 {
 	if (!ua.panel) return;
+	if (ua_is_clean()) {
+		lv_label_set_text(ua.name, "Clean up");
+		lv_label_set_text(ua.badge, "");
+		lv_label_set_text(ua.h1, "LEFTOVERS");
+		lv_label_set_text(ua.h2, "ARCADE ORGANIZER");
+		char a[700] = "", o[400] = "", sz[40];
+		if (!ua.left) snprintf(a, sizeof(a), "Things Update All installed that you've since turned off: their files stay on the SD card until they're removed. A looks for them.");
+		else {
+			cJSON *d;
+			double files = 0, bytes = 0;
+			int k = 0;
+			cJSON_ArrayForEach(d, cJSON_GetObjectItem(ua.left, "dbs")) { files += api_num(d, "files", 0); bytes += api_num(d, "bytes", 0); k++; }
+			ua_size(sz, sizeof(sz), bytes);
+			if (k) snprintf(a, sizeof(a), "%d turned off but still installed: %.0f files, %s.", k, files, sz);
+			else snprintf(a, sizeof(a), "None: everything installed is turned on in Update All.");
+			cJSON *ao = cJSON_GetObjectItem(ua.left, "arcade_organizer");
+			int nf = cJSON_GetArraySize(cJSON_GetObjectItem(ao, "folders"));
+			if (nf) snprintf(o, sizeof(o), "Its folders (_Arcade/_Organized): %.0f entries.%s", api_num(ao, "files", 0),
+				cJSON_IsTrue(cJSON_GetObjectItem(ao, "on")) ? " It's on, so the next run makes them again." : "");
+			else snprintf(o, sizeof(o), "No Arcade Organizer folders.");
+		}
+		lv_label_set_text(ua.t1, a);
+		lv_label_set_text(ua.t2, o);
+		lv_label_set_text(ua.foot, ua.busy ? "Uninstalling\xE2\x80\xA6" : "A  Clean up");
+		return;
+	}
+	lv_label_set_text(ua.h1, "UPDATE ALL SAYS");
+	lv_label_set_text(ua.h2, "PHOSPHOR SAYS");
 	cJSON *e = ua_cur();
 	lv_label_set_text(ua.name, e && api_str(e, "title") ? api_str(e, "title") : "");
 	const char *s = e ? ua_status(e) : "untested";
@@ -2726,7 +2766,7 @@ static void ua_take(cJSON *r)
 		cJSON_Delete(ua.list);
 		ua.list = r;
 		int keep = ua_vl.sel;
-		ua_vl.count = cJSON_GetArraySize(ua_entries());
+		ua_vl.count = ua_count();
 		ua_vl.sel = LV_MIN(keep, LV_MAX(0, ua_vl.count - 1));
 		lv_obj_set_hidden(ua.wait, true);
 		lv_obj_set_hidden(ua.panel, false);
@@ -2939,6 +2979,47 @@ static void ua_uninstall_ask(cJSON *e)
 	ua.db_ids = keep;
 }
 
+static void ua_cleanup(void)
+{
+	cJSON_Delete(ua.left);
+	ua.left = api_call_slow(120000, "{\"cmd\":\"ua\",\"do\":\"leftovers\"}");
+	if (!api_ok(ua.left)) {
+		toast_show(api_str(ua.left, "error") ? api_str(ua.left, "error") : "Couldn't look for leftovers");
+		cJSON_Delete(ua.left);
+		ua.left = NULL;
+		return;
+	}
+	ua_detail();
+	char text[1600] = "", sz[40];
+	cJSON *d, *ao = cJSON_GetObjectItem(ua.left, "arcade_organizer");
+	double files = 0, bytes = 0;
+	int k = 0;
+	cJSON_ArrayForEach(d, cJSON_GetObjectItem(ua.left, "dbs")) {
+		files += api_num(d, "files", 0);
+		bytes += api_num(d, "bytes", 0);
+		size_t l = strlen(text);
+		char s1[40];
+		ua_size(s1, sizeof(s1), api_num(d, "bytes", 0));
+		snprintf(text + l, sizeof(text) - l, "%s%s: %.0f files, %s", k++ ? "\n" : "Turned off in Update All, still installed:\n", api_str(d, "title") ? api_str(d, "title") : "?",
+			api_num(d, "files", 0), s1);
+	}
+	int nf = cJSON_GetArraySize(cJSON_GetObjectItem(ao, "folders"));
+	if (nf) {
+		size_t l = strlen(text);
+		snprintf(text + l, sizeof(text) - l, "%sThe Arcade Organizer's folders: %.0f entries (shortcuts to your arcade games; the games stay).", l ? "\n\n" : "", api_num(ao, "files", 0));
+	}
+	if (!k && !nf) { toast_show("Nothing to clean up"); return; }
+	static char rm[64];
+	ua_size(sz, sizeof(sz), bytes);
+	snprintf(rm, sizeof(rm), "Remove leftovers (%s)", sz);
+	const char *b[3];
+	int n = 0;
+	b[n] = "Keep everything"; ua.cact[n++] = 0;
+	if (k) { b[n] = rm; ua.cact[n++] = 1; }
+	if (nf) { b[n] = "Clear Organizer folders"; ua.cact[n++] = 2; }
+	ua_modal(5, "Clean up", text, b, n);
+}
+
 static void ua_modal_key(pkey_t k)
 {
 	if (k == K_LEFT && ua.msel > 0) { ua.msel--; ua_modal_draw(); return; }
@@ -2946,6 +3027,33 @@ static void ua_modal_key(pkey_t k)
 	if (k == K_B || k == K_MENU) { ua_modal_close(); return; }
 	if (k != K_A) return;
 	int kind = ua.modal, pick = ua.msel;
+	if (kind == 5) {
+		int act = ua.cact[pick];
+		ua_modal_close();
+		if (act == 1 && ua.left) {
+			/* every leftover in one uninstall: Update All's own, the Downloader removes their files */
+			cJSON *req = cJSON_CreateObject(), *ids = cJSON_AddArrayToObject(req, "args"), *d;
+			cJSON_AddStringToObject(req, "cmd", "ua");
+			cJSON_AddStringToObject(req, "do", "uninstall");
+			cJSON_AddStringToObject(req, "title", "leftovers");
+			cJSON_ArrayForEach(d, cJSON_GetObjectItem(ua.left, "dbs")) if (api_str(d, "db_id")) cJSON_AddItemToArray(ids, cJSON_CreateString(api_str(d, "db_id")));
+			char *rq = cJSON_PrintUnformatted(req);
+			cJSON_Delete(req);
+			cJSON *r = rq ? api_call("%s", rq) : NULL;
+			free(rq);
+			if (api_ok(r)) { ua.busy = 1; toast_show("Removing leftovers: Update All's Downloader removes the files"); cJSON_Delete(ua.left); ua.left = NULL; }
+			else toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
+			cJSON_Delete(r);
+		} else if (act == 2) {
+			cJSON *r = api_call_slow(120000, "{\"cmd\":\"ua\",\"do\":\"clean_ao\"}");
+			toast_show(api_ok(r) ? "Arcade Organizer folders cleared" : "Couldn't clear them");
+			cJSON_Delete(r);
+			cJSON_Delete(ua.left);
+			ua.left = NULL;
+		}
+		ua_detail();
+		return;
+	}
 	if (kind == 2 && pick == 1 && ua.db_ids) {
 		char *ids = cJSON_PrintUnformatted(ua.db_ids);
 		cJSON *t = cJSON_CreateString(ua.title);
@@ -2990,7 +3098,7 @@ static void ua_key(pkey_t k)
 	if (k == K_B || k == K_MENU) {
 		if (ua.depth > 0) {
 			ua.depth--;
-			ua_vl.count = cJSON_GetArraySize(ua_entries());
+			ua_vl.count = ua_count();
 			ua_vl.sel = ua.sel[ua.depth];
 			ua_vl.top = 0;
 			vlist_refresh(&ua_vl);
@@ -3013,6 +3121,7 @@ static void ua_key(pkey_t k)
 	}
 	if (!ua.list) return;
 	if (vlist_key(&ua_vl, k)) { ua_detail(); return; }
+	if (ua_is_clean()) { if (k == K_A && !ua.busy) ua_cleanup(); return; }
 	cJSON *e = ua_cur();
 	if (!e) return;
 	if (k == K_X) { ua_uninstall_ask(e); return; }
@@ -3021,7 +3130,7 @@ static void ua_key(pkey_t k)
 		ua.sel[ua.depth] = ua_vl.sel;
 		snprintf(ua.stack[ua.depth], sizeof(ua.stack[0]), "%s", sub);
 		ua.depth++;
-		ua_vl.count = cJSON_GetArraySize(ua_entries());
+		ua_vl.count = ua_count();
 		ua_vl.sel = ua_vl.top = 0;
 		vlist_refresh(&ua_vl);
 		ua_detail();
