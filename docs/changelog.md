@@ -3,6 +3,23 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.63
+
+### Fixed
+- **The menu lag is back out, and checked for every release now.** Screens added since the October fix
+  had brought synchronous polls back: the menu waited for phosphord on them, so when it was busy the cursor
+  stopped and the presses arrived all at once. Fixed:
+  - Settings: resting on Cloud saves (or WiFi, Bluetooth, Remote access, Backups) asked phosphord with the
+    menu waiting; just after start-up, Cloud saves took 2.4 s. Asked in the background now.
+  - Start-up: the update-guard, power, update and SD card checks (one froze the menu 1.2 s).
+  - Every screen's repeated status (Bluetooth, WiFi, Update Phosphor, Backups, Cloud saves, Diagnostics,
+    Remote access, front ports and memory cards, Storage, Look for games, Get box art, disc copy, Music, the
+    controller tests, RetroAchievements, Update All, RetroSpy): the newest answer from the background.
+- A check on every change (GitHub Actions "Shell checks") fails on a new synchronous poll, and a test walks
+  the menus on the SuperStation and reports every stall (tools/check-polls). The shell's log says how much
+  of the screen a stall repainted and on which screen, and how the shell ended (who stopped it, or where
+  it crashed).
+
 ## 0.27.62
 
 ### New

@@ -209,12 +209,12 @@ static int guard_count(cJSON *g)
 	return n;
 }
 /* asked at start-up, after a script, and from the Updates screen: never on a timer */
-static void guard_check(void)
+static void guard_check_got(cJSON *g)
 {
-	cJSON *g = api_call("{\"cmd\":\"guard\"}");
 	if (g && api_ok(g)) guard_alert_set(guard_count(g));
 	cJSON_Delete(g);
 }
+static void guard_check(void) { guard_check_got(api_call("{\"cmd\":\"guard\"}")); }
 
 static void toast_show(const char *msg);
 /* RetroSpy's reader running (RetroSpy on a PC watching a controller over SSH): the jsN it reads, -1 none */
@@ -1474,7 +1474,8 @@ static const char *const DC_HINTS_FAIL[] = { "X", "Try again", "B", "Back", NULL
 
 static void dcopy_update(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"disc_copy\"}");
+	cJSON *r = api_poll("disc_copy", "{\"cmd\":\"disc_copy\"}");
+	if (!r) return;
 	cJSON *c = api_ok(r) ? cJSON_GetObjectItem(r, "copy") : NULL;
 	if (!c) { cJSON_Delete(r); return; }
 	const char *st = api_str(c, "state") ? api_str(c, "state") : "";
@@ -2569,7 +2570,8 @@ static void gd_do(const char *what, int side)
 static void gd_tick(void)
 {
 	if (!gd.busy_seen) return;
-	cJSON *r = api_call("{\"cmd\":\"guard\"}");
+	cJSON *r = api_poll("guard", "{\"cmd\":\"guard\"}");
+	if (!r) return;
 	if (!api_ok(r)) { cJSON_Delete(r); return; }
 	cJSON *j = cJSON_GetObjectItem(r, "job");
 	if (cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"))) { cJSON_Delete(r); return; }
@@ -4542,7 +4544,7 @@ static struct {
 	lv_obj_t *box, *title, *pair[SI_ROWS], *k[SI_ROWS], *v[SI_ROWS], *swatch, *rule, *about, *tip;
 	int row;                  /* the row on show (-1: none yet) */
 	cJSON *ext;               /* phosphord's answer for ext_row */
-	int ext_row, ext_asked;
+	int ext_row, ext_asked, ext_wait;          /* ext_wait: the row its background request is for (+1), 0 none */
 	uint32_t moved_at;
 } si = { .row = -1, .ext_row = -1 };
 
@@ -4779,7 +4781,7 @@ static int si_state(int row, char k[][40], char v[][96], int *hi)
 }
 
 /* a row is waiting for its status: the loop wakes for it */
-static int si_pending(void) { return si.box && cur == SCR_SETTINGS && si_wants_ext(si.row) && !si.ext_asked; }
+static int si_pending(void) { return si.box && cur == SCR_SETTINGS && si_wants_ext(si.row) && (!si.ext_asked || si.ext_wait); }
 
 static void si_set(lv_obj_t *l, const char *t)
 {
@@ -4798,14 +4800,23 @@ static void si_update(void)
 		si.moved_at = now ? now : 1;
 		si.ext_asked = 0;
 	}
-	/* rested on a row with a screen of its own: ask phosphord once */
+	/* rested on a row with a screen of its own: phosphord asked once, in the background (an answer that takes
+	   seconds, cloud saves checking its server, never stops the cursor); shown when it comes */
 	if (si_wants_ext(row) && !si.ext_asked && now - si.moved_at >= SI_REST_MS) {
 		si.ext_asked = 1;
-		cJSON_Delete(si.ext);
-		si.ext = api_call(                            /* poll-ok: once per row rested on */row == SET_WIFI ? "{\"cmd\":\"wifi\"}" : row == SET_BT ? "{\"cmd\":\"bluetooth\"}" :
-		                  row == SET_REMOTE ? "{\"cmd\":\"remote\"}" : row == SET_CLOUD ? "{\"cmd\":\"cloud\"}" :
-		                  row == SET_BACKUP ? "{\"cmd\":\"backup\"}" : "{\"cmd\":\"status\"}");
-		si.ext_row = api_ok(si.ext) ? row : -1;
+		si.ext_wait = row + 1;
+		char key[24];
+		snprintf(key, sizeof(key), "si_ext%d", row);        /* (per row: an answer for a row left since stays its own) */
+		api_bg_ask(key, "%s", row == SET_WIFI ? "{\"cmd\":\"wifi\"}" : row == SET_BT ? "{\"cmd\":\"bluetooth\"}" :
+		           row == SET_REMOTE ? "{\"cmd\":\"remote\"}" : row == SET_CLOUD ? "{\"cmd\":\"cloud\"}" :
+		           row == SET_BACKUP ? "{\"cmd\":\"backup\"}" : "{\"cmd\":\"status\"}");
+	}
+	if (si.ext_wait && si.ext_wait != row + 1) si.ext_wait = 0;     /* (left that row) */
+	if (si.ext_wait) {
+		char key[24];
+		snprintf(key, sizeof(key), "si_ext%d", row);
+		cJSON *x = api_bg_take(key);
+		if (x) { cJSON_Delete(si.ext); si.ext = x; si.ext_row = api_ok(x) ? row : -1; si.ext_wait = 0; }
 	}
 	char t[96], val[96];
 	int dim = 0;
@@ -4814,7 +4825,7 @@ static void si_update(void)
 	si_set(si.title, t);
 	char k[SI_ROWS][40], v[SI_ROWS][96];
 	int hi, n = si_state(row, k, v, &hi);
-	if (!n && si_wants_ext(row)) { snprintf(k[0], 40, "Status"); snprintf(v[0], 96, "%s", si.ext_asked ? "phosphord isn't answering" : "..."); n = 1; hi = -1; }
+	if (!n && si_wants_ext(row)) { snprintf(k[0], 40, "Status"); snprintf(v[0], 96, "%s", si.ext_asked && !si.ext_wait ? "phosphord isn't answering" : "..."); n = 1; hi = -1; }
 	for (int i = 0; i < SI_ROWS; i++) {
 		lv_obj_set_hidden(si.pair[i], i >= n);
 		if (i >= n) continue;
@@ -6346,7 +6357,8 @@ static const char *pt_type(int id)
 
 static void pt_pads(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"pads\"}"), *it;
+	cJSON *r = api_poll("pads", "{\"cmd\":\"pads\"}"), *it;
+	if (!r) return;
 	static const char *const BTN[16] = { "Select", "L3", "R3", "Start", "Up", "Right", "Down", "Left",
 		"L2", "R2", "L1", "R1", "Triangle", "Circle", "Cross", "Square" };
 	if (!api_ok(r)) {
@@ -6772,7 +6784,8 @@ static void ms_name_done(const char *text);
 /* the job's progress; when it's done: the side shows the card that was read or written */
 static void ms_poll(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"memcard\"}");
+	cJSON *r = api_poll("memcard_ms", "{\"cmd\":\"memcard\"}");
+	if (!r) return;
 	if (!api_ok(r)) { cJSON_Delete(r); return; }
 	cJSON *j = cJSON_GetObjectItem(r, "job");
 	int busy = cJSON_IsTrue(cJSON_GetObjectItem(j, "busy")), ok = cJSON_IsTrue(cJSON_GetObjectItem(j, "ok"));
@@ -7134,9 +7147,8 @@ static void sg_rescue_parse(cJSON *o, sg_rescue_t *x)
 
 /* once after start-up: a repair that just ran, or a reason to look at it (the SD card wasn't shut down
    safely; the repair drive swapped for another) */
-static void sdrescue_check(void)
+static void sdrescue_check_got(cJSON *r)
 {
-	cJSON *r = api_call("{\"cmd\":\"storage\"}");
 	if (api_ok(r)) {
 		sg_rescue_t x;
 		sg_rescue_parse(cJSON_GetObjectItem(r, "sdrescue"), &x);
@@ -7158,6 +7170,7 @@ static void sdrescue_check(void)
 	}
 	cJSON_Delete(r);
 }
+static void sdrescue_check(void) { sdrescue_check_got(api_call("{\"cmd\":\"storage\"}")); }
 
 /* "USB drive (usb1, SanDisk Ultra)", "NVMe drive (usb0)" */
 static void sg_rescue_name(const char *path, const char *model, char *out, size_t n)
@@ -7193,7 +7206,8 @@ static void sg_rescue_line(const char *out, char *sum, size_t n)
 
 static void sg_refresh(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"storage\"}"), *it;
+	cJSON *r = api_poll("storage", "{\"cmd\":\"storage\"}"), *it;
+	if (!r) return;
 	if (api_ok(r)) {
 		int was = sg.busy;
 		sg.installed = cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"));
@@ -7731,7 +7745,9 @@ static const char *const PADT_HINTS[] = { "L/R", "Port", "B", "Back", NULL };
 
 static void padtest_poll(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"pads\"}"), *it, *pads = r ? cJSON_GetObjectItem(r, "pads") : NULL;
+	cJSON *r = api_poll("pads", "{\"cmd\":\"pads\"}"), *it;
+	if (!r) return;
+	cJSON *pads = cJSON_GetObjectItem(r, "pads");
 	ptst.conn = 0;
 	cJSON_ArrayForEach(it, pads) {
 		if ((int)api_num(it, "port", 0) != ptst.port) continue;
@@ -9197,9 +9213,8 @@ static void upd_note(void)
 }
 
 /* after Phosphor started again: what the update did (once) */
-static void update_check(void)
+static void update_check_got(cJSON *r)
 {
-	cJSON *r = api_call("{\"cmd\":\"update\"}");
 	cJSON *st = r ? cJSON_GetObjectItem(r, "state") : NULL;
 	const char *s = st ? api_str(st, "state") : NULL;
 	if (s && (!strcmp(s, "done") || !strcmp(s, "failed")) && time(NULL) - (time_t)api_num(st, "at", 0) < 300) {
@@ -9220,6 +9235,7 @@ static void update_check(void)
 	}
 	cJSON_Delete(r);
 }
+static void update_check(void) { update_check_got(api_call("{\"cmd\":\"update\"}")); }
 
 /* ---------- About this system ----------
  * Versions (Phosphor, its service, MiSTer's Linux, which Main), storage with free space, network
@@ -9467,7 +9483,7 @@ static void scan_row(lv_obj_t *list, int y, const char *mark, const char *name, 
 
 static void scan_update(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"scan_progress\"}");
+	cJSON *r = api_poll("scan_progress", "{\"cmd\":\"scan_progress\"}");
 	if (!r) return;
 	const char *stage = api_str(r, "stage");
 	int listing = stage && !strcmp(stage, "listing"), ident = stage && !strcmp(stage, "identifying");
@@ -9637,7 +9653,8 @@ static void upper(char *s) { for (; *s; s++) if (*s >= 'a' && *s <= 'z') *s -= 3
 
 static void art_update(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"scrape_progress\"}");
+	cJSON *r = api_poll("scrape_progress", "{\"cmd\":\"scrape_progress\"}");
+	if (!r) return;
 	if (!api_ok(r)) { cJSON_Delete(r); return; }
 	int running = cJSON_IsTrue(cJSON_GetObjectItem(r, "running"));
 	int total = (int)api_num(r, "total", 0), done = (int)api_num(r, "done", 0);
@@ -10890,7 +10907,8 @@ static lv_obj_t *np_cover, *np_eyebrow, *np_title, *np_sub, *np_bar, *np_fill, *
 static char np_src[1200];
 static void np_update(void)
 {
-	cJSON *r = api_call("{\"cmd\":\"music\"}");
+	cJSON *r = api_poll("music", "{\"cmd\":\"music\"}");
+	if (!r) return;
 	cJSON *m = api_ok(r) ? cJSON_GetObjectItem(r, "music") : NULL;
 	cJSON *t = m ? cJSON_GetObjectItem(m, "track") : NULL;
 	if (!t) {
@@ -11324,7 +11342,8 @@ static uint32_t rv_poll_since;
 static lv_timer_t *rv_timer;
 static int rv_fetch_profile(void)       /* 1: still updating */
 {
-	cJSON *r = api_call("{\"cmd\":\"ra_profile\"}");
+	cJSON *r = api_poll("ra_profile", "{\"cmd\":\"ra_profile\"}");
+	if (!r) return 1;
 	int upd = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "updating"));
 	if (api_ok(r)) {
 		cJSON_Delete(rv);
@@ -11337,7 +11356,8 @@ static int rv_fetch_profile(void)       /* 1: still updating */
 }
 static int rv_fetch_game(long long gid)
 {
-	cJSON *r = api_call("{\"cmd\":\"ra_game\",\"id\":%lld}", gid);
+	cJSON *r = api_poll("ra_game", "{\"cmd\":\"ra_game\",\"id\":%lld}", gid);
+	if (!r) return 1;
 	int upd = r && cJSON_IsTrue(cJSON_GetObjectItem(r, "updating"));
 	if (api_ok(r)) {
 		int first = rv_mode != 1;
@@ -11978,6 +11998,8 @@ int ui_ingame_open(void) { return cur == SCR_INGAME; }
 
 static uint32_t last_status, last_poll;
 
+int ui_screen(void) { return (int)cur; }
+
 int ui_max_sleep(void)
 {
 	if (cur == SCR_PORTS || cur == SCR_PADTEST || (cur == SCR_MCARDS && ms.pending)) return 50;   /* the card map, the controller test */
@@ -12108,6 +12130,21 @@ static void body_cards(void)
 
 void ui_tick(void)
 {
+	/* the screen showing and, in Settings, the row: in <tmp>/screen for tests (tools/check-polls/menu_walk.py
+	   walks the menus by it), written only when it changes */
+	{
+		static int ls = -1, lr = -2;
+		int r = cur == SCR_SETTINGS ? set_id(set_list.sel) : -1;
+		if ((int)cur != ls || r != lr) {
+			ls = (int)cur; lr = r;
+			char p[300], t[300];
+			const char *tp = getenv("PHOS_TMP");
+			snprintf(p, sizeof(p), "%s/screen", tp && *tp ? tp : "/tmp/phosphor");
+			snprintf(t, sizeof(t), "%s.new", p);
+			FILE *f = fopen(t, "w");
+			if (f) { fprintf(f, "%d %d\n", ls, lr); fclose(f); rename(t, p); }
+		}
+	}
 	uint32_t now = lv_tick_get();
 	/* where a slow pass went (for the log: the menu not answering the controller) */
 	static const char *tn[16]; static uint32_t tt[16]; int ti = 0; uint32_t tlast = mono_ms_ui(), tstart = tlast;
@@ -12149,8 +12186,14 @@ void ui_tick(void)
 	TT("vk");
 	/* the alerts, once after start-up: one at a time, 1.5 s apart (each asks phosphord, and the menu waits
 	   for its answer: all four at once froze it for seconds at a busy start-up) */
-	{ static int step; static uint32_t next = 5000;
-	  if (step < 4 && now > next) { switch (step++) { case 0: guard_check(); break; case 1: power_check(); break; case 2: update_check(); break; default: sdrescue_check(); } next = now + 1500; } }
+	{ static int step; static uint32_t next = 5000;     /* (asked in the background now: none of them stops the menu) */
+	  if (step < 4 && now > next) { switch (step++) { case 0: api_bg_ask("al_guard", "{\"cmd\":\"guard\"}"); break; case 1: api_bg_ask("al_power", "{\"cmd\":\"power\"}"); break;
+	                                case 2: api_bg_ask("al_update", "{\"cmd\":\"update\"}"); break; default: api_bg_ask("al_sd", "{\"cmd\":\"storage\"}"); } next = now + 1500; }
+	  if (step) { cJSON *x;
+	    if ((x = api_bg_take("al_guard"))) guard_check_got(x);
+	    if ((x = api_bg_take("al_power"))) power_apply(x);
+	    if ((x = api_bg_take("al_update"))) update_check_got(x);
+	    if ((x = api_bg_take("al_sd"))) sdrescue_check_got(x); } }
 	{ static int wall_done; if (!wall_done && now > 3000) { wall_done = 1; if (SETTINGS.wallpaper_on) bg_apply(root); } }   /* (phosphord up by now) */
 	wall_tick();
 	TT("info+alerts+wall");
@@ -12160,10 +12203,10 @@ void ui_tick(void)
 		static uint32_t next = 60000, follow;
 		if (now >= next && !mainlink_in_game()) {
 			next = now + 30u * 60u * 1000u;
-			cJSON_Delete(api_call("{\"cmd\":\"update\",\"do\":\"check\"}"));
+			cJSON_Delete(api_call("{\"cmd\":\"update\",\"do\":\"check\"}"));   /* poll-ok: every 30 min */
 			follow = now + 20000;
 		}
-		if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}"); upo_apply(r); cJSON_Delete(r); }
+		if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}");   /* poll-ok: once, 20 s after that */ upo_apply(r); cJSON_Delete(r); }
 	}
 	saver_tick(now);
 	{ static uint32_t pn_next; if (now >= pn_next) { pn_next = now + 500; pn_check(); } }   /* a game port's note */
@@ -12178,7 +12221,7 @@ void ui_tick(void)
 	if (cur == SCR_PORTS && pt.available && now - last_pads >= 100) { last_pads = now; pt_pads(); }
 	/* a card job: the map fills in as it goes */
 	static uint32_t last_mc;
-	if (cur == SCR_PORTS && pt.busy && now - last_mc >= 250) { last_mc = now; pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
+	if (cur == SCR_PORTS && pt.busy && now - last_mc >= 250) { last_mc = now; cJSON *r_ = api_poll("memcard", "{\"cmd\":\"memcard\"}"); if (r_) pt_apply(r_); }
 	if (cur == SCR_MCARDS && ms.pending && now - last_mc >= 250) { last_mc = now; ms_poll(); }
 	if (cur == SCR_PADTEST && now - last_pads >= 50) { last_pads = now; padtest_poll(); }
 	/* the library changed (a scan finished): refresh what's on screen */
@@ -12192,19 +12235,19 @@ void ui_tick(void)
 		rs_tick();                                    /* (RetroSpy's page: while it installs) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
-		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
+		if (cur == SCR_BACKUP && bk.busy) { cJSON *r_ = api_poll("backup", "{\"cmd\":\"backup\"}"); if (r_) bk_apply(r_); }
 		if (cur == SCR_STORAGE && (sg.busy || sg.bk_busy || sg.nqueue)) sg_refresh();
-		if (cur == SCR_PUPD) { static int ut; if (up.busy || ++ut % 3 == 0) up_apply(api_call("{\"cmd\":\"update\"}")); }
-		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
+		if (cur == SCR_PUPD) { static int ut; if (up.busy || ++ut % 3 == 0) { cJSON *r_ = api_poll("update", "{\"cmd\":\"update\"}"); if (r_) up_apply(r_); } }
+		if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) { cJSON *r_ = api_poll("bluetooth", "{\"cmd\":\"bluetooth\"}"); if (r_) bt_apply(r_); } }
 		/* (a card job is followed 4 times a second, below); otherwise the ports' state every 2 s, so the
 		   screen is right again by itself after Main restarts */
-		{ static int pt_tick; if (cur == SCR_PORTS && !pt.busy && ++pt_tick % 2 == 0) pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
-		if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
+		{ static int pt_tick; if (cur == SCR_PORTS && !pt.busy && ++pt_tick % 2 == 0) { cJSON *r_ = api_poll("memcard", "{\"cmd\":\"memcard\"}"); if (r_) pt_apply(r_); } }
+		if (cur == SCR_CLOUD && cl.busy && !osk.open) { cJSON *r_ = api_poll("cloud", "{\"cmd\":\"cloud\"}"); if (r_) cl_apply(r_); }
 		if (cur == SCR_RA && !osk.open) ra_tick();
 		if (cur == SCR_NOWPLAY || cur == SCR_MUSIC) music_tick();
-		if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
-		if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
-		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
+		if (cur == SCR_REMOTE && pair_box) { cJSON *r_ = api_poll("remote", "{\"cmd\":\"remote\"}"); if (r_) remote_apply(r_); }
+		if (cur == SCR_DIAG && diag_busy[0]) { cJSON *r_ = api_poll("diag", "{\"cmd\":\"diag\"}"); if (r_) diag_apply(r_); }
+		if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) { cJSON *r_ = api_poll("wifi", "{\"cmd\":\"wifi\"}"); if (r_) wifi_apply(r_); } }
 	}
 	TT("polls");
 	if (tlast - tstart >= 100) {

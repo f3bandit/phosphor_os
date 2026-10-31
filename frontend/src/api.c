@@ -257,7 +257,7 @@ void api_reset(void) { hang_up(); }
  * cursor stopped, then the presses came all at once). The newest reply per key is kept for the screen to
  * take on its next pass; a request asked again before it was sent is replaced, not queued twice. */
 #include <pthread.h>
-#define BG_SLOTS 16
+#define BG_SLOTS 48
 static struct { char key[40]; char *req; cJSON *reply; int fresh; } bg[BG_SLOTS];
 static pthread_mutex_t bg_lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t bg_cv = PTHREAD_COND_INITIALIZER;
@@ -355,6 +355,31 @@ cJSON *api_bg_take(const char *key)
 	for (int i = 0; i < BG_SLOTS; i++)
 		if (!strcmp(bg[i].key, key) && bg[i].fresh) { r = bg[i].reply; bg[i].reply = NULL; bg[i].fresh = 0; break; }
 	pthread_mutex_unlock(&bg_lk);
+	return r;
+}
+
+/* a screen's repeated poll: the newest answer from the background (asked again each time), so the menu
+   never waits for phosphord; NULL while it's on its way. Only when this key has had no answer for 10 s (the
+   screen was just opened) is it asked straight away, so the screen fills at once. */
+cJSON *api_poll(const char *key, const char *fmt, ...)
+{
+	char req[2048];
+	va_list ap;
+	va_start(ap, fmt);
+	int n = vsnprintf(req, sizeof(req), fmt, ap);
+	va_end(ap);
+	if (n < 0 || n >= (int)sizeof(req)) return NULL;
+	static struct { char key[40]; long at; } seen[BG_SLOTS];
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	int k;
+	for (k = 0; k < BG_SLOTS && seen[k].key[0] && strcmp(seen[k].key, key); k++) {}
+	if (k == BG_SLOTS) k = 0;
+	if (!seen[k].key[0]) snprintf(seen[k].key, sizeof(seen[k].key), "%s", key);
+	cJSON *r = api_bg_take(key);
+	if (!r && (!seen[k].at || ts.tv_sec - seen[k].at > 10)) r = api_call("%s", req);   /* poll-ok: a screen just opened */
+	api_bg_ask(key, "%s", req);
+	if (r) seen[k].at = ts.tv_sec ? ts.tv_sec : 1;
 	return r;
 }
 
