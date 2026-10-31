@@ -38,7 +38,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY, SCR_UA } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY, SCR_UA, SCR_RS } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -85,7 +85,7 @@ static void bg_apply(lv_obj_t *obj)
 
 /* ---------- status bar ---------- */
 
-static lv_obj_t *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc, *sb_upd;
+static lv_obj_t *sb_rs, *sb_rs_text, *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc, *sb_upd;
 
 static void status_bar(void)
 {
@@ -125,6 +125,15 @@ static void status_bar(void)
 	lv_obj_set_hidden(sb_alert, true);
 
 	int is = lr ? L(10) : S(22);
+	/* RetroSpy watching a controller (its reader running): a red dot and which player */
+	sb_rs = mk_box(right, LV_SIZE_CONTENT, is, PAL.bg, 0);
+	lv_obj_set_style_bg_opa(sb_rs, LV_OPA_TRANSP, 0);
+	lv_obj_set_flex_flow(sb_rs, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(sb_rs, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_column(sb_rs, S(6), 0);
+	mk_box(sb_rs, S(9), S(9), lv_color_hex(0xff5f56), S(5));
+	sb_rs_text = mk_label(sb_rs, FONT_SMALL, PAL.text, "RetroSpy");
+	lv_obj_set_hidden(sb_rs, true);
 	sb_upd = icon_create(right, ICON_UPDATE, is);         /* a newer Phosphor on GitHub (Settings > Update Phosphor) */
 	lv_obj_set_style_text_color(sb_upd, lv_color_hex(0xf5c542), 0);
 	lv_obj_set_hidden(sb_upd, true);
@@ -207,10 +216,60 @@ static void guard_check(void)
 	cJSON_Delete(g);
 }
 
+static void toast_show(const char *msg);
+/* RetroSpy's reader running (RetroSpy on a PC watching a controller over SSH): the jsN it reads, -1 none */
+static int rs_watching_js(void)
+{
+	DIR *d = opendir("/proc");
+	if (!d) return -1;
+	struct dirent *e;
+	int js = -1;
+	while (js < 0 && (e = readdir(d))) {
+		if (e->d_name[0] < '1' || e->d_name[0] > '9') continue;
+		char p[64], cmd[300];
+		snprintf(p, sizeof(p), "/proc/%.20s/cmdline", e->d_name);
+		FILE *f = fopen(p, "r");
+		if (!f) continue;
+		size_t n = fread(cmd, 1, sizeof(cmd) - 1, f);
+		fclose(f);
+		cmd[n] = 0;
+		size_t l = strlen(cmd);
+		if (l < 9 || strcmp(cmd + l - 9, "/retrospy") || l + 1 >= n) continue;
+		const char *j = strstr(cmd + l + 1, "/js");
+		js = j ? atoi(j + 3) : 0;
+	}
+	closedir(d);
+	return js;
+}
+static void rs_status(void)
+{
+	static int was = -1;
+	int js = rs_watching_js();
+	if (js == was || !sb_rs) return;
+	was = js;
+	if (js < 0) { lv_obj_set_hidden(sb_rs, true); return; }
+	/* which player that is: phosphord matches jsN to Main's players */
+	int pl = 0;
+	char name[120] = "";
+	cJSON *r = api_call("{\"cmd\":\"retrospy\"}"), *c;
+	cJSON_ArrayForEach(c, cJSON_GetObjectItem(r, "controllers"))
+		if ((int)api_num(c, "js", -1) == js) { pl = (int)api_num(c, "player", 0); snprintf(name, sizeof(name), "%s", api_str(c, "name") ? api_str(c, "name") : ""); }
+	cJSON_Delete(r);
+	char t[160];
+	if (pl > 0) snprintf(t, sizeof(t), "RetroSpy \xC2\xB7 Player %d", pl);
+	else snprintf(t, sizeof(t), "RetroSpy");
+	lv_label_set_text(sb_rs_text, t);
+	lv_obj_set_hidden(sb_rs, false);
+	if (pl > 0) snprintf(t, sizeof(t), "RetroSpy is watching Player %d%s%s%s", pl, name[0] ? " (" : "", name, name[0] ? ")" : "");
+	else snprintf(t, sizeof(t), "RetroSpy is watching controller %d%s%s%s", js, name[0] ? " (" : "", name, name[0] ? ")" : "");
+	toast_show(t);
+}
+
 static void status_update(void)
 {
 	sysinfo_t s;
 	sysinfo_read(&s);
+	rs_status();
 	{
 		char f[300];
 		const char *tp = getenv("PHOS_TMP");
@@ -2059,7 +2118,7 @@ static void shutdown_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_WALLPAPER, SET_WALL_PICK, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_RETROSPY, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_WALLPAPER, SET_WALL_PICK, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
 /* the rows shown: every setting, but Choose wallpaper only while Wallpapers is on */
 static int set_ids[SET_COUNT], set_n;
 static void set_build(void)
@@ -2213,6 +2272,7 @@ static void set_fill(int row, char *t, size_t n, char *val, size_t vn, int *dim)
 		else snprintf(val, vn, "%s  >", dk.enabled ? "On" : "Off");
 		break;
 	case SET_RA: snprintf(t, n, "RetroAchievements"); snprintf(val, vn, ">"); break;
+	case SET_RETROSPY: snprintf(t, n, "RetroSpy"); snprintf(val, vn, ">"); break;
 	case SET_SHOTS: snprintf(t, n, "Screenshots"); snprintf(val, vn, "%s  >", SETTINGS.shot_off ? "Off" : "L3 + R3"); break;
 	case SET_VIDEO: snprintf(t, n, "Video"); snprintf(val, vn, ">"); break;
 	case SET_RESCAN: snprintf(t, n, "Look for games"); snprintf(val, vn, "Start  >"); break;
@@ -3170,6 +3230,157 @@ static void ua_tick(void)
 {
 	if (cur != SCR_UA || ua.modal) return;
 	if (ua.loading || ua.busy || !ua.list) ua_refresh();
+}
+
+
+/* ---------- Settings > RetroSpy ----------
+ * RetroSpy (retro-spy.com) shows the controller being played on a PC. Its MiSTer part comes from Update All
+ * ("retrospy/retrospy-MiSTer"): installed and uninstalled here through Update All (phosphord's "ua"
+ * install / uninstall). RetroSpy on the PC starts it over SSH while it watches; Phosphor starts nothing.
+ * This page shows what to type into RetroSpy (the SS1's address, MiSTer's login, the controller numbers
+ * with their players). */
+#define RS_DB "retrospy/retrospy-MiSTer"
+static vlist_t rs_vl;
+static struct {
+	cJSON *info;                       /* phosphord's "retrospy" */
+	lv_obj_t *badge, *t1, *grid, *keys, *vals, *note;
+	int busy, sure;                    /* installing / uninstalling; A pressed once on Uninstall */
+} rs;
+
+static int rs_nctl(void) { return cJSON_GetArraySize(cJSON_GetObjectItem(rs.info, "controllers")); }
+static int rs_installed(void) { return cJSON_IsTrue(cJSON_GetObjectItem(rs.info, "installed")); }
+
+static void rs_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	int nc = rs_nctl();
+	if (i < nc) {
+		cJSON *c = cJSON_GetArrayItem(cJSON_GetObjectItem(rs.info, "controllers"), i);
+		snprintf(t, n, "%s", api_str(c, "name") && *api_str(c, "name") ? api_str(c, "name") : "Controller");
+		int pl = (int)api_num(c, "player", 0);
+		if (pl > 0) snprintf(val, vn, "%d  \xC2\xB7  Player %d", (int)api_num(c, "js", 0), pl);
+		else snprintf(val, vn, "%d", (int)api_num(c, "js", 0));
+		return;
+	}
+	if (rs.busy) snprintf(t, n, "Working\xE2\x80\xA6");
+	else if (!rs_installed()) snprintf(t, n, "Install RetroSpy");
+	else snprintf(t, n, "%s", rs.sure ? "Press A again to uninstall" : "Uninstall RetroSpy\xE2\x80\xA6");
+	val[0] = 0;
+}
+
+static void rs_draw(void)
+{
+	if (!rs.badge) return;
+	int inst = rs_installed();
+	char b[120];
+	if (rs.busy) snprintf(b, sizeof(b), "WORKING\xE2\x80\xA6");
+	else if (cJSON_IsTrue(cJSON_GetObjectItem(rs.info, "watching"))) snprintf(b, sizeof(b), "INSTALLED  \xC2\xB7  WATCHING CONTROLLER %d", (int)api_num(rs.info, "watching_js", 0));
+	else snprintf(b, sizeof(b), "%s", inst ? "INSTALLED" : "NOT INSTALLED");
+	lv_label_set_text(rs.badge, b);
+	lv_obj_set_style_text_color(rs.badge, inst ? lv_color_hex(0x7bd88f) : PAL.dim, 0);
+	if (inst) {
+		lv_label_set_text(rs.t1, "Shows your controller on your PC for streaming and recording. In RetroSpy on the PC, pick the source MiSTer and type these in:");
+		int js = 0;
+		cJSON *c;
+		cJSON_ArrayForEach(c, cJSON_GetObjectItem(rs.info, "controllers")) if ((int)api_num(c, "player", 0) == 1) js = (int)api_num(c, "js", 0);
+		char g[300];
+		if (rs_nctl()) snprintf(g, sizeof(g), "%s\n%s\n%s\n%d  (Player 1; the list has the others)",
+			api_str(rs.info, "host") && *api_str(rs.info, "host") ? api_str(rs.info, "host") : "(not on a network)",
+			api_str(rs.info, "user") ? api_str(rs.info, "user") : "root", api_str(rs.info, "password") ? api_str(rs.info, "password") : "1", js);
+		else snprintf(g, sizeof(g), "%s\n%s\n%s\nno controller connected right now",
+			api_str(rs.info, "host") && *api_str(rs.info, "host") ? api_str(rs.info, "host") : "(not on a network)",
+			api_str(rs.info, "user") ? api_str(rs.info, "user") : "root", api_str(rs.info, "password") ? api_str(rs.info, "password") : "1");
+		lv_label_set_text(rs.keys, "Host\nUsername\nPassword\nController");
+		lv_label_set_text(rs.vals, g);
+		lv_obj_set_hidden(rs.grid, false);
+		lv_label_set_text(rs.note, "Phosphor doesn't run anything for it: RetroSpy on the PC starts the reader on the SS1 while it watches, and it stops when RetroSpy closes.");
+	} else {
+		lv_label_set_text(rs.t1, "RetroSpy shows the controller you're playing with on your PC: a picture of the pad that lights up as you press, for streams and recordings (OBS).");
+		lv_obj_set_hidden(rs.grid, true);
+		lv_label_set_text(rs.note, "Install puts RetroSpy's small reader on the SD card through Update All, so Update All keeps it up to date. Nothing starts at boot. Get RetroSpy for the PC from retro-spy.com.");
+	}
+	rs_vl.count = rs_nctl() + 1;
+	if (rs_vl.sel >= rs_vl.count) rs_vl.sel = rs_vl.count - 1;
+	vlist_refresh(&rs_vl);
+}
+
+static void rs_refresh(void)
+{
+	cJSON *r = api_call_slow(4000, "{\"cmd\":\"retrospy\"}");
+	if (api_ok(r)) { cJSON_Delete(rs.info); rs.info = r; }
+	else cJSON_Delete(r);
+	rs_draw();
+}
+
+static void show_rs(void)
+{
+	cur = SCR_RS;
+	lv_obj_clean(body);
+	memset(&rs_vl, 0, sizeof(rs_vl));
+	rs.sure = 0;
+	screen_title("CONTROLLERS", "RetroSpy");
+	int x = S(56), w = SW(600);
+	lv_obj_t *p = mk_box(body, w, S(452), PAL.panel, S(10));
+	lv_obj_set_pos(p, x, S(170));
+	lv_obj_set_style_pad_all(p, S(22), 0);
+	lv_obj_set_style_pad_row(p, S(12), 0);
+	lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
+	int iw = w - 2 * S(22);
+	rs.badge = mk_label(p, FONT_SMALL, PAL.dim, "");
+	rs.t1 = mk_label(p, FONT_BODY, PAL.text, "");
+	lv_obj_set_width(rs.t1, iw);
+	lv_label_set_long_mode(rs.t1, LV_LABEL_LONG_MODE_WRAP);
+	rs.grid = lv_obj_create(p);                        /* the details: names, then what to type */
+	lv_obj_remove_style_all(rs.grid);
+	lv_obj_set_size(rs.grid, iw, LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(rs.grid, LV_FLEX_FLOW_ROW);
+	lv_obj_set_style_pad_column(rs.grid, S(18), 0);
+	rs.keys = mk_label(rs.grid, FONT_BODY, PAL.dim, "");
+	rs.vals = mk_label(rs.grid, FONT_BODY, PAL.acc, "");
+	rs.note = mk_label(p, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_width(rs.note, iw);
+	lv_label_set_long_mode(rs.note, LV_LABEL_LONG_MODE_WRAP);
+	if (theme_lr) lv_obj_set_hidden(p, true);
+	vlist_create(&rs_vl, body, theme_lr ? S(56) : SX(700), S(176), theme_lr ? SW(1168) : SW(524), S(440));
+	rs_vl.fill = rs_fill;
+	static const char *const h[] = { "A", "Select", "B", "Back", NULL };
+	footer_set(h);
+	rs_refresh();
+}
+
+static void rs_job_done(cJSON *r)
+{
+	cJSON *j = cJSON_GetObjectItem(r, "last_job");
+	toast_show(api_ok(j) ? "RetroSpy: done" : "That didn't finish: see Update All's log (Settings > Update All)");
+}
+
+static void rs_key(pkey_t k)
+{
+	if (k == K_B || k == K_MENU) { back_to_settings(SET_RETROSPY); return; }
+	if (vlist_key(&rs_vl, k)) { rs.sure = 0; rs_draw(); return; }
+	if (k != K_A || rs.busy || rs_vl.sel < rs_nctl()) return;
+	int inst = rs_installed();
+	if (inst && !rs.sure) { rs.sure = 1; rs_draw(); return; }
+	rs.sure = 0;
+	cJSON *rq = cJSON_CreateObject(), *args = cJSON_AddArrayToObject(rq, "args");
+	cJSON_AddStringToObject(rq, "cmd", "ua");
+	cJSON_AddStringToObject(rq, "do", inst ? "uninstall" : "install");
+	cJSON_AddStringToObject(rq, "title", "RetroSpy");
+	cJSON_AddItemToArray(args, cJSON_CreateString(RS_DB));
+	cJSON *r = api_call_json(30000, rq);
+	cJSON_Delete(rq);
+	if (api_ok(r)) { rs.busy = 1; toast_show(inst ? "Uninstalling RetroSpy through Update All" : "Installing RetroSpy through Update All"); }
+	else toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start it: is Update All on the SD card?");
+	cJSON_Delete(r);
+	rs_draw();
+}
+
+static void rs_tick(void)
+{
+	if (cur != SCR_RS || !rs.busy) return;
+	cJSON *r = api_call("{\"cmd\":\"ua\"}");
+	if (r && !cJSON_IsTrue(cJSON_GetObjectItem(r, "busy"))) { rs.busy = 0; rs_job_done(r); cJSON_Delete(r); rs_refresh(); return; }
+	cJSON_Delete(r);
 }
 
 
@@ -4386,6 +4597,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu, the OSD, and MiSTer's own settings. Launch Phosphor in its System page to come back here.", NULL },
 	[SET_CTRL] = { "Your USB and Bluetooth controllers: map their buttons for MiSTer's menu and every core, see them work live, or put them back to automatic.",
 	               "Every change is backed up first, and can be put back from Backups there." },
+	[SET_RETROSPY] = { "Shows the controller you're playing with on your PC, for streams and recordings, with RetroSpy (retro-spy.com).",
+	                   "Installed through Update All; here are the details to type into RetroSpy on the PC." },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
 	[SET_SHUTDOWN] = { "Turns the MiSTer off safely: every drive is finished with first, so the SD card and USB drives come out clean. When the screen says it's safe, switch the power off.",
 	                   "Also: Select + Start together, anywhere in Phosphor." },
@@ -10052,6 +10265,9 @@ void ui_key(pkey_t k)
 	case SCR_UA:
 		ua_key(k);
 		break;
+	case SCR_RS:
+		rs_key(k);
+		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
@@ -10090,6 +10306,7 @@ void ui_key(pkey_t k)
 			else if (set_id(set_list.sel) == SET_WIFI) show_wifi();
 			else if (set_id(set_list.sel) == SET_BT) show_bt();
 			else if (set_id(set_list.sel) == SET_CTRL) show_ctrl();
+			else if (set_id(set_list.sel) == SET_RETROSPY) show_rs();
 			else if (set_id(set_list.sel) == SET_PHOSUPD) show_update();
 			else if (set_id(set_list.sel) == SET_REMOTE) show_remote();
 			else if (set_id(set_list.sel) == SET_CLOUD) show_cloud();
@@ -11968,6 +12185,7 @@ void ui_tick(void)
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); si_update(); }
 		gd_tick();                                    /* (only while one of its jobs runs) */
 		ua_tick();                                    /* (while Update All's settings load, or an uninstall runs) */
+		rs_tick();                                    /* (RetroSpy's page: while it installs) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));

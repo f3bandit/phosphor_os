@@ -53,6 +53,7 @@ func routes(mux *http.ServeMux) {
 	})
 	h("/api/state", apiState)
 	h("/api/app_update", apiAppUpdate) // Phosphor for Windows updating itself (appupdate.go)
+	h("/api/retrospy", apiRetrospy)     // RetroSpy on this PC: found, opened with the SS1 filled in (retrospy.go)
 	h("/api/automatch", apiAutomatch)
 	h("/api/discover", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "found": discover()})

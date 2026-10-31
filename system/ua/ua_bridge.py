@@ -462,6 +462,24 @@ class Bridge:
                         return u
         return None
 
+    def install(self, db_id):
+        # turned on the way Update All's own menu does (its variable for that database), saved, then that one
+        # database fetched by Update All's Downloader (--run-only), as Update All's database manager updates one
+        lid = db_id.lower()
+        var = None
+        for v in self.variables:
+            if v.lower() == lid:
+                var = v
+        st = self.status_of({'key': ('var:' + var) if var else ('db:' + db_id), 'menu': '', 'value': 'true'})
+        if st.get('status') == 'guard' and not st.get('allowed'):
+            return {'ok': False, 'guarded': True, 'error': st.get('note') or 'Phosphor guards this'}
+        if var:
+            self.ui.set_value(var, 'true')
+        self.save()
+        service = self.screen._database_manager_service
+        code = service.update(db_id)
+        return {'ok': code == 0, 'code': code}
+
     def uninstall(self, db_ids):
         from update_all.ui_engine import _EffectResolver
         service = self.screen._database_manager_service
@@ -498,6 +516,8 @@ def run(b, args):
         return b.preview(args[1:])
     if cmd == 'uninstall':
         return b.uninstall(args[1:])
+    if cmd == 'install':
+        return b.install(args[1])
     if cmd == 'leftovers':
         return b.leftovers()
     if cmd == 'clean_ao':
@@ -521,7 +541,7 @@ def serve():
             args = json.loads(line)
             with contextlib.redirect_stdout(sys.stderr):
                 r = run(b, args)
-                if args and args[0] == 'uninstall':
+                if args and args[0] in ('uninstall', 'install'):
                     try:
                         b = Bridge()                  # what's installed changed: read it all again
                     except Exception:

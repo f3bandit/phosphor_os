@@ -13,7 +13,7 @@ const SET_SECTIONS = [
 	{ id: "updateall", name: "Update All", tabs: [["Update All", "tUA"]] },
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"]] },
 	{ id: "saves", name: "Saves & memory cards", tabs: [["Memory cards", "tMc"], ["Backups", "tSnaps"], ["Cloud saves", "tCloud"]] },
-	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"]] },
+	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"], ["RetroSpy", "tRS"]] },
 	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"]] },
 	{ id: "discs", name: "Discs", tabs: [["Discs", "tDiscs"]] },
 	{ id: "ra", name: "RetroAchievements", tabs: [["Account & options", "tRa"], ["Your progress", "tRaProg"]] },
@@ -1320,6 +1320,86 @@ class AppSettings {
 		tick();
 	}
 	/* backups of every controller's mapping files, on the SS1 */
+	/* ---------- RetroSpy: installed through Update All on the SS1, opened from this PC ----------
+	   RetroSpy (retro-spy.com) shows the controller being played, for streams and recordings. The SS1's part
+	   comes from Update All (installed here through phosphord's "ua"); RetroSpy on the PC logs in over SSH
+	   and runs it while it watches. phosphord's "retrospy" says what to type in; retrospy.go finds RetroSpy
+	   on this PC and opens it with the address and login filled in. */
+	async tRS(b) {
+		const alive = this.alive, DB = "retrospy/retrospy-MiSTer";
+		b.append(h(`<div class="split"><div class="col" id="rsl"><div class="empty"><span class="spin"></span></div></div><div class="col" id="rsr"></div></div>`));
+		let busy = false;
+		const copy = async text => {
+			try { await navigator.clipboard.writeText(text); toast("Copied"); return; } catch (e) {}
+			const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+			try { document.execCommand("copy"); toast("Copied"); } catch (e) { toast("Couldn't copy"); }
+			t.remove();
+		};
+		const draw = async () => {
+			let r, pc = {};
+			try { r = await ss1({ cmd: "retrospy" }); }
+			catch (e) { if (alive()) $("#rsl").innerHTML = `<div class="empty">${esc(/unknown/i.test(e.message) ? "Update Phosphor on the SS1 for RetroSpy's page." : e.message)}</div>`; return false; }
+			try { pc = await api("/api/retrospy"); } catch (e) {}
+			if (!alive()) return false;
+			const ctl = r.controllers || [], p1 = ctl.find(c => c.player === 1) || ctl[0];
+			const tag = (t, ok) => `<span class="tag ${ok ? "g" : ""}">${t}</span>`;
+			const L = $("#rsl");
+			if (!r.installed) {
+				L.innerHTML = `<div class="panel"><div style="display:flex;gap:.5rem;flex-wrap:wrap">${tag("NOT INSTALLED ON THE SS1", false)}</div>
+					<p>RetroSpy shows the controller you're playing with on your PC: a picture of the pad that lights up as you press, for streams and recordings (OBS).</p>
+					<p class="note">Install puts RetroSpy's small reader on the SS1's SD card through Update All, so Update All keeps it up to date. Nothing starts at boot; Phosphor's Update All page lists it as Safe.</p>
+					<div class="acts"><button class="btn primary" id="rs_inst" data-nav>${busy ? "Installing…" : "Install RetroSpy"}</button></div></div>`;
+			} else {
+				const det = `Host: ${r.host}\nUsername: ${r.user}\nPassword: ${r.password}\nController: ${p1 ? p1.js : 0}`;
+				L.innerHTML = `<div class="panel"><div style="display:flex;gap:.5rem;flex-wrap:wrap">${tag("INSTALLED ON THE SS1", true)}${tag(pc.found ? "RETROSPY FOUND ON THIS PC" : "RETROSPY NOT FOUND ON THIS PC", !!pc.found)}</div>
+					<div class="acts">${pc.found ? `<button class="btn primary" id="rs_open" data-nav>Open RetroSpy${p1 && p1.player ? " for Player " + p1.player : ""}</button>` : ""}<button class="btn" id="rs_copy" data-nav>Copy the details</button></div>
+					<p class="note">${pc.found ? "Opens RetroSpy with this SS1's address and MiSTer's login already filled in. In RetroSpy, pick the source MiSTer and the controller number below, then Go." : "In RetroSpy on this PC, pick the source MiSTer and type these in."}</p>
+					<dl class="kv"><dt>Host</dt><dd><b>${esc(r.host || "(not on a network)")}</b></dd><dt>Username</dt><dd>${esc(r.user)}</dd><dt>Password</dt><dd>${esc(r.password)}</dd></dl>
+					<div class="sub" style="margin-top:1.2rem">${spaced("Controllers · RetroSpy's number")}</div>
+					${ctl.length ? ctl.map(c => `<div class="row"><span class="n">${esc(c.name || "Controller")}</span><span class="v">${c.js}${c.player ? " · Player " + c.player : ""}</span></div>`).join("") : `<div class="empty">No USB or Bluetooth controller connected.</div>`}
+					<div class="acts"><button class="btn" id="rs_rm" data-nav>${busy ? "Uninstalling…" : "Uninstall RetroSpy"}</button></div></div>`;
+				const o = $("#rs_open");
+				if (o) o.onclick = async () => {
+					try { const x = await api("/api/retrospy", { host: r.host, user: r.user, password: r.password }); if (!x.ok) throw new Error(x.error); toast(x.filled ? "RetroSpy opened with the SS1 filled in" : "RetroSpy opened: type the details in (copied)"); if (!x.filled) copy(det); }
+					catch (e) { toast(e.message); }
+				};
+				$("#rs_copy").onclick = () => copy(det);
+				twice($("#rs_rm"), "Press again to uninstall", () => job("uninstall"));
+			}
+			live(r, pc);
+			const ib = $("#rs_inst");
+			if (ib) ib.onclick = () => job("install");
+			return true;
+		};
+		const live = (r, pc) => {
+			const R = $("#rsr"), ctl = r.controllers || [];
+			if (!R) return;
+			const w = r.watching ? ctl.find(c => c.js === r.watching_js) : null;
+			R.innerHTML = `<div class="panel"><h2>Live</h2><p>${r.watching ? `<span style="color:#ff5f56">●</span> RetroSpy is watching ${w && w.player ? "Player " + w.player : "controller " + r.watching_js}${w ? " (" + esc(w.name) + ")" : ""}` : "RetroSpy isn't watching right now."}</p>
+				<p class="note">From the SS1: RetroSpy's reader running. The TV shows it in its top bar too.</p></div>
+				${pc.found ? "" : `<div class="panel" style="margin-top:1rem"><h2>Not on this PC?</h2><p class="note">RetroSpy for Windows is free from retro-spy.com. Phosphor finds it once it's installed.</p></div>`}`;
+		};
+		const job = async what => {
+			if (busy) return;
+			try { await ss1({ cmd: "ua", do: what, args: [DB], title: "RetroSpy" }); } catch (e) { toast(e.message); return; }
+			busy = true; toast(what === "install" ? "Installing RetroSpy through Update All" : "Uninstalling RetroSpy through Update All");
+			await draw();
+			const poll = setInterval(async () => {
+				if (!alive()) { clearInterval(poll); return; }
+				let u; try { u = await ss1({ cmd: "ua" }); } catch (e) { return; }
+				if (u.busy) return;
+				clearInterval(poll); busy = false;
+				toast(u.last_job && u.last_job.ok ? "RetroSpy: done" : "That didn't finish: see Update All's log");
+				draw();
+			}, 2000);
+		};
+		let pcNow = {};
+		try { pcNow = await api("/api/retrospy"); } catch (e) {}
+		if (await draw()) this.every(4000, async () => {      /* the Live card follows RetroSpy (the rest stays) */
+			try { live(await ss1({ cmd: "retrospy" }), pcNow); } catch (e) {}
+			return true;
+		});
+	}
 	async tCtrlBk(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="cbl"><div class="empty"><span class="spin"></span></div></div><div class="panel" id="cbp"><h2>Backups</h2>
