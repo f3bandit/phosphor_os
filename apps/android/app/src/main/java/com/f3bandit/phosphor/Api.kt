@@ -133,7 +133,23 @@ private fun JSONObject.str(k: String): String? = if (isNull(k)) null else optStr
 /** One paired MiSTer. Every call does network I/O: call from a coroutine (they switch to Dispatchers.IO). */
 class PhosphorApi(val address: String, private val token: String?) {
 
+    /** the MiSTer's "busy" answer (503 with Retry-After): sent before the request is read, so nothing was done */
+    private class Busy : Exception()
+
+    /** a request, sent again (about 30 seconds in all) while the MiSTer is serving as many connections as it takes */
     private fun request(method: String, path: String, body: ByteArray? = null, type: String? = null, timeoutMs: Int = 20_000): ByteArray {
+        var tries = 0
+        while (true) {
+            try {
+                return requestOnce(method, path, body, type, timeoutMs)
+            } catch (e: Busy) {
+                if (++tries > 20) throw PhosphorError("The MiSTer is busy: try again", 503)
+                Thread.sleep(minOf(250L * tries, 2_000L) + (0..250).random())
+            }
+        }
+    }
+
+    private fun requestOnce(method: String, path: String, body: ByteArray?, type: String?, timeoutMs: Int): ByteArray {
         val c = URL("http://$address$path").openConnection() as HttpURLConnection
         try {
             c.requestMethod = method
@@ -151,6 +167,7 @@ class PhosphorApi(val address: String, private val token: String?) {
                 throw PhosphorError("Can't reach the MiSTer at $address. Is it on, on this WiFi, with Remote access turned on?")
             }
             val data = (if (code in 200..299) c.inputStream else c.errorStream)?.use { it.readBytes() } ?: ByteArray(0)
+            if (code == 503 && c.getHeaderField("Retry-After") != null) throw Busy()
             if (code != 200) {
                 val msg = runCatching { JSONObject(String(data)).optString("error") }.getOrNull()
                 throw PhosphorError(msg?.takeIf { it.isNotEmpty() } ?: "The MiSTer answered $code", code)
