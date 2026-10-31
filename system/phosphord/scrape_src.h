@@ -48,6 +48,8 @@ typedef struct {
 	int (*lookup)(sqlite3 *db, sgame_t *g, sres_t *r);
 } source_t;
 
+/* Local files (src_local.c): art and details already on the drives */
+extern const source_t SRC_LOCAL;
 extern const source_t SRC_LIBRETRO, SRC_ARCADEDB, SRC_LAUNCHBOX, SRC_TGDB, SRC_SCREENSCRAPER, SRC_IGDB;
 /* fan-made box art (src_fanart.c): asked first, always; not in the user's order */
 extern const source_t SRC_FANART;

@@ -136,6 +136,11 @@ h1 { flex: none; font-weight: 600; font-size: 2rem; letter-spacing: -.01em; marg
 /* forms */
 .field { display: grid; gap: .3rem; margin-bottom: .8rem; }
 .field label { font-size: .8125rem; color: var(--dim); }
+/* Box art: which games a lookup covers */
+.scope { display: flex; align-items: center; gap: .8rem; margin-top: 1rem; }
+.scope label { font-size: .8125rem; color: var(--dim); }
+.scope select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: .4rem; padding: .45rem .6rem; font: inherit; min-width: 14rem; }
+.scope select.f, .scope select:focus { border-color: var(--acc); outline: none; }
 input[type=text], input[type=search], input[type=password], textarea { width: 100%; background: #121214; border: 1px solid var(--line); border-radius: .5rem;
 	padding: .55rem .75rem; color: var(--text); outline: none; user-select: text; }
 input.f, textarea.f, input:focus, textarea:focus { border-color: var(--acc); }
@@ -153,6 +158,8 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.45; }
 /* ---- hints and toast */
 #hints { display: flex; gap: 2.2rem; align-items: center; padding: 0 var(--gut) 1.4rem; height: 4.2rem; }
 .hint { display: flex; align-items: center; gap: .7rem; color: var(--dim); font-size: 1rem; }
+#hints .hint { cursor: pointer; border-radius: .5rem; padding: .3rem .5rem; margin: -.3rem -.5rem; }
+#hints .hint:hover { color: var(--text); background: rgba(255, 255, 255, .06); }
 .hint kbd { min-width: 1.75rem; height: 1.75rem; padding: 0 .45rem; border: 1.5px solid var(--text); border-radius: 1rem; display: inline-flex;
 	align-items: center; justify-content: center; font: 600 .8125rem Inter, sans-serif; color: var(--text); }
 #hints:not(.pad) .hint kbd { border-radius: .35rem; }   /* the PC's keys look like keys, a controller's buttons stay round */

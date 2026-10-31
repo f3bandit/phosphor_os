@@ -39,6 +39,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,7 +73,7 @@ static const char *ALLOWED[] = {
 	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "not_game", "scrape_sources", "scrape_accounts", "scrape_progress",
 	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
-	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
+	"system", "samba", "power", "guard", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_local", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
 	"disc", "disc_play", "disc_eject", "disc_enable", "disc_copy",
 	/* RetroAchievements: looking and the Web API key; logging in (a password) only on the MiSTer itself */
 	"ra", "ra_set", "ra_key", "ra_cores", "ra_match", "ra_profile", "ra_game",
@@ -1010,16 +1011,83 @@ static int open_listener(int p)
 	return s;
 }
 
-/* too many connections open: say so straight away, without waiting for the request */
+/* too many connections open: the answer is "busy" (503, Retry-After), before reading the request, so it
+ * was certainly not acted on and the client can send it again. Two things make that answer arrive
+ * cleanly (0.27.60):
+ *  - it's sent once the request has started to come in (up to 2 s): sent on a connection the client
+ *    hasn't written to yet, it's an answer to nothing, and a client (Go's) drops the connection as broken;
+ *  - the rest of the request is read before the socket is closed: closing with data unread sends a reset,
+ *    and a reset can wipe out the answer before the client reads it (Windows: "forcibly closed by the
+ *    remote host" on a box art upload). Up to 16 MB or 10 s are taken in and thrown away.
+ * That's done on a thread of its own (a few at once; the accept loop never waits). With none free, the
+ * answer goes straight away, as before. */
+#define DRAIN_MAX 4
+#define DRAIN_BYTES (16L * 1024 * 1024)
+#define DRAIN_MS 10000
+#define BUSY_WAIT_MS 2000
+static int draining;                /* under pmu */
+static const char BUSY_MSG[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 39\r\n"
+                               "Retry-After: 1\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+                               "{\"ok\":false,\"error\":\"busy: try again\"}\n";
+
+static int busy_send(int fd)
+{
+	if (send(fd, BUSY_MSG, sizeof(BUSY_MSG) - 1, MSG_DONTWAIT | MSG_NOSIGNAL) < 0) return -1;
+	shutdown(fd, SHUT_WR);
+	return 0;
+}
+
+static void *drain_run(void *arg)
+{
+	int fd = (int)(intptr_t)arg;
+	char junk[16384];
+	/* the request's first bytes, then the answer */
+	struct pollfd pf = { fd, POLLIN, 0 };
+	poll(&pf, 1, BUSY_WAIT_MS);
+	if (busy_send(fd) == 0) {
+		long got = 0;
+		long long until = now_ms() + DRAIN_MS;
+		while (got < DRAIN_BYTES) {
+			long long left = until - now_ms();
+			if (left <= 0) break;
+			pf.revents = 0;
+			if (poll(&pf, 1, (int)(left > 1000 ? 1000 : left)) <= 0) continue;
+			ssize_t n = recv(fd, junk, sizeof(junk), MSG_DONTWAIT);
+			if (n <= 0) break;          /* the client is done (closed its side) */
+			got += n;
+		}
+	}
+	close(fd);
+	pthread_mutex_lock(&pmu);
+	draining--;
+	pthread_mutex_unlock(&pmu);
+	return NULL;
+}
+
 static void busy(int fd)
 {
-	static const char msg[] = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: 39\r\n"
-	                          "Retry-After: 1\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
-	                          "{\"ok\":false,\"error\":\"busy: try again\"}\n";
-	if (send(fd, msg, sizeof(msg) - 1, MSG_DONTWAIT | MSG_NOSIGNAL) < 0) { close(fd); return; }
-	shutdown(fd, SHUT_WR);
-	char junk[4096];   /* whatever of the request has come: dropping it unread would reset the answer */
-	for (int i = 0; i < 4 && recv(fd, junk, sizeof(junk), MSG_DONTWAIT) > 0; i++) ;
+	pthread_mutex_lock(&pmu);
+	int ok = draining < DRAIN_MAX;
+	if (ok) draining++;
+	pthread_mutex_unlock(&pmu);
+	if (ok) {
+		pthread_t t;
+		pthread_attr_t at;
+		pthread_attr_init(&at);
+		pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+		pthread_attr_setstacksize(&at, 64 * 1024);
+		int rc = pthread_create(&t, &at, drain_run, (void *)(intptr_t)fd);
+		pthread_attr_destroy(&at);
+		if (rc == 0) return;
+		pthread_mutex_lock(&pmu);
+		draining--;
+		pthread_mutex_unlock(&pmu);
+	}
+	/* none free: straight away */
+	if (busy_send(fd) == 0) {
+		char junk[4096];
+		for (int i = 0; i < 4 && recv(fd, junk, sizeof(junk), MSG_DONTWAIT) > 0; i++) ;
+	}
 	close(fd);
 }
 

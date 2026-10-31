@@ -39,25 +39,35 @@ const e2eGames = 60
 
 // e2eSS1: a phosphord on a pretend SD card with e2eGames SNES games, remote access on, this test paired
 func e2eSS1(t *testing.T) (addr, token string) {
+	addr, token, _ = e2eSS1With(t, func(fat string) {
+		games := filepath.Join(fat, "games", "SNES")
+		os.MkdirAll(games, 0o755)
+		for i := 1; i <= e2eGames; i++ {
+			b := make([]byte, 4096)
+			rand.Read(b)
+			if err := os.WriteFile(filepath.Join(games, fmt.Sprintf("E2E Game %d (USA).sfc", i)), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	return addr, token
+}
+
+// e2eSS1With: the same, with the pretend SD card (fat) laid out by setup; also returns where it is
+func e2eSS1With(t *testing.T, setup func(fat string)) (addr, token, fat string) {
 	bin := os.Getenv("PHOSD_BIN")
 	if bin == "" {
 		t.Skip("PHOSD_BIN not set (a PC build of phosphord)")
 	}
 	root := t.TempDir()
-	fat, tmp := filepath.Join(root, "fat"), filepath.Join(root, "tmp")
-	games := filepath.Join(fat, "games", "SNES")
-	for _, d := range []string{games, filepath.Join(fat, "phosphor", "config"), tmp} {
+	var tmp string
+	fat, tmp = filepath.Join(root, "fat"), filepath.Join(root, "tmp")
+	for _, d := range []string{filepath.Join(fat, "games"), filepath.Join(fat, "phosphor", "config"), tmp} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for i := 1; i <= e2eGames; i++ {
-		b := make([]byte, 4096)
-		rand.Read(b)
-		if err := os.WriteFile(filepath.Join(games, fmt.Sprintf("E2E Game %d (USA).sfc", i)), b, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	setup(fat)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +111,7 @@ func e2eSS1(t *testing.T) (addr, token string) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return addr, token
+	return addr, token, fat
 }
 
 // a box art picture, and a source that finds every game and points at it
@@ -205,7 +215,7 @@ func TestE2ELookUpOnThisPC(t *testing.T) {
 		}()
 	}
 
-	retriesBefore := busyRetries.Load()
+	retriesBefore, cutsBefore := busyRetries.Load(), cutOffs.Load()
 	s := &scrapeRun{ctx: ctx, cancel: cancel}
 	s.st = scrapeState{Running: true, Status: "Starting", Started: time.Now().Unix()}
 	all := s.lookupAll()
@@ -216,8 +226,8 @@ func TestE2ELookUpOnThisPC(t *testing.T) {
 	st := s.st
 	s.mu.Unlock()
 	t.Logf("notes: %q", st.Notes)
-	t.Logf("status %q: %d found, %d not found, %d later; %d pictures served; page asked %d times (%d failed); %d busy answers sent again",
-		st.Status, st.Found, st.NotFound, st.Later, served.Load(), polls.Load(), pollFails.Load(), busyRetries.Load()-retriesBefore)
+	t.Logf("status %q: %d found, %d not found, %d later; %d pictures served; page asked %d times (%d failed); %d busy answers sent again (%d of them uploads cut off)",
+		st.Status, st.Found, st.NotFound, st.Later, served.Load(), polls.Load(), pollFails.Load(), busyRetries.Load()-retriesBefore, cutOffs.Load()-cutsBefore)
 	if !all || strings.HasPrefix(st.Status, "The SS1") || strings.HasPrefix(st.Status, "No connection") {
 		t.Fatalf("the run stopped: %q", st.Status)
 	}
@@ -246,5 +256,38 @@ func TestE2ELookUpOnThisPC(t *testing.T) {
 		if r.StatusCode != 200 || len(b) < 3 || b[0] != 0xFF || b[1] != 0xD8 {
 			t.Fatalf("game %d: no box art on the SS1 (HTTP %d, %d bytes)", id, r.StatusCode, len(b))
 		}
+	}
+}
+
+// A big upload to a busy SS1 gets its "busy" answer, not a reset connection: the SS1 takes in the rest of
+// it before closing (0.27.60). Every connection it serves from this address is taken first.
+func TestE2EBusyUploadAnswered(t *testing.T) {
+	addr, token := e2eSS1(t)
+	big := make([]byte, 2<<20)
+	rand.Read(big)
+	for round := 0; round < 5; round++ {
+		var held []net.Conn
+		for i := 0; i < 6; i++ {
+			c, err := net.Dial("tcp", addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			held = append(held, c)
+		}
+		time.Sleep(150 * time.Millisecond)
+		req, _ := http.NewRequest("PUT", "http://"+addr+"/art/1", bytes.NewReader(big))
+		req.Header.Set("Authorization", "Bearer "+token)
+		r, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+		for _, c := range held {
+			c.Close()
+		}
+		if err != nil {
+			t.Fatalf("round %d: the upload's connection was cut off instead of answered: %v", round, err)
+		}
+		r.Body.Close()
+		if r.StatusCode != 503 || r.Header.Get("Retry-After") == "" {
+			t.Fatalf("round %d: HTTP %d, want the busy answer", round, r.StatusCode)
+		}
+		time.Sleep(3500 * time.Millisecond) // the held connections let go (the SS1 waits 3 s for a request)
 	}
 }

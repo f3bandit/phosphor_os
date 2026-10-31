@@ -27,6 +27,8 @@ type config struct {
 	// passwords and keys protected like the pairing key
 	Accounts    map[string]map[string]string `json:"accounts,omitempty"`
 	AccountsEnc map[string]map[string]string `json:"accounts_protected,omitempty"`
+	// a folder of box art on this PC, for the Local files source (scrape_local.go)
+	ArtFolder string `json:"art_folder,omitempty"`
 }
 
 var (

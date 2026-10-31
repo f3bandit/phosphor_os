@@ -104,6 +104,9 @@ var busyTries = 20 // (a var: the end-to-end test can turn it off)
 // busyRetries: how many times a request was sent again (counted for the tests)
 var busyRetries atomic.Int64
 
+// cutOffs: uploads sent again after their connection was cut off (counted for the tests)
+var cutOffs atomic.Int64
+
 // busyWait: a short wait, a little longer each time, with some jitter so waiting requests don't all come back at once
 func busyWait(try int) time.Duration {
 	ms := 250 * (try + 1)
@@ -111,6 +114,13 @@ func busyWait(try int) time.Duration {
 		ms = 2000
 	}
 	return time.Duration(ms+rand.Intn(250)) * time.Millisecond
+}
+
+// notSent: the connection died before the request went out (Go: "readLoopPeekFailLocked", an answer
+// arrived before the request was written, as a busy SS1 used to send it): nothing reached the SS1, so
+// any request can be sent again
+func notSent(err error) bool {
+	return strings.Contains(err.Error(), "readLoopPeekFailLocked")
 }
 
 // cutOff: the connection was made and then reset or closed before an answer (not: no connection at all,
@@ -164,8 +174,9 @@ func authed(method, path string, body io.Reader, timeout time.Duration) (*http.R
 		if err != nil {
 			// a busy SS1 answering a big upload (box art, a package) drops the rest of it, and the dropped
 			// connection can cut off the "busy" answer: an upload is sent again (it only replaces a file)
-			if method == http.MethodPut && try < busyTries && cutOff(err) {
+			if try < busyTries && (notSent(err) || (method == http.MethodPut && cutOff(err))) {
 				busyRetries.Add(1)
+				cutOffs.Add(1)
 				time.Sleep(busyWait(try))
 				continue
 			}

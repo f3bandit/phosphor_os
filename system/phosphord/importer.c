@@ -44,7 +44,7 @@ static void unescape(char *s)
 	*o = 0;
 }
 
-static char *tag_text(const char *from, const char *to, const char *tag)
+char *gl_tag_text(const char *from, const char *to, const char *tag)
 {
 	char open[32], close[32];
 	snprintf(open, sizeof(open), "<%s>", tag);
@@ -65,7 +65,7 @@ static char *tag_text(const char *from, const char *to, const char *tag)
 	return t;
 }
 
-static void resolve(const char *dir, const char *rel, char *out, size_t n)
+void gl_resolve(const char *dir, const char *rel, char *out, size_t n)
 {
 	if (rel[0] == '/') snprintf(out, n, "%s", rel);
 	else snprintf(out, n, "%s/%s", dir, rel[0] == '.' && rel[1] == '/' ? rel + 2 : rel);
@@ -151,18 +151,18 @@ static void import_gamelist(imp_t *m, const gsys_t *s, const char *dir)
 		if (p[5] != '>' && p[5] != ' ') { p += 5; continue; }
 		char *end = strstr(p, "</game>");
 		if (!end) break;
-		char *rel = tag_text(p, end, "path");
+		char *rel = gl_tag_text(p, end, "path");
 		if (rel) {
 			char gp[1024], ip[1024];
-			resolve(dir, rel, gp, sizeof(gp));
-			char *name = tag_text(p, end, "name"), *desc = tag_text(p, end, "desc");
-			char *img = tag_text(p, end, "image");
-			if (!img) img = tag_text(p, end, "thumbnail");
-			if (img) resolve(dir, img, ip, sizeof(ip));
-			char *date = tag_text(p, end, "releasedate");
+			gl_resolve(dir, rel, gp, sizeof(gp));
+			char *name = gl_tag_text(p, end, "name"), *desc = gl_tag_text(p, end, "desc");
+			char *img = gl_tag_text(p, end, "image");
+			if (!img) img = gl_tag_text(p, end, "thumbnail");
+			if (img) gl_resolve(dir, img, ip, sizeof(ip));
+			char *date = gl_tag_text(p, end, "releasedate");
 			if (date && strlen(date) >= 4) date[4] = 0;   /* 19970131T000000 -> 1997 */
-			char *dev = tag_text(p, end, "developer"), *pub = tag_text(p, end, "publisher");
-			char *genre = tag_text(p, end, "genre"), *players = tag_text(p, end, "players");
+			char *dev = gl_tag_text(p, end, "developer"), *pub = gl_tag_text(p, end, "publisher");
+			char *genre = gl_tag_text(p, end, "genre"), *players = gl_tag_text(p, end, "players");
 			apply(m, s->id, gp, name, desc, date, dev, pub, genre, players, img ? ip : NULL);
 			free(rel); free(name); free(desc); free(img); free(date); free(dev); free(pub); free(genre); free(players);
 			count++;
