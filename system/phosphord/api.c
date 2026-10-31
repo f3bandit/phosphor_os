@@ -134,6 +134,7 @@
 #include "log.h"
 #include "indexer.h"
 #include "guard.h"
+#include "ua.h"
 #include "power.h"
 #include "paths.h"
 #include "play.h"
@@ -1537,6 +1538,12 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "cloud")) out = cmd_cloud(req);
 	else if (!strcmp(c->valuestring, "power")) out = cmd_power(req);
 	else if (!strcmp(c->valuestring, "guard")) out = cmd_guard(req);
+	else if (!strcmp(c->valuestring, "ua")) {            /* Update All from Phosphor (ua.c) */
+		const char *e = NULL;
+		cJSON *o = ua_cmd(req, &e);
+		if (!o) out = fail(e ? e : "failed");
+		else { if (!cJSON_GetObjectItem(o, "ok")) cJSON_AddBoolToObject(o, "ok", 1); out = reply(o); }
+	}
 	else if (!strcmp(c->valuestring, "backup")) out = cmd_backup(req);
 	else if (!strcmp(c->valuestring, "storage")) out = cmd_storage(req);
 	else if (!strcmp(c->valuestring, "network") || !strcmp(c->valuestring, "usb") || !strcmp(c->valuestring, "ini") || !strcmp(c->valuestring, "scripts")) {
