@@ -6,6 +6,7 @@
  * Serves the API on a local socket (<tmp>/phosphord.sock): one JSON request per line, one JSON
  * reply per line. Indexes the library in the background, again whenever the mount table changes,
  * and keeps play time. Sleeps in poll() between events. */
+#include "ua.h"
 #include "busy.h"
 #include "api.h"
 #include "vtry.h"
@@ -212,6 +213,7 @@ int main(int argc, char **argv)
 		}
 		clock_gettime(CLOCK_MONOTONIC, &tk2);
 		phantom_tick();
+		ua_tick();
 		clock_gettime(CLOCK_MONOTONIC, &tk3);
 		{
 #define MSD(a, b) ((long)(((b).tv_sec - (a).tv_sec) * 1000 + ((b).tv_nsec - (a).tv_nsec) / 1000000))
