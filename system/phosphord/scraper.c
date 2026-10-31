@@ -673,7 +673,7 @@ static int where_scoped(char *out, size_t n, const char *from, const char *sys, 
    for a connection), then it's in the queue like anything new */
 static void scope_reset(sqlite3 *db, const char *sys, long long id)
 {
-	if (id > 0) { db_exec_id(db, "UPDATE games SET scrape=NULL WHERE id=?", id); return; }
+	if (id > 0) { db_exec_id(db, "UPDATE games SET scrape=NULL WHERE id=? AND scrape IS NOT 'nogame'", id); return; }
 	if (!sys || !*sys) return;
 	sqlite3_stmt *st;
 	if (sqlite3_prepare_v2(db, "UPDATE games SET scrape=NULL WHERE system_id=? AND scrape IN ('miss','later')", -1, &st, NULL) != SQLITE_OK) return;
@@ -799,6 +799,8 @@ void scraper_start(void)
 void scraper_kick(void)
 {
 	pthread_mutex_lock(&lk);
+	run_sys[0] = 0;                     /* everything */
+	run_id = 0;
 	kicked = 1;
 	pthread_cond_signal(&cv);
 	pthread_mutex_unlock(&lk);
