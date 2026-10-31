@@ -1351,16 +1351,16 @@ class AppSettings {
 					<div class="acts"><button class="btn primary" id="rs_inst" data-nav>${busy ? "Installing…" : "Install RetroSpy"}</button></div></div>`;
 			} else {
 				const det = `Host: ${r.host}\nUsername: ${r.user}\nPassword: ${r.password}\nController: ${p1 ? p1.js : 0}`;
-				L.innerHTML = `<div class="panel"><div style="display:flex;gap:.5rem;flex-wrap:wrap">${tag("INSTALLED ON THE SS1", true)}${tag(pc.found ? "RETROSPY FOUND ON THIS PC" : "RETROSPY NOT FOUND ON THIS PC", !!pc.found)}</div>
+				L.innerHTML = `<div class="panel"><div style="display:flex;gap:.5rem;flex-wrap:wrap">${tag("INSTALLED ON THE SS1", true)}${tag(pc.edition ? "RETROSPY INCLUDED WITH PHOSPHOR" : pc.found ? "RETROSPY FOUND ON THIS PC" : "RETROSPY NOT FOUND ON THIS PC", !!pc.found)}</div>
 					<div class="acts">${pc.found ? `<button class="btn primary" id="rs_open" data-nav>Open RetroSpy${p1 && p1.player ? " for Player " + p1.player : ""}</button>` : ""}<button class="btn" id="rs_copy" data-nav>Copy the details</button></div>
-					<p class="note">${pc.found ? "Opens RetroSpy with this SS1's address and MiSTer's login already filled in. In RetroSpy, pick the source MiSTer and the controller number below, then Go." : "In RetroSpy on this PC, pick the source MiSTer and type these in."}</p>
+					<p class="note">${pc.edition ? "Opens RetroSpy (its Phosphor edition, included with Phosphor) on this SS1 and starts showing the active controller, drawn as Phosphor detects it. Its own window picks another player, a RetroSpy skin, or a green-screen or transparent background for OBS." : pc.found ? "Opens RetroSpy with this SS1's address and MiSTer's login already filled in. In RetroSpy, pick the source MiSTer and the controller number below, then Go." : "In RetroSpy on this PC, pick the source MiSTer and type these in."}</p>
 					<dl class="kv"><dt>Host</dt><dd><b>${esc(r.host || "(not on a network)")}</b></dd><dt>Username</dt><dd>${esc(r.user)}</dd><dt>Password</dt><dd>${esc(r.password)}</dd></dl>
 					<div class="sub" style="margin-top:1.2rem">${spaced("Controllers · RetroSpy's number")}</div>
 					${ctl.length ? ctl.map(c => `<div class="row"><span class="n">${esc(c.name || "Controller")}</span><span class="v">${c.js}${c.player ? " · Player " + c.player : ""}</span></div>`).join("") : `<div class="empty">No USB or Bluetooth controller connected.</div>`}
 					<div class="acts"><button class="btn" id="rs_rm" data-nav>${busy ? "Uninstalling…" : "Uninstall RetroSpy"}</button></div></div>`;
 				const o = $("#rs_open");
 				if (o) o.onclick = async () => {
-					try { const x = await api("/api/retrospy", { host: r.host, user: r.user, password: r.password }); if (!x.ok) throw new Error(x.error); toast(x.filled ? "RetroSpy opened with the SS1 filled in" : "RetroSpy opened: type the details in (copied)"); if (!x.filled) copy(det); }
+					try { const x = await api("/api/retrospy", { host: r.host, user: r.user, password: r.password, player: p1 && p1.player ? p1.player : 0 }); if (!x.ok) throw new Error(x.error); toast(pc.edition ? "RetroSpy opened on this SS1" : x.filled ? "RetroSpy opened with the SS1 filled in" : "RetroSpy opened: type the details in (copied)"); if (!x.filled && !pc.edition) copy(det); }
 					catch (e) { toast(e.message); }
 				};
 				$("#rs_copy").onclick = () => copy(det);

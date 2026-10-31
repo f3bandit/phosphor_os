@@ -9,9 +9,16 @@
  * The "retrospy" command: whether it's installed; whether RetroSpy is watching, and which controller; the
  * SS1's address; the controllers as RetroSpy numbers them (jsN), each with its MiSTer player (Main's
  * "players": jsN and eventN are matched through sysfs). Installing and uninstalling go through Update All
- * (the "ua" command: install / uninstall of that database). */
+ * (the "ua" command: install / uninstall of that database).
+ *
+ * For RetroSpy's Phosphor edition (f3bandit/RetroSpy, which asks with `phos '{"cmd":"retrospy"}'` over its SSH
+ * login): each controller also has "phosphor", the layout Phosphor draws it with and which of its jsN buttons and
+ * axes each control is (ctrl.c); "active" is the js number of the controller to show (Player 1's, else the first);
+ * "layouts" has the drawings of the layouts in use, from the table the TV's controller test draws. */
 #include "retrospy.h"
+#include "ctrl.h"
 #include "paths.h"
+#include "../../frontend/src/padlayouts.h"      /* the drawings the TV's controller test uses (RetroSpy draws the same) */
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <glob.h>
@@ -128,6 +135,8 @@ cJSON *retrospy_cmd(cJSON *req)
 	cJSON *ps = cJSON_GetObjectItem(pl, "players");
 
 	cJSON *arr = cJSON_AddArrayToObject(o, "controllers");
+	cJSON *layouts = cJSON_CreateObject();
+	int active = -1, first_js = -1;
 	glob_t g;
 	if (!glob("/sys/class/input/js*", 0, NULL, &g)) {
 		for (size_t i = 0; i < g.gl_pathc; i++) {
@@ -155,14 +164,48 @@ cJSON *retrospy_cmd(cJSON *req)
 				}
 			}
 			cJSON *c = cJSON_CreateObject();
-			cJSON_AddNumberToObject(c, "js", atoi(base + 2));
+			int jsn = atoi(base + 2);
+			cJSON_AddNumberToObject(c, "js", jsn);
 			cJSON_AddStringToObject(c, "name", name);
 			if (ev[0]) cJSON_AddStringToObject(c, "event", ev);
 			cJSON_AddNumberToObject(c, "player", player);
+			cJSON *ph = ev[0] ? ctrl_retrospy(ev) : NULL;
+			if (ph) {
+				const char *lk = cJSON_GetStringValue(cJSON_GetObjectItem(ph, "layout"));
+				for (int li = 0; lk && li < PL_COUNT; li++) if (!strcmp(PLAYOUTS[li].key, lk)) cJSON_AddStringToObject(ph, "layout_name", PLAYOUTS[li].name);
+				if (lk && !cJSON_GetObjectItem(layouts, lk)) {
+					for (int li = 0; li < PL_COUNT; li++) {
+						if (strcmp(PLAYOUTS[li].key, lk)) continue;
+						cJSON *L = cJSON_AddObjectToObject(layouts, lk), *its = cJSON_AddArrayToObject(L, "items");
+						cJSON_AddStringToObject(L, "name", PLAYOUTS[li].name);
+						cJSON_AddNumberToObject(L, "w", 600);
+						cJSON_AddNumberToObject(L, "h", 345);
+						for (int k = 0; k < PLAYOUTS[li].n; k++) {
+							const pl_item_t *it = &PLAYOUTS[li].it[k];
+							cJSON *e = cJSON_CreateObject();
+							char t[2] = { it->t, 0 };
+							cJSON_AddStringToObject(e, "t", t);
+							cJSON_AddStringToObject(e, "id", it->id);
+							cJSON_AddNumberToObject(e, "x", it->x);
+							cJSON_AddNumberToObject(e, "y", it->y);
+							cJSON_AddNumberToObject(e, "a", it->a);
+							cJSON_AddNumberToObject(e, "b", it->b);
+							cJSON_AddStringToObject(e, "lab", it->lab);
+							cJSON_AddItemToArray(its, e);
+						}
+					}
+				}
+				cJSON_AddItemToObject(c, "phosphor", ph);
+			}
+			if (player == 1) active = jsn;
+			if (first_js < 0 || jsn < first_js) first_js = jsn;
 			cJSON_AddItemToArray(arr, c);
 		}
 		globfree(&g);
 	}
 	cJSON_Delete(pl);
+	if (active < 0) active = first_js;
+	cJSON_AddNumberToObject(o, "active", active);
+	cJSON_AddItemToObject(o, "layouts", layouts);
 	return o;
 }

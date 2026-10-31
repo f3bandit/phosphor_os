@@ -8,6 +8,10 @@ package main
 // MisterPassword are written there before it starts (only when RetroSpy isn't already running, which would
 // write its own over them). The source (MiSTer) and the controller number are picked in RetroSpy: its
 // source list is the user's own (some hidden, reordered), so it isn't guessed here.
+//
+// Phosphor's release also brings RetroSpy's Phosphor edition (f3bandit/RetroSpy, GPL-3.0, a separate
+// program: Phosphor's zip has it in RetroSpy\ next to Phosphor.exe). That one is opened with
+// --phosphor <address> --go: it finds the SS1's active controller itself and draws it as Phosphor does.
 
 import (
 	"errors"
@@ -18,10 +22,30 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
+// the edition bundled with Phosphor: RetroSpy\RetroSpy.exe next to Phosphor.exe
+func retrospyBundled() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if p, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = p
+	}
+	p := filepath.Join(filepath.Dir(exe), "RetroSpy", "RetroSpy.exe")
+	if st, err := os.Stat(p); err == nil && !st.IsDir() {
+		return p
+	}
+	return ""
+}
+
 func retrospyExe() string {
+	if b := retrospyBundled(); b != "" {
+		return b
+	}
 	var dirs []string
 	for _, e := range []string{"ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA", "APPDATA"} {
 		if v := os.Getenv(e); v != "" {
@@ -78,7 +102,20 @@ func retrospyRunning() bool {
 	return err == nil && strings.Contains(strings.ToLower(string(out)), "retrospy.exe")
 }
 
-func retrospyOpen(host, user, pass string) error {
+func retrospyOpen(host, user, pass string, player int) error {
+	if b := retrospyBundled(); b != "" {
+		args := []string{"--phosphor", host, "--go"}
+		if player > 0 {
+			args = append(args, "--player", strconv.Itoa(player))
+		}
+		cmd := hidden(exec.Command(b, args...))
+		cmd.Dir = filepath.Dir(b)
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		go cmd.Wait()
+		return nil
+	}
 	exe := retrospyExe()
 	if exe == "" {
 		return errors.New("RetroSpy isn't installed on this PC: get it from retro-spy.com")
@@ -116,15 +153,18 @@ var errNotFilled = errors.New("not filled")
 
 func apiRetrospy(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		writeJSON(w, map[string]any{"ok": true, "found": retrospyExe() != "", "running": retrospyRunning()})
+		writeJSON(w, map[string]any{"ok": true, "found": retrospyExe() != "", "edition": retrospyBundled() != "", "running": retrospyRunning()})
 		return
 	}
-	var q struct{ Host, User, Password string }
+	var q struct {
+		Host, User, Password string
+		Player               int
+	}
 	if err := readJSON(r, &q); err != nil {
 		fail(w, "bad request")
 		return
 	}
-	err := retrospyOpen(q.Host, q.User, q.Password)
+	err := retrospyOpen(q.Host, q.User, q.Password, q.Player)
 	if err == errNotFilled {
 		writeJSON(w, map[string]any{"ok": true, "filled": false})
 		return
