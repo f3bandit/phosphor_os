@@ -32,6 +32,12 @@ jobs:
           PHOSPHOR_SS_DEVID: ${{ secrets.PHOSPHOR_SS_DEVID }}
           PHOSPHOR_SS_DEVPASSWORD: ${{ secrets.PHOSPHOR_SS_DEVPASSWORD }}
         run: ./gradlew --console=plain testDebugUnitTest assembleDebug assembleRelease
+      - name: The end-to-end test ran (not skipped)
+        run: |
+          x=app/build/test-results/testDebugUnitTest/TEST-com.f3bandit.phosphor.PhoneE2ETest.xml
+          grep -o 'tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$x"
+          grep -q 'skipped="0" failures="0" errors="0"' "$x"
+          grep -o 'phone e2e: [^<]*' "$x" || true
       - name: Sign the release APK
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
