@@ -12,6 +12,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash   # -eo pipefail: a failed test isn't hidden by the grep after it
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -29,7 +32,7 @@ jobs:
         working-directory: apps/windows
         run: |
           go vet ./...
-          GOOS=windows go vet ./...
+          # (the Windows build itself is checked in secret-builds.yml: it needs fsck.exfat.exe, fetched there)
           go test -count=1 ./...
           # the end-to-end one a few more times: it's about timing
           go test -count=5 -run TestE2E -v . | grep -E "^(---|ok|FAIL)|e2e_lookup"
