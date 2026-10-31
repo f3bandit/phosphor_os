@@ -225,7 +225,8 @@ class Bridge:
         # the uninstall action is a confirm whose "Yes" leads to {"ui": "uninstall_db", "db_ids": [...]}
         if isinstance(eff, dict):
             if eff.get('ui') == 'uninstall_db':
-                return {'db_ids': list(eff.get('db_ids', [])), 'title': eff.get('title', '')}
+                return {'db_ids': list(eff.get('db_ids', [])), 'title': eff.get('title', ''),
+                        'on_success': eff.get('on_success')}
             for v in eff.values():
                 r = self._find_uninstall(v)
                 if r:
@@ -319,8 +320,16 @@ class Bridge:
                         self.ui.set_value(before['variable'], values[n])
                         self.save()
                         return {'ok': True, 'saved': True, 'skipped': nxt, 'entry': self.entry_info(menu_id, idx, e)}
+        # the chain runs up to its first dialog: what it changed before a confirm is undone until the confirm is
+        # answered (the answer replays the chain from the real values, then the chosen button's effects)
+        before_values = dict(self.ui.values)
+        before_edits = dict(getattr(self.screen, '_pending_mister_ini_edits', {}) or {})
         res = _EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(chain)
         nav = self._navigate_of(res)
+        if isinstance(res, dict) and res.get('ui') == 'confirm' and choice is None:
+            self.ui.values = before_values
+            if hasattr(self.screen, '_pending_mister_ini_edits'):
+                self.screen._pending_mister_ini_edits = before_edits
         if isinstance(res, dict) and res.get('ui') in ('message', 'confirm'):
             buttons = [a.get('title', '') for a in res.get('actions', []) if isinstance(a, dict)]
             if choice is None or res.get('ui') == 'message':
@@ -344,6 +353,8 @@ class Bridge:
 
     def _navigate_of(self, res):
         # Update All's engine hands a navigate back to its screen: the menu to open, when it's one of the list's
+        if isinstance(res, str) and res in self.items:
+            return res
         if isinstance(res, dict):
             if res.get('type') == 'navigate' and res.get('target') in self.items:
                 return res['target']
@@ -441,10 +452,31 @@ class Bridge:
         self.screen.clean_arcade_organizer_folders(self.ui)
         return {'ok': True, 'removed': folders}
 
+    def _uninstall_effect(self, db_ids):
+        want = sorted(x.lower() for x in db_ids)
+        for it in self.items.values():
+            for e in it.get('entries') or []:
+                for key in ('uninstall', 'uninstall_all'):
+                    u = self._find_uninstall(((e or {}).get('actions') or {}).get(key))
+                    if u and sorted(x.lower() for x in u['db_ids']) == want:
+                        return u
+        return None
+
     def uninstall(self, db_ids):
+        from update_all.ui_engine import _EffectResolver
         service = self.screen._database_manager_service
         code = service.uninstall(list(db_ids))
-        return {'ok': code == 0, 'code': code}
+        if code != 0:
+            return {'ok': False, 'code': code}
+        # Update All's own menu then turns it off (its variable, <id>_installed, MiSTer.ini lines, artwork
+        # and manuals selections): the same chain, then saved, so the next run doesn't put it back
+        u = self._uninstall_effect(db_ids)
+        chain = [x for x in ((u or {}).get('on_success') or []) if not (isinstance(x, dict) and x.get('type') == 'navigate')]
+        if chain:
+            data = {'variables': self.variables, 'formatters': self.formatters}
+            _EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(chain)
+        self.save()
+        return {'ok': True, 'code': 0}
 
 
 def run(b, args):
@@ -490,7 +522,10 @@ def serve():
             with contextlib.redirect_stdout(sys.stderr):
                 r = run(b, args)
                 if args and args[0] == 'uninstall':
-                    b = Bridge()                      # what's installed changed: read it all again
+                    try:
+                        b = Bridge()                  # what's installed changed: read it all again
+                    except Exception:
+                        pass                          # (phosphord reloads it on the next list)
         except Exception as e:
             import traceback
             r = {'ok': False, 'error': str(e), 'trace': traceback.format_exc()[-1500:]}

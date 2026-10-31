@@ -202,6 +202,28 @@ cJSON *api_call_slow(int ms, const char *fmt, ...)
 	return r;
 }
 
+/* a request of any size, built as JSON (Update All's long lists of database ids): up to ms for the answer,
+   never sent twice */
+cJSON *api_call_json(int ms, const cJSON *req)
+{
+	char *s = cJSON_PrintUnformatted(req);
+	if (!s) return NULL;
+	size_t n = strlen(s);
+	char *line = realloc(s, n + 2);
+	if (!line) { free(s); return NULL; }
+	line[n++] = '\n';
+	line[n] = 0;
+	cJSON *r = NULL;
+	if (ensure() == 0) {
+		if (send_all(line, n) != 0) { hang_up(); if (ensure() != 0 || send_all(line, n) != 0) { hang_up(); free(line); return NULL; } }
+		char *got = read_line(ms);
+		if (!got) hang_up();
+		else { r = cJSON_Parse(got); free(got); }
+	}
+	free(line);
+	return r;
+}
+
 /* a fresh connection for the next request (phosphord was restarted under us, by an update) */
 void api_reset(void) { hang_up(); }
 

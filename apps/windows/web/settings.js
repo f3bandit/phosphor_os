@@ -633,6 +633,7 @@ class AppSettings {
 					try { await ss1({ cmd: "ua", do: "allow", args: [e.key, "on"] }); } catch (x) { toast(x.message); return; }
 					return change(e);
 				}
+				return;
 			} else if (r.prompt) {
 				const p = r.prompt;
 				if (p.ui === "confirm") {
@@ -739,7 +740,7 @@ class AppSettings {
 		};
 		twice($("#ua_run"), "Press again to run it on the TV", run);
 		this.extra = [["X", "Uninstall"], ["Y", "Run Update All"]];
-		this.onX = () => { if (cur_e && cur_e.uninstall && installed(cur_e)) uninstall(cur_e); else toast("Nothing of it is installed"); };
+		this.onX = () => { if (L && cur_e && cur_e.uninstall && installed(cur_e)) uninstall(cur_e); else toast(L ? "Nothing of it is installed" : "Update All's settings are still loading"); };
 		this.onY = () => $("#ua_run").click();
 		this.onBack = () => {
 			if (!st.stack.length || st.q.trim() || st.filter || !$("#ual").contains(cur)) return false;

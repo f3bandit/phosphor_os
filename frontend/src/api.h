@@ -15,6 +15,7 @@ cJSON *api_call(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 /* the same for one slow request (up to ms), never retried */
 void api_reset(void);   /* a new connection for the next request */
 cJSON *api_call_slow(int ms, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+cJSON *api_call_json(int ms, const cJSON *req);   /* any size; ms for the answer; never sent twice */
 
 /* a request made in the background (its own thread and connection): the menu never waits for it. Ask
  * again and again (polls); take gives the newest reply that came since the last take (free it), or NULL.
