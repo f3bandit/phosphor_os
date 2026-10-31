@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 # Phosphor: a bridge to Update All's own settings code (its update_all.pyz on the SD card), so Phosphor's
-# Settings > Update All shows Update All's whole list, as Update All itself loads it, and saves changes the way
-# Update All's own menu does. Part of phosphor_os. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0.
+# Settings > Update All shows Update All's whole list as Update All itself loads it, changes settings the way
+# Update All's own menu does (its own effects and save), and uninstalls through its own database manager.
+# Part of phosphor_os. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
 #
-#   ua_bridge.py dump            the menus, entries, descriptions and current values, as JSON
-# Reading only: Update All's start-up migrations (which write) are not run here.
-import sys, os, json, io, contextlib
+#   ua_bridge.py list                         every menu and entry: titles, descriptions, values, actions
+#   ua_bridge.py act MENU INDEX ACTION [N]    ACTION ok or toggle on that entry; a dialog it opens comes back
+#                                             as a prompt, and N answers it (the Nth button); then saved
+#   ua_bridge.py preview DB_ID...             what uninstalling would remove: files and bytes, from the store
+#   ua_bridge.py uninstall DB_ID...           Update All's own uninstall (the Downloader removes the files)
+#   ua_bridge.py serve                        the same, one JSON array of arguments per line on stdin
+#
+# Output: one JSON object on stdout. Update All's own prints go to stderr. Update All's start-up migrations
+# (which write) are not run: `list` and `preview` write nothing.
+import sys, os, json, io, contextlib, re
 
 PYZ = os.environ.get('UA_PYZ', '/media/fat/Scripts/.config/update_all/update_all.pyz')
 sys.path.insert(0, PYZ)
@@ -55,55 +63,326 @@ class FakeUi:
     def add_custom_formatters(self, formatters):
         self.formatters.update(formatters)
 
+    def custom_effects(self):
+        return self.effects
 
-def build():
-    from update_all.logger import PrintLogger
-    from update_all.other import GenericProvider
-    from update_all.update_all_service import UpdateAllServiceFactory
-    logger = PrintLogger()
-    from update_all.main import read_env
-    try:
-        from commit import default_commit
-    except ImportError:
-        from update_all.constants import DEFAULT_COMMIT as default_commit
-    import time
-    env = read_env(default_commit, time.monotonic())
-    service = UpdateAllServiceFactory(logger, local_repository_provider=GenericProvider()).create(env)
-    return service
+    def custom_formatters(self):
+        return self.formatters
 
 
-def load(service):
-    from update_all.config import Config
-    es = service._environment_setup
-    config = Config()
-    es._config_provider.initialize(config)
-    es._config_reader.fill_config_with_environment(config)
-    store = es._local_repository.load_store()
-    es._store_provider.initialize(store)
-    ini = es._config_reader.read_downloader_ini()
-    es._config_reader.fill_config_with_mister_section(config, ini)
-    es._config_reader.fill_config_with_local_store(config, store)
-    es._config_reader.fill_config_with_database_sections(config, ini)
-    return config
+STATUS_PATHS = [os.environ.get('UA_STATUS', ''), '/media/fat/phosphor/config/ua_status.json',
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), 'status.json')]
+ALLOW_PATH = os.environ.get('UA_ALLOW', '/media/fat/phosphor/config/ua_allow.json')
+
+
+def read_json(paths, default):
+    for p in paths:
+        if p and os.path.isfile(p):
+            try:
+                with open(p) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return default
+
+
+class Bridge:
+    def __init__(self):
+        from update_all.logger import PrintLogger
+        from update_all.other import GenericProvider
+        from update_all.update_all_service import UpdateAllServiceFactory
+        from update_all.main import read_env
+        try:
+            from commit import default_commit
+        except ImportError:
+            from update_all.constants import DEFAULT_COMMIT as default_commit
+        import time
+        env = read_env(default_commit, time.monotonic())
+        self.service = UpdateAllServiceFactory(PrintLogger(), local_repository_provider=GenericProvider()).create(env)
+        self._load_config()
+        self.screen = self.service._settings_screen
+        self.screen._settings_screen_printer = NoScreen()
+        self.ui = FakeUi()
+        self.screen.initialize_ui(self.ui)
+        self.model = self.screen._model
+        self.items = self.model.get('items', {})
+        # every declared variable and formatter, as Update All's engine merges them for a menu
+        self.variables = dict(self.model.get('variables', {}))
+        self.formatters = dict(self.model.get('formatters', {}))
+        for it in self.items.values():
+            self.variables.update(it.get('variables', {}) or {})
+            self.formatters.update(it.get('formatters', {}) or {})
+        self.formatters.update(self.ui.formatters)
+        self.status = read_json(STATUS_PATHS, {})
+        self.allowed = set(read_json([ALLOW_PATH], []))
+
+    # ---------- Phosphor's status ----------
+
+    @staticmethod
+    def key(info):
+        if info.get('variable'):
+            return 'var:' + info['variable']
+        if info.get('uninstall') and info['uninstall'].get('db_ids'):
+            return 'db:' + info['uninstall']['db_ids'][0]
+        return 'entry:' + info['menu'] + '/' + info['title']
+
+    def status_of(self, info):
+        k = info['key']
+        st = (self.status.get('items') or {}).get(k)
+        if not st:
+            for prefix, s2 in (self.status.get('menus') or {}).items():
+                if info['menu'].startswith(prefix):
+                    st = s2
+                    break
+        st = dict(st or {'status': 'untested', 'note': ''})
+        vals = (self.status.get('values') or {}).get(k)
+        if vals:
+            st['values'] = vals
+            cur = vals.get(info.get('value', ''))
+            if cur:
+                st['status_now'] = cur['status']
+        if k in self.allowed:
+            st['allowed'] = True
+        return st
+
+    def _load_config(self):
+        from update_all.config import Config
+        es = self.service._environment_setup
+        config = Config()
+        es._config_provider.initialize(config)
+        es._config_reader.fill_config_with_environment(config)
+        store = es._local_repository.load_store()
+        es._store_provider.initialize(store)
+        ini = es._config_reader.read_downloader_ini()
+        es._config_reader.fill_config_with_mister_section(config, ini)
+        es._config_reader.fill_config_with_local_store(config, store)
+        es._config_reader.fill_config_with_database_sections(config, ini)
+
+    # ---------- text ----------
+
+    def interpolate(self, text):
+        from update_all.ui_engine import _Interpolator
+        try:
+            return _Interpolator(self.formatters, self.ui).interpolate(text or '')
+        except Exception:
+            return re.sub(r'\{[^}]*\}', '', text or '')
+
+    @staticmethod
+    def clean(text):
+        # Update All's markup: "# " titles, @highlight@, ~link~
+        text = (text or '').strip()
+        if text.startswith('# '):
+            text = text[2:]
+        return text.replace('@', '').replace('~', '')
+
+    # ---------- the list ----------
+
+    def entry_info(self, menu_id, idx, e):
+        acts = e.get('actions') or {}
+        out = {'menu': menu_id, 'index': idx, 'id': e.get('id', ''),
+               'title': self.clean(self.interpolate(e.get('title', ''))),
+               'desc': self.clean(self.interpolate(e.get('description', '')))}
+        var = None
+        for a in ('toggle', 'ok'):
+            for eff in acts.get(a) or []:
+                if isinstance(eff, dict) and eff.get('type') == 'rotate_variable':
+                    var = var or eff.get('target')
+        if var:
+            out['variable'] = var
+            out['value'] = self.ui.get_value(var)
+            out['values'] = (self.variables.get(var) or {}).get('values', [])
+        for eff in acts.get('ok') or []:
+            if isinstance(eff, dict) and eff.get('type') == 'navigate' and eff.get('target') in self.items:
+                out['submenu'] = eff['target']
+        out['actions'] = sorted(a for a in acts if a in ('ok', 'toggle', 'info'))
+        info = acts.get('info')
+        if info:
+            for eff in info:
+                if isinstance(eff, dict) and eff.get('ui') in ('message', 'confirm'):
+                    out['info'] = [self.clean(self.interpolate(t)) for t in eff.get('text', [])]
+        for key in ('uninstall', 'uninstall_all'):
+            u = self._find_uninstall(acts.get(key))
+            if u:
+                out['uninstall'] = u
+        out['toggles'] = 'toggle' in acts or bool(var)
+        out['on'] = out.get('value') == 'true' if var else out['desc'].lower().startswith('on')
+        out['key'] = self.key(out)
+        out['status'] = self.status_of(out)
+        return out
+
+    def _find_uninstall(self, eff):
+        # the uninstall action is a confirm whose "Yes" leads to {"ui": "uninstall_db", "db_ids": [...]}
+        if isinstance(eff, dict):
+            if eff.get('ui') == 'uninstall_db':
+                return {'db_ids': list(eff.get('db_ids', [])), 'title': eff.get('title', '')}
+            for v in eff.values():
+                r = self._find_uninstall(v)
+                if r:
+                    return r
+        elif isinstance(eff, list):
+            for v in eff:
+                r = self._find_uninstall(v)
+                if r:
+                    return r
+        return None
+
+    def _update_all_only(self, e):
+        # what only makes sense inside Update All: its SAVE / EXIT, the account and patron menus
+        flat = json.dumps(e.get('actions') or {})
+        if any(k in flat for k in ('calculate_needs_save', 'device_login', 'calculate_has_right_available_code',
+                                   '"target": "abort"', 'retroaccount_', 'patrons_menu')):
+            return True
+        return self.clean(e.get('title', '')).upper().startswith(('SAVE', 'EXIT'))
+
+    def list(self):
+        menus = {}
+        for mid, it in self.items.items():
+            if mid.startswith('test_') or mid.startswith('retroaccount_'):
+                continue
+            entries = []
+            for i, e in enumerate(it.get('entries', []) or []):
+                if not e or not e.get('title') or self._update_all_only(e):
+                    continue
+                entries.append(self.entry_info(mid, i, e))
+            menus[mid] = {'title': self.clean(self.interpolate(it.get('header', ''))), 'entries': entries}
+        root = 'main_menu_account' if 'main_menu_account' in menus else 'main_menu_login'
+        installed = sorted(k[:-len('_installed')] for k, v in self.ui.values.items() if k.endswith('_installed') and v == 'true')
+        return {'ok': True, 'version': self.ui.get_value('update_all_version'), 'root': root, 'menus': menus,
+                'installed': installed}
+
+    # ---------- changing things ----------
+
+    def act(self, menu_id, idx, action, choice=None):
+        from update_all.ui_engine import _EffectResolver
+        it = self.items[menu_id]
+        e = (it.get('entries') or [])[idx]
+        chain = (e.get('actions') or {}).get(action) or []
+        data = {'variables': self.variables, 'formatters': self.formatters}
+        # Phosphor's guard: a guarded item isn't turned on (nor a guarded value chosen) unless allowed
+        before = self.entry_info(menu_id, idx, e)
+        if action in ('ok', 'toggle') and not before['status'].get('allowed'):
+            if before['status']['status'] == 'guard' and not before['on'] and not before.get('submenu'):
+                return {'ok': False, 'guarded': True, 'entry': before,
+                        'error': before['status'].get('note') or 'Phosphor guards this'}
+            vals = before['status'].get('values')
+            if vals and before.get('variable'):
+                values = before.get('values') or []
+                if before['value'] in values:
+                    nxt = values[(values.index(before['value']) + 1) % len(values)]
+                    if (vals.get(nxt) or {}).get('status') == 'guard':
+                        # skip the guarded values: straight to the next one that isn't
+                        n = values.index(nxt)
+                        for _ in values:
+                            n = (n + 1) % len(values)
+                            if (vals.get(values[n]) or {}).get('status') != 'guard':
+                                break
+                        self.ui.set_value(before['variable'], values[n])
+                        self.save()
+                        return {'ok': True, 'saved': True, 'skipped': nxt, 'entry': self.entry_info(menu_id, idx, e)}
+        res = _EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(chain)
+        if isinstance(res, dict) and res.get('ui') in ('message', 'confirm'):
+            buttons = [a.get('title', '') for a in res.get('actions', []) if isinstance(a, dict)]
+            if choice is None or res.get('ui') == 'message':
+                prompt = {'ui': res.get('ui'), 'header': self.clean(self.interpolate(res.get('header', ''))),
+                          'text': [self.clean(self.interpolate(t)) for t in res.get('text', [])], 'buttons': buttons}
+                if res.get('ui') == 'confirm':
+                    return {'ok': True, 'prompt': prompt, 'saved': False}
+                self.save()                          # (a message only reports: the change stands)
+                return {'ok': True, 'prompt': prompt, 'saved': True}
+            picked = [a for a in res.get('actions', []) if isinstance(a, dict)][int(choice)]
+            if picked.get('type') == 'fixed':
+                _EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(picked.get('fixed', []))
+        self.save()
+        return {'ok': True, 'saved': True, 'entry': self.entry_info(menu_id, idx, e)}
+
+    def save(self):
+        self.screen.save(self.ui)
+
+    # ---------- uninstall ----------
+
+    def preview(self, db_ids):
+        store = self.service._environment_setup._local_repository
+        try:
+            path = self.service._ini_repository.downloader_store_standard_path() if hasattr(self.service, '_ini_repository') else None
+        except Exception:
+            path = None
+        path = path or '/media/fat/Scripts/.config/downloader/downloader.json'
+        with open(path) as f:
+            dbs = json.load(f).get('dbs', {})
+        files = size = 0
+        sample = []
+        for db in db_ids:
+            d = dbs.get(db) or dbs.get(db.lower()) or {}
+            for p, desc in (d.get('files') or {}).items():
+                files += 1
+                size += int((desc or {}).get('size', 0) or 0)
+                if len(sample) < 8:
+                    sample.append(p)
+        return {'ok': True, 'files': files, 'bytes': size, 'sample': sample}
+
+    def uninstall(self, db_ids):
+        service = self.screen._database_manager_service
+        code = service.uninstall(list(db_ids))
+        return {'ok': code == 0, 'code': code}
+
+
+def run(b, args):
+    cmd = args[0]
+    if cmd == 'list':
+        return b.list()
+    if cmd == 'act':
+        return b.act(args[1], int(args[2]), args[3], int(args[4]) if len(args) > 4 and args[4] is not None else None)
+    if cmd == 'allow':                        # allow KEY on|off: Phosphor's guard lets that item through
+        allowed = set(read_json([ALLOW_PATH], []))
+        (allowed.add if args[2] == 'on' else allowed.discard)(args[1])
+        os.makedirs(os.path.dirname(ALLOW_PATH), exist_ok=True)
+        with open(ALLOW_PATH + '.tmp', 'w') as f:
+            json.dump(sorted(allowed), f)
+        os.replace(ALLOW_PATH + '.tmp', ALLOW_PATH)
+        b.allowed = allowed
+        return {'ok': True, 'allowed': sorted(allowed)}
+    if cmd == 'preview':
+        return b.preview(args[1:])
+    if cmd == 'uninstall':
+        return b.uninstall(args[1:])
+    return {'ok': False, 'error': 'unknown command'}
+
+
+def serve():
+    # kept running by phosphord while the page is open: Update All's code loads once (seconds on the SS1);
+    # one JSON array of arguments per line in, one JSON object per line out
+    real_out = sys.stdout
+    with contextlib.redirect_stdout(sys.stderr):
+        b = Bridge()
+    real_out.write(json.dumps({'ok': True, 'ready': True}) + '\n')
+    real_out.flush()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            args = json.loads(line)
+            with contextlib.redirect_stdout(sys.stderr):
+                r = run(b, args)
+                if args and args[0] == 'uninstall':
+                    b = Bridge()                      # what's installed changed: read it all again
+        except Exception as e:
+            import traceback
+            r = {'ok': False, 'error': str(e), 'trace': traceback.format_exc()[-1500:]}
+        real_out.write(json.dumps(r) + '\n')
+        real_out.flush()
+    return 0
 
 
 def main():
-    cmd = sys.argv[1] if len(sys.argv) > 1 else 'dump'
-    out = io.StringIO()
-    with contextlib.redirect_stdout(out):
-        service = build()
-        load(service)
-        screen = service._settings_screen
-        screen._settings_screen_printer = NoScreen()
-        ui = FakeUi()
-        screen.initialize_ui(ui)
-        model = screen._model
-    if cmd == 'dump':
-        json.dump({'ok': True, 'values': ui.values, 'items': model.get('items', {}),
-                   'formatters': list(ui.formatters)}, sys.stdout)
-        return 0
-    json.dump({'ok': False, 'error': 'unknown command'}, sys.stdout)
-    return 2
+    args = sys.argv[1:] or ['list']
+    if args[0] == 'serve':
+        return serve()
+    real_out = sys.stdout
+    with contextlib.redirect_stdout(sys.stderr):    # Update All's own prints
+        r = run(Bridge(), args)
+    json.dump(r, real_out)
+    return 0 if r.get('ok') else 1
 
 
 if __name__ == '__main__':

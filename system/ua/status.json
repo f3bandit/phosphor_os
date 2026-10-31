@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "checked": "2026-10-31",
+  "checked_with": "Update All 2.11",
+  "about": "Phosphor's status for Update All's items: safe, guard (Phosphor blocks it; Allow overrides), warn (works, with a catch), keep (Phosphor leaves it alone). Anything not here is untested. Keys: var:<variable>, db:<database id>, entry:<menu>/<title>; menus: a menu id prefix for all of its entries.",
+  "menus": {
+    "game_artwork_": {
+      "status": "safe",
+      "note": "Box art and pictures: Phosphor's Local files source can use them."
+    },
+    "game_manuals_": {
+      "status": "safe",
+      "note": "Manuals: nothing of Phosphor's is touched."
+    },
+    "rannysnice_wallpapers_": {
+      "status": "safe",
+      "note": "Wallpapers for MiSTer's menu."
+    },
+    "anime0t4ku_wallpapers_": {
+      "status": "safe",
+      "note": "Wallpapers for MiSTer's menu."
+    },
+    "arcade_organizer_": {
+      "status": "safe",
+      "note": "Arcade Organizer options: Phosphor's library skips its _Organized folders."
+    },
+    "pocket_": {
+      "status": "safe",
+      "note": "Analogue Pocket tools: nothing of Phosphor's is touched."
+    },
+    "system_video_": {
+      "status": "keep",
+      "note": "Update All's CRT video mode: Phosphor leaves it as Update All sets it."
+    }
+  },
+  "items": {
+    "var:main_updater": {
+      "status": "safe",
+      "note": "MiSTer-devel's cores, Main and menu. Phosphor keeps its own Main and menu core after each run."
+    },
+    "var:jotego_updater": {
+      "status": "safe",
+      "note": "Ordinary cores."
+    },
+    "var:coin_op_collection_downloader": {
+      "status": "safe",
+      "note": "Ordinary cores."
+    },
+    "db:arcade_roms_db": {
+      "status": "safe",
+      "note": "Arcade ROMs."
+    },
+    "db:bios_db": {
+      "status": "safe",
+      "note": "BIOS files for the cores."
+    },
+    "db:theypsilon/RetroAchievementsDB_MiSTer": {
+      "status": "safe",
+      "note": "odelot's RetroAchievements cores: built into Phosphor's Main, which stays for them."
+    },
+    "db:MultiDatabases/physical-disc": {
+      "status": "safe",
+      "note": "Physical CD support is built into Phosphor's Main, which stays for it."
+    },
+    "var:unofficial_updater": {
+      "status": "safe",
+      "note": "Ordinary cores."
+    },
+    "var:arcade_offset_downloader": {
+      "status": "safe",
+      "note": "Arcade hacks: ordinary MRAs."
+    },
+    "var:llapi_updater": {
+      "status": "safe",
+      "note": "Core forks: ordinary cores."
+    },
+    "db:MikeS11/YC_Builds-MiSTer": {
+      "status": "safe",
+      "note": "Core forks: ordinary cores."
+    },
+    "db:MultiDatabases/paprium": {
+      "status": "safe",
+      "note": "A Mega Drive core fork."
+    },
+    "db:MultiDatabases/mms2-gb": {
+      "status": "safe",
+      "note": "A Game Boy core."
+    },
+    "var:ajgowans/alt-cores": {
+      "status": "safe",
+      "note": "Core builds: ordinary cores."
+    },
+    "db:TheJesusFish/Dual-Ram-Console-Cores": {
+      "status": "safe",
+      "note": "Core builds: ordinary cores."
+    },
+    "db:MultiDatabases/megavgmdrive": {
+      "status": "safe",
+      "note": "A music player core."
+    },
+    "db:MultiDatabases/maldita-castilla": {
+      "status": "safe",
+      "note": "A hybrid core: Phosphor's Main starts its engine itself."
+    },
+    "db:MultiDatabases/sonic-mania": {
+      "status": "safe",
+      "note": "Phosphor runs it with its own build of the game's Main (today's Main, Phosphor's menu). Needs Data.rsdk from your copy."
+    },
+    "db:MultiDatabases/duke3d": {
+      "status": "safe",
+      "note": "Runs inside Phosphor's Main. Needs duke3d.grp from your copy."
+    },
+    "db:MultiDatabases/mister-quake": {
+      "status": "safe",
+      "note": "Runs inside Phosphor's Main. Needs PAK0.PAK from your copy."
+    },
+    "db:MultiDatabases/3s-arm": {
+      "status": "safe",
+      "note": "Phosphor runs it with its own build of the game's Main (today's Main, Phosphor's menu)."
+    },
+    "db:MultiDatabases/nblood": {
+      "status": "warn",
+      "note": "Works, with its own Main (its source isn't published): Phosphor's in-game menu isn't there while it runs."
+    },
+    "db:MultiDatabases/dreamster": {
+      "status": "guard",
+      "note": "Takes over the screen Phosphor uses."
+    },
+    "db:MultiDatabases/solarus": {
+      "status": "guard",
+      "note": "Takes over the screen Phosphor uses."
+    },
+    "db:MultiDatabases/diablo": {
+      "status": "guard",
+      "note": "Starts its own launcher that takes over the screen."
+    },
+    "db:MiSTerOrganize/MiSTer_Frontier": {
+      "status": "guard",
+      "note": "Another main menu: it replaces Phosphor."
+    },
+    "entry:frontends_menu/Zaparoo Frontend": {
+      "status": "guard",
+      "note": "Another main menu: it replaces Phosphor's Main. Phosphor's own Zaparoo support works without it."
+    },
+    "db:degauss": {
+      "status": "guard",
+      "note": "Another main menu: it replaces Phosphor."
+    },
+    "entry:frontends_menu/Stock MiSTer UI": {
+      "status": "safe",
+      "note": "MiSTer's own menu: Phosphor runs over it."
+    },
+    "db:ZaparooProject/Zaparoo_MiSTer": {
+      "status": "safe",
+      "note": "Zaparoo Core: Phosphor tracks the games its cards start."
+    },
+    "var:arcade_organizer": {
+      "status": "safe",
+      "note": "Phosphor's library skips the _Organized folders, so games aren't listed twice."
+    },
+    "entry:tools_and_scripts_menu/Names TXT": {
+      "status": "safe",
+      "note": "Core names for MiSTer's menu."
+    },
+    "entry:names_txt_menu/Names TXT": {
+      "status": "safe",
+      "note": "Core names for MiSTer's menu."
+    },
+    "db:mrext/all": {
+      "status": "guard",
+      "note": "Its remote takes over MiSTer's menu and starts cores behind Phosphor's back."
+    },
+    "var:mistersam_files_downloader": {
+      "status": "safe",
+      "note": "Phosphor's screen saver can hand over to it when idle."
+    },
+    "var:ajgowans/240p": {
+      "status": "safe",
+      "note": "Test ROMs and a core."
+    },
+    "var:anime0t4ku_mister_scripts": {
+      "status": "guard",
+      "note": "Its FTP save sync, Syncthing, DAV browser and clock scripts start at boot and clash with Phosphor's own (cloud sync, clock, file sharing)."
+    },
+    "db:MultiDatabases/cifs-scripts": {
+      "status": "guard",
+      "note": "Mounts a network share at boot over the folders Phosphor's library and backups use; Phosphor has its own network share settings."
+    },
+    "db:MultiDatabases/mister-dvd": {
+      "status": "safe",
+      "note": "Phosphor starts the DVD player only when a DVD plays."
+    },
+    "db:chipster6502/MiSTer_monitor_DB": {
+      "status": "safe",
+      "note": "Game art on a second screen: reads what's running, changes nothing."
+    },
+    "db:MultiDatabases/mister-hifi": {
+      "status": "guard",
+      "note": "Takes over the screen Phosphor uses."
+    },
+    "db:MultiDatabases/misterfin": {
+      "status": "guard",
+      "note": "Starts at boot and takes over the screen Phosphor uses."
+    },
+    "db:MultiDatabases/shmup-deck": {
+      "status": "guard",
+      "note": "Starts games behind Phosphor's back."
+    },
+    "var:retrospy/retrospy-MiSTer": {
+      "status": "safe",
+      "note": "A controller viewer: reads input, changes nothing."
+    },
+    "var:Dinierto/MiSTer-GBA-Borders": {
+      "status": "safe",
+      "note": "Borders for the GBA core."
+    },
+    "var:Ranny-Snice/Ranny-Snice-Wallpapers": {
+      "status": "safe",
+      "note": "Wallpapers for MiSTer's menu."
+    },
+    "var:uberyoji_mister_boot_roms_mgl": {
+      "status": "safe",
+      "note": "Boot ROMs and MGLs."
+    },
+    "var:autoreboot": {
+      "status": "safe",
+      "note": "Phosphor's safe stop runs before the restart."
+    },
+    "var:countdown_time": {
+      "status": "safe",
+      "note": ""
+    },
+    "var:log_viewer": {
+      "status": "safe",
+      "note": ""
+    },
+    "var:overscan": {
+      "status": "safe",
+      "note": "Update All's own screen only."
+    },
+    "var:monochrome_ui": {
+      "status": "safe",
+      "note": "Update All's own screen only."
+    },
+    "entry:system_options_menu/Linux Updates": {
+      "status": "warn",
+      "note": "A MiSTer Linux update can put some settings back to stock; Phosphor's restore points can roll it back. Edge Linux replaces the Linux Phosphor runs on and is untested with it."
+    },
+    "entry:system_options_menu/CRT Video Mode": {
+      "status": "keep",
+      "note": "Phosphor leaves Update All's video mode as it sets it."
+    },
+    "entry:system_options_menu/CRT Screen Position": {
+      "status": "keep",
+      "note": "Phosphor leaves it as Update All sets it."
+    },
+    "var:encc_forks": {
+      "status": "safe",
+      "note": "Which Main distribution: the standard one is safe; DB9 / SNAC8 and AitorGomez are guarded."
+    },
+    "entry:tools_and_scripts_menu/Analogue Pocket": {
+      "status": "safe",
+      "note": "Analogue Pocket tools: nothing of Phosphor's is touched."
+    }
+  },
+  "values": {
+    "var:encc_forks": {
+      "pinned_linux": {
+        "status": "safe",
+        "note": "The standard Main distribution."
+      },
+      "devel": {
+        "status": "safe",
+        "note": "MiSTer-devel's latest builds."
+      },
+      "db9": {
+        "status": "guard",
+        "note": "DB9 / SNAC8 support is built into Phosphor's Main; this distribution would replace it."
+      },
+      "aitorgomez": {
+        "status": "guard",
+        "note": "Its Main replaces Phosphor's; its loading screen and Zaparoo features are built into Phosphor's."
+      }
+    }
+  }
+}
