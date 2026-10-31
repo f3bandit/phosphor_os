@@ -113,7 +113,17 @@ static int is_image(const char *ext)
 /* call with mu held; NULL if the folder isn't there */
 static ldir_t *dir_read(const char *path)
 {
-	for (int i = 0; i < ndirs; i++) if (!strcmp(dirs[i].path, path)) return dirs[i].e || dirs[i].n == 0 ? &dirs[i] : NULL;
+	for (int i = 0; i < ndirs; i++)
+		if (!strcmp(dirs[i].path, path)) {
+			/* most recently used last: the shared folders (games/PSX/media/box2d) stay, the one-off ones go */
+			if (i != ndirs - 1) {
+				ldir_t t = dirs[i];
+				memmove(&dirs[i], &dirs[i + 1], (size_t)(ndirs - 1 - i) * sizeof(dirs[0]));
+				dirs[ndirs - 1] = t;
+			}
+			ldir_t *d = &dirs[ndirs - 1];
+			return d->e || d->n == 0 ? d : NULL;
+		}
 	ldir_t d = { strdup(path), NULL, 0 };
 	DIR *dp = opendir(path);
 	int cap = 0;
@@ -129,14 +139,16 @@ static ldir_t *dir_read(const char *path)
 				if (!ne) break;
 				d.e = ne;
 			}
-			lent_t *e = &d.e[d.n++];
+			lent_t *e = &d.e[d.n];
 			e->file = strdup(de->d_name);
 			e->base = strndup(de->d_name, (size_t)(dot - de->d_name));
 			char nb[512], tb[256];
-			title_norm(e->base, nb, sizeof(nb));
-			tags_of(e->base, tb, sizeof(tb));
+			title_norm(e->base ? e->base : "", nb, sizeof(nb));
+			tags_of(e->base ? e->base : "", tb, sizeof(tb));
 			e->norm = strdup(nb);
 			e->tags = strdup(tb);
+			if (!e->file || !e->base || !e->norm || !e->tags) { free(e->file); free(e->base); free(e->norm); free(e->tags); break; }
+			d.n++;
 		}
 		closedir(dp);
 	}
@@ -191,7 +203,14 @@ static int gl_cmp(const void *a, const void *b) { return strcmp(((const glent_t 
 static glist_t *list_read(const char *dir)
 {
 	for (int i = 0; i < nlists; i++) if (!strcmp(lists[i].dir, dir)) return &lists[i];
-	if (nlists == MAX_LISTS) return NULL;
+	if (nlists == MAX_LISTS) {           /* full (a folder a game: discs): the oldest goes */
+		glist_t *o = &lists[0];
+		for (int k = 0; k < o->n; k++) { free(o->e[k].path); free(o->e[k].image); for (int f = 0; f < F_COUNT; f++) free(o->e[k].f[f]); }
+		free(o->e);
+		free(o->dir);
+		memmove(lists, lists + 1, (MAX_LISTS - 1) * sizeof(lists[0]));
+		nlists--;
+	}
 	glist_t *L = &lists[nlists++];
 	memset(L, 0, sizeof(*L));
 	L->dir = strdup(dir);
@@ -225,7 +244,7 @@ static glist_t *list_read(const char *dir)
 			memset(e, 0, sizeof(*e));
 			char gp[1100];
 			gl_resolve(dir, rel, gp, sizeof(gp));
-			e->path = strdup(gp);
+			if (!(e->path = strdup(gp))) { L->n--; free(rel); break; }
 			char *img = gl_tag_text(p, end, "image");
 			if (!img) img = gl_tag_text(p, end, "thumbnail");
 			if (img) { char ip[1100]; gl_resolve(dir, img, ip, sizeof(ip)); e->image = strdup(ip); free(img); }
@@ -277,13 +296,16 @@ static int info_cmp(const void *a, const void *b) { return strcmp(((const info_t
 static void kv_add(kv_t **arr, int *n, int *cap, const char *a, const char *b)
 {
 	if (*n == *cap) {
-		*cap = *cap ? *cap * 2 : 1024;
-		kv_t *na = realloc(*arr, (size_t)*cap * sizeof(**arr));
+		int nc = *cap ? *cap * 2 : 1024;
+		kv_t *na = realloc(*arr, (size_t)nc * sizeof(**arr));
 		if (!na) return;
 		*arr = na;
+		*cap = nc;
 	}
-	(*arr)[*n].a = strdup(a);
-	(*arr)[(*n)++].b = strdup(b);
+	char *x = strdup(a), *y = strdup(b);
+	if (!x || !y) { free(x); free(y); return; }
+	(*arr)[*n].a = x;
+	(*arr)[(*n)++].b = y;
 }
 
 static const char *kv_get(kv_t *arr, int n, const char *a)
@@ -361,14 +383,16 @@ static void pack_load(pack_t *P, const char *dir)
 			char *c[6];
 			if (tsv_split(line, c, 6) < 6 || !c[0][0]) continue;
 			if (P->ninfo == ci) {
-				ci = ci ? ci * 2 : 1024;
-				info_t *ni = realloc(P->info, (size_t)ci * sizeof(*ni));
+				int nc = ci ? ci * 2 : 1024;
+				info_t *ni = realloc(P->info, (size_t)nc * sizeof(*ni));
 				if (!ni) break;
 				P->info = ni;
+				ci = nc;
 			}
-			info_t *in = &P->info[P->ninfo++];
+			info_t *in = &P->info[P->ninfo];
 			memset(in, 0, sizeof(*in));
-			in->key = strdup(c[0]);
+			if (!(in->key = strdup(c[0]))) break;
+			P->ninfo++;
 			if (c[2][0]) in->f[F_YEAR] = strndup(c[2], 4);
 			if (c[3][0]) in->f[F_GENRE] = strdup(c[3]);
 			if (c[4][0]) in->f[F_DEV] = strdup(c[4]);
@@ -549,6 +573,20 @@ static void art_file(sres_t *r, const char *path)
 	sres_art(r, "local", u);
 }
 
+/* the folder above, if it's still inside the system's folder: never games/ itself (other systems' art)
+   or above _Arcade. 0: stop here */
+static int up_one(char *d)
+{
+	size_t l = strlen(d);
+	if (l >= 8 && !strcmp(d + l - 8, "/_Arcade")) return 0;
+	char *s = strrchr(d, '/');
+	if (!s || s == d) return 0;
+	*s = 0;
+	l = strlen(d);
+	if (l >= 6 && !strcmp(d + l - 6, "/games")) return 0;
+	return 1;
+}
+
 static int local_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 {
 	char path[1024];
@@ -580,9 +618,7 @@ static int local_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 			found = 1;
 			break;
 		}
-		char *s = strrchr(d, '/');
-		if (!s || !strcmp(s, "/games") || !strcmp(s, "/_Arcade")) break;
-		*s = 0;
+		if (!up_one(d)) break;
 	}
 
 	/* 2. media/ folders, nearest first */
@@ -605,9 +641,7 @@ static int local_lookup(sqlite3 *db, sgame_t *g, sres_t *r)
 				if (desc) { desc[got] = 0; sres_set(r, F_DESC, desc); found = 1; free(desc); }
 			}
 		}
-		char *s = strrchr(d, '/');
-		if (!s || !strcmp(s, "/games") || !strcmp(s, "/_Arcade")) break;
-		*s = 0;
+		if (!up_one(d)) break;
 	}
 
 	/* 3. the artwork packs: each of the system's games folders, and Game Boy's / Color's other one */
