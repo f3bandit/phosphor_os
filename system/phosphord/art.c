@@ -8,6 +8,7 @@
 #include "log.h"
 #include "paths.h"
 #include <ctype.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -164,7 +165,8 @@ int art_store_box(const char *system_id, const char *game_key, const char *src, 
 	snprintf(rel, reln, "%s/%s/box.jpg", system_id, folder);
 	snprintf(dir, sizeof(dir), "%s/art/%s/%s", p_data(), system_id, folder);
 	mkdirs(dir);
-	snprintf(out, sizeof(out), "%s/box.jpg.tmp", dir);
+	/* a temporary name of this thread's own: the SS1's run and the app's Local files can store art at once */
+	snprintf(out, sizeof(out), "%s/box.jpg.%lx.tmp", dir, (unsigned long)pthread_self());
 	int ok = stbi_write_jpg(out, nw, nh, 4, px, 85);
 	free(px);
 	if (!ok) { plog("art: can't write %s", out); return -1; }

@@ -108,6 +108,9 @@ func localCard(t *testing.T) func(fat string) {
 		writePic(t, filepath.Join(art, "Tetris (Japan).jpg"), cWhite)
 		writePic(t, filepath.Join(art, "Tetris (USA).jpg"), cWhite)
 		writeGame(t, filepath.Join(snes, "Nothing Here (USA).sfc"))
+		// above the system folders: games/media is no system's, never used
+		writePic(t, filepath.Join(fat, "games", "media", "box2d", "Nothing Here (USA).png"), cWhite)
+		writePic(t, filepath.Join(fat, "games", "media", "Nothing Here.png"), cWhite)
 		w("docs/SNES/Artwork/index.tsv", "#name\tcrc\tsize\tkey\n"+
 			"Super Mario Kart (USA)\t"+strings.ToUpper(crcMK)+"\t4096\tSuper Mario Kart (USA)\n"+
 			"Star Fox (USA)\t00000000\t1\tStar Fox (USA)\n"+
@@ -368,4 +371,48 @@ func TestE2ELocalLookUpOnThisPC(t *testing.T) {
 	s = run(0)
 	t.Logf("%d done, %d found, %d not found; notes %q", s.st.Done, s.st.Found, s.st.NotFound, s.st.Notes)
 	checkLocal(t, ids)
+}
+
+// a folder a game (as disc games are kept), each with its own gamelist.xml: more folders than the SS1
+// keeps read at once (64), all still used
+func TestE2ELocalManyFolders(t *testing.T) {
+	const n = 90
+	addr, token, _ := e2eSS1With(t, func(fat string) {
+		for i := 1; i <= n; i++ {
+			d := filepath.Join(fat, "games", "SNES", fmt.Sprintf("Game %03d", i))
+			writeGame(t, filepath.Join(d, fmt.Sprintf("Game %03d (USA).sfc", i)))
+			writePic(t, filepath.Join(d, "cover.png"), cGreen)
+			os.WriteFile(filepath.Join(d, "gamelist.xml"), []byte(fmt.Sprintf(`<gameList><game><path>./Game %03d (USA).sfc</path><image>./cover.png</image><desc>Game %d.</desc></game></gameList>`, i, i)), 0o644)
+		}
+	})
+	e2eUse(t, addr, token)
+	if err := ss1Call(map[string]any{"cmd": "scrape_sources", "order": []string{"local", "libretro", "arcadedb", "launchbox", "thegamesdb", "screenscraper", "igdb"},
+		"off": []string{"libretro", "arcadedb", "launchbox", "thegamesdb", "screenscraper", "igdb"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ss1Call(map[string]any{"cmd": "rescan"}, nil)
+	for i := 0; pending(t) < n; i++ {
+		if i > 100 {
+			t.Fatalf("%d games waiting, want %d", pending(t), n)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	ss1Call(map[string]any{"cmd": "scrape", "on": true}, nil)
+	scrapeWait(t)
+	var r struct {
+		Games []struct {
+			ID    int64  `json:"id"`
+			Title string `json:"title"`
+		} `json:"games"`
+	}
+	ss1Call(map[string]any{"cmd": "games", "system": "SNES", "limit": 500}, &r)
+	missing := 0
+	for _, g := range r.Games {
+		if c := artColour(t, g.ID); c == nil || !near(*c, cGreen) {
+			missing++
+		}
+	}
+	if len(r.Games) != n || missing > 0 {
+		t.Fatalf("%d games, %d without their gamelist.xml's box art", len(r.Games), missing)
+	}
 }
