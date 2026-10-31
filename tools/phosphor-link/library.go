@@ -94,6 +94,13 @@ func busyWait(try int) time.Duration {
 	return time.Duration(ms+rand.Intn(250)) * time.Millisecond
 }
 
+// notSent: the connection died before the request went out (Go: "readLoopPeekFailLocked", an answer
+// arrived before the request was written, as a busy SS1 used to send it): nothing reached the SS1, so
+// any request can be sent again
+func notSent(err error) bool {
+	return strings.Contains(err.Error(), "readLoopPeekFailLocked")
+}
+
 // cutOff: the connection was made and then reset or closed before an answer (not: no connection at all,
 // or no answer in time)
 func cutOff(err error) bool {
@@ -142,7 +149,7 @@ func libDo(c libConfig, method, path string, body io.Reader, ctype string) ([]by
 		}
 		resp, err = httpc.Do(req)
 		if err != nil {
-			if method == http.MethodPut && try < busyTries && cutOff(err) {
+			if try < busyTries && (notSent(err) || (method == http.MethodPut && cutOff(err))) {
 				time.Sleep(busyWait(try))
 				continue
 			}

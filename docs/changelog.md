@@ -3,6 +3,46 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.60
+
+### New
+- **Local files: box art you already have.** A new box art source, first in the order (it's instant and
+  needs no network), on by default. On the SS1's drives (SD card, USB drives, a network share) it uses:
+  - gamelist.xml files (EmulationStation, Skraper): the entry for that very file, its picture and details;
+  - media folders next to the games, or a folder or two up: media/box2d, covers, boxart, media itself,
+    then box3d. A picture named like the game, with or without the region and year ("Gamename.png" for
+    "Gamename (USA) (1999).sfc"), and media/<name>.txt as the description;
+  - the MiSTer artwork packs Update All installs (docs/<system>/Artwork), matched the way the packs say:
+    the file name, the pack's index, the CRC of a renamed file, a bare title only one game has. Their
+    gameinfo and synopsis give the year, genre, developer, players and description.
+  Phosphor for Windows (0.2.51) can also use **a folder on the PC** (Settings > Box art > Local files):
+  a Skraper or ES-DE media folder, LaunchBox's Images folder, a downloaded pack. Folders named for a
+  system ("snes", "Mega Drive") are matched to it, front covers before 3D boxes; screenshots, title
+  screens and logos are left out. Nothing in any of these folders is changed. Suggested by n00dlez.
+- **One system, or one game.** Settings > Box art in Phosphor for Windows has a "Look up" choice: all
+  games or one system, for both Look up on this PC and Look up on the SS1. What wasn't found there
+  before is asked again. A game's page has **Look it up now**: that game alone, straight away.
+  Suggested by n00dlez.
+- **Phosphor for Windows with the mouse.** The key hints at the bottom can be clicked (Back, Open,
+  Search, the LB/RB tabs: the left half goes left), the mouse's back button goes back, and so does a
+  right-click outside a text box. Drop-down lists can be changed with left / right or Enter.
+  Suggested by n00dlez.
+- The phone app (0.9.14) uses Local files from the SS1's drives in its lookups too.
+
+### Fixed
+- **A busy SS1's answer arrives cleanly.** When the SS1 is serving all the connections it takes from one
+  PC, it says "busy" and the app asks again. That answer could be lost two ways: a big upload (box art)
+  had the rest of it left unread, which reset the connection on Windows ("forcibly closed by the remote
+  host"), and an answer sent before the request was written was dropped by the app as broken ("The SS1
+  didn't answer"). The SS1 now waits for the request to start and takes in the rest of it before
+  closing, and the apps send again a request that never went out. Found by the new end-to-end tests
+  run on a phosphord built with memory checks.
+
+### Tests
+- End-to-end tests for Local files (every kind above, the matching rules, one system, one game, from the
+  SS1 and from the PC), a big upload to a busy SS1, and all of them again on a phosphord built with
+  memory and undefined-behaviour checks, on every change.
+
 ## 0.27.59
 
 ### Fixed

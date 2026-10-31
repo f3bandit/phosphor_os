@@ -79,7 +79,20 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi, priv
     private val libretro = Libretro(File(cache, "libretro"))
     private val launchbox = LaunchBox(cache)
 
+    /** games the MiSTer found box art for on its own drives this run (Local files: it stored it itself) */
+    private val localArt = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+
+    /** Local files: the MiSTer reads its own drives (gamelist.xml, media folders, Update All's artwork packs) */
+    private suspend fun localLookup(g: SGame, r: SRes): Int {
+        val j = try { api.cmd(JSONObject().put("cmd", "scrape_local").put("id", g.id)) } catch (e: CancellationException) { throw e } catch (e: Exception) { return 0 }
+        if (j.optBoolean("art")) localArt.add(g.id)
+        val f = j.optJSONObject("fields")
+        if (f != null) for (i in FIELD_COLS.indices) f.optString(FIELD_COLS[i]).takeIf { it.isNotEmpty() }?.let { r.set(i, it) }
+        return if (j.optBoolean("found")) 1 else 0
+    }
+
     private val sources = listOf(
+        Source("local", "Local files", { true }) { _, g, r -> localLookup(g, r) },
         Source("libretro", "libretro", { true }) { s, g, r -> libretro.lookup(s, g, r) },
         Source("arcadedb", "ArcadeDB", { true }) { s, g, r -> adbLookup(s, g, r) },
         Source("launchbox", "LaunchBox", { true }) { s, g, r -> launchbox.lookup(s, g, r) },
@@ -149,6 +162,7 @@ class ScrapeRun(private val context: Context, private val api: PhosphorApi, priv
                 1 -> { found = true; r.foundBy.add(src.name) }
                 -1 -> trouble = true
             }
+            if (g.id in localArt) art = true    // stored on the MiSTer by Local files
         }
         if (found && !art) when (fetchArt(g, r, tried)) { 1 -> art = true; -1 -> trouble = true }
         if (!found) r = SRes()  // nothing filled in: the MiSTer still tries Disc 1's art

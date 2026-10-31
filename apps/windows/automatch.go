@@ -588,7 +588,7 @@ func (s *scrapeRun) matchPhase() {
 			Miss  bool    `json:"miss"`
 			Games []sgame `json:"games"`
 		}
-		if err := ss1Call(map[string]any{"cmd": "scrape_todo", "miss": true, "limit": 1000, "offset": off}, &todo); err != nil {
+		if err := ss1Call(s.scoped(map[string]any{"cmd": "scrape_todo", "miss": true, "limit": 1000, "offset": off}), &todo); err != nil {
 			s.status("The SS1 didn't answer: " + err.Error())
 			return
 		}

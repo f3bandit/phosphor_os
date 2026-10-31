@@ -179,6 +179,7 @@ class AppSettings {
 	async tArt(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="col"><div class="sub">${spaced("Sources, asked in this order")}</div><div class="list" id="srcs"><div class="empty"><span class="spin"></span></div></div>
+			<div class="scope"><label for="scr_sys">Look up</label><select id="scr_sys" data-nav><option value="">All games</option></select></div>
 			<div class="acts"><button class="btn primary" id="runpc" data-nav>Look up on this PC</button><button class="btn" id="runart" data-nav>Look up on the SS1</button><button class="btn" id="amrev" data-nav hidden>Review matches</button></div>
 			<div class="note" id="scr_st" style="margin-top:.6rem"></div></div>
 			<div class="panel" id="acct"></div></div>`));
@@ -219,11 +220,24 @@ class AppSettings {
 			try {
 				const cur = await api("/api/scrape");
 				if (cur.state.running) { await api("/api/scrape", { do: "stop" }); toast("Stopping"); }
-				else { await api("/api/scrape", { do: "start" }); toast("Looking up box art on this PC"); }
+				else {
+					const sys = $("#scr_sys").value;
+					await api("/api/scrape", { do: "start", system: sys });
+					toast(sys ? `Looking up ${$("#scr_sys").selectedOptions[0].textContent.replace(/ \([\d,.]+\)$/, "")} on this PC` : "Looking up box art on this PC");
+				}
 			} catch (e) { toast(e.message); }
 			scrPoll();
 		};
-		$("#runart").onclick = async () => { try { await ss1({ cmd: "scrape", on: true }); toast("Looking up box art on the SS1 (slower)"); } catch (e) { toast(e.message); } };
+		$("#runart").onclick = async () => {
+			const sys = $("#scr_sys").value;
+			try { await ss1(sys ? { cmd: "scrape", on: true, system: sys } : { cmd: "scrape", on: true }); toast("Looking up box art on the SS1 (slower)"); } catch (e) { toast(e.message); }
+		};
+		/* one system at a time: what wasn't found there before is asked again too */
+		ss1({ cmd: "systems", all: true }).then(j => {
+			const sel = $("#scr_sys");
+			if (!sel || !alive()) return;
+			for (const x of (j.systems || []).filter(x => x.games > 0)) sel.append(new Option(`${x.name} (${n(x.games)})`, x.id));
+		}).catch(() => {});
 		scrPoll();
 		try {
 			const [src, acc, pc] = await Promise.all([ss1({ cmd: "scrape_sources" }), ss1({ cmd: "scrape_accounts" }), api("/api/accounts")]);
@@ -274,6 +288,7 @@ class AppSettings {
 			thegamesdb: [["apikey", "API key (free, from thegamesdb.net)", "password"]],
 			igdb: [["client_id", "Client ID (Twitch developer app)", "text"], ["client_secret", "Client secret", "password"]],
 		}[x.id];
+		if (x.id === "local") return this.drawLocal(p, x);
 		const ABOUT = {
 			libretro: "No account. Box art from libretro's thumbnails, matched by each file's content (CRC or product code), then by its exact name.",
 			arcadedb: "No account. Arcade games by their MAME set name.",
@@ -319,6 +334,36 @@ class AppSettings {
 				this.drawSources(this.sx);
 			} catch (e) { toast(e.message); }
 		};
+	}
+
+	/* Local files: what's on the SS1's drives already, and a folder on this PC */
+	async drawLocal(p, x) {
+		p.innerHTML = `<h2>${esc(x.name)}</h2>
+			<p class="note">No account and no network: box art and details you already have.</p>
+			<p class="note"><b>On the SS1's drives</b> (the SD card, USB drives, a network share): gamelist.xml files, media folders next to your games (media/box2d, covers, boxart, media itself, box3d) and the artwork packs Update All installs (docs/&lt;system&gt;/Artwork). Pictures named like the game are used, with or without the region ("Gamename.png" for "Gamename (USA) (1999)").</p>
+			<div class="field" style="margin-top:1rem"><label for="lf_dir">A folder on this PC (for Look up on this PC)</label><input id="lf_dir" type="text" data-nav placeholder="Not set, e.g. D:\\Skraper\\media" autocomplete="off"></div>
+			<div class="acts"><button class="btn primary" id="lf_save" data-nav>Save</button><button class="btn" id="lf_browse" data-nav hidden>Browse…</button><button class="btn" id="lf_clear" data-nav>Clear</button></div>
+			<p class="note" id="lf_st"></p>
+			<p class="note">Any folder of box art: a Skraper or ES-DE media folder, LaunchBox's Images folder, a pack you downloaded. Folders named for a system ("snes", "Mega Drive") are matched to it; front covers come before 3D boxes; screenshots, title screens and logos are left out. Nothing in the folder is changed.</p>`;
+		const st = $("#lf_st");
+		const draw = j => {
+			$("#lf_dir").value = j.folder || "";
+			$("#lf_browse").hidden = !j.browse;
+			st.className = "note";
+			st.textContent = j.folder ? `${n(j.pictures || 0)} picture${j.pictures === 1 ? "" : "s"} in it` : "";
+		};
+		const save = async folder => {
+			st.className = "note"; st.textContent = folder ? "Reading the folder…" : "";
+			try { const j = await api("/api/artfolder", { folder }); if (!j.ok) throw new Error(j.error); draw(j); toast(folder ? "Saved" : "Cleared"); }
+			catch (e) { st.className = "note bad"; st.textContent = e.message; }
+		};
+		$("#lf_save").onclick = () => save($("#lf_dir").value.trim());
+		$("#lf_clear").onclick = () => save("");
+		$("#lf_browse").onclick = async () => {
+			try { const j = await api("/api/artfolder", { do: "browse" }); if (!j.ok) throw new Error(j.error); if (j.folder) { $("#lf_dir").value = j.folder; save(j.folder); } }
+			catch (e) { toast(e.message); }
+		};
+		try { draw(await api("/api/artfolder")); } catch (e) { st.textContent = e.message; }
 	}
 
 	/* ---------- Power: restart, shut down, reload the TV screen ---------- */

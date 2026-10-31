@@ -32,8 +32,11 @@
  *   link       id base                      id is a hack/mod/translation of base: uses base's art and details
  *   unlink     id                           not based on another game any more
  *   candidates id [q] [limit]               games id could be based on, most alike first: [{id,title,score}]
- *   scrape     [on]                         box art and details: turn on/off; replies on, running,
+ *   scrape     [on] [system | id]           box art and details: turn on/off (one system / one game: only it,
+ *                                           what wasn't found there before too); replies on, running,
  *                                           pending, found, not_found, status
+ *   scrape_local id                         Local files for one game (the PC app's run): stored on the SS1;
+ *                                           {found, art, fields}
  *   dashboard  [kernel]                     live numbers: temps, cpu, load, uptime, mem, disks, io, ips, net,
  *                                           procs, core; kernel: the kernel log's last lines (read only)
  *   storage    [do: check (test, target) | mount (target /dev/sdXN) | overlap-remove | overlap-undo |
@@ -50,7 +53,7 @@
  *              packages [{file, version}], rollbacks [{version, date}], state {state, version, restart, msg, at}
  *   system     do: shutdown|reboot|reload_ui|safe_stop|halt_now|reboot_now   (see the command below)
  *   scrape_accounts [set:{sec,key,value}]  account keys in scraper.ini: {accounts:[{sec,key,set,value}]}
- *   rescrape   id                           look this game up again
+ *   rescrape   id [now]                     look this game up again (now: straight away, on its own)
  *   wifi       [do: scan|connect|forget|up|down|undo] [ssid] [password] [hidden]
  *                                           {status{...}, scanning, networks:[{ssid, signal, bands,
  *                                           secure, saved}], saved:[{ssid, open}]}; passwords are
@@ -1768,6 +1771,11 @@ char *api_handle(sqlite3 *db, const char *request)
 		cJSON *o = scraper_todo(db, req);
 		cJSON_AddBoolToObject(o, "ok", 1);
 		out = reply(o);
+	} else if (!strcmp(c->valuestring, "scrape_local")) {
+		cJSON *o = scraper_local_one(db, req);
+		if (!o) { cJSON_Delete(req); return fail("no such game"); }
+		cJSON_AddBoolToObject(o, "ok", 1);
+		out = reply(o);
 	} else if (!strcmp(c->valuestring, "scrape_result")) {
 		const char *e = scraper_result(db, req);
 		out = e ? fail(e) : reply(ok());
@@ -1780,7 +1788,13 @@ char *api_handle(sqlite3 *db, const char *request)
 	}
 	else if (!strcmp(c->valuestring, "scrape")) {
 		cJSON *on = cJSON_GetObjectItem(req, "on");
-		if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
+		/* "system" (id) or "id" with on: only that system / that game, now */
+		const char *ssys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+		cJSON *sid = cJSON_GetObjectItem(req, "id");
+		long long one = cJSON_IsNumber(sid) && sid->valuedouble > 0 ? (long long)sid->valuedouble : 0;
+		if (ssys && !system_by_id(ssys)) { cJSON_Delete(req); return fail("no such system"); }
+		if (cJSON_IsTrue(on) && (one || (ssys && *ssys))) scraper_run_scope(ssys, one);
+		else if (cJSON_IsBool(on)) scraper_set(db, cJSON_IsTrue(on));
 		scrape_info_t si;
 		scraper_info(db, &si);
 		cJSON *o = ok();
@@ -1854,7 +1868,13 @@ char *api_handle(sqlite3 *db, const char *request)
 		}
 		out = reply(o);
 	} else if (!strcmp(c->valuestring, "rescrape")) {
-		out = scraper_retry(db, req_id(req)) == 0 ? reply(ok()) : fail("no such game");
+		/* "now": looked up straight away (on its own), not at the next Get box art */
+		long long rid = req_id(req);
+		if (scraper_retry(db, rid) != 0) out = fail("no such game");
+		else {
+			if (cJSON_IsTrue(cJSON_GetObjectItem(req, "now"))) scraper_run_scope(NULL, rid);
+			out = reply(ok());
+		}
 	} else if (!strcmp(c->valuestring, "not_game")) {
 		/* {"id", "on"}: a test ROM, a boot file, a tool: out of "not found", no box art looked up; off puts it back */
 		long long gid = req_id(req);
