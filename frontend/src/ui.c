@@ -838,8 +838,15 @@ static void pn_open(cJSON *n)
 		pn.txt[i] = mk_label(r, FONT_NAME, PAL.text, opts[i]);
 		lv_obj_align(pn.txt[i], LV_ALIGN_LEFT_MID, lr ? L(12) : S(34), 0);
 	}
+	const char *credit = api_str(n, "credit");
+	int cy = y + 2 * (lr ? L(20) : S(50)) + (lr ? L(2) : S(10));
+	if (credit && *credit) {                             /* who made the port */
+		lv_obj_t *cr = pn_wrap(panel, FONT_SMALL, PAL.dim, credit, x, cy, w);
+		lv_obj_update_layout(cr);
+		cy += lv_obj_get_height(cr);
+	}
 	if (!lr) {                                           /* the panel as tall as what's in it, centred */
-		int ph2 = y + S(50) + S(46) + S(44);
+		int ph2 = cy + S(44);
 		lv_obj_set_height(panel, ph2);
 		lv_obj_set_y(panel, (H - ph2) / 2 - S(10));
 	}
@@ -8511,6 +8518,8 @@ static void show_about(void)
 	ab_add("The SuperStation One", "Taki and Retro Remake: thank you for such excellent hardware");
 	ab_add("Disc support", "Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)");
 	ab_add("RetroAchievements", "odelot (RA Main and cores); rcheevos by the RA team");
+	ab_add("Quake and Duke Nukem 3D", "MiSTer ports by neofreno; on TyrQuake, id Software's and 3D Realms' GPL source");
+	ab_add("ARM game ports", "the pattern by kimchiman52 (Sonic Mania, 3S-ARM)");
 	ab_add("Music CD names", "MusicBrainz and the Cover Art Archive");
 	ab_add("Music decoding", "dr_libs by David Reid, stb_vorbis by Sean Barrett");
 	ab_add("Licence", "PolyForm Noncommercial 1.0.0: phosphor/LICENSE.md");
