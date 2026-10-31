@@ -44,7 +44,8 @@ int mainlink_disc_enable(int on);
 int mainlink_shot_combo(int on);   /* L3 + R3 (both sticks in) takes a screenshot (Phosphor's Main); kept for reconnects */
 int mainlink_ingame(int on);          /* Phosphor's screen over the game (controllers to Phosphor), or off */
 int mainlink_ingame_osd(void);        /* to MiSTer's menu, from the in-game menu */
-int mainlink_quit_game(void);         /* leave the game: the menu core (Phosphor) again */
+int mainlink_quit_game(void);
+int mainlink_launch(const char *path);   /* a core or MGL under /media (a game port's Check again) */         /* leave the game: the menu core (Phosphor) again */
 int mainlink_can_map(void);
 int mainlink_map(const char *what);
 int mainlink_map_state(int *step, int *done, int *saved, char *dev, size_t dn, char *err, size_t en);

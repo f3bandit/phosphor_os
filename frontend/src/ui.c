@@ -739,6 +739,155 @@ static int cc_key(pkey_t k)
 	return 1;
 }
 
+/* ---------- A game port that couldn't start (Quake, Duke3D...) ----------
+ * Phosphor's Main runs the game ports itself (gameport.cpp). When the game's data or the game isn't on the
+ * SD card, or it kept stopping, Main comes back here and leaves a note: which file, where, what's there. */
+#define PN_PATH "/tmp/phosphor-port-note"
+static struct { lv_obj_t *dim, *row[2], *bar[2], *txt[2]; int sel, open; char rbf[512]; } pn;
+static void pn_draw(void)
+{
+	for (int i = 0; i < 2; i++) {
+		int on = i == pn.sel;
+		lv_obj_set_style_bg_opa(pn.row[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_hidden(pn.bar[i], !on);
+		lv_obj_set_style_text_color(pn.txt[i], on ? PAL.text : PAL.dim, 0);
+	}
+}
+static void pn_close(void)
+{
+	if (!pn.open) return;
+	lv_obj_delete(pn.dim);
+	memset(&pn, 0, sizeof(pn));
+}
+static lv_obj_t *pn_wrap(lv_obj_t *par, const lv_font_t *f, lv_color_t c, const char *t, int x, int y, int w)
+{
+	lv_obj_t *l = mk_label(par, f, c, t);
+	lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_set_width(l, w);
+	lv_obj_set_pos(l, x, y);
+	return l;
+}
+static void pn_open(cJSON *n)
+{
+	pn_close();
+	const char *why = api_str(n, "why") ? api_str(n, "why") : "data";
+	const char *title = api_str(n, "title") ? api_str(n, "title") : "This game";
+	const char *file = api_str(n, "file") ? api_str(n, "file") : "";
+	const char *dir = api_str(n, "dir") ? api_str(n, "dir") : "";
+	char head[160], text[600], path[600], small[600];
+	if (!strcmp(why, "engine")) {
+		snprintf(head, sizeof(head), "%s isn't installed", title);
+		snprintf(text, sizeof(text), "Its game files aren't on the SD card. Turn %s on in Update All's settings and run it, then choose Check again.", title);
+		snprintf(path, sizeof(path), "%s", dir);
+		small[0] = 0;
+	} else if (!strcmp(why, "stopped")) {
+		snprintf(head, sizeof(head), "%s keeps stopping", title);
+		snprintf(text, sizeof(text), "It stopped three times in a minute, so Phosphor brought you back. What it printed is in this file:");
+		snprintf(path, sizeof(path), "%s", api_str(n, "log") ? api_str(n, "log") : "");
+		small[0] = 0;
+	} else {
+		snprintf(head, sizeof(head), "%s needs its game data", title);
+		snprintf(text, sizeof(text), "Phosphor couldn't find %s. Copy it from your own copy of %s to this folder on the SD card, then choose Check again.", file, title);
+		snprintf(path, sizeof(path), "%s", api_str(n, "path") ? api_str(n, "path") : "");
+		snprintf(small, sizeof(small), "Found in %s: %s.  %s", dir, api_str(n, "found") ? api_str(n, "found") : "nothing yet", api_str(n, "hint") ? api_str(n, "hint") : "");
+	}
+	snprintf(pn.rbf, sizeof(pn.rbf), "%s", api_str(n, "rbf") ? api_str(n, "rbf") : "");
+	pn.open = 1;
+	pn.sel = 0;
+	pn.dim = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(pn.dim);
+	lv_obj_set_size(pn.dim, W, H);
+	lv_obj_set_style_bg_color(pn.dim, PAL.bg, 0);
+	lv_obj_set_style_bg_opa(pn.dim, LV_OPA_COVER, 0);
+	int lr = theme_lr;                                   /* 240p / 288p: the whole screen, smaller margins */
+	int px = lr ? L(12) : SX(140), py = lr ? L(12) : S(110), pw = lr ? W - L(24) : SW(1000), ph = lr ? H - L(40) : S(560);
+	lv_obj_t *panel = mk_box(pn.dim, pw, ph, PAL.panel, lr ? 0 : S(18));
+	lv_obj_set_pos(panel, px, py);
+	int in = lr ? L(8) : S(56), x = in, w = pw - 2 * in, y = lr ? L(6) : S(44);
+	char cap[200];
+	spaced_caps(cap, sizeof(cap), title);
+	lv_obj_t *c = mk_label(panel, FONT_LABEL, PAL.dim, cap);
+	lv_obj_set_style_text_letter_space(c, S(3), 0);
+	lv_obj_set_pos(c, x, y);
+	y += lr ? L(14) : S(30);
+	lv_obj_t *h = pn_wrap(panel, lr ? FONT_TITLE : FONT_HEADING, PAL.text, head, x, y, w);
+	lv_obj_update_layout(h);
+	y += lv_obj_get_height(h) + (lr ? L(6) : S(16));
+	lv_obj_t *t = pn_wrap(panel, FONT_BODY, PAL.dim, text, x, y, w);
+	lv_obj_update_layout(t);
+	y += lv_obj_get_height(t) + (lr ? L(6) : S(16));
+	if (path[0]) {
+		lv_obj_t *b = mk_box(panel, w, lr ? L(20) : S(48), PAL.bg, S(10));
+		lv_obj_set_pos(b, x, y);
+		lv_obj_t *pl = mk_label(b, FONT_LABEL, PAL.acc, path);
+		lv_obj_align(pl, LV_ALIGN_LEFT_MID, lr ? L(6) : S(18), 0);
+		y += (lr ? L(20) : S(48)) + (lr ? L(6) : S(14));
+	}
+	if (small[0]) {
+		lv_obj_t *sm = pn_wrap(panel, FONT_SMALL, PAL.dim, small, x, y, w);
+		lv_obj_update_layout(sm);
+		y += lv_obj_get_height(sm) + (lr ? L(6) : S(14));
+	}
+	const char *opts[2] = { !strcmp(why, "stopped") ? "Try again" : "Check again", "Back to Phosphor" };
+	for (int i = 0; i < 2; i++) {
+		lv_obj_t *r = mk_box(panel, lr ? w : SW(420), lr ? L(18) : S(46), PAL.panel_on, S(10));
+		lv_obj_set_pos(r, x, y + i * (lr ? L(20) : S(50)));
+		pn.row[i] = r;
+		pn.bar[i] = mk_box(r, S(4) > 0 ? S(4) : 2, lr ? L(10) : S(20), PAL.acc, S(2));
+		lv_obj_align(pn.bar[i], LV_ALIGN_LEFT_MID, lr ? L(4) : S(16), 0);
+		pn.txt[i] = mk_label(r, FONT_NAME, PAL.text, opts[i]);
+		lv_obj_align(pn.txt[i], LV_ALIGN_LEFT_MID, lr ? L(12) : S(34), 0);
+	}
+	if (!lr) {                                           /* the panel as tall as what's in it, centred */
+		int ph2 = y + S(50) + S(46) + S(44);
+		lv_obj_set_height(panel, ph2);
+		lv_obj_set_y(panel, (H - ph2) / 2 - S(10));
+	}
+	static const char *const hints[] = { "A", "Select", "B", "Back to Phosphor", NULL };
+	lv_obj_t *hb = mk_box(pn.dim, W, S(40), PAL.bg, 0);
+	lv_obj_set_style_bg_opa(hb, LV_OPA_TRANSP, 0);
+	lv_obj_set_flex_flow(hb, LV_FLEX_FLOW_ROW);
+	lv_obj_set_style_pad_column(hb, S(28), 0);
+	lv_obj_set_pos(hb, lr ? L(12) : S(56), H - (lr ? L(22) : S(56)));
+	for (int i = 0; hints[i]; i += 2) {
+		char hh[80];
+		snprintf(hh, sizeof(hh), "(%s)  %s", hints[i], hints[i + 1]);
+		mk_label(hb, FONT_SMALL, PAL.dim, hh);
+	}
+	pn_draw();
+	plog("game port note: %s, %s", title, why);
+}
+/* Main left a note (and the shell has the screen): show it once */
+static void pn_check(void)
+{
+	if (pn.open || mainlink_hidden() || mainlink_in_game() || access(PN_PATH, R_OK)) return;
+	FILE *f = fopen(PN_PATH, "r");
+	if (!f) return;
+	char buf[4096];
+	size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+	fclose(f);
+	unlink(PN_PATH);
+	buf[n] = 0;
+	cJSON *j = cJSON_Parse(buf);
+	if (j) pn_open(j);
+	cJSON_Delete(j);
+}
+static int pn_key(pkey_t k)
+{
+	if (!pn.open) return 0;
+	if (k == K_UP || k == K_DOWN) pn.sel ^= 1;
+	else if (k == K_B || k == K_MENU || (k == K_A && pn.sel == 1)) { pn_close(); return 1; }
+	else if (k == K_A) {
+		char rbf[512];
+		snprintf(rbf, sizeof(rbf), "%s", pn.rbf);
+		pn_close();
+		if (!rbf[0] || mainlink_launch(rbf) < 0) toast_show("Couldn't start it again: start it from the library");
+		return 1;
+	}
+	pn_draw();
+	return 1;
+}
+
 /* Start with... (Select on a game): the chooser even when a default is set, to change it */
 static void play_choose(long long id)
 {
@@ -9183,6 +9332,7 @@ void ui_key(pkey_t k)
 	if (vk_key(k)) return;                           /* a video try waits for Keep */
 	if (pm_key(k)) return;
 	if (cc_key(k)) return;
+	if (pn_key(k)) return;
 	if (osk_key(k)) return;
 	switch (cur) {
 	case SCR_HOME:
@@ -11194,6 +11344,7 @@ void ui_tick(void)
 		if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}"); upo_apply(r); cJSON_Delete(r); }
 	}
 	saver_tick(now);
+	{ static uint32_t pn_next; if (now >= pn_next) { pn_next = now + 500; pn_check(); } }   /* a game port's note */
 	TT("updcheck");
 	const char *note = input_notice();
 	if (note) toast_show(note);
