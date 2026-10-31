@@ -8465,9 +8465,13 @@ static void script_requests(void)
 	path[strcspn(path, "\r\n")] = 0;
 	/* a script in Scripts, or Phosphor's own update wrappers (a restore point first, then the updater) */
 	size_t pl = strlen(path);
-	int wrapper = (pl > 30 && !strcmp(path + pl - 30, "/phosphor/scripts/update_all.sh")) ||
-	              (pl > 26 && !strcmp(path + pl - 26, "/phosphor/scripts/update.sh"));
-	if (!path[0] || strstr(path, "/../") || (!strstr(path, "/Scripts/") && !wrapper)) return;
+	static const char *const W[] = { "/phosphor/scripts/update_all.sh", "/phosphor/scripts/update.sh" };
+	int wrapper = 0;
+	for (int i = 0; i < 2; i++) {
+		size_t wl = strlen(W[i]);
+		if (pl > wl && !strcmp(path + pl - wl, W[i])) wrapper = 1;
+	}
+	if (!path[0] || strstr(path, "/../") || (!strstr(path, "/Scripts/") && !wrapper)) { plog("scripts: %s refused", path); return; }
 	plog("scripts: %s asked from the app", path);
 	run_script(path);
 }
