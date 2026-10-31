@@ -3,6 +3,15 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.58
+
+### Fixed
+- **Look up on this PC stopped with "busy: try again"** (Phosphor for Windows 0.2.49). It looks up 6 games
+  at once, and the SS1 serves 6 connections from one PC: the app's own progress check on top of that was
+  turned away, and the whole run stopped. Requests the SS1 is too busy for are now sent again after a
+  moment (only the "busy" answer, which comes before the SS1 reads the request, so nothing runs twice).
+  The phone app (0.9.12) does the same. Reported by n00dlez.
+
 ## 0.27.57
 
 ### Fixed
