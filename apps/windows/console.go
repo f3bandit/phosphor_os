@@ -7,14 +7,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -95,7 +99,10 @@ func pair(addr, code string) (id, tok string, err error) {
 }
 
 // busyTries: how many more times a request the SS1 was too busy for is sent (about 30 seconds in all)
-const busyTries = 20
+var busyTries = 20 // (a var: the end-to-end test can turn it off)
+
+// busyRetries: how many times a request was sent again (counted for the tests)
+var busyRetries atomic.Int64
 
 // busyWait: a short wait, a little longer each time, with some jitter so waiting requests don't all come back at once
 func busyWait(try int) time.Duration {
@@ -104,6 +111,25 @@ func busyWait(try int) time.Duration {
 		ms = 2000
 	}
 	return time.Duration(ms+rand.Intn(250)) * time.Millisecond
+}
+
+// cutOff: the connection was made and then reset or closed before an answer (not: no connection at all,
+// or no answer in time)
+func cutOff(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return false
+	}
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "readLoopPeekFailLocked") ||
+		strings.Contains(err.Error(), "server closed") || strings.Contains(err.Error(), "forcibly closed") || strings.Contains(err.Error(), "connection reset")
 }
 
 func authed(method, path string, body io.Reader, timeout time.Duration) (*http.Response, error) {
@@ -136,6 +162,13 @@ func authed(method, path string, body io.Reader, timeout time.Duration) (*http.R
 		req.Header.Set("Authorization", "Bearer "+tok)
 		r, err = client(timeout).Do(req)
 		if err != nil {
+			// a busy SS1 answering a big upload (box art, a package) drops the rest of it, and the dropped
+			// connection can cut off the "busy" answer: an upload is sent again (it only replaces a file)
+			if method == http.MethodPut && try < busyTries && cutOff(err) {
+				busyRetries.Add(1)
+				time.Sleep(busyWait(try))
+				continue
+			}
 			return nil, err
 		}
 		// only the "busy" answer (sent before the request is read, so nothing was done) has Retry-After
@@ -144,6 +177,7 @@ func authed(method, path string, body io.Reader, timeout time.Duration) (*http.R
 		}
 		io.Copy(io.Discard, io.LimitReader(r.Body, 4096))
 		r.Body.Close()
+		busyRetries.Add(1)
 		time.Sleep(busyWait(try))
 	}
 	if r.StatusCode == 401 {
