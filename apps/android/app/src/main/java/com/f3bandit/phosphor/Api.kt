@@ -149,6 +149,13 @@ class PhosphorApi(val address: String, private val token: String?) {
         }
     }
 
+    /** a busy MiSTer answering a big upload (box art) drops the rest of it, and the dropped connection can cut
+     *  off its "busy" answer: an upload whose connection was reset or closed (not: never made, or no answer in
+     *  time) is sent again, as it only replaces a file */
+    private fun cutOff(method: String, e: IOException) = method == "PUT" &&
+        e !is java.net.ConnectException && e !is java.net.SocketTimeoutException &&
+        e !is java.net.UnknownHostException && e !is java.net.NoRouteToHostException
+
     private fun requestOnce(method: String, path: String, body: ByteArray?, type: String?, timeoutMs: Int): ByteArray {
         val c = URL("http://$address$path").openConnection() as HttpURLConnection
         try {
@@ -164,6 +171,7 @@ class PhosphorApi(val address: String, private val token: String?) {
                 c.outputStream.use { it.write(body) }
             }
             val code = try { c.responseCode } catch (e: IOException) {
+                if (cutOff(method, e)) throw Busy()
                 throw PhosphorError("Can't reach the MiSTer at $address. Is it on, on this WiFi, with Remote access turned on?")
             }
             val data = (if (code in 200..299) c.inputStream else c.errorStream)?.use { it.readBytes() } ?: ByteArray(0)
@@ -176,6 +184,7 @@ class PhosphorApi(val address: String, private val token: String?) {
         } catch (e: PhosphorError) {
             throw e
         } catch (e: IOException) {
+            if (cutOff(method, e)) throw Busy()
             throw PhosphorError("Can't reach the MiSTer at $address. Is it on, on this WiFi, with Remote access turned on?")
         } finally {
             c.disconnect()

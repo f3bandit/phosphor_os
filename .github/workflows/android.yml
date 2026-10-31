@@ -5,7 +5,7 @@
 name: Android app
 on:
   push:
-    paths: ["apps/android/**", ".github/workflows/android.yml"]
+    paths: ["apps/android/**", "system/phosphord/remote.c", ".github/workflows/android.yml"]
   workflow_dispatch:
 jobs:
   build:
@@ -20,6 +20,12 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+      - name: phosphord for the PC (the end-to-end test, PhoneE2ETest)
+        working-directory: .
+        run: |
+          cmake -S system -B build-pc -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-pc -j"$(nproc)" --target phosphord
+          echo "PHOSD_BIN=$PWD/build-pc/phosphord" >> "$GITHUB_ENV"
       - name: Test and build
         env:
           # Phosphor's ScreenScraper developer login (repo secrets; empty on forks and PRs, so scraping is off there)

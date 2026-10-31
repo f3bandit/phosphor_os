@@ -1,0 +1,41 @@
+# Tests for Phosphor for Windows and phosphor-link, including end-to-end ones against a real phosphord
+# (built for the PC here): Look up on this PC with box art from a pretend source while the app's page asks
+# for progress, and the library tools with every connection the SS1 serves from one address taken.
+# The phone app's end-to-end test runs in android.yml.
+name: Tests
+on:
+  push:
+    paths: ["system/**", "apps/windows/**", "tools/phosphor-link/**", ".github/workflows/tests.yml"]
+  pull_request:
+    paths: ["system/**", "apps/windows/**", "tools/phosphor-link/**", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/windows/go.mod
+          cache-dependency-path: |
+            apps/windows/go.sum
+            tools/phosphor-link/go.sum
+      - name: phosphord for the PC
+        run: |
+          cmake -S system -B build-pc -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-pc -j"$(nproc)" --target phosphord
+          echo "PHOSD_BIN=$PWD/build-pc/phosphord" >> "$GITHUB_ENV"
+      - name: Phosphor for Windows
+        working-directory: apps/windows
+        run: |
+          go vet ./...
+          GOOS=windows go vet ./...
+          go test -count=1 ./...
+          # the end-to-end one a few more times: it's about timing
+          go test -count=5 -run TestE2E -v . | grep -E "^(---|ok|FAIL)|e2e_lookup"
+      - name: phosphor-link
+        working-directory: tools/phosphor-link
+        run: |
+          go vet ./...
+          go test -count=1 -v -run TestE2E . | grep -E "^(---|ok|FAIL)|busy_e2e"
+          go test -count=1 ./...

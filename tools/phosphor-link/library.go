@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -80,21 +82,78 @@ func normAddress(a string) (string, error) {
 	return a, nil
 }
 
-// do sends a request to phosphord and returns the body (JSON or image).
+// busyTries: a request the MiSTer is too busy for is sent again this many times (about 30 seconds in all)
+var busyTries = 20
+
+// busyWait: a short wait, a little longer each time, with some jitter
+func busyWait(try int) time.Duration {
+	ms := 250 * (try + 1)
+	if ms > 2000 {
+		ms = 2000
+	}
+	return time.Duration(ms+rand.Intn(250)) * time.Millisecond
+}
+
+// cutOff: the connection was made and then reset or closed before an answer (not: no connection at all,
+// or no answer in time)
+func cutOff(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return false
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return false
+	}
+	return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "readLoopPeekFailLocked") ||
+		strings.Contains(err.Error(), "server closed") || strings.Contains(err.Error(), "forcibly closed") ||
+		strings.Contains(err.Error(), "connection reset")
+}
+
+// do sends a request to phosphord and returns the body (JSON or image). The MiSTer serves a few connections
+// from one address at once (the PC app looking up box art can use them all) and answers more with 503 "busy",
+// before reading them: those are sent again after a moment. So is an upload whose connection was cut off
+// (a busy MiSTer drops the rest of a big upload, which can cut off its answer); an upload only replaces a file.
 func libDo(c libConfig, method, path string, body io.Reader, ctype string) ([]byte, string, error) {
-	req, err := http.NewRequest(method, "http://"+c.Address+path, body)
-	if err != nil {
-		return nil, "", err
+	var data []byte
+	if body != nil {
+		b, err := io.ReadAll(body)
+		if err != nil {
+			return nil, "", err
+		}
+		data = b
 	}
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
-	if ctype != "" {
-		req.Header.Set("Content-Type", ctype)
-	}
-	resp, err := httpc.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("can't reach the MiSTer at %s (is it on, on this network, with Remote access turned on?): %v", c.Address, err)
+	var resp *http.Response
+	for try := 0; ; try++ {
+		var rd io.Reader
+		if body != nil {
+			rd = bytes.NewReader(data)
+		}
+		req, err := http.NewRequest(method, "http://"+c.Address+path, rd)
+		if err != nil {
+			return nil, "", err
+		}
+		if c.Token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.Token)
+		}
+		if ctype != "" {
+			req.Header.Set("Content-Type", ctype)
+		}
+		resp, err = httpc.Do(req)
+		if err != nil {
+			if method == http.MethodPut && try < busyTries && cutOff(err) {
+				time.Sleep(busyWait(try))
+				continue
+			}
+			return nil, "", fmt.Errorf("can't reach the MiSTer at %s (is it on, on this network, with Remote access turned on?): %v", c.Address, err)
+		}
+		if resp.StatusCode != 503 || resp.Header.Get("Retry-After") == "" || try >= busyTries {
+			break
+		}
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		time.Sleep(busyWait(try))
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
