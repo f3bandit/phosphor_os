@@ -31,6 +31,22 @@
     "system_video_": {
       "status": "keep",
       "note": "Update All's CRT video mode: Phosphor leaves it as Update All sets it."
+    },
+    "names_txt_": {
+      "status": "safe",
+      "note": "Core names for MiSTer's own menu: Phosphor's library uses its own names."
+    },
+    "analogue_pocket_": {
+      "status": "safe",
+      "note": "Analogue Pocket tools: nothing of Phosphor's is touched."
+    },
+    "patrons_": {
+      "status": "safe",
+      "note": "Update All's own screen only."
+    },
+    "arcade_roms_database_": {
+      "status": "safe",
+      "note": "Arcade ROMs."
     }
   },
   "items": {
@@ -261,6 +277,34 @@
     "entry:tools_and_scripts_menu/Analogue Pocket": {
       "status": "safe",
       "note": "Analogue Pocket tools: nothing of Phosphor's is touched."
+    },
+    "db:MultiDatabases/disc-tools": {
+      "status": "safe",
+      "note": "A script you start from MiSTer's Scripts folder to rip or burn CDs: it doesn't start at boot or replace anything of Phosphor's. Phosphor saves a copy of a game disc itself too (Settings › Discs); don't use both on the same disc at once."
+    },
+    "entry:other_cores_menu/Hybrid Cores": {
+      "status": "safe",
+      "note": "Hybrid FPGA/ARM cores: Phosphor's Main starts their engines itself."
+    },
+    "entry:extra_content_menu/Arcade ROMs Database": {
+      "status": "safe",
+      "note": "Arcade ROMs."
+    },
+    "entry:extra_content_menu/Game Manuals (EN) DBs": {
+      "status": "safe",
+      "note": "Manuals: nothing of Phosphor's is touched."
+    },
+    "entry:system_options_menu/Mirror": {
+      "status": "safe",
+      "note": "Where Update All downloads from."
+    },
+    "var:i2c2oled_files_downloader": {
+      "status": "safe",
+      "note": "Core art on a small i2c display: reads what's running, changes nothing of Phosphor's."
+    },
+    "var:tty2oled_files_downloader": {
+      "status": "safe",
+      "note": "Core art on a small display over USB serial: reads what's running, changes nothing of Phosphor's."
     }
   },
   "values": {

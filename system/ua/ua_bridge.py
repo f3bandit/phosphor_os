@@ -236,7 +236,8 @@ class Bridge:
         if any(k in flat for k in ('calculate_needs_save', 'device_login', 'calculate_has_right_available_code',
                                    '"target": "abort"', 'retroaccount_', 'patrons_menu')):
             return True
-        return self.clean(e.get('title', '')).upper().startswith(('SAVE', 'EXIT'))
+        t = self.clean(self.interpolate(e.get('title', ''))).strip().upper()
+        return t.startswith(('SAVE', 'EXIT')) or t in ('BACK', '#', '')
 
     def list(self):
         menus = {}
