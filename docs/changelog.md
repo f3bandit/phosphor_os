@@ -3,6 +3,21 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.64
+
+### New
+- **RetroSpy, Phosphor edition, included with Phosphor for Windows (0.2.54).** RetroSpy (by zoggins and
+  contributors, based on jaburns's NintendoSpy; GPL-3.0, a separate program: github.com/f3bandit/RetroSpy)
+  with a SuperStation (Phosphor) source: it asks Phosphor which controller is active (Player 1's, or a
+  player you pick) and draws it the way Phosphor's controller test does (Xbox-style, PlayStation, Switch
+  Pro, NES, SNES, PC Engine, Genesis, arcade sticks...), lit live, redrawn when the controller changes, on a
+  dark, green-screen or transparent background for OBS. Phosphor's look for the whole app; RetroSpy's other
+  sources and skins are all still there. Settings > Controllers > RetroSpy in Phosphor for Windows opens it
+  on the SS1 and starts it. Phosphor for Windows' update keeps it up to date (in RetroSpy\ next to
+  Phosphor.exe).
+- phosphord's "retrospy" request also gives each controller's layout, which of its jsN buttons and axes each
+  control is, the active controller and the layouts' drawings.
+
 ## 0.27.63
 
 ### Fixed
