@@ -3004,7 +3004,11 @@ static void ua_key(pkey_t k)
 		cJSON *w = api_call("{\"cmd\":\"wifi\"}");
 		int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(w ? cJSON_GetObjectItem(w, "status") : NULL, "connected"));
 		cJSON_Delete(w);
-		cores_start_job(net, 1);
+		if (!net) { toast_show("Connect to a network first"); return; }
+		/* through phosphord, so its copy of Update All's settings is read again after the run */
+		cJSON *r = api_call("{\"cmd\":\"ua\",\"do\":\"run\"}");
+		if (!api_ok(r)) cores_start_job(net, 1);
+		cJSON_Delete(r);
 		return;
 	}
 	if (!ua.list) return;
@@ -8338,7 +8342,11 @@ static void script_requests(void)
 	fclose(f);
 	unlink(p);
 	path[strcspn(path, "\r\n")] = 0;
-	if (!path[0] || strstr(path, "/../") || !strstr(path, "/Scripts/")) return;
+	/* a script in Scripts, or Phosphor's own update wrappers (a restore point first, then the updater) */
+	size_t pl = strlen(path);
+	int wrapper = (pl > 30 && !strcmp(path + pl - 30, "/phosphor/scripts/update_all.sh")) ||
+	              (pl > 26 && !strcmp(path + pl - 26, "/phosphor/scripts/update.sh"));
+	if (!path[0] || strstr(path, "/../") || (!strstr(path, "/Scripts/") && !wrapper)) return;
 	plog("scripts: %s asked from the app", path);
 	run_script(path);
 }
