@@ -27,6 +27,7 @@
 #include "sdrepair.h"
 #include "lvgl.h"
 #include <signal.h>
+#include <ucontext.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,11 +217,34 @@ static void fb_black(const char *fbdev)
 }
 
 /* stopped (an update, Reload, phosphor.sh stop): the console back to text mode first, for the same reason */
-static void on_term(int sig)
+/* how the shell ended, in its log: a stop asked for (who by), or a crash (where: the program counter and
+   the return address, for addr2line on an unstripped build) */
+static void say(const char *s) { if (write(2, s, strlen(s)) < 0) {} }
+static void hex(char *o, unsigned long v) { static const char d[] = "0123456789abcdef"; for (int i = 7; i >= 0; i--) { o[i] = d[v & 15]; v >>= 4; } o[8] = 0; }
+static void on_term(int sig, siginfo_t *si, void *uc)
 {
-	(void)sig;
+	(void)uc;
+	char b[120], n[12];
+	snprintf(b, sizeof(b), "phosphor: stopped by signal %d from pid %d\n", sig, si ? (int)si->si_pid : -1);
+	(void)n;
+	say(b);
 	console_text();
 	_exit(0);
+}
+static void on_crash(int sig, siginfo_t *si, void *ucv)
+{
+	char b[160], a[9], pc[9] = "?", lr[9] = "?";
+	hex(a, (unsigned long)(si ? si->si_addr : 0));
+#if defined(__arm__)
+	ucontext_t *uc = ucv;
+	if (uc) { hex(pc, uc->uc_mcontext.arm_pc); hex(lr, uc->uc_mcontext.arm_lr); }
+#else
+	(void)ucv;
+#endif
+	snprintf(b, sizeof(b), "phosphor: CRASH signal %d at address %s, pc %s, lr %s\n", sig, a, pc, lr);
+	say(b);
+	signal(sig, SIG_DFL);
+	raise(sig);
 }
 
 static char **g_argv;                          /* (to start again at a new screen size) */
@@ -250,11 +274,30 @@ static void restart_self(void)
 	_exit(1);
 }
 
+/* what the screen had to redraw since the last stall check: its invalidated area, in pixels (a stall that
+   repaints the whole 1080p screen shows up here, for the log) */
+static uint64_t inv_px;
+static void inv_count(lv_event_t *e)
+{
+	const lv_area_t *a = lv_event_get_param(e);
+	if (a) inv_px += (uint64_t)lv_area_get_width(a) * (uint64_t)lv_area_get_height(a);
+}
+
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 {
-	signal(SIGTERM, on_term);
-	signal(SIGINT, on_term);
-	signal(SIGHUP, on_term);
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_sigaction = on_term;
+	sa.sa_flags = SA_SIGINFO;
+	sigaction(SIGTERM, &sa, NULL);
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGHUP, &sa, NULL);
+	sa.sa_sigaction = on_crash;
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGILL, &sa, NULL);
+	sigaction(SIGFPE, &sa, NULL);
+	sigaction(SIGABRT, &sa, NULL);
 	lv_tick_set_cb(mono_ms);
 	int mw = 0, mh = 0;
 	/* "full": 0x0, which Main turns into the size it sends to the TV */
@@ -292,6 +335,7 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 	console_quiet();
 	fb_black(fbdev);
 	lv_display_t *d = lv_linux_fbdev_create();
+	lv_display_add_event_cb(d, inv_count, LV_EVENT_INVALIDATE_AREA, NULL);
 	if (!d) { plog("can't create the framebuffer display"); return 1; }
 	lv_linux_fbdev_set_file(d, fbdev);
 	int w = lv_display_get_horizontal_resolution(d), h = lv_display_get_vertical_resolution(d);
@@ -403,7 +447,9 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		uint32_t wait = lv_timer_handler();
 		uint32_t t_d = mono_ms();
 		/* a stall (the menu not answering the controller): what it was busy with, for the log */
-		if (t_d - t_a >= 250) plog("slow: %u ms (keys %u, timers %u, drawing %u)", t_d - t_a, t_b - t_a, t_c - t_b, t_d - t_c);
+		if (t_d - t_a >= 250) plog("slow: %u ms (keys %u, timers %u, drawing %u, %u%% of the screen) (screen %d)", t_d - t_a, t_b - t_a, t_c - t_b, t_d - t_c,
+		                           (unsigned)(inv_px * 100 / ((uint64_t)lv_display_get_horizontal_resolution(lv_display_get_default()) * lv_display_get_vertical_resolution(lv_display_get_default()) + 1)), ui_screen());
+		inv_px = 0;
 		uint32_t cap = (uint32_t)ui_max_sleep();
 		if (input_held() || redraw_at) cap = 16;
 		if (crt_flip_waiting()) cap = 10;

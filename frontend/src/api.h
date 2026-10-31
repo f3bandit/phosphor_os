@@ -22,6 +22,8 @@ cJSON *api_call_json(int ms, const cJSON *req);   /* any size; ms for the answer
  * The same key asked again before it was sent replaces the earlier ask. */
 void api_bg_ask(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 cJSON *api_bg_take(const char *key);
+/* a screen's repeated poll (see api.c): the newest background answer, asked again; NULL while on its way */
+cJSON *api_poll(const char *key, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 int api_bg_waiting(const char *key);   /* asked and not sent yet */
 
 /* reply helpers */
