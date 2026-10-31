@@ -2,7 +2,7 @@
   "version": 1,
   "checked": "2026-10-31",
   "checked_with": "Update All 2.11",
-  "about": "Phosphor's status for Update All's items: safe, guard (Phosphor blocks it; Allow overrides), warn (works, with a catch), keep (Phosphor leaves it alone). Anything not here is untested. Keys: var:<variable>, db:<database id>, entry:<menu>/<title>; menus: a menu id prefix for all of its entries.",
+  "about": "Phosphor's status for Update All's items: merged (built into Phosphor: its own Main runs it), safe, guard (Phosphor blocks it; Allow overrides), warn (works, with a catch), keep (Phosphor leaves it alone). Anything not here is untested; a menu shows what's inside it. Keys: var:<variable>, db:<database id>, entry:<menu>/<title>; menus: a menu id prefix for all of its entries.",
   "menus": {
     "game_artwork_": {
       "status": "safe",
@@ -71,12 +71,12 @@
       "note": "BIOS files for the cores."
     },
     "db:theypsilon/RetroAchievementsDB_MiSTer": {
-      "status": "safe",
-      "note": "odelot's RetroAchievements cores: built into Phosphor's Main, which stays for them."
+      "status": "merged",
+      "note": "Built into Phosphor: odelot's RetroAchievements support is in Phosphor's Main, which stays for these cores."
     },
     "db:MultiDatabases/physical-disc": {
-      "status": "safe",
-      "note": "Physical CD support is built into Phosphor's Main, which stays for it."
+      "status": "merged",
+      "note": "Built into Phosphor: physical CD support is in Phosphor's Main, which stays for it (Settings › Discs)."
     },
     "var:unofficial_updater": {
       "status": "safe",
@@ -115,24 +115,24 @@
       "note": "A music player core."
     },
     "db:MultiDatabases/maldita-castilla": {
-      "status": "safe",
-      "note": "A hybrid core: Phosphor's Main starts its engine itself."
+      "status": "merged",
+      "note": "Built into Phosphor: Phosphor's Main starts the game's engine itself (hybrid core)."
     },
     "db:MultiDatabases/sonic-mania": {
-      "status": "safe",
-      "note": "Phosphor runs it with its own build of the game's Main (today's Main, Phosphor's menu). Needs Data.rsdk from your copy."
+      "status": "merged",
+      "note": "Built into Phosphor: Phosphor runs it with its own build of the game's Main (Phosphor's in-game menu, back to Phosphor on Quit). Needs Data.rsdk from your copy."
     },
     "db:MultiDatabases/duke3d": {
-      "status": "safe",
-      "note": "Runs inside Phosphor's Main. Needs duke3d.grp from your copy."
+      "status": "merged",
+      "note": "Built into Phosphor: runs inside Phosphor's Main. Needs duke3d.grp from your copy."
     },
     "db:MultiDatabases/mister-quake": {
-      "status": "safe",
-      "note": "Runs inside Phosphor's Main. Needs PAK0.PAK from your copy."
+      "status": "merged",
+      "note": "Built into Phosphor: runs inside Phosphor's Main. Needs PAK0.PAK from your copy."
     },
     "db:MultiDatabases/3s-arm": {
-      "status": "safe",
-      "note": "Phosphor runs it with its own build of the game's Main (today's Main, Phosphor's menu)."
+      "status": "merged",
+      "note": "Built into Phosphor: Phosphor runs it with its own build of the game's Main (Phosphor's in-game menu, back to Phosphor on Quit)."
     },
     "db:MultiDatabases/nblood": {
       "status": "warn",
@@ -282,10 +282,6 @@
       "status": "safe",
       "note": "A script you start from MiSTer's Scripts folder to rip or burn CDs: it doesn't start at boot or replace anything of Phosphor's. Phosphor saves a copy of a game disc itself too (Settings › Discs); don't use both on the same disc at once."
     },
-    "entry:other_cores_menu/Hybrid Cores": {
-      "status": "safe",
-      "note": "Hybrid FPGA/ARM cores: Phosphor's Main starts their engines itself."
-    },
     "entry:extra_content_menu/Arcade ROMs Database": {
       "status": "safe",
       "note": "Arcade ROMs."
@@ -305,6 +301,10 @@
     "var:tty2oled_files_downloader": {
       "status": "safe",
       "note": "Core art on a small display over USB serial: reads what's running, changes nothing of Phosphor's."
+    },
+    "entry:system_options_menu/Database Manager": {
+      "status": "safe",
+      "note": "Update All's own list of what's installed, to update or uninstall. Here, each item's Uninstall and Clean up do the same through it."
     }
   },
   "values": {

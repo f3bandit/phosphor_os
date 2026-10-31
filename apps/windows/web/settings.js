@@ -526,9 +526,9 @@ class AppSettings {
 	async tUA(b) {
 		const alive = this.alive;
 		const st = this.uaSt = this.uaSt || { stack: [], filter: 0, q: "" };
-		const FILTERS = [["all", "Show: all"], ["guard", "Show: guarded"], ["warn", "Show: warnings"], ["untested", "Show: untested"], ["installed", "Show: installed"]];
-		const WORD = { safe: "Safe", guard: "Guarded", warn: "Warning", keep: "Left alone", untested: "Untested" };
-		const TAG = { safe: "g", guard: "c", warn: "w" };
+		const FILTERS = [["all", "Show: all"], ["merged", "Show: built in"], ["guard", "Show: guarded"], ["warn", "Show: warnings"], ["untested", "Show: untested"], ["installed", "Show: installed"]];
+		const WORD = { merged: "Built in", safe: "Safe", guard: "Guarded", warn: "Warning", keep: "Left alone", untested: "Untested", menu: "Menu" };
+		const TAG = { merged: "g", safe: "g", guard: "c", warn: "w" };
 		b.append(h(`<div class="uatop"><input type="search" id="ua_q" placeholder="Search: cores, scripts, artwork…" value="${esc(st.q)}" data-nav>
 			<button class="btn" id="ua_f" data-nav>${FILTERS[st.filter][1]}</button><button class="btn" id="ua_clean" data-nav>Clean up</button><button class="btn primary" id="ua_run" data-nav>Run Update All</button></div>
 			<div class="split"><div class="list" id="ual"><div class="empty"><span class="spin"></span> Reading Update All's settings…</div></div><div class="panel" id="uap"></div></div>`));
@@ -564,7 +564,7 @@ class AppSettings {
 			cur_e = e;
 			const p = $("#uap");
 			if (!p) return;
-			if (!e) { p.innerHTML = `<h2>Update All</h2><p class="note">Update All ${esc(L.version || "")}'s own settings, read from the SS1. Every item shows what Update All says about it and what Phosphor says: Safe, Guarded (Phosphor blocks it; you can allow it), Warning, Left alone, or Untested (new since Phosphor checked).</p>`; return; }
+			if (!e) { p.innerHTML = `<h2>Update All</h2><p class="note">Update All ${esc(L.version || "")}'s own settings, read from the SS1. Every item shows what Update All says about it and what Phosphor says: Built in (Phosphor runs it itself), Safe, Guarded (Phosphor blocks it; you can allow it), Warning, Left alone, or Untested (new since Phosphor checked).</p>`; return; }
 			const s = status(e), sj = e.status || {};
 			const said = [e.desc, ...(e.info || [])].filter(Boolean).join("\n");
 			const note = sj.note || (s === "untested" && !(e.submenu && !e.toggles) ? "Nobody has checked this with Phosphor yet. If it changes MiSTer's main menu or starts at boot, the guard catches that after the run." : "");
@@ -572,7 +572,7 @@ class AppSettings {
 			p.innerHTML = `<h2>${esc(e.title)}</h2>
 				${e.submenu && !e.toggles ? "" : `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap"><span class="tag ${TAG[s] || ""}">${WORD[s] || "Untested"}</span>${sj.allowed ? `<span class="note" style="margin:0">allowed by you</span>` : ""}${inst ? `<span class="note" style="margin:0">installed</span>` : ""}</div>`}
 				${said ? `<div class="sub" style="margin-top:1.2rem">${spaced("Update All says")}</div><p style="white-space:pre-line;margin-top:.4rem">${esc(said)}</p>` : ""}
-				${note ? `<div class="sub" style="margin-top:1.2rem">${spaced("Phosphor says")}</div><p style="margin-top:.4rem">${esc(note)}</p>` : ""}
+				${note ? `<div class="sub" style="margin-top:1.2rem">${spaced(s === "menu" ? "In this menu" : "Phosphor says")}</div><p style="margin-top:.4rem">${esc(note)}</p>` : ""}
 				<div class="acts">${e.submenu && !e.toggles ? `<button class="btn primary" id="ua_open" data-nav>Open</button>` : ""}
 				${acts(e) ? `<button class="btn primary" id="ua_chg" data-nav>${blocked(e) ? "Allow…" : e.value && !/^(true|false)$/.test(e.value) ? "Next choice" : e.on || e.value === "true" ? "Turn off" : "Turn on"}</button>` : ""}
 				${sj.allowed ? `<button class="btn" id="ua_block" data-nav>Block it again</button>` : ""}
@@ -581,12 +581,13 @@ class AppSettings {
 			const o = $("#ua_open"); if (o) o.onclick = () => open(e);
 			const c = $("#ua_chg"); if (c) c.onclick = () => change(e);
 			const r = $("#ua_rm"); if (r) r.onclick = () => uninstall(e);
-			const k = $("#ua_block"); if (k) k.onclick = async () => { try { await ss1({ cmd: "ua", do: "allow", args: [e.key, "off"] }); toast("Blocked again"); await draw(); } catch (x) { toast(x.message); } };
+			const k = $("#ua_block"); if (k) k.onclick = async () => { try { await ss1({ cmd: "ua", do: "allow", args: [e.key, "off"] }); toast("Blocked again"); await refresh(); } catch (x) { toast(x.message); } };
 		};
 		const row = e => {
 			const s = status(e);
 			const el = h(`<div class="row" data-nav><span class="n">${esc(e.title)}</span>${e.submenu && !e.toggles ? "" : `<span class="tag ${TAG[s] || ""}">${WORD[s] || "Untested"}</span>`}<span class="v" style="min-width:4.5rem;text-align:right">${esc(valText(e))}</span></div>`).firstChild;
 			el._key = e.menu + "/" + e.index;
+			if (e.submenu && !e.toggles) el.dataset.open = "1";      /* a menu opens on one click */
 			el._onfocus = () => detail(e);
 			el.onclick = () => e.submenu && !e.toggles ? open(e) : acts(e) ? change(e) : null;
 			return el;
@@ -604,6 +605,7 @@ class AppSettings {
 				if (st.stack.length) {
 					const bk = h(`<div class="row" data-nav><span class="n">‹ Back to ${esc(st.stack.length > 1 ? menu(st.stack[st.stack.length - 2]).title : "Update All")}</span></div>`).firstChild;
 					bk._key = "back";
+					bk.dataset.open = "1";
 					bk._onfocus = () => detail(null);
 					bk.onclick = () => { st.stack.pop(); fill(); };
 					l.append(bk);
@@ -637,9 +639,10 @@ class AppSettings {
 					const pick = await askChoice(p.header || "Update All", (p.text || []).join("\n"), p.buttons || ["OK"]);
 					if (pick !== null) return change(e, pick);
 				} else await askChoice(p.header || "Update All", (p.text || []).join("\n"), ["OK"]);
-			} else if (!r.ok) toast(r.error || "That didn't work");
+			}
+			if (r.navigate && L && L.menus[r.navigate]) { st.stack.push(r.navigate); fill(""); } else if (!r.ok) toast(r.error || "That didn't work");
 			else if (r.skipped) toast("Skipped a choice Phosphor guards");
-			await draw();
+			await refresh();
 		};
 		const uninstall = async e => {
 			if (busy) { toast("Already uninstalling something"); return; }
@@ -657,6 +660,7 @@ class AppSettings {
 			this.every(2000, draw);
 		};
 		/* the list from phosphord; true while it's still loading or uninstalling (asked again) */
+		const refresh = async () => { if (await draw()) this.every(1500, draw); };
 		const draw = async () => {
 			let r;
 			try { r = await ss1({ cmd: "ua" }); }

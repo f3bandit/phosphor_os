@@ -58,7 +58,7 @@ static int stale_locked(void)
 	char b[600];
 	bridge_path(b, sizeof(b));
 	snprintf(st, sizeof(st), "%.*s/status.json", (int)(strrchr(b, '/') ? strrchr(b, '/') - b : 0), b);
-	time_t a = mtime_of(z) + mtime_of(st);
+	time_t a = mtime_of(z) + mtime_of(st) + mtime_of(b);     /* (Phosphor's bridge updated too) */
 	if (a == pyz_at) return 0;
 	pyz_at = a;
 	return list_json != NULL;

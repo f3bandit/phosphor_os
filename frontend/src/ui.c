@@ -2632,11 +2632,12 @@ static int ua_is_clean(void) { return ua.depth == 0 && ua.list && ua_vl.sel == c
 static const char *ua_status(cJSON *e) { cJSON *s = cJSON_GetObjectItem(e, "status"); const char *v = api_str(s, "status_now"); return v ? v : api_str(s, "status") ? api_str(s, "status") : "untested"; }
 static const char *ua_status_word(const char *s)
 {
-	return !strcmp(s, "safe") ? "Safe" : !strcmp(s, "guard") ? "Guarded" : !strcmp(s, "warn") ? "Warning" : !strcmp(s, "keep") ? "Left alone" : "Untested";
+	return !strcmp(s, "merged") ? "Built in" : !strcmp(s, "safe") ? "Safe" : !strcmp(s, "guard") ? "Guarded" : !strcmp(s, "warn") ? "Warning" :
+	       !strcmp(s, "keep") ? "Left alone" : !strcmp(s, "menu") ? "Menu" : "Untested";
 }
 static lv_color_t ua_status_color(const char *s)
 {
-	return !strcmp(s, "safe") ? lv_color_hex(0x7bd88f) : !strcmp(s, "guard") ? PAL.acc : !strcmp(s, "warn") ? lv_color_hex(0xff9a66) : PAL.dim;
+	return !strcmp(s, "safe") || !strcmp(s, "merged") ? lv_color_hex(0x7bd88f) : !strcmp(s, "guard") ? PAL.acc : !strcmp(s, "warn") ? lv_color_hex(0xff9a66) : PAL.dim;
 }
 static int ua_installed(cJSON *e)
 {
@@ -2713,8 +2714,8 @@ static void ua_detail(void)
 		return;
 	}
 	lv_label_set_text(ua.h1, "UPDATE ALL SAYS");
-	lv_label_set_text(ua.h2, "PHOSPHOR SAYS");
 	cJSON *e = ua_cur();
+	lv_label_set_text(ua.h2, e && !strcmp(ua_status(e), "menu") ? "IN THIS MENU" : "PHOSPHOR SAYS");
 	lv_label_set_text(ua.name, e && api_str(e, "title") ? api_str(e, "title") : "");
 	const char *s = e ? ua_status(e) : "untested";
 	char b[80];
@@ -2923,8 +2924,19 @@ static void ua_result(cJSON *r)
 		}
 	} else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "That didn't work");
 	else if (api_str(r, "skipped")) toast_show("Skipped a value Phosphor guards");
+	/* Update All's own chain opened a menu (after its message): that menu, under the message */
+	const char *nav = api_str(r, "navigate");
+	if (nav && ua.depth < 8 && cJSON_GetObjectItem(cJSON_GetObjectItem(ua.list, "menus"), nav)) {
+		ua.sel[ua.depth] = ua_vl.sel;
+		snprintf(ua.stack[ua.depth], sizeof(ua.stack[0]), "%s", nav);
+		ua.depth++;
+		ua_vl.sel = ua_vl.top = 0;
+	}
 	cJSON_Delete(r);
 	ua_refresh();
+	ua_vl.count = ua_count();
+	vlist_refresh(&ua_vl);
+	ua_detail();
 }
 static void ua_do_act(const char *menu, int idx, const char *act, int choice)
 {

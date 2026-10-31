@@ -198,9 +198,16 @@ class Bridge:
         for eff in acts.get('ok') or []:
             if isinstance(eff, dict) and eff.get('type') == 'navigate' and eff.get('target') in self.items:
                 out['submenu'] = eff['target']
+            # a menu with an introduction first (Hybrid Cores: "About Hybrid Cores", then its menu): a menu,
+            # its introduction shown with Update All's description
+            elif isinstance(eff, dict) and eff.get('ui') == 'message' and len(acts.get('ok') or []) == 1:
+                nav = [x.get('target') for x in eff.get('effects') or [] if isinstance(x, dict) and x.get('type') == 'navigate']
+                if nav and nav[0] in self.items:
+                    out['submenu'] = nav[0]
+                    out['info'] = [self.clean(self.interpolate(t)) for t in eff.get('text', []) if t.strip()]
         out['actions'] = sorted(a for a in acts if a in ('ok', 'toggle', 'info'))
         info = acts.get('info')
-        if info:
+        if info and 'info' not in out:
             for eff in info:
                 if isinstance(eff, dict) and eff.get('ui') in ('message', 'confirm'):
                     out['info'] = [self.clean(self.interpolate(t)) for t in eff.get('text', [])]
@@ -250,6 +257,34 @@ class Bridge:
                     continue
                 entries.append(self.entry_info(mid, i, e))
             menus[mid] = {'title': self.clean(self.interpolate(it.get('header', ''))), 'entries': entries}
+        # a menu entry with no word of its own: what's inside it, counted (its menus' items, all the way down)
+        def inside(mid, seen):
+            n = {}
+            if mid in seen or mid not in menus:
+                return n
+            seen.add(mid)
+            for e in menus[mid]['entries']:
+                if e.get('submenu') and not e.get('toggles') and e['status'].get('status') == 'menu':
+                    for k, v in inside(e['submenu'], seen).items():
+                        n[k] = n.get(k, 0) + v
+                else:
+                    st = e['status'].get('status_now') or e['status'].get('status')
+                    n[st] = n.get(st, 0) + 1
+            return n
+        for m in menus.values():
+            for e in m['entries']:
+                if e.get('submenu') and not e.get('toggles') and e['status'].get('status') == 'untested' \
+                        and e['key'] not in (self.status.get('items') or {}):
+                    e['status'] = {'status': 'menu', 'note': ''}
+        for m in menus.values():
+            for e in m['entries']:
+                if e['status'].get('status') == 'menu':
+                    n = inside(e['submenu'], set())
+                    words = [('merged', 'built into Phosphor'), ('safe', 'safe'), ('guard', 'guarded'), ('warn', 'with a warning'),
+                             ('keep', 'left alone'), ('untested', 'untested')]
+                    parts = ['%d %s' % (n[k], w) for k, w in words if n.get(k)]
+                    e['status']['note'] = ('Inside: ' + ', '.join(parts) + '.') if parts else ''
+                    e['status']['counts'] = n
         root = 'main_menu_account' if 'main_menu_account' in menus else 'main_menu_login'
         installed = sorted(k[:-len('_installed')] for k, v in self.ui.values.items() if k.endswith('_installed') and v == 'true')
         return {'ok': True, 'version': self.ui.get_value('update_all_version'), 'root': root, 'menus': menus,
@@ -285,6 +320,7 @@ class Bridge:
                         self.save()
                         return {'ok': True, 'saved': True, 'skipped': nxt, 'entry': self.entry_info(menu_id, idx, e)}
         res = _EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(chain)
+        nav = self._navigate_of(res)
         if isinstance(res, dict) and res.get('ui') in ('message', 'confirm'):
             buttons = [a.get('title', '') for a in res.get('actions', []) if isinstance(a, dict)]
             if choice is None or res.get('ui') == 'message':
@@ -293,12 +329,28 @@ class Bridge:
                 if res.get('ui') == 'confirm':
                     return {'ok': True, 'prompt': prompt, 'saved': False}
                 self.save()                          # (a message only reports: the change stands)
-                return {'ok': True, 'prompt': prompt, 'saved': True}
+                r = {'ok': True, 'prompt': prompt, 'saved': True}
+                if nav:
+                    r['navigate'] = nav
+                return r
             picked = [a for a in res.get('actions', []) if isinstance(a, dict)][int(choice)]
             if picked.get('type') == 'fixed':
-                _EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(picked.get('fixed', []))
+                nav = self._navigate_of(_EffectResolver(self.ui, data, self.ui.effects).resolve_effect_chain(picked.get('fixed', [])))
         self.save()
-        return {'ok': True, 'saved': True, 'entry': self.entry_info(menu_id, idx, e)}
+        r = {'ok': True, 'saved': True, 'entry': self.entry_info(menu_id, idx, e)}
+        if nav:
+            r['navigate'] = nav
+        return r
+
+    def _navigate_of(self, res):
+        # Update All's engine hands a navigate back to its screen: the menu to open, when it's one of the list's
+        if isinstance(res, dict):
+            if res.get('type') == 'navigate' and res.get('target') in self.items:
+                return res['target']
+            for x in res.get('effects') or []:
+                if isinstance(x, dict) and x.get('type') == 'navigate' and x.get('target') in self.items:
+                    return x['target']
+        return None
 
     def save(self):
         self.screen.save(self.ui)
