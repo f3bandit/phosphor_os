@@ -203,6 +203,15 @@ int mainlink_quit_game(void)
 	return say(access("/media/fat/menu.rbf", F_OK) == 0 ? "launch /media/fat/menu.rbf" : "launch /media/fat/phosphor/cores/menu_phosphor.rbf");
 }
 
+/* a core (or an MGL) under /media: a game port's Check again */
+int mainlink_launch(const char *path)
+{
+	if (fd < 0 || !path || !*path || strchr(path, '\n')) return -1;
+	char b[600];
+	snprintf(b, sizeof(b), "launch %s", path);
+	return say(b);
+}
+
 int mainlink_script(const char *path)
 {
 	if (fd < 0 || !scripts || hidden || script_on) return -1;
