@@ -64,6 +64,7 @@ func routes(mux *http.ServeMux) {
 	})
 	h("/api/theme", apiTheme)
 	h("/api/accounts", apiAccounts)
+	h("/api/artfolder", apiArtFolder)
 	h("/api/explore", func(w http.ResponseWriter, r *http.Request) { // the SS1's shared folders in Explorer
 		if !openShare() {
 			fail(w, "not paired")

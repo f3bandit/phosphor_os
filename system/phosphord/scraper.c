@@ -34,9 +34,9 @@
 #include <time.h>
 #include <unistd.h>
 
-static const source_t *const ALL[] = { &SRC_LIBRETRO, &SRC_ARCADEDB, &SRC_LAUNCHBOX, &SRC_TGDB, &SRC_SCREENSCRAPER, &SRC_IGDB };
+static const source_t *const ALL[] = { &SRC_LOCAL, &SRC_LIBRETRO, &SRC_ARCADEDB, &SRC_LAUNCHBOX, &SRC_TGDB, &SRC_SCREENSCRAPER, &SRC_IGDB };
 #define NSRC (int)(sizeof(ALL) / sizeof(ALL[0]))
-static const char *DEFAULT_ORDER = "libretro, arcadedb, launchbox, thegamesdb, screenscraper, igdb";
+static const char *DEFAULT_ORDER = "local, libretro, arcadedb, launchbox, thegamesdb, screenscraper, igdb";
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv = PTHREAD_COND_INITIALIZER;
@@ -279,6 +279,8 @@ static int sources_in_order(const source_t **out)
 	int n = 0;
 	char buf[300], *save = NULL;
 	snprintf(buf, sizeof(buf), "%s", order);
+	/* an order saved before "Local files" existed (0.27.60): it goes first, as it's instant and offline */
+	if (!in_list(order, "local")) out[n++] = &SRC_LOCAL;
 	for (char *t = strtok_r(buf, ", ", &save); t; t = strtok_r(NULL, ", ", &save))
 		for (int i = 0; i < NSRC; i++) {
 			int dup = 0;
@@ -474,6 +476,10 @@ static int fetch_art(sqlite3 *db, sgame_t *g, sres_t *r, int from)
 	int trouble = 0;
 	snprintf(tmp, sizeof(tmp), "%s/scrape-art.img", p_tmp());
 	for (int i = from; i < r->nart; i++) {
+		if (!strncmp(r->art[i], "file:", 5)) {      /* Local files: straight from the drive, left as it is */
+			if (art_store_box(g->sys, g->key, r->art[i] + 5, rel, sizeof(rel)) == 0) { put_text(db, g->id, "art_box", rel); return 1; }
+			continue;
+		}
 		int rc = !strncmp(r->art[i], "pack:", 5) ? fanart_pack_get(r->art[i] + 5, tmp) : net_get_file(r->art[i], tmp);
 		if (rc < 0) { trouble = 1; continue; }
 		if (rc) continue;
@@ -650,22 +656,54 @@ static void mark(sqlite3 *db, long long gid, const char *state)
 	sqlite3_finalize(st);
 }
 
+/* a run for one system or one game (Look up this system / Look up now): the SS1's own run (under lk) */
+static char run_sys[32];
+static long long run_id;
+
+/* PENDING or MISSED, for one system / one game when asked; 0 if it didn't fit */
+static int where_scoped(char *out, size_t n, const char *from, const char *sys, long long id)
+{
+	char extra[120] = "";
+	if (id > 0) snprintf(extra, sizeof(extra), " AND g.id=%lld", id);
+	else if (sys && *sys) sqlite3_snprintf((int)sizeof(extra), extra, " AND g.system_id=%Q", sys);
+	return snprintf(out, n, "%s%s", from, extra) < (int)n;
+}
+
+/* a system or game asked for again: what wasn't found before is looked up again (and what's waiting
+   for a connection), then it's in the queue like anything new */
+static void scope_reset(sqlite3 *db, const char *sys, long long id)
+{
+	if (id > 0) { db_exec_id(db, "UPDATE games SET scrape=NULL WHERE id=?", id); return; }
+	if (!sys || !*sys) return;
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "UPDATE games SET scrape=NULL WHERE system_id=? AND scrape IN ('miss','later')", -1, &st, NULL) != SQLITE_OK) return;
+	sqlite3_bind_text(st, 1, sys, -1, SQLITE_TRANSIENT);
+	sqlite3_step(st);
+	sqlite3_finalize(st);
+}
+
 static void *thread(void *arg)
 {
 	(void)arg;
 	sqlite3 *db = db_open();
 	if (!db) return NULL;
-	char sql[1200];
-	snprintf(sql, sizeof(sql),
-	         "SELECT g.id, g.system_id, g.key, g.title,"
-	         " (SELECT crc32 FROM files WHERE game_id=g.id AND crc32 IS NOT NULL LIMIT 1),"
-	         " (SELECT serial FROM files WHERE game_id=g.id AND serial IS NOT NULL LIMIT 1) %s ORDER BY g.system_id, g.id LIMIT 1", PENDING);
+	char sql[1400], where[700];
 	for (;;) {
 		pthread_mutex_lock(&lk);
 		while (!kicked) pthread_cond_wait(&cv, &lk);
 		kicked = 0;
 		stop_now = 0;
+		char sys[32];
+		long long one = run_id;
+		snprintf(sys, sizeof(sys), "%s", run_sys);
+		run_sys[0] = 0;
+		run_id = 0;
 		pthread_mutex_unlock(&lk);
+		where_scoped(where, sizeof(where), PENDING, sys, one);
+		snprintf(sql, sizeof(sql),
+		         "SELECT g.id, g.system_id, g.key, g.title,"
+		         " (SELECT crc32 FROM files WHERE game_id=g.id AND crc32 IS NOT NULL LIMIT 1),"
+		         " (SELECT serial FROM files WHERE game_id=g.id AND serial IS NOT NULL LIMIT 1) %s ORDER BY g.system_id, g.id LIMIT 1", where);
 		if (!menu_up()) { scrape_status("Not while a game is running"); continue; }
 		pthread_mutex_lock(&lk);
 		int pc = pc_active();
@@ -674,10 +712,12 @@ static void *thread(void *arg)
 		cfg_load();
 		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");   /* network trouble last time: try again */
 		arcade_relook_once(db);
+		scope_reset(db, sys, one);
+		local_reset();                      /* local art folders are read afresh each run */
 		int worked = 0, fails = 0, cut = 0;
 		{
 			char csql[1300];
-			snprintf(csql, sizeof(csql), "SELECT COUNT(*) %s", PENDING);
+			snprintf(csql, sizeof(csql), "SELECT COUNT(*) %s", where);
 			sqlite3_stmt *cs;
 			int total = 0;
 			if (sqlite3_prepare_v2(db, csql, -1, &cs, NULL) == SQLITE_OK) {
@@ -764,10 +804,20 @@ void scraper_kick(void)
 	pthread_mutex_unlock(&lk);
 }
 
+void scraper_run_scope(const char *sys, long long id)
+{
+	pthread_mutex_lock(&lk);
+	snprintf(run_sys, sizeof(run_sys), "%s", sys ? sys : "");
+	run_id = id;
+	kicked = 1;
+	pthread_cond_signal(&cv);
+	pthread_mutex_unlock(&lk);
+}
+
 void scraper_set(sqlite3 *db, int on)
 {
 	(void)db;
-	if (on) scraper_kick();             /* Get box art: go through the games once */
+	if (on) scraper_run_scope(NULL, 0); /* Get box art: go through the games once */
 	else stop_now = 1;                  /* stop */
 }
 
@@ -822,7 +872,7 @@ int scraper_retry(sqlite3 *db, long long gid)
 	sqlite3_step(st);
 	sqlite3_finalize(st);
 	/* looked up the next time the user chooses Get box art */
-	return 0;
+	return sqlite3_changes(db) > 0 ? 0 : -1;
 }
 
 int scraper_sources(scrape_source_t *out, int max)
@@ -867,9 +917,22 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 	int miss = cJSON_IsTrue(cJSON_GetObjectItem(req, "miss"));
 	cJSON *offj = cJSON_GetObjectItem(req, "offset");
 	long offset = miss && cJSON_IsNumber(offj) && offj->valuedouble > 0 ? (long)offj->valuedouble : 0;
-	const char *from = miss ? MISSED : PENDING;
+	/* "system" (id) or "id": only that system / game (Look up this system, Look up now); asked for with
+	   "start", what wasn't found there before is looked up again */
+	const char *only_sys = cJSON_GetStringValue(cJSON_GetObjectItem(req, "system"));
+	cJSON *only_idj = cJSON_GetObjectItem(req, "id");
+	long long only_id = cJSON_IsNumber(only_idj) && only_idj->valuedouble > 0 ? (long long)only_idj->valuedouble : 0;
+	if (only_sys && (strlen(only_sys) >= 32 || !system_by_id(only_sys))) only_sys = NULL;
+	char fromb[700];
+	where_scoped(fromb, sizeof(fromb), miss ? MISSED : PENDING, only_sys, only_id);
+	const char *from = fromb;
 	cfg_load();
-	if (start && !miss) { db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'"); arcade_relook_once(db); }
+	if (start && !miss) {
+		db_exec(db, "UPDATE games SET scrape=NULL WHERE scrape='later'");
+		arcade_relook_once(db);
+		scope_reset(db, only_sys, only_id);
+		local_reset();                     /* the app's run: local art folders read afresh */
+	}
 	char sql[1600];
 	snprintf(sql, sizeof(sql), "SELECT COUNT(*) %s", from);
 	int total = count(db, sql);
@@ -937,6 +1000,61 @@ cJSON *scraper_todo(sqlite3 *db, cJSON *req)
 			for (int i = 0; i < F_COUNT; i++) if (sqlite3_column_int(st, 7 + i)) cJSON_AddItemToArray(has, cJSON_CreateString(COLS[i]));
 			cJSON_AddItemToArray(arr, g);
 		}
+		sqlite3_finalize(st);
+	}
+	return o;
+}
+
+/* {"cmd":"scrape_local","id"}: the Phosphor app's run asks the SS1 for Local files (they're on its drives):
+ * the game's art from there is stored straight away, its details filled where empty. Replies
+ * {"found", "art": the game has box art now, "fields": {...}} so the app knows what's still missing. */
+cJSON *scraper_local_one(sqlite3 *db, cJSON *req)
+{
+	cJSON *idj = cJSON_GetObjectItem(req, "id");
+	if (!cJSON_IsNumber(idj)) return NULL;
+	sgame_t g;
+	memset(&g, 0, sizeof(g));
+	g.id = (long long)idj->valuedouble;
+	sqlite3_stmt *st;
+	if (sqlite3_prepare_v2(db, "SELECT g.system_id, g.key, g.title, g.ref_name,"
+	                           " (SELECT crc32 FROM files WHERE game_id=g.id AND crc32 IS NOT NULL LIMIT 1),"
+	                           " (SELECT serial FROM files WHERE game_id=g.id AND serial IS NOT NULL LIMIT 1)"
+	                           " FROM games g WHERE g.id=?", -1, &st, NULL) != SQLITE_OK) return NULL;
+	sqlite3_bind_int64(st, 1, g.id);
+	if (sqlite3_step(st) != SQLITE_ROW) { sqlite3_finalize(st); return NULL; }
+	const unsigned char *t;
+	if ((t = sqlite3_column_text(st, 0))) snprintf(g.sys, sizeof(g.sys), "%s", t);
+	if ((t = sqlite3_column_text(st, 1))) snprintf(g.key, sizeof(g.key), "%s", t);
+	if ((t = sqlite3_column_text(st, 2))) snprintf(g.title, sizeof(g.title), "%s", t);
+	if ((t = sqlite3_column_text(st, 3))) snprintf(g.official, sizeof(g.official), "%s", t);
+	if ((t = sqlite3_column_text(st, 4))) snprintf(g.crc, sizeof(g.crc), "%s", t);
+	if ((t = sqlite3_column_text(st, 5))) snprintf(g.serial, sizeof(g.serial), "%s", t);
+	sqlite3_finalize(st);
+	const gsys_t *gs = system_by_id(g.sys);
+	g.disc = gs && gs->type == 's';
+	g.arcade = gs && gs->cat == CAT_ARCADE;
+	cfg_load();
+	cJSON *o = cJSON_CreateObject();
+	int found = 0;
+	if (source_on(&SRC_LOCAL)) {
+		sres_t r;
+		memset(&r, 0, sizeof(r));
+		found = SRC_LOCAL.lookup(db, &g, &r) == 1;
+		if (found) {
+			for (int i = 0; i < F_COUNT; i++) if (r.f[i] && *r.f[i]) put_text(db, g.id, COLS[i], r.f[i]);
+			if (!has_col(db, g.id, "art_box")) fetch_art(db, &g, &r, 0);
+		}
+		sres_free(&r);
+	}
+	cJSON_AddBoolToObject(o, "found", found);
+	cJSON_AddBoolToObject(o, "art", has_col(db, g.id, "art_box"));
+	cJSON *f = cJSON_AddObjectToObject(o, "fields");
+	for (int i = 0; i < F_COUNT; i++) {
+		char sql[120];
+		snprintf(sql, sizeof(sql), "SELECT %s FROM games WHERE id=?", COLS[i]);
+		if (sqlite3_prepare_v2(db, sql, -1, &st, NULL) != SQLITE_OK) continue;
+		sqlite3_bind_int64(st, 1, g.id);
+		if (sqlite3_step(st) == SQLITE_ROW && (t = sqlite3_column_text(st, 0)) && *t) cJSON_AddStringToObject(f, COLS[i], (const char *)t);
 		sqlite3_finalize(st);
 	}
 	return o;

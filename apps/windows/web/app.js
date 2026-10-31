@@ -118,7 +118,15 @@ function focus(el, quiet) {
 	const s = topScr();
 	if (s && s.focused) s.focused(el);
 }
+/* a drop-down list with the highlight on it: left / right (and Enter, A) step through its choices */
+function stepSelect(el, d) {
+	const n = el.options.length;
+	if (!n) return;
+	el.selectedIndex = (el.selectedIndex + d + n) % n;
+	el.dispatchEvent(new Event("change", { bubbles: true }));
+}
 function move(dx, dy) {
+	if (dx && cur && cur.matches("select") && navs().includes(cur)) { stepSelect(cur, dx); return; }
 	const all = navs();
 	if (!cur || !all.includes(cur)) { focus(all.find(e => !e.closest("#top")) || all[0]); return; }
 	const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
@@ -136,7 +144,11 @@ function move(dx, dy) {
 	}
 	if (best) focus(best);
 }
-function activate() { if (cur && !cur.matches("input, textarea")) cur.click(); else if (cur && cur._enter) cur._enter(); }
+function activate() {
+	if (cur && cur.matches("select")) stepSelect(cur, 1);
+	else if (cur && !cur.matches("input, textarea")) cur.click();
+	else if (cur && cur._enter) cur._enter();
+}
 
 /* ---------- screens: a stack ---------- */
 const stack = [];
@@ -162,8 +174,37 @@ let hintList = [], padMode = false;
 function setHints(list) {
 	hintList = list;
 	$("#hints").classList.toggle("pad", padMode);
-	$("#hints").innerHTML = list.map(([k, t]) => `<span class="hint"><kbd>${esc(padMode ? k : KEYS[k] || k)}</kbd>${esc(t)}</span>`).join("");
+	$("#hints").innerHTML = list.map(([k, t]) => `<span class="hint" data-k="${esc(k)}" role="button" tabindex="-1" title="Click, or press ${esc(KEYS[k] || k)}"><kbd>${esc(padMode ? k : KEYS[k] || k)}</kbd>${esc(t)}</span>`).join("");
 }
+/* one action by its button's name (a, b, x, y, lb, rb, start): the controller, the hints and the mouse share these */
+function doAct(name) {
+	touched = true;
+	const s = topScr();
+	if (lockwin) {   /* a locked window: only Back (its own close) and Choose */
+		if (name === "b" && lockwin._esc) lockwin._esc();
+		else if (name === "a") activate();
+		return;
+	}
+	switch (name) {
+	case "a": activate(); break;
+	case "b": if (!(s && s.back && s.back())) back(); break;
+	case "x": s && s.x && s.x(); break;
+	case "y": s && s.y ? s.y() : push(Search); break;
+	case "lb": s && s.tab && s.tab(-1); break;
+	case "rb": s && s.tab && s.tab(1); break;
+	case "start": s && s.start ? s.start() : push(AppSettings); break;
+	}
+}
+const HINT_ACT = { A: "a", B: "b", X: "x", Y: "y", Start: "start", "☰": "start" };
+/* the hints at the bottom can be clicked: each does what its key does (LB/RB: the left half goes left) */
+$("#hints").addEventListener("mousedown", e => e.preventDefault());   /* the highlight stays where it is */
+$("#hints").addEventListener("click", e => {
+	const el = e.target.closest(".hint");
+	if (!el) return;
+	const k = el.dataset.k;
+	if (k === "LB/RB") { const r = el.getBoundingClientRect(); doAct(e.clientX < r.left + r.width / 2 ? "lb" : "rb"); return; }
+	if (HINT_ACT[k]) doAct(HINT_ACT[k]);
+});
 function inputMode(pad) {
 	if (pad !== padMode) { padMode = pad; setHints(hintList); }
 }
@@ -217,6 +258,13 @@ document.addEventListener("click", e => {
 	const el = e.target.closest("[data-nav]");
 	if (el && el === picked) { picked = null; e.stopPropagation(); e.preventDefault(); }
 }, true);
+/* the mouse's back button goes Back, and so does a right-click (not in a text box: that keeps Paste) */
+document.addEventListener("mouseup", e => { if (e.button === 3) { e.preventDefault(); doAct("b"); } });
+document.addEventListener("contextmenu", e => {
+	if (e.target.closest("input, textarea, [contenteditable]") || String(getSelection() || "")) return;
+	e.preventDefault();
+	doAct("b");
+});
 document.addEventListener("dblclick", e => {
 	const el = e.target.closest(".row[data-nav]");
 	if (el && el === cur) el.click();
@@ -240,8 +288,8 @@ function padLoop() {
 		const now = performance.now(), s = topScr();
 		const act = {
 			up: () => move(0, -1), down: () => move(0, 1), left: () => move(-1, 0), right: () => move(1, 0),
-			a: activate, b: () => { if (!(s && s.back && s.back())) back(); }, x: () => s && s.x && s.x(), y: () => (s && s.y ? s.y() : push(Search)),
-			lb: () => s && s.tab && s.tab(-1), rb: () => s && s.tab && s.tab(1), start: () => (s && s.start ? s.start() : push(AppSettings)),
+			a: activate, b: () => doAct("b"), x: () => doAct("x"), y: () => doAct("y"),
+			lb: () => doAct("lb"), rb: () => doAct("rb"), start: () => doAct("start"),
 		};
 		for (const k in st) {
 			if (st[k] && !pad.held[k]) { touched = true; inputMode(true); act[k](); pad.next[k] = now + 400; }
@@ -830,12 +878,33 @@ class Game {
 			<div class="field"><label for="f-description">Description</label><textarea id="f-description" data-nav>${esc(g.description)}</textarea></div>
 			<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 1rem">${DETAIL_KEYS.map(([k, l]) => f(k, l)).join("")}</div></div>
 			<div class="acts" style="flex:none;margin-top:.8rem"><button class="btn primary" id="save" data-nav>Save</button><button class="btn" id="play" data-nav>Play on TV</button>
-			<button class="btn" id="again" data-nav>Look it up again</button><button class="btn" id="setart" data-nav>Choose box art…</button></div>
+			<button class="btn" id="again" data-nav>Look it up now</button><button class="btn" id="setart" data-nav>Choose box art…</button></div>
 			<input type="file" id="artfile" accept="image/*" hidden></div>
 			<div class="panel">${gamePanel(g)}<p class="note">${esc(g.system_name || g.system)} · ${g.play_count ? `played ${g.play_count} time${g.play_count === 1 ? "" : "s"}` : "not played yet"}</p></div></div>`));
 		$("#save").onclick = () => this.save();
 		$("#play").onclick = () => launch(g);
-		$("#again").onclick = async () => { try { await ss1({ cmd: "rescrape", id: g.id }); toast("It'll be looked up again the next time box art runs"); } catch (e) { toast(e.message); } };
+		/* this game alone, on this PC, now (what wasn't found before is asked again); while another run is on,
+		   it's queued for the next one */
+		$("#again").onclick = async () => {
+			try {
+				if ((await api("/api/scrape")).state.running) {
+					await ss1({ cmd: "rescrape", id: g.id });
+					toast("A lookup is running: this game is looked up again in the next one");
+					return;
+				}
+				await api("/api/scrape", { do: "start", id: g.id });
+				toast("Looking it up");
+				const alive = () => topScr() === this;
+				for (let i = 0; i < 240; i++) {
+					await new Promise(r => setTimeout(r, 500));
+					const st = (await api("/api/scrape")).state;
+					if (st.running) continue;
+					toast(st.found ? "Found" : st.later ? "Couldn't reach the sources: try again later" : "Not found anywhere: try Choose box art, or Match to base games");
+					if (alive()) show(this);
+					return;
+				}
+			} catch (e) { toast(e.message); }
+		};
 		$("#setart").onclick = () => $("#artfile").click();
 		$("#artfile").onchange = e => this.putArt(e.target.files[0]);
 	}

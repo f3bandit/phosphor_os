@@ -34,6 +34,9 @@ void scraper_progress(scrape_progress_t *out);
 void scraper_start(void);                  /* background thread */
 void scraper_set(sqlite3 *db, int on);     /* on: go through the games once now (only ever on request); off: stop */
 void scraper_kick(void);                   /* run once now (the user asked) */
+void scraper_run_scope(const char *sys, long long id);   /* run once now, for one system (id) or one game only (NULL/0: all) */
+cJSON *scraper_local_one(sqlite3 *db, cJSON *req);   /* the app's run: Local files for one game, on the SS1 */
+void local_reset(void);                    /* src_local.c: forget the folders read (a new run) */
 void scraper_info(sqlite3 *db, scrape_info_t *out);
 int scraper_retry(sqlite3 *db, long long game_id);   /* look this game up again */
 int scraper_sources(scrape_source_t *out, int max);   /* in the user's order */

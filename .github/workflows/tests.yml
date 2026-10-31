@@ -1,6 +1,7 @@
 # Tests for Phosphor for Windows and phosphor-link, including end-to-end ones against a real phosphord
 # (built for the PC here): Look up on this PC with box art from a pretend source while the app's page asks
-# for progress, and the library tools with every connection the SS1 serves from one address taken.
+# for progress, a big upload to a busy SS1, Local files (gamelist.xml, media folders, Update All's artwork
+# packs, a folder on the PC; one system, one game), and the library tools with every connection taken.
 # The phone app's end-to-end test runs in android.yml.
 name: Tests
 on:
@@ -34,8 +35,13 @@ jobs:
           go vet ./...
           # (the Windows build itself is checked in secret-builds.yml: it needs fsck.exfat.exe, fetched there)
           go test -count=1 ./...
-          # the end-to-end one a few more times: it's about timing
-          go test -count=5 -run TestE2E -v . | grep -E "^(---|ok|FAIL)|e2e_lookup"
+          # the end-to-end lookup a few more times: it's about timing
+          go test -count=5 -run 'TestE2ELookUpOnThisPC$' -v . | grep -E "^(---|ok|FAIL)|e2e_lookup"
+          # and all of them on a phosphord built with memory and undefined-behaviour checks
+          cmake -S ../../system -B ../../build-asan -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          cmake --build ../../build-asan -j"$(nproc)" --target phosphord
+          PHOSD_BIN=$PWD/../../build-asan/phosphord ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            go test -count=1 -run TestE2E -v . | grep -E "^(---|ok|FAIL)|runtime error|AddressSanitizer"
       - name: phosphor-link
         working-directory: tools/phosphor-link
         run: |

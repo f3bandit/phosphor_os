@@ -97,6 +97,7 @@ type scrapeSource struct {
 }
 
 var scrapeSources = []scrapeSource{
+	{"local", "Local files", func(*scrapeRun) bool { return true }, localLookup},
 	{"libretro", "libretro", func(*scrapeRun) bool { return true }, lrLookup},
 	{"arcadedb", "ArcadeDB", func(*scrapeRun) bool { return true }, adbLookup},
 	{"launchbox", "LaunchBox", func(*scrapeRun) bool { return true }, lbLookup},
@@ -138,6 +139,10 @@ type scrapeRun struct {
 	st       scrapeState
 	only     bool // only match the not-found games to their base games
 	ss       ssGate
+	picOnce  sync.Once // the box art folder on this PC (scrape_local.go), read once a run
+	pics     *picIndex
+	sys      string // only this system (a Phosphor system id), "" all
+	gameID   int64  // only this game, 0 all
 }
 
 type scrapeState struct {
@@ -245,6 +250,11 @@ func (s *scrapeRun) fetchArt(g *sgame, r *sres, from int) int {
 		var rc int
 		if strings.HasPrefix(r.art[i].url, "pack:") { // Phosphor's own copy of a fan-made cover (fanart.go)
 			b, rc = fanpackGet(s.ctx, strings.TrimPrefix(r.art[i].url, "pack:"))
+		} else if strings.HasPrefix(r.art[i].url, "file:") { // Local files: a picture in this PC's folder
+			var err error
+			if b, err = os.ReadFile(strings.TrimPrefix(r.art[i].url, "file:")); err != nil {
+				continue
+			}
 		} else {
 			b, rc, _ = netRequest(s.ctx, "GET", r.art[i].url, nil, nil, 32<<20)
 		}
@@ -318,6 +328,9 @@ func (s *scrapeRun) one(g *sgame) (int, *sres) {
 		case -1:
 			trouble = true
 		}
+		if g.HasArt { // stored on the SS1 by the source itself (Local files from the SS1's drives)
+			art = true
+		}
 	}
 	if found && !art {
 		switch s.fetchArt(g, r, tried) {
@@ -384,6 +397,16 @@ func (s *scrapeRun) run() {
 	}
 }
 
+// scoped: a scrape_todo for this run's system or game only (Look up this system / Look up now)
+func (s *scrapeRun) scoped(req map[string]any) map[string]any {
+	if s.gameID > 0 {
+		req["id"] = s.gameID
+	} else if s.sys != "" {
+		req["system"] = s.sys
+	}
+	return req
+}
+
 // todoConfig: scrape_todo's "config": the sources' order, the SS1's user names / IDs and which of
 // its logins are set (no passwords or keys: those are this PC's own, accounts.go)
 type todoConfig struct {
@@ -428,7 +451,7 @@ func (s *scrapeRun) lookupAll() bool {
 			Games  []sgame    `json:"games"`
 			Config todoConfig `json:"config"`
 		}
-		if err := ss1Call(map[string]any{"cmd": "scrape_todo", "start": first, "limit": 400}, &todo); err != nil {
+		if err := ss1Call(s.scoped(map[string]any{"cmd": "scrape_todo", "start": first, "limit": 400}), &todo); err != nil {
 			s.status("The SS1 didn't answer: " + err.Error())
 			return false
 		}
@@ -522,15 +545,16 @@ func (s *scrapeRun) lookupAll() bool {
 func scrapeStart(only bool) bool {
 	scrapeMu.Lock()
 	defer scrapeMu.Unlock()
-	return scrapeStartLocked(only)
+	return scrapeStartLocked(only, "", 0)
 }
 
-func scrapeStartLocked(only bool) bool {
+// sys / id: only that system (a Phosphor system id) or that game; "" / 0: all
+func scrapeStartLocked(only bool, sys string, id int64) bool {
 	if scrapeCur != nil {
 		return false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &scrapeRun{ctx: ctx, cancel: cancel, only: only}
+	s := &scrapeRun{ctx: ctx, cancel: cancel, only: only, sys: sys, gameID: id}
 	s.st = scrapeState{Running: true, Status: "Starting", Started: time.Now().Unix()}
 	scrapeCur = s
 	go s.run()
@@ -540,12 +564,16 @@ func scrapeStartLocked(only bool) bool {
 // GET: the state; POST {do: "start"|"stop"}
 func apiScrape(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		var req struct{ Do string }
+		var req struct {
+			Do     string
+			System string // only this system (its id)
+			ID     int64  // only this game
+		}
 		_ = readJSON(r, &req)
 		scrapeMu.Lock()
 		switch req.Do {
 		case "start":
-			scrapeStartLocked(false)
+			scrapeStartLocked(false, req.System, req.ID)
 		case "stop":
 			if scrapeCur != nil {
 				scrapeCur.cancel()
