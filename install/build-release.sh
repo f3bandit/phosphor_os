@@ -73,7 +73,7 @@ if [ -f "$D/bin/MiSTer_phosphor" ] || [ -d "$D/cores" ]; then
 	{
 		echo "# Source of the GPL programs in this release"
 		echo
-		echo "Phosphor $V. These two are free software under the GNU General Public License version 3"
+		echo "Phosphor $V. These are free software under the GNU General Public License version 3"
 		echo "(licenses/GPL-3.0.txt). Their complete source, the exact version built for this release:"
 		echo
 		[ -z "$main_src" ] || echo "- bin/MiSTer_phosphor (Phosphor's Main, a fork of MiSTer's Main with odelot's RetroAchievements): $main_src"
