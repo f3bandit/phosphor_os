@@ -8519,7 +8519,7 @@ static void show_about(void)
 	ab_add("Disc support", "Anime0t4ku and bonna79 (Main_MiSTer_Physical_Disc)");
 	ab_add("RetroAchievements", "odelot (RA Main and cores); rcheevos by the RA team");
 	ab_add("Quake and Duke Nukem 3D", "MiSTer ports by neofreno; on TyrQuake, id Software's and 3D Realms' GPL source");
-	ab_add("ARM game ports", "the pattern by kimchiman52 (Sonic Mania, 3S-ARM)");
+	ab_add("3S-ARM and Sonic Mania", "MiSTer ports and their launchers by kimchiman52; Sonic Mania on the RSDKModding decompilation");
 	ab_add("Music CD names", "MusicBrainz and the Cover Art Archive");
 	ab_add("Music decoding", "dr_libs by David Reid, stb_vorbis by Sean Barrett");
 	ab_add("Licence", "PolyForm Noncommercial 1.0.0: phosphor/LICENSE.md");
