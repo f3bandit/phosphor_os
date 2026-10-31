@@ -243,6 +243,34 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		if (strcmp(d, "preview")) refresh_list();     /* values or the guard changed */
 		return o;
 	}
+	if (!strcmp(d, "run")) {
+		/* Update All itself, on the TV (MiSTer's terminal), through Phosphor's wrapper when it's there:
+		 * a restore point first, the guard after. The shell takes it from <tmp>/script-request. */
+		pthread_mutex_lock(&lk);
+		int b = busy;
+		pthread_mutex_unlock(&lk);
+		if (b) { *err = "Busy uninstalling; run it when that's done"; return NULL; }
+		char path[700], rq[600];
+		snprintf(path, sizeof(path), "%s/phosphor/scripts/update_all.sh", p_fat());
+		if (access(path, X_OK)) snprintf(path, sizeof(path), "%s/Scripts/update_all.sh", p_fat());
+		if (!file_exists(path)) { *err = "Update All isn't in Scripts"; return NULL; }
+		snprintf(rq, sizeof(rq), "%s/script-request", p_tmp());
+		FILE *f = fopen(rq, "w");
+		if (!f) { *err = "Couldn't ask the TV"; return NULL; }
+		fprintf(f, "%s\n", path);
+		fclose(f);
+		plog("Update All: run asked from the app");
+		pthread_mutex_lock(&io);                      /* the run changes its settings: read them again after */
+		stop_locked();
+		pthread_mutex_unlock(&io);
+		pthread_mutex_lock(&lk);
+		free(list_json);
+		list_json = NULL;
+		pthread_mutex_unlock(&lk);
+		cJSON *o = cJSON_CreateObject();
+		cJSON_AddBoolToObject(o, "running", 1);
+		return o;
+	}
 	if (!strcmp(d, "uninstall")) {
 		cJSON *a = args_of("uninstall", req);
 		if (cJSON_GetArraySize(a) < 2) { cJSON_Delete(a); *err = "args: the database ids"; return NULL; }
@@ -262,7 +290,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON_AddBoolToObject(o, "busy", 1);
 		return o;
 	}
-	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids)";
+	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), run";
 	return NULL;
 }
 

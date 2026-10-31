@@ -200,7 +200,12 @@ func authed(method, path string, body io.Reader, timeout time.Duration) (*http.R
 
 // call: one phosphord command (JSON), its reply (JSON)
 func call(cmd json.RawMessage) (json.RawMessage, int, error) {
-	r, err := authed("POST", "/api", bytes.NewReader(cmd), 30*time.Second)
+	return callFor(cmd, 30*time.Second)
+}
+
+// callFor: a command that can take longer (Update All's settings: its code starts on the SS1 first)
+func callFor(cmd json.RawMessage, timeout time.Duration) (json.RawMessage, int, error) {
+	r, err := authed("POST", "/api", bytes.NewReader(cmd), timeout)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -242,7 +242,14 @@ func apiCall(w http.ResponseWriter, r *http.Request) {
 		fail(w, "bad request")
 		return
 	}
-	b, code, err := call(body)
+	timeout := 30 * time.Second
+	var probe struct {
+		Cmd string `json:"cmd"`
+	}
+	if json.Unmarshal(body, &probe) == nil && probe.Cmd == "ua" {
+		timeout = 130 * time.Second
+	}
+	b, code, err := callFor(body, timeout)
 	if err != nil {
 		writeJSON(w, map[string]any{"ok": false, "error": err.Error(), "offline": true, "forgotten": err == errForgotten})
 		return

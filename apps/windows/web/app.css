@@ -311,3 +311,9 @@ pre.out { white-space: pre-wrap; font: .8rem/1.45 PhosMono, Consolas, monospace;
 .row.f .tag { border-color: var(--acc); color: var(--acc); }
 .kv { display: grid; grid-template-columns: 6.5rem 1fr; gap: .4rem 1rem; font-size: .9rem; margin-top: 1rem; }
 .kv span:nth-child(odd) { color: var(--faint); }
+
+/* Settings > Update All */
+.uatop { display: flex; gap: .6rem; align-items: center; margin-bottom: 1rem; }
+.uatop input[type=search] { flex: 1; }
+.tag.g { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
+#ual .row .tag { flex: none; }
