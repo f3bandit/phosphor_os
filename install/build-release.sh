@@ -11,6 +11,8 @@ mkdir -p "$D/bin" "$D/config"
 # a failed build leaves the old binary behind: refuse anything older than its sources
 pairs="frontend/build-arm/phosphor:frontend/src system/build-arm/phosphord:system/phosphord"
 [ -x ../phosphor-main/bin/MiSTer ] && pairs="$pairs ../phosphor-main/bin/MiSTer:../phosphor-main"
+[ -x ../phosphor-main/bin-3s-arm/MiSTer_3S-ARM ] && pairs="$pairs ../phosphor-main/bin-3s-arm/MiSTer_3S-ARM:../phosphor-main"
+[ -x ../phosphor-main/bin-sonic-mania/MiSTer_SonicMania ] && pairs="$pairs ../phosphor-main/bin-sonic-mania/MiSTer_SonicMania:../phosphor-main"
 for pair in $pairs; do
 	set -- "${pair%%:*}" "${pair#*:}"
 	newer="$(find "$2" -newer "$1" -type f \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) | head -1)"
@@ -26,6 +28,13 @@ if [ -n "$PHOS_SECRET_BUILDS" ]; then
 fi
 # phosphor-main (GPL-3.0, its own repo): copied in when built next to this repo; never started by the installer
 if [ -x ../phosphor-main/bin/MiSTer ]; then cp ../phosphor-main/bin/MiSTer "$D/bin/MiSTer_phosphor"; fi
+# the game ports' own Mains, built from Phosphor's Main (make PORT=3s-arm / sonic-mania): Phosphor's Main
+# switches to one only for the release of the game it was tested with (phosphor_port_main)
+for pm in 3s-arm/MiSTer_3S-ARM sonic-mania/MiSTer_SonicMania; do
+	if [ -x "../phosphor-main/bin-$pm" ]; then cp "../phosphor-main/bin-$pm" "$D/bin/"; fi
+done
+# Settings > Update All: the bridge to Update All's own settings code, and Phosphor's word on each item
+mkdir -p "$D/ua" && cp system/ua/ua_bridge.py system/ua/status.json "$D/ua/"
 # RetroAchievements' unlock sound (from odelot's RetroAchievements Main, in phosphor-main)
 if [ -f ../phosphor-main/achievement.wav ]; then cp ../phosphor-main/achievement.wav "$D/achievement.wav"; fi
 # phosphor-menu (the menu core with the front ports): its GitHub Actions build, saved next to the repo
@@ -68,6 +77,8 @@ if [ -f "$D/bin/MiSTer_phosphor" ] || [ -d "$D/cores" ]; then
 		echo "(licenses/GPL-3.0.txt). Their complete source, the exact version built for this release:"
 		echo
 		[ -z "$main_src" ] || echo "- bin/MiSTer_phosphor (Phosphor's Main, a fork of MiSTer's Main with odelot's RetroAchievements): $main_src"
+		[ -z "$main_src" ] || [ ! -f "$D/bin/MiSTer_3S-ARM" ] || echo "- bin/MiSTer_3S-ARM (3S-ARM's Main built from Phosphor's Main with kimchiman52's 3S-ARM wrapper, ports/3s-arm, AGPL-3.0 there): the same source, make PORT=3s-arm"
+		[ -z "$main_src" ] || [ ! -f "$D/bin/MiSTer_SonicMania" ] || echo "- bin/MiSTer_SonicMania (Sonic Mania's Main built from Phosphor's Main with kimchiman52's wrapper, ports/sonic-mania): the same source, make PORT=sonic-mania"
 		[ -z "$menu_src" ] || echo "- cores/menu_phosphor.rbf (Phosphor's menu core, a fork of MiSTer's Menu core, GPL-2.0-or-later, with GPL-3.0 additions): $menu_src"
 		[ -z "$menu_src" ] || echo "  Its CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later)."
 		echo

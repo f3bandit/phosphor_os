@@ -9,6 +9,10 @@
 #                                             as a prompt, and N answers it (the Nth button); then saved
 #   ua_bridge.py preview DB_ID...             what uninstalling would remove: files and bytes, from the store
 #   ua_bridge.py uninstall DB_ID...           Update All's own uninstall (the Downloader removes the files)
+#   ua_bridge.py leftovers                    what Clean up offers: databases still installed but no longer turned
+#                                             on in Update All (its own Downloader's list), and the Arcade
+#                                             Organizer's folders (as its own Clean Folders finds them)
+#   ua_bridge.py clean_ao                     Update All's own Clean Folders: the Arcade Organizer's folders go
 #   ua_bridge.py serve                        the same, one JSON array of arguments per line on stdin
 #
 # Output: one JSON object on stdout. Update All's own prints go to stderr. Update All's start-up migrations
@@ -320,6 +324,70 @@ class Bridge:
                     sample.append(p)
         return {'ok': True, 'files': files, 'bytes': size, 'sample': sample}
 
+    # ---------- clean up ----------
+
+    def _store_dbs(self):
+        path = '/media/fat/Scripts/.config/downloader/downloader.json'
+        try:
+            with open(path) as f:
+                return {k.lower(): v for k, v in (json.load(f).get('dbs') or {}).items()}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _folder_size(top):
+        files = size = 0
+        for root, dirs, names in os.walk(top):          # (links aren't followed: the organizer's are links)
+            for n in names:
+                files += 1
+                try:
+                    st = os.lstat(os.path.join(root, n))
+                    size += st.st_size if not os.path.islink(os.path.join(root, n)) else 0
+                except OSError:
+                    pass
+        return files, size
+
+    def leftovers(self):
+        # databases the Downloader still has installed that Update All no longer has turned on: their files
+        # stay on the SD card until they're uninstalled (Update All's own Downloader --list-dbs)
+        dbs = []
+        installed = self.screen._database_manager_service.list_installed_dbs() or []
+        store = self._store_dbs()
+        for d in installed:
+            if d.configured:
+                continue
+            files = size = 0
+            sample = []
+            for p, desc in ((store.get(d.db_id.lower()) or {}).get('files') or {}).items():
+                path = os.path.join('/media/fat', p.lstrip('|'))
+                if not os.path.lexists(path):
+                    continue                              # (already gone)
+                files += 1
+                size += int((desc or {}).get('size', 0) or 0)
+                if len(sample) < 8:
+                    sample.append(p.lstrip('|'))
+            dbs.append({'db_id': d.db_id, 'title': d.title or d.db_id, 'files': files, 'bytes': size, 'sample': sample})
+        # the Arcade Organizer's folders, as its own Clean Folders finds them
+        ao = {'folders': [], 'files': 0, 'bytes': 0, 'on': self.ui.get_value('arcade_organizer') == 'true'}
+        try:
+            self.screen.calculate_arcade_organizer_folders(self.ui)
+            for line in self.ui.get_value('arcade_organizer_folders_list').splitlines():
+                line = line.strip()
+                if line and os.path.isdir(line):
+                    f, b = self._folder_size(line)
+                    ao['folders'].append(line)
+                    ao['files'] += f
+                    ao['bytes'] += b
+        except Exception as e:
+            ao['error'] = str(e)
+        return {'ok': True, 'dbs': dbs, 'arcade_organizer': ao}
+
+    def clean_ao(self):
+        self.screen.calculate_arcade_organizer_folders(self.ui)
+        folders = [l.strip() for l in self.ui.get_value('arcade_organizer_folders_list').splitlines() if l.strip()]
+        self.screen.clean_arcade_organizer_folders(self.ui)
+        return {'ok': True, 'removed': folders}
+
     def uninstall(self, db_ids):
         service = self.screen._database_manager_service
         code = service.uninstall(list(db_ids))
@@ -345,6 +413,10 @@ def run(b, args):
         return b.preview(args[1:])
     if cmd == 'uninstall':
         return b.uninstall(args[1:])
+    if cmd == 'leftovers':
+        return b.leftovers()
+    if cmd == 'clean_ao':
+        return b.clean_ao()
     return {'ok': False, 'error': 'unknown command'}
 
 

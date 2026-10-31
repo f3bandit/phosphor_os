@@ -530,7 +530,7 @@ class AppSettings {
 		const WORD = { safe: "Safe", guard: "Guarded", warn: "Warning", keep: "Left alone", untested: "Untested" };
 		const TAG = { safe: "g", guard: "c", warn: "w" };
 		b.append(h(`<div class="uatop"><input type="search" id="ua_q" placeholder="Search: cores, scripts, artwork…" value="${esc(st.q)}" data-nav>
-			<button class="btn" id="ua_f" data-nav>${FILTERS[st.filter][1]}</button><button class="btn primary" id="ua_run" data-nav>Run Update All</button></div>
+			<button class="btn" id="ua_f" data-nav>${FILTERS[st.filter][1]}</button><button class="btn" id="ua_clean" data-nav>Clean up</button><button class="btn primary" id="ua_run" data-nav>Run Update All</button></div>
 			<div class="split"><div class="list" id="ual"><div class="empty"><span class="spin"></span> Reading Update All's settings…</div></div><div class="panel" id="uap"></div></div>`));
 		let L = null, busy = false, cur_e = null;
 		const status = e => { const s = e.status || {}; return s.status_now || s.status || "untested"; };
@@ -687,6 +687,48 @@ class AppSettings {
 		};
 		$("#ua_q").oninput = () => { st.q = $("#ua_q").value; if (L) fill(); };
 		$("#ua_f").onclick = () => { st.filter = (st.filter + 1) % FILTERS.length; $("#ua_f").textContent = FILTERS[st.filter][1]; if (L) fill(); };
+		/* Clean up: what Update All installed that's since been turned off (still on the SD card), and the
+		   Arcade Organizer's folders, as Update All's own tools find them */
+		const size = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b >= 1e6 ? Math.round(b / 1e6) + " MB" : Math.round(b / 1e3) + " KB";
+		const cleanup = async () => {
+			cur_e = null;
+			const p = $("#uap");
+			p.innerHTML = `<h2>Clean up</h2><div class="empty"><span class="spin"></span> Looking for leftovers…</div>`;
+			let r;
+			try { r = await ss1({ cmd: "ua", do: "leftovers" }); }
+			catch (x) { if (alive()) p.innerHTML = `<h2>Clean up</h2><p class="note">${esc(/do: list/i.test(x.message) ? "Update Phosphor on the SS1 to clean up from here." : x.message)}</p>`; return; }
+			if (!alive()) return;
+			const dbs = r.dbs || [], ao = r.arcade_organizer || {};
+			const files = dbs.reduce((a, d) => a + (d.files || 0), 0), bytes = dbs.reduce((a, d) => a + (d.bytes || 0), 0);
+			p.innerHTML = `<h2>Clean up</h2>
+				<div class="sub" style="margin-top:1rem">${spaced("Turned off, still installed")}</div>
+				${dbs.length ? `<dl class="kv">${dbs.map(d => `<dt>${esc(d.title)}</dt><dd>${d.files ? `${n(d.files)} files, ${size(d.bytes)}` : "only Update All's record"}</dd>`).join("")}</dl>
+				<p class="note">Things Update All installed that you've since turned off: their files stay on the SD card until they're removed. Removing goes through Update All's own Downloader, from its own list of what it installed.</p>
+				<div class="acts"><button class="btn primary" id="cu_rm" data-nav>Remove leftovers${files ? ` (${size(bytes)})` : ""}</button></div>`
+				: `<p class="note">None: everything installed is turned on in Update All.</p>`}
+				<div class="sub" style="margin-top:1.4rem">${spaced("Arcade Organizer")}</div>
+				${(ao.folders || []).length ? `<p class="note">Its folders (${esc(ao.folders.join(", "))}): ${n(ao.files)} entries, shortcuts to your arcade games; the games themselves stay.${ao.on ? " It's turned on, so its next run makes them again." : ""}</p>
+				<div class="acts"><button class="btn" id="cu_ao" data-nav>Clear its folders</button></div>`
+				: `<p class="note">No Arcade Organizer folders.</p>`}`;
+			const rm = $("#cu_rm");
+			if (rm) rm.onclick = async () => {
+				const pick = await askChoice("Remove leftovers?", `${dbs.map(d => `${d.title}: ${d.files ? n(d.files) + " files, " + size(d.bytes) : "only Update All's record"}`).join("\n")}\n\nYour saves, settings and games from anywhere else stay.`, ["Keep them", "Remove them"], 1);
+				if (pick !== 1) return;
+				try { await ss1({ cmd: "ua", do: "uninstall", args: dbs.map(d => d.db_id), title: "leftovers" }); toast("Removing leftovers: Update All's Downloader removes the files"); }
+				catch (x) { toast(x.message); return; }
+				busy = true;
+				this.every(2000, async () => { const more = await draw(); if (!more) cleanup(); return more; });
+			};
+			const c = $("#cu_ao");
+			if (c) c.onclick = async () => {
+				const pick = await askChoice("Clear the Arcade Organizer's folders?", `${ao.folders.join("\n")}\n\nUpdate All's own Clean Folders: everything in these folders goes.`, ["Keep them", "Clear them"], 1);
+				if (pick !== 1) return;
+				try { await ss1({ cmd: "ua", do: "clean_ao" }); toast("Arcade Organizer folders cleared"); } catch (x) { toast(x.message); }
+				cleanup();
+			};
+			focus(p.querySelector("[data-nav]") || $("#ua_clean"));
+		};
+		$("#ua_clean").onclick = () => { if (busy) toast("Busy uninstalling; try again when it's done"); else cleanup(); };
 		const run = async () => {
 			try { await ss1({ cmd: "ua", do: "run" }); toast("Update All is running on the TV: a restore point first, Phosphor comes back when it's done"); L = null; this.every(4000, draw); }
 			catch (x) { toast(/unknown|do: list/i.test(x.message) ? "Update Phosphor on the SS1 to run Update All from here" : x.message); }
