@@ -3,6 +3,35 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.61
+
+### New
+- **Update All from Phosphor.** Settings > Update All on the TV, and the same page in Phosphor for
+  Windows (0.2.52): Update All's whole list of settings, read from Update All itself, so whatever a new
+  Update All adds shows up by itself. Every item shows what Update All says about it and what Phosphor
+  says, with a status: **Built in** (Phosphor runs it itself), **Safe**, **Guarded** (Phosphor blocks it:
+  it would replace Phosphor or take over its screen; Allow it lets it through, and Block it again puts it
+  back), **Warning**, **Left alone**, or **Untested** (new since Phosphor checked). A menu shows what's in
+  it. Changes are saved the way Update All's own menu saves them, its own questions included.
+  - **Uninstall** what an item installed, through Update All's own uninstall, with the number of files
+    and the space first.
+  - **Clean up**: what's still on the SD card from things you've turned off in Update All, and the Arcade
+    Organizer's folders (Update All's own Clean Folders).
+  - **Run Update All** from the page (Y on the TV): a restore point first, then Update All on the TV,
+    Phosphor's Main and menu core kept afterwards.
+  - The Windows page has search and filters (built in, guarded, warnings, untested, installed).
+- **Game ports in Phosphor.** Quake and Duke3D run inside Phosphor's Main, with Phosphor's in-game menu.
+  3S-ARM and Sonic Mania run on their own Main built from Phosphor's (Phosphor's in-game menu, back to
+  Phosphor on Quit); Phosphor switches to it only for the game release it was tested with, so a game
+  update can't start an untested Main. Hybrid cores (Maldita Castilla and others using the
+  mister-hybrid-platform) are started by Phosphor's Main. A port that needs your own game data (Quake's
+  PAK0.PAK, Duke3D's duke3d.grp, Sonic Mania's Data.rsdk) says so before it starts.
+- **Credits** for the ports in the port screens and About: neofreno (Quake, Duke3D), kimchiman52 with
+  RSDKModding (3S-ARM, Sonic Mania), gmcnaught (Maldita Castilla and the hybrid platform).
+
+### Fixed
+- Quitting 3S-ARM goes straight back to Phosphor (no other menu screen first).
+
 ## 0.27.60
 
 ### New
