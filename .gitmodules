@@ -1,0 +1,4 @@
+[submodule "apps/retrospy"]
+	path = apps/retrospy
+	url = https://github.com/f3bandit/RetroSpy.git
+	shallow = true

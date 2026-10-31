@@ -10,6 +10,11 @@ Not in this list, because they are separate programs with their own source:
   builds of MiSTer's Main and Menu core; their source and licence are in SOURCE.md and licenses/.
   The menu core's CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's
   menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later).
+- **RetroSpy, Phosphor edition** (RetroSpy\ in Phosphor for Windows' zip, apps/retrospy in this repository)
+  is RetroSpy by zoggins and the RetroSpy contributors (https://github.com/retrospy/RetroSpy), a fork of
+  NintendoSpy by jaburns (https://github.com/jaburns/NintendoSpy), with skins by their authors (each
+  skin.xml), plus f3bandit's Phosphor edition: a separate program under the GPL-3.0 (its LICENSE.txt);
+  its source is https://github.com/f3bandit/RetroSpy, at the commit apps/retrospy points to.
 - **The SD card image** also holds MiSTer's Linux, kernel, u-boot, Main and Mr. Fusion; see
   LICENSES/SOURCES.txt on the card.
 - **achievement.wav**, the RetroAchievements unlock sound, comes with odelot's RetroAchievements

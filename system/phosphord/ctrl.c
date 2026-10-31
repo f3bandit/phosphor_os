@@ -736,6 +736,81 @@ static time_t pads_at;
 static char pads_sig[512];
 static void pads_look(pad_t *P, const char *sig) { pads_n = pads(P, MAXDEV); pads_at = time(NULL); snprintf(pads_sig, sizeof(pads_sig), "%s", sig); }
 
+/* ---------- RetroSpy (retrospy.c): a controller's layout and its controls, numbered as its jsN device does ---------- */
+
+/* joydev numbers buttons BTN_JOYSTICK..KEY_MAX first, then BTN_MISC..BTN_JOYSTICK-1; axes in code order */
+static int js_button(const pad_t *d, int code)
+{
+	int n = 0;
+	for (int i = 0; i < d->nkeys; i++) if (d->keys[i] >= BTN_JOYSTICK) { if (d->keys[i] == code) return n; n++; }
+	for (int i = 0; i < d->nkeys; i++) if (d->keys[i] >= BTN_MISC && d->keys[i] < BTN_JOYSTICK) { if (d->keys[i] == code) return n; n++; }
+	return -1;
+}
+
+static int js_axis(const pad_t *d, int code)
+{
+	for (int i = 0; i < d->nabs; i++) if (d->abs[i] == code) return i;
+	return -1;
+}
+
+static cJSON *rs_bind(const pad_t *d, int c)
+{
+	const bind_t *b = &d->b[c];
+	cJSON *o = NULL;
+	if (b->kind == 'b') {
+		int i = js_button(d, b->code);
+		if (i >= 0) { o = cJSON_CreateObject(); cJSON_AddNumberToObject(o, "b", i); }
+	} else if (b->kind == 'a') {
+		int i = js_axis(d, b->code);
+		if (i >= 0) {
+			o = cJSON_CreateObject();
+			cJSON_AddNumberToObject(o, "a", i);
+			if (b->half) cJSON_AddNumberToObject(o, "half", b->half);
+			if (b->inv) cJSON_AddBoolToObject(o, "inv", 1);
+		}
+	} else if (b->kind == 'h') {                  /* a hat: two axes on jsN, up/down on its Y, left/right on its X */
+		int vert = b->half & 5, i = js_axis(d, b->code + (vert ? 1 : 0));
+		if (i >= 0) {
+			o = cJSON_CreateObject();
+			cJSON_AddNumberToObject(o, "a", i);
+			cJSON_AddNumberToObject(o, "half", (b->half & 9) ? -1 : 1);     /* up, left: negative */
+		}
+	}
+	return o;
+}
+
+cJSON *ctrl_retrospy(const char *ev)
+{
+	static pad_t P[MAXDEV];
+	static int n = -1;
+	static char sig[256];
+	char now[256];
+	ev_sig(now, sizeof(now));
+	if (n < 0 || strcmp(now, sig)) { n = pads(P, MAXDEV); snprintf(sig, sizeof(sig), "%s", now); }
+	for (int k = 0; k < n; k++) {
+		const pad_t *d = &P[k];
+		if (strcmp(d->ev, ev)) continue;
+		cJSON *o = cJSON_CreateObject();
+		char style[24];
+		const char *a = style_auto(d);
+		cJSON_AddStringToObject(o, "layout", style_get(d->vid, d->pid, style, sizeof(style)) ? style : a);
+		char vp[16];
+		snprintf(vp, sizeof(vp), "%04x:%04x", d->vid, d->pid);
+		cJSON_AddStringToObject(o, "vidpid", vp);
+		cJSON *bs = cJSON_AddObjectToObject(o, "binds");
+		for (int c = 0; c < C_N; c++) { cJSON *b = rs_bind(d, c); if (b) cJSON_AddItemToObject(bs, CTL[c], b); }
+		/* C and Z on 6-button pads, when no control has those buttons already */
+		int cu = 0, zu = 0;
+		for (int c = 0; c < C_N; c++) if (d->b[c].kind == 'b') { cu |= d->b[c].code == BTN_C; zu |= d->b[c].code == BTN_Z; }
+		if (!cu && has_key(d, BTN_C)) { cJSON *b = cJSON_CreateObject(); cJSON_AddNumberToObject(b, "b", js_button(d, BTN_C)); cJSON_AddItemToObject(bs, "c", b); }
+		if (!zu && has_key(d, BTN_Z)) { cJSON *b = cJSON_CreateObject(); cJSON_AddNumberToObject(b, "b", js_button(d, BTN_Z)); cJSON_AddItemToObject(bs, "z", b); }
+		cJSON_AddNumberToObject(o, "js_buttons", d->nkeys);
+		cJSON_AddNumberToObject(o, "js_axes", d->nabs);
+		return o;
+	}
+	return NULL;
+}
+
 cJSON *ctrl_command(cJSON *req, const char **err)
 {
 	static pad_t P[MAXDEV];

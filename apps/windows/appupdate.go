@@ -271,6 +271,7 @@ func appDoInstall(s appUpd) error {
 	if len(newExe) < 2 || newExe[0] != 'M' || newExe[1] != 'Z' {
 		return errors.New("the zip has no Phosphor.exe")
 	}
+	rsNote := appUpdateRetroSpy(zr, dir)
 	appSetState("working", "Installing Phosphor for Windows "+s.Latest+"...")
 	tmp := exe + ".new"
 	if err := os.WriteFile(tmp, newExe, 0o755); err != nil {
@@ -287,7 +288,7 @@ func appDoInstall(s appUpd) error {
 		os.Remove(tmp)
 		return errors.New("couldn't put the new Phosphor.exe in place")
 	}
-	appSetState("done", "Phosphor for Windows "+s.Latest+" is installed: it's starting")
+	appSetState("done", "Phosphor for Windows "+s.Latest+" is installed: it's starting"+rsNote)
 	cmd := exec.Command(exe)
 	cmd.Dir = dir
 	if err := cmd.Start(); err != nil {
@@ -312,6 +313,8 @@ func appDoInstall(s appUpd) error {
 // appCleanOld: the copy set aside by the last update
 func appCleanOld() {
 	if exe, err := os.Executable(); err == nil {
+		// RetroSpy's folder the update replaced
+		os.RemoveAll(filepath.Join(filepath.Dir(exe), "RetroSpy.old"))
 		for i := 0; i < 10; i++ { // (the old one may still be closing)
 			if err := os.Remove(exe + ".old"); err == nil || os.IsNotExist(err) {
 				return
@@ -346,4 +349,70 @@ func apiAppUpdate(w http.ResponseWriter, r *http.Request) {
 	s := appUpdate.s
 	appUpdate.Unlock()
 	writeJSON(w, map[string]any{"ok": true, "version": appVersion, "update": s})
+}
+
+// appUpdateRetroSpy puts the zip's RetroSpy\ (RetroSpy's Phosphor edition) next to Phosphor.exe: unpacked into
+// RetroSpy.new, the old folder set aside as RetroSpy.old (removed at the next start), the new one renamed in.
+// RetroSpy open holds its folder: then the old one stays and the reply says so. "" when all went well.
+func appUpdateRetroSpy(zr *zip.Reader, dir string) string {
+	var files []*zip.File
+	for _, f := range zr.File {
+		n := strings.ReplaceAll(f.Name, "\\", "/")
+		if strings.HasPrefix(n, "RetroSpy/") && !strings.Contains(n, "..") {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	if retrospyRunning() {
+		return " (RetroSpy is open, so it wasn't updated: close it and install again)"
+	}
+	nw, cur, old := filepath.Join(dir, "RetroSpy.new"), filepath.Join(dir, "RetroSpy"), filepath.Join(dir, "RetroSpy.old")
+	os.RemoveAll(nw)
+	for _, f := range files {
+		rel := strings.TrimPrefix(strings.ReplaceAll(f.Name, "\\", "/"), "RetroSpy/")
+		if rel == "" {
+			continue
+		}
+		p := filepath.Join(nw, filepath.FromSlash(rel))
+		if f.FileInfo().IsDir() {
+			_ = os.MkdirAll(p, 0o755)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			os.RemoveAll(nw)
+			return " (RetroSpy couldn't be updated)"
+		}
+		rc, err := f.Open()
+		if err != nil {
+			os.RemoveAll(nw)
+			return " (RetroSpy couldn't be updated)"
+		}
+		out, err := os.Create(p)
+		if err == nil {
+			_, err = io.Copy(out, rc)
+			if cerr := out.Close(); err == nil {
+				err = cerr
+			}
+		}
+		rc.Close()
+		if err != nil {
+			os.RemoveAll(nw)
+			return " (RetroSpy couldn't be updated)"
+		}
+	}
+	os.RemoveAll(old)
+	if _, err := os.Stat(cur); err == nil {
+		if err := os.Rename(cur, old); err != nil {
+			os.RemoveAll(nw)
+			return " (RetroSpy is in use, so it wasn't updated)"
+		}
+	}
+	if err := os.Rename(nw, cur); err != nil {
+		_ = os.Rename(old, cur)
+		os.RemoveAll(nw)
+		return " (RetroSpy couldn't be updated)"
+	}
+	return ""
 }
