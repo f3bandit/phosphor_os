@@ -27,17 +27,22 @@
 extern char **environ;
 
 static pthread_mutex_t lk = PTHREAD_MUTEX_INITIALIZER;     /* the state below */
-static pthread_mutex_t io = PTHREAD_MUTEX_INITIALIZER;     /* one request to the bridge at a time */
+static pthread_mutex_t io = PTHREAD_MUTEX_INITIALIZER;     /* the bridge (pid, pipes): one request at a time */
 static pid_t pid = -1;
 static int to_fd = -1, from_fd = -1;
-static char *list_json;                                    /* the last list (the bridge's reply) */
-static int loading, busy;                                  /* starting it / uninstalling */
+static char *list_json;                                    /* the last good list (the bridge's reply) */
+static int loading, busy;                                  /* reading the list / uninstalling */
 static char job_title[200], *job_result;
 static char load_error[300];
-static time_t used_at;
-static void bridge_path(char *o, size_t n);
-static time_t pyz_at;                           /* when the list was read: Update All's code, the notes */
+static time_t used_at, failed_at;                          /* last request; when loading last failed */
+static time_t stamp;                                       /* the files the list was read from, as of then */
 
+static void bridge_path(char *o, size_t n)
+{
+	const char *e = getenv("PHOS_UA_BRIDGE");
+	if (e && *e) snprintf(o, n, "%s", e);
+	else snprintf(o, n, "%s/phosphor/ua/ua_bridge.py", p_fat());
+}
 static void pyz_path(char *o, size_t n)
 {
 	const char *z = getenv("UA_PYZ");
@@ -49,45 +54,49 @@ static time_t mtime_of(const char *p)
 	struct stat sb;
 	return stat(p, &sb) ? 0 : sb.st_mtime;
 }
-/* Update All updated itself (from anywhere: the Scripts menu too), or Phosphor's notes changed:
-   its code is loaded again and the list read again, so new items appear */
-static int stale_locked(void)
+/* what the list depends on: Update All's code (it updates itself, from the Scripts menu too), Phosphor's
+   bridge and notes, and Update All's settings (changed in its own menu or its countdown during a run) */
+static time_t files_stamp(void)
 {
-	char z[600], st[600];
-	pyz_path(z, sizeof(z));
-	char b[600];
+	char p[700], b[600];
+	time_t t = 0;
+	pyz_path(p, sizeof(p));
+	t += mtime_of(p);
 	bridge_path(b, sizeof(b));
-	snprintf(st, sizeof(st), "%.*s/status.json", (int)(strrchr(b, '/') ? strrchr(b, '/') - b : 0), b);
-	time_t a = mtime_of(z) + mtime_of(st) + mtime_of(b);     /* (Phosphor's bridge updated too) */
-	if (a == pyz_at) return 0;
-	pyz_at = a;
-	return list_json != NULL;
-}
-
-static void bridge_path(char *o, size_t n)
-{
-	const char *e = getenv("PHOS_UA_BRIDGE");
-	if (e && *e) snprintf(o, n, "%s", e);
-	else snprintf(o, n, "%s/phosphor/ua/ua_bridge.py", p_fat());
+	t += mtime_of(b);
+	snprintf(p, sizeof(p), "%.*s/status.json", (int)(strrchr(b, '/') ? strrchr(b, '/') - b : 0), b);
+	t += mtime_of(p);
+	static const char *const cfg[] = { "downloader.ini", "update_arcade-organizer.ini", "MiSTer.ini",
+		"Scripts/.config/update_all/update_all.json", "Scripts/.config/downloader/downloader.json", NULL };
+	for (int i = 0; cfg[i]; i++) {
+		snprintf(p, sizeof(p), "%s/%s", p_fat(), cfg[i]);
+		t += mtime_of(p);
+	}
+	return t;
 }
 
 int ua_installed(void)
 {
 	char p[600], pyz[600];
 	bridge_path(p, sizeof(p));
-	const char *z = getenv("UA_PYZ");
-	snprintf(pyz, sizeof(pyz), "%s", z && *z ? z : "");
-	if (!pyz[0]) snprintf(pyz, sizeof(pyz), "%s/Scripts/.config/update_all/update_all.pyz", p_fat());
+	pyz_path(pyz, sizeof(pyz));
 	return file_exists(p) && file_exists(pyz);
 }
 
+/* (io held) the bridge and anything it started (the Downloader during an uninstall): its process group */
 static void stop_locked(void)
 {
 	if (pid > 0) {
-		kill(pid, SIGTERM);
-		for (int i = 0; i < 20 && waitpid(pid, NULL, WNOHANG) == 0; i++) usleep(50000);
-		kill(pid, SIGKILL);
-		waitpid(pid, NULL, WNOHANG);
+		kill(-pid, SIGTERM);
+		int gone = 0;
+		for (int i = 0; i < 20; i++) {
+			if (waitpid(pid, NULL, WNOHANG) != 0) { gone = 1; break; }
+			usleep(50000);
+		}
+		if (!gone) {
+			kill(-pid, SIGKILL);
+			waitpid(pid, NULL, 0);
+		}
 	}
 	if (to_fd >= 0) close(to_fd);
 	if (from_fd >= 0) close(from_fd);
@@ -125,6 +134,7 @@ static char *read_line(int limit)
 	return NULL;
 }
 
+/* (io held) starts the bridge: Update All's code loads (seconds on the SS1). Only from a thread. */
 static int start_locked(void)
 {
 	char script[600];
@@ -139,9 +149,14 @@ static int start_locked(void)
 	char errlog[600];
 	snprintf(errlog, sizeof(errlog), "%s/ua-bridge.log", p_tmp());
 	posix_spawn_file_actions_addopen(&fa, 2, errlog, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawnattr_t at;
+	posix_spawnattr_init(&at);
+	posix_spawnattr_setpgroup(&at, 0);                /* its own group: stopped with what it starts */
+	posix_spawnattr_setflags(&at, POSIX_SPAWN_SETPGROUP);
 	const char *argv[] = { "python3", script, "serve", NULL };
-	int r = posix_spawnp(&pid, "python3", &fa, NULL, (char *const *)argv, environ);
+	int r = posix_spawnp(&pid, "python3", &fa, &at, (char *const *)argv, environ);
 	posix_spawn_file_actions_destroy(&fa);
+	posix_spawnattr_destroy(&at);
 	close(in[0]);
 	close(out[1]);
 	if (r) { close(in[1]); close(out[0]); pid = -1; return -1; }
@@ -149,61 +164,72 @@ static int start_locked(void)
 	from_fd = out[0];
 	char *ready = read_line(90);                  /* Update All's code loading */
 	int ok = ready && strstr(ready, "\"ready\"");
-	if (!ok) {
-		snprintf(load_error, sizeof(load_error), "%s", ready && strstr(ready, "\"error\"") ? ready : "Update All's settings didn't load");
-		stop_locked();
-	}
+	pthread_mutex_lock(&lk);
+	if (!ok) snprintf(load_error, sizeof(load_error), "%s", ready && strstr(ready, "\"error\"") ? ready : "Update All's settings didn't load");
+	else load_error[0] = 0;
+	if (!ok) failed_at = time(NULL);
+	pthread_mutex_unlock(&lk);
+	if (!ok) stop_locked();
 	free(ready);
 	return ok ? 0 : -1;
 }
 
-/* one request ("[\"list\"]"...) and its reply (malloc'd); the bridge is started if it isn't running */
-static char *ask(const char *args_json, int limit)
+/* (io held) one request ("[\"list\"]"...) and its reply (malloc'd) */
+static char *ask_locked(const char *args_json, int limit)
 {
-	pthread_mutex_lock(&io);
-	if (pid <= 0 && start_locked()) { pthread_mutex_unlock(&io); return NULL; }
 	size_t n = strlen(args_json);
 	char *line = malloc(n + 2);
-	if (!line) { pthread_mutex_unlock(&io); return NULL; }
+	if (!line) return NULL;
 	memcpy(line, args_json, n);
 	line[n] = '\n';
 	ssize_t w = write(to_fd, line, n + 1);
 	free(line);
 	char *r = w == (ssize_t)(n + 1) ? read_line(limit) : NULL;
 	if (!r) stop_locked();                        /* gone or stuck: started again next time */
-	pthread_mutex_unlock(&io);
+	pthread_mutex_lock(&lk);
 	used_at = time(NULL);
+	pthread_mutex_unlock(&lk);
+	return r;
+}
+/* from a thread: the bridge started first when it isn't running */
+static char *ask(const char *args_json, int limit)
+{
+	pthread_mutex_lock(&io);
+	char *r = NULL;
+	if (pid > 0 || start_locked() == 0) r = ask_locked(args_json, limit);
+	pthread_mutex_unlock(&io);
 	return r;
 }
 
+/* (a thread) reads the list again; only a good one replaces the last */
 static void refresh_list(void)
 {
+	time_t st = files_stamp();
 	char *l = ask("[\"list\"]", 60);
+	cJSON *j = l ? cJSON_Parse(l) : NULL;
+	int good = j && cJSON_IsTrue(cJSON_GetObjectItem(j, "ok")) && cJSON_GetObjectItem(j, "menus");
+	cJSON_Delete(j);
 	pthread_mutex_lock(&lk);
-	if (l) { free(list_json); list_json = l; load_error[0] = 0; }
+	if (good) { free(list_json); list_json = l; l = NULL; stamp = st; load_error[0] = 0; }
+	else {
+		failed_at = time(NULL);
+		if (!load_error[0]) snprintf(load_error, sizeof(load_error), "Update All's settings couldn't be read");
+	}
 	pthread_mutex_unlock(&lk);
+	free(l);
 }
 
 static void *loader(void *a)
 {
-	(void)a;
+	int restart = a != NULL;
+	if (restart) {                                /* Update All or its settings changed: its code loads again */
+		pthread_mutex_lock(&io);
+		stop_locked();
+		pthread_mutex_unlock(&io);
+	}
 	refresh_list();
 	pthread_mutex_lock(&lk);
 	loading = 0;
-	pthread_mutex_unlock(&lk);
-	return NULL;
-}
-
-static void *uninstaller(void *a)
-{
-	char *args = a;
-	char *r = ask(args, 1800);                    /* the Downloader removing files: up to 30 min */
-	free(args);
-	refresh_list();
-	pthread_mutex_lock(&lk);
-	free(job_result);
-	job_result = r ? r : strdup("{\"ok\":false,\"error\":\"Update All's uninstall didn't answer\"}");
-	busy = 0;
 	pthread_mutex_unlock(&lk);
 	return NULL;
 }
@@ -214,7 +240,44 @@ static void start_thread(void *(*fn)(void *), void *arg)
 	if (pthread_create(&t, NULL, fn, arg) == 0) pthread_detach(t);
 }
 
-/* the reply's text for one of the bridge's own commands, as an args array: ["act","menu",3,"ok"] */
+/* (lk held) starts reading the list in the background, unless it's being read or just failed */
+static int load_locked(int restart, int fresh)
+{
+	if (loading) return 1;
+	if (!fresh && load_error[0] && failed_at && time(NULL) - failed_at < 60) return 0;   /* (not every poll) */
+	loading = 1;
+	start_thread(loader, restart ? (void *)1 : NULL);
+	return 1;
+}
+
+static void *uninstaller(void *a)
+{
+	char *args = a;
+	char *r = ask(args, 1800);                    /* the Downloader removing files: up to 30 min */
+	free(args);
+	pthread_mutex_lock(&lk);
+	stamp = files_stamp();                        /* (its own changes: no reload for them) */
+	pthread_mutex_unlock(&lk);
+	refresh_list();
+	pthread_mutex_lock(&lk);
+	free(job_result);
+	job_result = r ? r : strdup("{\"ok\":false,\"error\":\"Update All's uninstall didn't answer\"}");
+	busy = 0;
+	pthread_mutex_unlock(&lk);
+	return NULL;
+}
+
+static void *refresher(void *a)
+{
+	(void)a;
+	refresh_list();
+	pthread_mutex_lock(&lk);
+	loading = 0;
+	pthread_mutex_unlock(&lk);
+	return NULL;
+}
+
+/* the bridge's own command as an args array: ["act","menu",3,"ok"] */
 static cJSON *args_of(const char *cmd, cJSON *req)
 {
 	cJSON *a = cJSON_CreateArray();
@@ -227,26 +290,28 @@ static cJSON *args_of(const char *cmd, cJSON *req)
 	return a;
 }
 
+static cJSON *wait_reply(const char *why)
+{
+	cJSON *o = cJSON_CreateObject();
+	cJSON_AddBoolToObject(o, "ok", 0);
+	cJSON_AddBoolToObject(o, "wait", 1);
+	cJSON_AddStringToObject(o, "error", why);
+	return o;
+}
+
 cJSON *ua_cmd(cJSON *req, const char **err)
 {
 	if (!ua_installed()) { *err = "Update All isn't installed (Scripts/update_all.sh, run once), or Phosphor's ua bridge is missing"; return NULL; }
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 	if (!d) d = "list";
 
+	/* never waits for the bridge: the list is read in the background, the last one sent meanwhile */
 	if (!strcmp(d, "list") || !strcmp(d, "status")) {
 		int fresh = cJSON_IsTrue(cJSON_GetObjectItem(req, "fresh"));
 		pthread_mutex_lock(&lk);
-		if (!loading && !busy && stale_locked()) {
-			free(list_json);
-			list_json = NULL;
-			pthread_mutex_unlock(&lk);
-			pthread_mutex_lock(&io);
-			stop_locked();                            /* the old code out: the new one loads */
-			pthread_mutex_unlock(&io);
-			pthread_mutex_lock(&lk);
-		}
-		int start = (!list_json || fresh) && !loading;
-		if (start) loading = 1;
+		int stale = list_json && !busy && files_stamp() != stamp;
+		if (stale) { free(list_json); list_json = NULL; }
+		if (!list_json || fresh) load_locked(stale, fresh);
 		cJSON *o = cJSON_CreateObject();
 		if (list_json && !fresh) {
 			cJSON *l = cJSON_Parse(list_json);
@@ -259,31 +324,52 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 			cJSON *jr = cJSON_Parse(job_result);
 			if (jr) cJSON_AddItemToObject(o, "last_job", jr);
 		}
-		if (load_error[0]) cJSON_AddStringToObject(o, "load_error", load_error);
+		if (load_error[0] && !loading) cJSON_AddStringToObject(o, "load_error", load_error);
 		pthread_mutex_unlock(&lk);
-		if (start) start_thread(loader, NULL);
 		return o;
 	}
+	/* answered straight away when the bridge is free and up to date; otherwise "wait" (it's loaded meanwhile) */
 	if (!strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview") || !strcmp(d, "leftovers") || !strcmp(d, "clean_ao")) {
 		pthread_mutex_lock(&lk);
-		int b = busy;
+		if (busy) { pthread_mutex_unlock(&lk); *err = "Busy uninstalling; try again when it's done"; return NULL; }
+		int stale = files_stamp() != stamp;
+		if (stale || loading) {
+			if (stale && list_json) { free(list_json); list_json = NULL; }
+			load_locked(stale, 1);
+			pthread_mutex_unlock(&lk);
+			return wait_reply("Update All's settings are being read again; try again in a moment");
+		}
 		pthread_mutex_unlock(&lk);
-		if (b) { *err = "Busy uninstalling; try again when it's done"; return NULL; }
+		if (pthread_mutex_trylock(&io)) return wait_reply("Update All's settings are busy; try again in a moment");
+		if (pid <= 0) {                               /* stopped (unused for a while): started in the background */
+			pthread_mutex_unlock(&io);
+			pthread_mutex_lock(&lk);
+			load_locked(0, 1);
+			pthread_mutex_unlock(&lk);
+			return wait_reply("Update All's settings are loading; try again in a moment");
+		}
 		cJSON *a = args_of(d, req);
 		char *s = cJSON_PrintUnformatted(a);
 		cJSON_Delete(a);
-		char *r = s ? ask(s, 120) : NULL;
+		char *r = s ? ask_locked(s, 60) : NULL;
+		pthread_mutex_unlock(&io);
 		free(s);
 		if (!r) { *err = "Update All's settings didn't answer"; return NULL; }
 		cJSON *o = cJSON_Parse(r);
 		free(r);
 		if (!o) { *err = "Update All's settings answered something unreadable"; return NULL; }
-		if (strcmp(d, "preview") && strcmp(d, "leftovers")) refresh_list();     /* values or the guard changed */
+		if (strcmp(d, "preview") && strcmp(d, "leftovers")) {
+			pthread_mutex_lock(&lk);
+			stamp = files_stamp();                    /* (our own change: not a reason to reload) */
+			if (!loading) { loading = 1; start_thread(refresher, NULL); }   /* values or the guard changed */
+			pthread_mutex_unlock(&lk);
+		}
 		return o;
 	}
 	if (!strcmp(d, "run")) {
 		/* Update All itself, on the TV (MiSTer's terminal), through Phosphor's wrapper when it's there:
-		 * a restore point first, the guard after. The shell takes it from <tmp>/script-request. */
+		 * a restore point first, the guard after. The shell takes it from <tmp>/script-request. The list is
+		 * read again when the run has changed Update All's settings (their files' times). */
 		pthread_mutex_lock(&lk);
 		int b = busy;
 		pthread_mutex_unlock(&lk);
@@ -297,14 +383,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		if (!f) { *err = "Couldn't ask the TV"; return NULL; }
 		fprintf(f, "%s\n", path);
 		fclose(f);
-		plog("Update All: run asked from the app");
-		pthread_mutex_lock(&io);                      /* the run changes its settings: read them again after */
-		stop_locked();
-		pthread_mutex_unlock(&io);
-		pthread_mutex_lock(&lk);
-		free(list_json);
-		list_json = NULL;
-		pthread_mutex_unlock(&lk);
+		plog("Update All: run asked");
 		cJSON *o = cJSON_CreateObject();
 		cJSON_AddBoolToObject(o, "running", 1);
 		return o;
@@ -335,10 +414,10 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 void ua_tick(void)
 {
 	pthread_mutex_lock(&lk);
-	int idle = pid > 0 && !busy && !loading && used_at && time(NULL) - used_at > 300;
+	int idle = !busy && !loading && used_at && time(NULL) - used_at > 300;
 	pthread_mutex_unlock(&lk);
 	if (idle && pthread_mutex_trylock(&io) == 0) {
-		stop_locked();                            /* 5 min unused: Update All's code out of memory */
+		if (pid > 0) stop_locked();               /* 5 min unused: Update All's code out of memory */
 		pthread_mutex_unlock(&io);
 	}
 }

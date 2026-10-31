@@ -29,8 +29,16 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - **Credits** for the ports in the port screens and About: neofreno (Quake, Duke3D), kimchiman52 with
   RSDKModding (3S-ARM, Sonic Mania), gmcnaught (Maldita Castilla and the hybrid platform).
 
+- **MiSTer's latest Main** merged into Phosphor's (MiSTer-devel up to afb917f, 31 October): ao486 / z486 no
+  longer freeze with a CD on IDE 1-0 (IDE transfers don't block), Minimig's CD reads at full speed and data
+  reads stop CD audio, and an arcade game's MRA can load its disk image into an entry the core hides.
+
 ### Fixed
 - Quitting 3S-ARM goes straight back to Phosphor (no other menu screen first).
+- The OSD's Restart in Quake and Duke3D, and a hybrid core's OSD Reset, work (the button's pulse was over
+  before Main looked). A game port's or hybrid core's engine is stopped before the next core is loaded, and
+  a game that doesn't quit is stopped instead of waited for; the 3S-ARM and Sonic Mania Mains put the ARM
+  clock back to stock on Quit.
 
 ## 0.27.60
 

@@ -2770,7 +2770,7 @@ static void ua_take(cJSON *r)
 		ua_vl.count = ua_count();
 		ua_vl.sel = LV_MIN(keep, LV_MAX(0, ua_vl.count - 1));
 		lv_obj_set_hidden(ua.wait, true);
-		lv_obj_set_hidden(ua.panel, false);
+		lv_obj_set_hidden(ua.panel, theme_lr);
 		vlist_refresh(&ua_vl);
 		ua_detail();
 	} else {
@@ -2922,7 +2922,7 @@ static void ua_result(cJSON *r)
 			static const char *const ok_[] = { "OK" };
 			ua_modal(4, api_str(p, "header") && *api_str(p, "header") ? api_str(p, "header") : "Update All", text, ok_, 1);
 		}
-	} else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "That didn't work");
+	} else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "That didn't work");   /* (a "wait" reply says to try again) */
 	else if (api_str(r, "skipped")) toast_show("Skipped a value Phosphor guards");
 	/* Update All's own chain opened a menu (after its message): that menu, under the message */
 	const char *nav = api_str(r, "navigate");
@@ -2961,12 +2961,17 @@ static void ua_uninstall_ask(cJSON *e)
 {
 	cJSON *u = cJSON_GetObjectItem(e, "uninstall");
 	if (!u || !ua_installed(e)) { toast_show("Nothing of it is installed"); return; }
-	char *ids = cJSON_PrintUnformatted(cJSON_GetObjectItem(u, "db_ids"));
-	if (!ids) return;
-	char req[1200];
-	snprintf(req, sizeof(req), "{\"cmd\":\"ua\",\"do\":\"preview\",\"args\":%s}", ids);
-	free(ids);
-	cJSON *p = api_call("%s", req);
+	cJSON *pq = cJSON_CreateObject();
+	cJSON_AddStringToObject(pq, "cmd", "ua");
+	cJSON_AddStringToObject(pq, "do", "preview");
+	cJSON_AddItemToObject(pq, "args", cJSON_Duplicate(cJSON_GetObjectItem(u, "db_ids"), 1));
+	cJSON *p = api_call_json(60000, pq);
+	cJSON_Delete(pq);
+	if (!api_ok(p)) {
+		toast_show(api_str(p, "error") ? api_str(p, "error") : "Couldn't see what it installed: try again");
+		cJSON_Delete(p);
+		return;
+	}
 	double files = api_num(p, "files", 0), bytes = api_num(p, "bytes", 0);
 	char sz[40], text[1600], hd[220];
 	ua_size(sz, sizeof(sz), bytes);
@@ -3049,10 +3054,8 @@ static void ua_modal_key(pkey_t k)
 			cJSON_AddStringToObject(req, "do", "uninstall");
 			cJSON_AddStringToObject(req, "title", "leftovers");
 			cJSON_ArrayForEach(d, cJSON_GetObjectItem(ua.left, "dbs")) if (api_str(d, "db_id")) cJSON_AddItemToArray(ids, cJSON_CreateString(api_str(d, "db_id")));
-			char *rq = cJSON_PrintUnformatted(req);
+			cJSON *r = api_call_json(30000, req);
 			cJSON_Delete(req);
-			cJSON *r = rq ? api_call("%s", rq) : NULL;
-			free(rq);
 			if (api_ok(r)) { ua.busy = 1; toast_show("Removing leftovers: Update All's Downloader removes the files"); cJSON_Delete(ua.left); ua.left = NULL; }
 			else toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start it");
 			cJSON_Delete(r);
@@ -3067,16 +3070,14 @@ static void ua_modal_key(pkey_t k)
 		return;
 	}
 	if (kind == 2 && pick == 1 && ua.db_ids) {
-		char *ids = cJSON_PrintUnformatted(ua.db_ids);
-		cJSON *t = cJSON_CreateString(ua.title);
-		char *tj = cJSON_PrintUnformatted(t);
-		cJSON_Delete(t);
-		char req[1400];
-		snprintf(req, sizeof(req), "{\"cmd\":\"ua\",\"do\":\"uninstall\",\"args\":%s,\"title\":%s}", ids ? ids : "[]", tj ? tj : "\"\"");
-		free(ids);
-		free(tj);
+		cJSON *rq = cJSON_CreateObject();
+		cJSON_AddStringToObject(rq, "cmd", "ua");
+		cJSON_AddStringToObject(rq, "do", "uninstall");
+		cJSON_AddItemToObject(rq, "args", cJSON_Duplicate(ua.db_ids, 1));
+		cJSON_AddStringToObject(rq, "title", ua.title);
 		ua_modal_close();
-		cJSON *r = api_call("%s", req);
+		cJSON *r = api_call_json(30000, rq);
+		cJSON_Delete(rq);
 		if (api_ok(r)) { ua.busy = 1; toast_show("Uninstalling: Update All's Downloader removes the files"); }
 		else toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start the uninstall");
 		cJSON_Delete(r);
@@ -3084,12 +3085,22 @@ static void ua_modal_key(pkey_t k)
 		return;
 	}
 	if (kind == 3 && pick == 1) {
-		char req[300], key[96];
-		snprintf(key, sizeof(key), "%s", ua.key);
+		char menu[48], act[8];
+		int idx = ua.idx;
+		snprintf(menu, sizeof(menu), "%s", ua.menu);
+		snprintf(act, sizeof(act), "%s", ua.act);
+		cJSON *rq = cJSON_CreateObject(), *args = cJSON_AddArrayToObject(rq, "args");
+		cJSON_AddStringToObject(rq, "cmd", "ua");
+		cJSON_AddStringToObject(rq, "do", "allow");
+		cJSON_AddItemToArray(args, cJSON_CreateString(ua.key));
+		cJSON_AddItemToArray(args, cJSON_CreateString("on"));
 		ua_modal_close();
-		snprintf(req, sizeof(req), "{\"cmd\":\"ua\",\"do\":\"allow\",\"args\":[\"%s\",\"on\"]}", key);
-		cJSON_Delete(api_call("%s", req));
-		ua_do_act(ua.menu, ua.idx, ua.act, -1);       /* now it goes through */
+		cJSON *r = api_call_json(60000, rq);
+		cJSON_Delete(rq);
+		int ok = api_ok(r);
+		if (!ok) toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't allow it");
+		cJSON_Delete(r);
+		if (ok) ua_do_act(menu, idx, act, -1);       /* now it goes through */
 		return;
 	}
 	if (kind == 1) {
@@ -3125,9 +3136,13 @@ static void ua_key(pkey_t k)
 		int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(w ? cJSON_GetObjectItem(w, "status") : NULL, "connected"));
 		cJSON_Delete(w);
 		if (!net) { toast_show("Connect to a network first"); return; }
-		/* through phosphord, so its copy of Update All's settings is read again after the run */
-		cJSON *r = api_call("{\"cmd\":\"ua\",\"do\":\"run\"}");
-		if (!api_ok(r)) cores_start_job(net, 1);
+		if (ua.busy) { toast_show("Busy uninstalling: run it when that's done"); return; }
+		/* through phosphord (it refuses while an uninstall runs); straight from here only when phosphord
+		   is too old to know "run" */
+		cJSON *r = api_call_slow(15000, "{\"cmd\":\"ua\",\"do\":\"run\"}");
+		const char *er = api_str(r, "error");
+		if (r && !api_ok(r) && er && strstr(er, "do: list")) cores_start_job(net, 1);
+		else if (!api_ok(r)) toast_show(er ? er : "Couldn't start Update All: try again");
 		cJSON_Delete(r);
 		return;
 	}
