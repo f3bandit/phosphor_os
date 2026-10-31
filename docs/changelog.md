@@ -3,6 +3,22 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.59
+
+### Fixed
+- **"Couldn't send box art to the SS1: … forcibly closed by the remote host"** during Look up on this PC
+  (Phosphor for Windows 0.2.50). When the SS1 was busy, it answered a box art upload with "busy" but
+  dropped the rest of the picture, and on Windows that reset the connection before the answer arrived:
+  the game was left for later. Uploads cut off like that are now sent again (they only replace the art).
+  The phone app (0.9.13) and phosphor-link do the same, and phosphor-link now waits out "busy" too.
+  Reported by n00dlez.
+
+### Tests
+- New end-to-end tests run on every change against a real phosphord built for the PC: Look up on this
+  PC with box art from a pretend source while the app's page asks for progress, the phone app's uploads
+  six at a time, and phosphor-link with every connection taken. They fail on 0.27.57's apps with the same
+  "busy: try again", and found the upload problem above.
+
 ## 0.27.58
 
 ### Fixed
