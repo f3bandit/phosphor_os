@@ -1,0 +1,30 @@
+# check_polls.py: synchronous phosphord calls on repeating paths that were there when the check
+# was added (Oct 31 2026), as '<function>: <its line>'. Move each to api_bg_ask / api_bg_take, then take its line out.
+art_update: cJSON *r = api_call("{\"cmd\":\"scrape_progress\"}");
+dcopy_update: cJSON *r = api_call("{\"cmd\":\"disc_copy\"}");
+disc_refresh: cJSON *r = api_call("{\"cmd\":\"disc\"}");
+gd_tick: cJSON *r = api_call("{\"cmd\":\"guard\"}");
+ms_poll: cJSON *r = api_call("{\"cmd\":\"memcard\"}");
+mu_panel: cJSON *r = api_call("{\"cmd\":\"music_album\",\"id\":\"%s\"}", api_str(a, "id") ? api_str(a, "id") : "");
+music_tick: cJSON *r = api_call("{\"cmd\":\"music_albums\"}");
+np_update: cJSON *r = api_call("{\"cmd\":\"music\"}");
+padtest_poll: cJSON *r = api_call("{\"cmd\":\"pads\"}"), *it, *pads = r ? cJSON_GetObjectItem(r, "pads") : NULL;
+pt_pads: cJSON *r = api_call("{\"cmd\":\"pads\"}"), *it;
+rv_fetch_game: cJSON *r = api_call("{\"cmd\":\"ra_game\",\"id\":%lld}", gid);
+rv_fetch_profile: cJSON *r = api_call("{\"cmd\":\"ra_profile\"}");
+scan_update: cJSON *r = api_call("{\"cmd\":\"scan_progress\"}");
+sg_refresh: cJSON *b = api_call("{\"cmd\":\"backup\"}");
+sg_refresh: cJSON *r = api_call("{\"cmd\":\"storage\"}"), *it;
+ui_tick: cJSON_Delete(api_call("{\"cmd\":\"update\",\"do\":\"check\"}"));
+ui_tick: if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
+ui_tick: if (cur == SCR_BT) { static int bt_tick; if (bt.busy || ++bt_tick % 3 == 0) bt_apply(api_call("{\"cmd\":\"bluetooth\"}")); }
+ui_tick: if (cur == SCR_CLOUD && cl.busy && !osk.open) cl_apply(api_call("{\"cmd\":\"cloud\"}"));
+ui_tick: if (cur == SCR_DIAG && diag_busy[0]) diag_apply(api_call("{\"cmd\":\"diag\"}"));
+ui_tick: if (cur == SCR_PORTS && pt.busy && now - last_mc >= 250) { last_mc = now; pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
+ui_tick: if (cur == SCR_PUPD) { static int ut; if (up.busy || ++ut % 3 == 0) up_apply(api_call("{\"cmd\":\"update\"}")); }
+ui_tick: if (cur == SCR_REMOTE && pair_box) remote_apply(api_call("{\"cmd\":\"remote\"}"));
+ui_tick: if (cur == SCR_WIFI && !osk.open) { static int tick; if (wscanning || ++tick % 5 == 0) wifi_apply(api_call("{\"cmd\":\"wifi\"}")); }
+ui_tick: if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}"); upo_apply(r); cJSON_Delete(r); }
+ui_tick: { static int pt_tick; if (cur == SCR_PORTS && !pt.busy && ++pt_tick % 2 == 0) pt_apply(api_call("{\"cmd\":\"memcard\"}")); }
+wall_tick: cJSON *r = api_call("%s", b);
+wl_refresh_net: cJSON *w = api_call("{\"cmd\":\"wifi\"}");
