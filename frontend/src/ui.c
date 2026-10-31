@@ -251,7 +251,7 @@ static void rs_status(void)
 	/* which player that is: phosphord matches jsN to Main's players */
 	int pl = 0;
 	char name[120] = "";
-	cJSON *r = api_call("{\"cmd\":\"retrospy\"}"), *c;
+	cJSON *r = api_call("{\"cmd\":\"retrospy\"}"), *c;          /* poll-ok: only when RetroSpy starts watching */
 	cJSON_ArrayForEach(c, cJSON_GetObjectItem(r, "controllers"))
 		if ((int)api_num(c, "js", -1) == js) { pl = (int)api_num(c, "player", 0); snprintf(name, sizeof(name), "%s", api_str(c, "name") ? api_str(c, "name") : ""); }
 	cJSON_Delete(r);
@@ -1701,7 +1701,7 @@ static int nsysname;
 static const char *system_name(const char *id)
 {
 	if (!nsysname) {
-		cJSON *r = api_call("{\"cmd\":\"systems\",\"all\":true}"), *it;
+		cJSON *r = api_call("{\"cmd\":\"systems\",\"all\":true}"), *it;   /* poll-ok: once, then kept */
 		cJSON *arr = api_ok(r) ? cJSON_GetObjectItem(r, "systems") : NULL;
 		cJSON_ArrayForEach(it, arr) {
 			if (nsysname >= 96) break;
@@ -2841,7 +2841,7 @@ static void ua_take(cJSON *r)
 	}
 }
 
-static void ua_refresh(void) { ua_take(api_call("{\"cmd\":\"ua\"}")); }
+static void ua_refresh(void) { ua_take(api_call("{\"cmd\":\"ua\"}")); }   /* poll-ok: on opening the page and after an action */
 
 static void show_ua(void)
 {
@@ -3229,7 +3229,10 @@ static void ua_key(pkey_t k)
 static void ua_tick(void)
 {
 	if (cur != SCR_UA || ua.modal) return;
-	if (ua.loading || ua.busy || !ua.list) ua_refresh();
+	/* while the list loads or an uninstall runs: asked in the background, the newest answer taken */
+	if (ua.loading || ua.busy || !ua.list) api_bg_ask("ua", "{\"cmd\":\"ua\"}");
+	cJSON *r = api_bg_take("ua");
+	if (r) ua_take(r);
 }
 
 
@@ -3306,7 +3309,7 @@ static void rs_draw(void)
 
 static void rs_refresh(void)
 {
-	cJSON *r = api_call_slow(4000, "{\"cmd\":\"retrospy\"}");
+	cJSON *r = api_call_slow(4000, "{\"cmd\":\"retrospy\"}");   /* poll-ok: on opening the page and once after a job */
 	if (api_ok(r)) { cJSON_Delete(rs.info); rs.info = r; }
 	else cJSON_Delete(r);
 	rs_draw();
@@ -3378,7 +3381,8 @@ static void rs_key(pkey_t k)
 static void rs_tick(void)
 {
 	if (cur != SCR_RS || !rs.busy) return;
-	cJSON *r = api_call("{\"cmd\":\"ua\"}");
+	api_bg_ask("rs_ua", "{\"cmd\":\"ua\"}");       /* (in the background: the menu never waits for it) */
+	cJSON *r = api_bg_take("rs_ua");
 	if (r && !cJSON_IsTrue(cJSON_GetObjectItem(r, "busy"))) { rs.busy = 0; rs_job_done(r); cJSON_Delete(r); rs_refresh(); return; }
 	cJSON_Delete(r);
 }
@@ -4798,7 +4802,7 @@ static void si_update(void)
 	if (si_wants_ext(row) && !si.ext_asked && now - si.moved_at >= SI_REST_MS) {
 		si.ext_asked = 1;
 		cJSON_Delete(si.ext);
-		si.ext = api_call(row == SET_WIFI ? "{\"cmd\":\"wifi\"}" : row == SET_BT ? "{\"cmd\":\"bluetooth\"}" :
+		si.ext = api_call(                            /* poll-ok: once per row rested on */row == SET_WIFI ? "{\"cmd\":\"wifi\"}" : row == SET_BT ? "{\"cmd\":\"bluetooth\"}" :
 		                  row == SET_REMOTE ? "{\"cmd\":\"remote\"}" : row == SET_CLOUD ? "{\"cmd\":\"cloud\"}" :
 		                  row == SET_BACKUP ? "{\"cmd\":\"backup\"}" : "{\"cmd\":\"status\"}");
 		si.ext_row = api_ok(si.ext) ? row : -1;

@@ -10,6 +10,8 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <stdarg.h>
+#include <stdint.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -114,6 +116,25 @@ static char *read_line(int ms)
 	}
 }
 
+/* the same request asked again and again with the menu waiting each time (a poll that belongs in
+   api_bg_ask): logged once a minute per request, so a new screen that does it shows up in frontend.log
+   ("poll: ..."); tools/check-polls finds the same in the source */
+static void poll_note(const char *req)
+{
+	static struct { uint32_t h; int n; long t0, logged; } ring[8];
+	uint32_t h = 2166136261u;
+	for (const char *c = req; *c && *c != '\n'; c++) h = (h ^ (unsigned char)*c) * 16777619u;
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	long now = ts.tv_sec;
+	int k = (int)(h % 8);
+	if (ring[k].h != h || now - ring[k].t0 > 10) { ring[k].h = h; ring[k].n = 0; ring[k].t0 = now; }
+	if (++ring[k].n == 5 && now - ring[k].logged >= 60) {
+		ring[k].logged = now;
+		plog("poll: the menu waited for phosphord 5 times in %ld s for %.80s (use api_bg_ask)", now - ring[k].t0 + 1, req);
+	}
+}
+
 cJSON *api_call(const char *fmt, ...)
 {
 	char req[2048];
@@ -122,6 +143,7 @@ cJSON *api_call(const char *fmt, ...)
 	int n = vsnprintf(req, sizeof(req) - 2, fmt, ap);
 	va_end(ap);
 	if (n < 0 || n >= (int)sizeof(req) - 2) return NULL;
+	poll_note(req);
 	req[n++] = '\n';
 	req[n] = 0;
 	for (int attempt = 0; attempt < 2; attempt++) {
@@ -190,6 +212,7 @@ cJSON *api_call_slow(int ms, const char *fmt, ...)
 	int n = vsnprintf(req, sizeof(req) - 2, fmt, ap);
 	va_end(ap);
 	if (n < 0 || n >= (int)sizeof(req) - 2) return NULL;
+	poll_note(req);
 	req[n++] = '\n';
 	req[n] = 0;
 	if (ensure() != 0) return NULL;

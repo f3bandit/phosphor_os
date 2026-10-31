@@ -1,0 +1,16 @@
+# Checks for the TV's shell (frontend/): the menu must never wait for phosphord on something it asks again
+# and again (tools/check-polls: a synchronous api_call on a repeating path; the menu lag fixed Oct 29 2026).
+name: Shell checks
+on:
+  push:
+    paths: ["frontend/**", "tools/check-polls/**", ".github/workflows/shell-checks.yml"]
+  pull_request:
+    paths: ["frontend/**", "tools/check-polls/**", ".github/workflows/shell-checks.yml"]
+  workflow_dispatch:
+jobs:
+  polls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: No new synchronous polls on the menu's repeating paths
+        run: python3 tools/check-polls/check_polls.py
