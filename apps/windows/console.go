@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -93,6 +94,18 @@ func pair(addr, code string) (id, tok string, err error) {
 	return out.ID, out.Token, nil
 }
 
+// busyTries: how many more times a request the SS1 was too busy for is sent (about 30 seconds in all)
+const busyTries = 20
+
+// busyWait: a short wait, a little longer each time, with some jitter so waiting requests don't all come back at once
+func busyWait(try int) time.Duration {
+	ms := 250 * (try + 1)
+	if ms > 2000 {
+		ms = 2000
+	}
+	return time.Duration(ms+rand.Intn(250)) * time.Millisecond
+}
+
 func authed(method, path string, body io.Reader, timeout time.Duration) (*http.Response, error) {
 	cfgMu.Lock()
 	addr := cfg.Address
@@ -101,14 +114,37 @@ func authed(method, path string, body io.Reader, timeout time.Duration) (*http.R
 	if addr == "" || tok == "" {
 		return nil, errNotPaired
 	}
-	req, err := http.NewRequest(method, "http://"+addr+path, body)
-	if err != nil {
-		return nil, err
+	// the SS1 serves a few connections at once and answers 503 "busy" to more: kept, so it can be sent again
+	var data []byte
+	if body != nil {
+		b, err := io.ReadAll(body)
+		if err != nil {
+			return nil, err
+		}
+		data = b
 	}
-	req.Header.Set("Authorization", "Bearer "+tok)
-	r, err := client(timeout).Do(req)
-	if err != nil {
-		return nil, err
+	var r *http.Response
+	for try := 0; ; try++ {
+		var rd io.Reader
+		if body != nil {
+			rd = bytes.NewReader(data)
+		}
+		req, err := http.NewRequest(method, "http://"+addr+path, rd)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+		r, err = client(timeout).Do(req)
+		if err != nil {
+			return nil, err
+		}
+		// only the "busy" answer (sent before the request is read, so nothing was done) has Retry-After
+		if r.StatusCode != 503 || r.Header.Get("Retry-After") == "" || try >= busyTries {
+			break
+		}
+		io.Copy(io.Discard, io.LimitReader(r.Body, 4096))
+		r.Body.Close()
+		time.Sleep(busyWait(try))
 	}
 	if r.StatusCode == 401 {
 		r.Body.Close()
