@@ -3,6 +3,16 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.62 (in progress)
+
+### New
+- **RetroSpy, set up from Phosphor.** Settings > RetroSpy on the TV, and Settings > Controllers > RetroSpy in
+  Phosphor for Windows (0.2.53): install or uninstall RetroSpy's MiSTer reader through Update All, and what
+  to type into RetroSpy on the PC (the SS1's address, MiSTer's login, each controller's number with its
+  player). While RetroSpy is watching, a red dot and the player show in the TV's top bar. Phosphor for
+  Windows finds RetroSpy on the PC and opens it with the address and login filled in. Nothing starts at
+  boot: RetroSpy on the PC starts the reader over SSH while it watches.
+
 ## 0.27.61
 
 ### New

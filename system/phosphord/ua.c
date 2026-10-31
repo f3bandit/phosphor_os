@@ -253,7 +253,7 @@ static int load_locked(int restart, int fresh)
 static void *uninstaller(void *a)
 {
 	char *args = a;
-	char *r = ask(args, 1800);                    /* the Downloader removing files: up to 30 min */
+	char *r = ask(args, 1800);                    /* the Downloader removing / fetching files: up to 30 min */
 	free(args);
 	pthread_mutex_lock(&lk);
 	stamp = files_stamp();                        /* (its own changes: no reload for them) */
@@ -388,26 +388,26 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON_AddBoolToObject(o, "running", 1);
 		return o;
 	}
-	if (!strcmp(d, "uninstall")) {
-		cJSON *a = args_of("uninstall", req);
+	if (!strcmp(d, "uninstall") || !strcmp(d, "install")) {
+		cJSON *a = args_of(d, req);
 		if (cJSON_GetArraySize(a) < 2) { cJSON_Delete(a); *err = "args: the database ids"; return NULL; }
 		char *s = cJSON_PrintUnformatted(a);
 		cJSON_Delete(a);
 		const char *title = cJSON_GetStringValue(cJSON_GetObjectItem(req, "title"));
 		pthread_mutex_lock(&lk);
-		if (busy || !s) { pthread_mutex_unlock(&lk); free(s); *err = "Busy uninstalling something else"; return NULL; }
+		if (busy || !s) { pthread_mutex_unlock(&lk); free(s); *err = "Busy with another install or uninstall"; return NULL; }
 		busy = 1;
 		snprintf(job_title, sizeof(job_title), "%s", title ? title : "");
 		free(job_result);
 		job_result = NULL;
 		pthread_mutex_unlock(&lk);
-		plog("Update All: uninstalling %s", title ? title : s);
+		plog("Update All: %s %s", !strcmp(d, "install") ? "installing" : "uninstalling", title ? title : s);
 		start_thread(uninstaller, s);
 		cJSON *o = cJSON_CreateObject();
 		cJSON_AddBoolToObject(o, "busy", 1);
 		return o;
 	}
-	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), leftovers, clean_ao, run";
+	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), install (args: a db id), leftovers, clean_ao, run";
 	return NULL;
 }
 
