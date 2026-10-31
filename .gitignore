@@ -56,3 +56,4 @@ ss_secret_gen.go
 *.jks
 *.keystore
 release-keys/
+__pycache__/
