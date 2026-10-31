@@ -38,7 +38,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY, SCR_UA } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -2594,6 +2594,445 @@ static void guard_key(pkey_t k)
 static void cores_start_job_fwd(int all);
 static struct { int util, reg, linked; cJSON *cores; vlist_t list; lv_obj_t *dtitle, *dtext, *dfile; } fo;
 static cJSON *fo_core(int i) { return cJSON_GetArrayItem(fo.cores, i - fo.reg); }
+/* ---------- Settings > Update All ----------
+ * Update All's own list (phosphord's "ua": its settings code, read from the SD card), each item with Phosphor's
+ * status: Safe, Guarded (Phosphor blocks turning it on: Allow overrides), Warning, Left alone, or Untested (new
+ * since Phosphor checked). A opens a menu or changes an item, X uninstalls what an item installed (what goes
+ * is shown first), Y runs Update All through Phosphor (a restore point first). */
+static vlist_t ua_vl;
+static struct {
+	cJSON *list;                       /* phosphord's last reply */
+	char stack[8][48];                 /* the menus opened, root first */
+	int depth, sel[8];
+	lv_obj_t *wait, *panel, *name, *badge, *h1, *t1, *h2, *t2, *foot;
+	int loading, busy;
+	/* a dialog: 1 Update All's own (confirm or message), 2 uninstall, 3 allow a guarded item */
+	lv_obj_t *dim, *btn[4];
+	int modal, msel, mn;
+	char menu[48], act[8], key[96];
+	int idx;
+	cJSON *db_ids;
+	char title[160];
+} ua;
+
+static const char *ua_menu_id(void) { return ua.depth > 0 ? ua.stack[ua.depth - 1] : api_str(ua.list, "root"); }
+static cJSON *ua_entries(void)
+{
+	const char *m = ua_menu_id();
+	cJSON *menus = cJSON_GetObjectItem(ua.list, "menus");
+	return m ? cJSON_GetObjectItem(cJSON_GetObjectItem(menus, m), "entries") : NULL;
+}
+static cJSON *ua_cur(void) { return cJSON_GetArrayItem(ua_entries(), ua_vl.sel); }
+
+static const char *ua_status(cJSON *e) { cJSON *s = cJSON_GetObjectItem(e, "status"); const char *v = api_str(s, "status_now"); return v ? v : api_str(s, "status") ? api_str(s, "status") : "untested"; }
+static const char *ua_status_word(const char *s)
+{
+	return !strcmp(s, "safe") ? "Safe" : !strcmp(s, "guard") ? "Guarded" : !strcmp(s, "warn") ? "Warning" : !strcmp(s, "keep") ? "Left alone" : "Untested";
+}
+static lv_color_t ua_status_color(const char *s)
+{
+	return !strcmp(s, "safe") ? lv_color_hex(0x7bd88f) : !strcmp(s, "guard") ? PAL.acc : !strcmp(s, "warn") ? lv_color_hex(0xff9a66) : PAL.dim;
+}
+static int ua_installed(cJSON *e)
+{
+	cJSON *u = cJSON_GetObjectItem(e, "uninstall"), *id = cJSON_GetArrayItem(cJSON_GetObjectItem(u, "db_ids"), 0), *it;
+	if (!cJSON_IsString(id)) return 0;
+	cJSON_ArrayForEach(it, cJSON_GetObjectItem(ua.list, "installed"))
+		if (cJSON_IsString(it) && !strcasecmp(it->valuestring, id->valuestring)) return 1;
+	return 0;
+}
+static int ua_blocked(cJSON *e)
+{
+	cJSON *s = cJSON_GetObjectItem(e, "status");
+	return !strcmp(ua_status(e), "guard") && !cJSON_IsTrue(cJSON_GetObjectItem(e, "on")) && !cJSON_IsTrue(cJSON_GetObjectItem(s, "allowed"));
+}
+
+/* it can be changed here: a toggle, or an ok that isn't a menu (Update All's own dialog may follow) */
+static int ua_acts(cJSON *e)
+{
+	if (cJSON_IsTrue(cJSON_GetObjectItem(e, "toggles"))) return 1;
+	if (api_str(e, "submenu")) return 0;
+	cJSON *a;
+	cJSON_ArrayForEach(a, cJSON_GetObjectItem(e, "actions")) if (cJSON_IsString(a) && !strcmp(a->valuestring, "ok")) return 1;
+	return 0;
+}
+
+static void ua_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	cJSON *e = cJSON_GetArrayItem(ua_entries(), i);
+	snprintf(t, n, "%s", api_str(e, "title") ? api_str(e, "title") : "");
+	const char *st = ua_status_word(ua_status(e)), *v = api_str(e, "value");
+	*dim = 0;
+	if (api_str(e, "submenu") && !cJSON_IsTrue(cJSON_GetObjectItem(e, "toggles"))) snprintf(val, vn, ">");
+	else if (ua_blocked(e)) snprintf(val, vn, "%s  \xC2\xB7  Blocked", st);
+	else if (v && (!strcmp(v, "true") || !strcmp(v, "false"))) snprintf(val, vn, "%s  \xC2\xB7  <  %s  >", st, !strcmp(v, "true") ? "On" : "Off");
+	else if (v && *v) snprintf(val, vn, "%s  \xC2\xB7  <  %.20s  >", st, v);
+	else if (ua_acts(e)) snprintf(val, vn, "%s  \xC2\xB7  <  %s  >", st, cJSON_IsTrue(cJSON_GetObjectItem(e, "on")) ? "On" : "Off");
+	else snprintf(val, vn, "%s", st);
+}
+
+static void ua_detail(void)
+{
+	if (!ua.panel) return;
+	cJSON *e = ua_cur();
+	lv_label_set_text(ua.name, e && api_str(e, "title") ? api_str(e, "title") : "");
+	const char *s = e ? ua_status(e) : "untested";
+	char b[80];
+	cJSON *stj = cJSON_GetObjectItem(e, "status");
+	snprintf(b, sizeof(b), "%s%s%s", ua_status_word(s), cJSON_IsTrue(cJSON_GetObjectItem(stj, "allowed")) ? "  \xC2\xB7  allowed by you" : "",
+		ua_installed(e) ? "  \xC2\xB7  installed" : "");
+	lv_label_set_text(ua.badge, b);
+	lv_obj_set_style_text_color(ua.badge, ua_status_color(s), 0);
+	/* Update All's own words: its description, and its info text when it has one */
+	char said[1200] = "";
+	if (e && api_str(e, "desc")) snprintf(said, sizeof(said), "%s", api_str(e, "desc"));
+	cJSON *info = cJSON_GetObjectItem(e, "info"), *ln;
+	cJSON_ArrayForEach(ln, info) if (cJSON_IsString(ln) && *ln->valuestring) {
+		size_t l = strlen(said);
+		snprintf(said + l, sizeof(said) - l, "%s%s", l ? "\n" : "", ln->valuestring);
+	}
+	lv_label_set_text(ua.t1, said);
+	const char *note = api_str(stj, "note");
+	lv_label_set_text(ua.t2, note && *note ? note : !strcmp(s, "untested") ? "Nobody has checked this with Phosphor yet. If it changes MiSTer's main menu or starts at boot, the guard catches that after the run." : "");
+	char f[160] = "";
+	if (e && cJSON_GetObjectItem(e, "uninstall") && ua_installed(e)) snprintf(f, sizeof(f), "X  Uninstall what it installed");
+	if (ua.busy) snprintf(f, sizeof(f), "Uninstalling\xE2\x80\xA6");
+	lv_label_set_text(ua.foot, f);
+}
+
+static void ua_hints(void)
+{
+	static const char *const h[] = { "A", "Select", "\xE2\x86\x94", "Change", "X", "Uninstall", "Y", "Run Update All", "B", "Back", NULL };
+	footer_set(h);
+}
+
+static void ua_take(cJSON *r)
+{
+	if (!r) return;
+	if (!api_ok(r)) {
+		lv_label_set_text(ua.wait, api_str(r, "error") ? api_str(r, "error") : "Update All's settings couldn't be read");
+		lv_obj_set_hidden(ua.wait, false);
+		cJSON_Delete(r);
+		return;
+	}
+	ua.loading = cJSON_IsTrue(cJSON_GetObjectItem(r, "loading"));
+	int was_busy = ua.busy;
+	ua.busy = cJSON_IsTrue(cJSON_GetObjectItem(r, "busy"));
+	if (was_busy && !ua.busy) {
+		cJSON *j = cJSON_GetObjectItem(r, "last_job");
+		toast_show(api_ok(j) ? "Uninstalled" : "The uninstall didn't finish: see Update All's log");
+	}
+	if (cJSON_GetObjectItem(r, "menus")) {
+		cJSON_Delete(ua.list);
+		ua.list = r;
+		int keep = ua_vl.sel;
+		ua_vl.count = cJSON_GetArraySize(ua_entries());
+		ua_vl.sel = LV_MIN(keep, LV_MAX(0, ua_vl.count - 1));
+		lv_obj_set_hidden(ua.wait, true);
+		lv_obj_set_hidden(ua.panel, false);
+		vlist_refresh(&ua_vl);
+		ua_detail();
+	} else {
+		const char *le = api_str(r, "load_error");
+		lv_label_set_text(ua.wait, le ? "Update All's settings didn't load: run Update All once from Scripts, then try again" : "Reading Update All's settings\xE2\x80\xA6");
+		lv_obj_set_hidden(ua.wait, false);
+		cJSON_Delete(r);
+	}
+}
+
+static void ua_refresh(void) { ua_take(api_call("{\"cmd\":\"ua\"}")); }
+
+static void show_ua(void)
+{
+	cur = SCR_UA;
+	lv_obj_clean(body);
+	ua.panel = NULL;
+	ua.depth = 0;
+	screen_title("SETTINGS", "Update All");
+	vlist_create(&ua_vl, body, S(56), S(176), SW(720), S(440));
+	ua_vl.fill = ua_fill;
+	ua_vl.count = 0;
+	ua_vl.sel = ua_vl.top = 0;
+	ua.wait = mk_label(body, FONT_BODY, PAL.dim, "Reading Update All's settings\xE2\x80\xA6");
+	lv_obj_set_pos(ua.wait, S(80), S(190));
+	int x = SX(800), w = SW(424), iw = w - 2 * S(22);
+	ua.panel = mk_box(body, w, S(452), PAL.panel, S(10));
+	lv_obj_set_pos(ua.panel, x, S(170));
+	lv_obj_set_style_border_color(ua.panel, PAL.line, 0);
+	lv_obj_set_style_border_width(ua.panel, S(1) > 0 ? S(1) : 1, 0);
+	lv_obj_set_style_pad_all(ua.panel, S(22), 0);
+	lv_obj_set_style_pad_row(ua.panel, S(8), 0);
+	lv_obj_set_flex_flow(ua.panel, LV_FLEX_FLOW_COLUMN);
+	if (theme_lr) lv_obj_set_hidden(ua.panel, true);
+	ua.name = mk_label(ua.panel, FONT_TITLE, PAL.text, "");
+	lv_obj_set_width(ua.name, iw);
+	lv_label_set_long_mode(ua.name, LV_LABEL_LONG_MODE_DOTS);
+	ua.badge = mk_label(ua.panel, FONT_SMALL, PAL.dim, "");
+	ua.h1 = mk_label(ua.panel, FONT_LABEL, PAL.dim, "UPDATE ALL SAYS");
+	lv_obj_set_style_text_letter_space(ua.h1, S(2), 0);
+	lv_obj_set_style_margin_top(ua.h1, S(8), 0);
+	ua.t1 = mk_label(ua.panel, FONT_BODY, PAL.text, "");
+	lv_obj_set_width(ua.t1, iw);
+	lv_label_set_long_mode(ua.t1, LV_LABEL_LONG_MODE_WRAP);
+	ua.h2 = mk_label(ua.panel, FONT_LABEL, PAL.dim, "PHOSPHOR SAYS");
+	lv_obj_set_style_text_letter_space(ua.h2, S(2), 0);
+	lv_obj_set_style_margin_top(ua.h2, S(8), 0);
+	ua.t2 = mk_label(ua.panel, FONT_BODY, PAL.text, "");
+	lv_obj_set_width(ua.t2, iw);
+	lv_label_set_long_mode(ua.t2, LV_LABEL_LONG_MODE_WRAP);
+	ua.foot = mk_label(ua.panel, FONT_SMALL, PAL.acc, "");
+	lv_obj_set_style_margin_top(ua.foot, S(8), 0);
+	lv_obj_set_hidden(ua.panel, true);
+	ua_hints();
+	vlist_refresh(&ua_vl);
+	ua_refresh();
+}
+
+/* ---- the dialogs ---- */
+static void ua_modal_close(void)
+{
+	if (ua.modal) lv_obj_delete(ua.dim);
+	ua.modal = 0;
+	cJSON_Delete(ua.db_ids);
+	ua.db_ids = NULL;
+}
+static void ua_modal_draw(void)
+{
+	for (int i = 0; i < ua.mn; i++) {
+		int on = i == ua.msel;
+		lv_obj_set_style_bg_opa(ua.btn[i], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+		lv_obj_set_style_text_color(lv_obj_get_child(ua.btn[i], 0), on ? PAL.text : PAL.dim, 0);
+	}
+}
+/* header, lines of text, buttons (the first highlighted) */
+static void ua_modal(int kind, const char *header, const char *text, const char *const *buttons, int nb)
+{
+	ua_modal_close();
+	ua.modal = kind;
+	ua.msel = 0;
+	ua.mn = LV_MIN(nb, 4);
+	ua.dim = lv_obj_create(lv_layer_top());
+	lv_obj_remove_style_all(ua.dim);
+	lv_obj_set_size(ua.dim, W, H);
+	lv_obj_set_style_bg_color(ua.dim, PAL.bg, 0);
+	lv_obj_set_style_bg_opa(ua.dim, LV_OPA_80, 0);
+	int pw = theme_lr ? W - L(24) : SW(900);
+	lv_obj_t *p = mk_box(ua.dim, pw, LV_SIZE_CONTENT, PAL.panel, S(18));
+	lv_obj_center(p);
+	lv_obj_set_style_border_color(p, PAL.acc, 0);
+	lv_obj_set_style_border_width(p, S(1) > 0 ? S(1) : 1, 0);
+	lv_obj_set_style_pad_all(p, theme_lr ? L(8) : S(36), 0);
+	lv_obj_set_style_pad_row(p, S(14), 0);
+	lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
+	lv_obj_t *h = mk_label(p, theme_lr ? FONT_TITLE : FONT_HEADING, PAL.text, header);
+	lv_obj_set_width(h, pw - 2 * S(36));
+	lv_label_set_long_mode(h, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_t *t = mk_label(p, FONT_BODY, PAL.dim, text);
+	lv_obj_set_width(t, pw - 2 * S(36));
+	lv_label_set_long_mode(t, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_t *row = lv_obj_create(p);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_style_pad_column(row, S(12), 0);
+	for (int i = 0; i < ua.mn; i++) {
+		ua.btn[i] = mk_box(row, LV_SIZE_CONTENT, S(46), PAL.panel_on, S(10));
+		lv_obj_set_style_pad_hor(ua.btn[i], S(20), 0);
+		lv_obj_t *l = mk_label(ua.btn[i], FONT_NAME, PAL.dim, buttons[i]);
+		lv_obj_center(l);
+	}
+	ua_modal_draw();
+}
+
+static void ua_size(char *o, size_t n, double b)
+{
+	if (b >= 1e9) snprintf(o, n, "%.1f GB", b / 1e9);
+	else if (b >= 1e6) snprintf(o, n, "%.0f MB", b / 1e6);
+	else snprintf(o, n, "%.0f KB", b / 1e3);
+}
+
+static void ua_do_act(const char *menu, int idx, const char *act, int choice);
+static void ua_result(cJSON *r)
+{
+	if (!r) { toast_show("Update All's settings didn't answer"); return; }
+	cJSON *e = cJSON_GetObjectItem(r, "entry");
+	if (cJSON_IsTrue(cJSON_GetObjectItem(r, "guarded"))) {
+		snprintf(ua.key, sizeof(ua.key), "%s", api_str(e, "key") ? api_str(e, "key") : "");
+		char text[700];
+		snprintf(text, sizeof(text), "%s\n\nAllow it anyway? Phosphor then leaves it alone; set it back to Blocked any time.",
+			api_str(r, "error") ? api_str(r, "error") : "Phosphor guards this.");
+		char hd[200];
+		snprintf(hd, sizeof(hd), "%s is guarded", api_str(e, "title") ? api_str(e, "title") : "This");
+		static const char *const b[] = { "Keep it blocked", "Allow it" };
+		ua_modal(3, hd, text, b, 2);
+	} else if (cJSON_GetObjectItem(r, "prompt")) {
+		cJSON *p = cJSON_GetObjectItem(r, "prompt"), *ln;
+		char text[1200] = "";
+		cJSON_ArrayForEach(ln, cJSON_GetObjectItem(p, "text")) if (cJSON_IsString(ln)) {
+			size_t l = strlen(text);
+			snprintf(text + l, sizeof(text) - l, "%s%s", l ? "\n" : "", ln->valuestring);
+		}
+		if (!strcmp(api_str(p, "ui") ? api_str(p, "ui") : "", "confirm")) {
+			const char *b[4];
+			int nb = 0;
+			cJSON_ArrayForEach(ln, cJSON_GetObjectItem(p, "buttons")) if (cJSON_IsString(ln) && nb < 4) b[nb++] = ln->valuestring;
+			ua_modal(1, api_str(p, "header") ? api_str(p, "header") : "Update All", text, b, nb);
+		} else {
+			static const char *const ok_[] = { "OK" };
+			ua_modal(4, api_str(p, "header") && *api_str(p, "header") ? api_str(p, "header") : "Update All", text, ok_, 1);
+		}
+	} else if (!api_ok(r)) toast_show(api_str(r, "error") ? api_str(r, "error") : "That didn't work");
+	else if (api_str(r, "skipped")) toast_show("Skipped a value Phosphor guards");
+	cJSON_Delete(r);
+	ua_refresh();
+}
+static void ua_do_act(const char *menu, int idx, const char *act, int choice)
+{
+	snprintf(ua.menu, sizeof(ua.menu), "%s", menu);
+	ua.idx = idx;
+	snprintf(ua.act, sizeof(ua.act), "%s", act);
+	cJSON *r = choice >= 0 ? api_call_slow(120000, "{\"cmd\":\"ua\",\"do\":\"act\",\"args\":[\"%s\",%d,\"%s\",%d]}", menu, idx, act, choice)
+	                       : api_call_slow(120000, "{\"cmd\":\"ua\",\"do\":\"act\",\"args\":[\"%s\",%d,\"%s\"]}", menu, idx, act);
+	ua_result(r);
+}
+
+static void ua_change(cJSON *e)
+{
+	if (!e || ua.busy) return;
+	cJSON *acts = cJSON_GetObjectItem(e, "actions"), *a;
+	int has_toggle = 0;
+	cJSON_ArrayForEach(a, acts) if (cJSON_IsString(a) && !strcmp(a->valuestring, "toggle")) has_toggle = 1;
+	ua_do_act(api_str(e, "menu"), (int)api_num(e, "index", 0), has_toggle ? "toggle" : "ok", -1);
+}
+
+static void ua_uninstall_ask(cJSON *e)
+{
+	cJSON *u = cJSON_GetObjectItem(e, "uninstall");
+	if (!u || !ua_installed(e)) { toast_show("Nothing of it is installed"); return; }
+	char *ids = cJSON_PrintUnformatted(cJSON_GetObjectItem(u, "db_ids"));
+	if (!ids) return;
+	char req[1200];
+	snprintf(req, sizeof(req), "{\"cmd\":\"ua\",\"do\":\"preview\",\"args\":%s}", ids);
+	free(ids);
+	cJSON *p = api_call("%s", req);
+	double files = api_num(p, "files", 0), bytes = api_num(p, "bytes", 0);
+	char sz[40], text[1600], hd[220];
+	ua_size(sz, sizeof(sz), bytes);
+	snprintf(text, sizeof(text), "Only the files Update All installed for it are removed, from its own list: %.0f files, %s. "
+		"Your saves, settings and games from anywhere else stay. It's also turned off in Update All, so the next run doesn't put it back.", files, sz);
+	cJSON *ln;
+	int k = 0;
+	cJSON_ArrayForEach(ln, cJSON_GetObjectItem(p, "sample")) if (cJSON_IsString(ln) && k++ < 4) {
+		size_t l = strlen(text);
+		snprintf(text + l, sizeof(text) - l, "%s%s", k == 1 ? "\n\n" : "\n", ln->valuestring);
+	}
+	cJSON_Delete(p);
+	snprintf(ua.title, sizeof(ua.title), "%s", api_str(e, "title") ? api_str(e, "title") : "it");
+	snprintf(hd, sizeof(hd), "Remove %s?", ua.title);
+	ua.db_ids = cJSON_Duplicate(cJSON_GetObjectItem(u, "db_ids"), 1);
+	cJSON *keep = ua.db_ids;
+	ua.db_ids = NULL;
+	static char rm[48];
+	snprintf(rm, sizeof(rm), "Remove %.0f files", files);
+	const char *b[] = { "Keep it", rm };
+	ua_modal(2, hd, text, b, 2);
+	ua.db_ids = keep;
+}
+
+static void ua_modal_key(pkey_t k)
+{
+	if (k == K_LEFT && ua.msel > 0) { ua.msel--; ua_modal_draw(); return; }
+	if (k == K_RIGHT && ua.msel + 1 < ua.mn) { ua.msel++; ua_modal_draw(); return; }
+	if (k == K_B || k == K_MENU) { ua_modal_close(); return; }
+	if (k != K_A) return;
+	int kind = ua.modal, pick = ua.msel;
+	if (kind == 2 && pick == 1 && ua.db_ids) {
+		char *ids = cJSON_PrintUnformatted(ua.db_ids);
+		cJSON *t = cJSON_CreateString(ua.title);
+		char *tj = cJSON_PrintUnformatted(t);
+		cJSON_Delete(t);
+		char req[1400];
+		snprintf(req, sizeof(req), "{\"cmd\":\"ua\",\"do\":\"uninstall\",\"args\":%s,\"title\":%s}", ids ? ids : "[]", tj ? tj : "\"\"");
+		free(ids);
+		free(tj);
+		ua_modal_close();
+		cJSON *r = api_call("%s", req);
+		if (api_ok(r)) { ua.busy = 1; toast_show("Uninstalling: Update All's Downloader removes the files"); }
+		else toast_show(api_str(r, "error") ? api_str(r, "error") : "Couldn't start the uninstall");
+		cJSON_Delete(r);
+		ua_detail();
+		return;
+	}
+	if (kind == 3 && pick == 1) {
+		char req[300], key[96];
+		snprintf(key, sizeof(key), "%s", ua.key);
+		ua_modal_close();
+		snprintf(req, sizeof(req), "{\"cmd\":\"ua\",\"do\":\"allow\",\"args\":[\"%s\",\"on\"]}", key);
+		cJSON_Delete(api_call("%s", req));
+		ua_do_act(ua.menu, ua.idx, ua.act, -1);       /* now it goes through */
+		return;
+	}
+	if (kind == 1) {
+		char menu[48], act[8];
+		int idx = ua.idx;
+		snprintf(menu, sizeof(menu), "%s", ua.menu);
+		snprintf(act, sizeof(act), "%s", ua.act);
+		ua_modal_close();
+		ua_do_act(menu, idx, act, pick);
+		return;
+	}
+	ua_modal_close();
+}
+
+static void ua_key(pkey_t k)
+{
+	if (ua.modal) { ua_modal_key(k); return; }
+	if (k == K_B || k == K_MENU) {
+		if (ua.depth > 0) {
+			ua.depth--;
+			ua_vl.count = cJSON_GetArraySize(ua_entries());
+			ua_vl.sel = ua.sel[ua.depth];
+			ua_vl.top = 0;
+			vlist_refresh(&ua_vl);
+			ua_detail();
+		} else back_to_settings(SET_UPDATE_ALL);
+		return;
+	}
+	if (k == K_Y) {
+		sysinfo_t si;
+		sysinfo_read(&si);
+		cJSON *w = api_call("{\"cmd\":\"wifi\"}");
+		int net = si.ethernet || cJSON_IsTrue(cJSON_GetObjectItem(w ? cJSON_GetObjectItem(w, "status") : NULL, "connected"));
+		cJSON_Delete(w);
+		cores_start_job(net, 1);
+		return;
+	}
+	if (!ua.list) return;
+	if (vlist_key(&ua_vl, k)) { ua_detail(); return; }
+	cJSON *e = ua_cur();
+	if (!e) return;
+	if (k == K_X) { ua_uninstall_ask(e); return; }
+	const char *sub = api_str(e, "submenu");
+	if (k == K_A && sub && ua.depth < 8) {
+		ua.sel[ua.depth] = ua_vl.sel;
+		snprintf(ua.stack[ua.depth], sizeof(ua.stack[0]), "%s", sub);
+		ua.depth++;
+		ua_vl.count = cJSON_GetArraySize(ua_entries());
+		ua_vl.sel = ua_vl.top = 0;
+		vlist_refresh(&ua_vl);
+		ua_detail();
+		return;
+	}
+	if ((k == K_A || k == K_LEFT || k == K_RIGHT) && ua_acts(e)) ua_change(e);
+}
+
+static void ua_tick(void)
+{
+	if (cur != SCR_UA || ua.modal) return;
+	if (ua.loading || ua.busy || !ua.list) ua_refresh();
+}
+
+
 static void fo_detail(void)
 {
 	int i = fo.list.sel;
@@ -3794,7 +4233,7 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	                  "Some sources need a free account key, in phosphor/config/scraper.ini." },
 	[SET_CORES] = { "Runs MiSTer's own downloader to get the cores, or update them. A restore point is saved first.",
 	                "Takes a while on a fresh card. Cores go to the games drive when there is one." },
-	[SET_UPDATE_ALL] = { "Runs Update All: cores, plus extras such as arcade ROMs, BIOS files and other databases you've chosen in it. A restore point is saved first.",
+	[SET_UPDATE_ALL] = { "Update All's whole list, with Phosphor's word on each item: what's safe, what Phosphor guards, what's untested. Turn things on and off, uninstall what you don't want, and run it from there (Y): a restore point is saved first.",
 	                     "Use a single-port power adapter: shared multi-port chargers can cut out under the load." },
 	[SET_PHOSUPD] = { "Installs a new version of Phosphor from a release package, or goes back to the version before. Your library, box art and settings stay.",
 	                  "The installed version is backed up first; MiSTer's own files aren't touched." },
@@ -9462,6 +9901,9 @@ void ui_key(pkey_t k)
 	case SCR_GUARD:
 		guard_key(k);
 		break;
+	case SCR_UA:
+		ua_key(k);
+		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
@@ -9511,6 +9953,7 @@ void ui_key(pkey_t k)
 			else if (set_id(set_list.sel) == SET_SHOTS) show_shots();
 			else if (set_id(set_list.sel) == SET_VIDEO) show_video();
 			else if (set_id(set_list.sel) == SET_ABOUT) show_about();
+			else if (set_id(set_list.sel) == SET_UPDATE_ALL && k == K_A && cr.all_available) show_ua();
 			else if ((set_id(set_list.sel) == SET_CORES || set_id(set_list.sel) == SET_UPDATE_ALL) && k == K_A) {
 				if (set_id(set_list.sel) == SET_UPDATE_ALL && !cr.all_available) { toast_show("Update All isn't on the SD card (Scripts/update_all.sh)"); break; }
 				sysinfo_t si;
@@ -11376,6 +11819,7 @@ void ui_tick(void)
 		power_requests();
 		if (cur == SCR_SETTINGS) { scrape_refresh(); cores_refresh(); vlist_refresh(&set_list); si_update(); }
 		gd_tick();                                    /* (only while one of its jobs runs) */
+		ua_tick();                                    /* (while Update All's settings load, or an uninstall runs) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) bk_apply(api_call("{\"cmd\":\"backup\"}"));
