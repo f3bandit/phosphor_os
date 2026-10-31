@@ -251,7 +251,7 @@ document.addEventListener("mousedown", e => {
 	touched = true;
 	const el = e.target.closest("[data-nav]");
 	if (!el) return;
-	picked = el.matches(".row") && el._onfocus && el !== cur ? el : null;   /* rows that drive a panel */
+	picked = el.matches(".row") && el._onfocus && !el.dataset.open && el !== cur ? el : null;   /* rows that drive a panel (not ones that open a menu: one click) */
 	focus(el);
 });
 document.addEventListener("click", e => {
