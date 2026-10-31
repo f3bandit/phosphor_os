@@ -3,7 +3,7 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
-## 0.27.62 (in progress)
+## 0.27.62
 
 ### New
 - **RetroSpy, set up from Phosphor.** Settings > RetroSpy on the TV, and Settings > Controllers > RetroSpy in
