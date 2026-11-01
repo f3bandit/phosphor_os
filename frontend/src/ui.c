@@ -602,7 +602,16 @@ static void shelf_layout(float pos)
 	}
 }
 
-static void shelf_anim_cb(void *var, int32_t v) { (void)var; shelf_layout(v / 1000.0f); }
+static void shelf_anim_cb(void *var, int32_t v) { (void)var; if (home.card[0]) shelf_layout(v / 1000.0f); }
+
+/* Home's cards go (another screen cleared the body): the slide stops with them, or its next step moved cards
+   that were gone (Right then Start inside 170 ms crashed the shell) */
+static void shelf_gone_cb(lv_event_t *e)
+{
+	(void)e;
+	lv_anim_delete(&home, shelf_anim_cb);
+	memset(home.card, 0, sizeof(home.card));
+}
 
 static void shelf_go(int sel)
 {
@@ -1156,6 +1165,7 @@ static void show_home(void)
 		lv_obj_set_flex_align(c, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 		lv_obj_set_style_pad_row(c, lr ? L(3) : S(14), 0);
 		home.card[i] = c;
+		if (i == 0) lv_obj_add_event_cb(c, shelf_gone_cb, LV_EVENT_DELETE, NULL);
 		home.ic[i] = icon_create(c, shelf_icon(i), lr ? L(28) : S(72));
 		home.nm[i] = mk_label(c, FONT_NAME, PAL.dim, shelf_name(i));
 		home.ct[i] = mk_label(c, FONT_SMALL, PAL.faint, "");
