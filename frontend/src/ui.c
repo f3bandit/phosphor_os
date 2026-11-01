@@ -393,6 +393,7 @@ static void toast_show(const char *msg)
 	lv_obj_set_hidden(toast, false);
 	lv_obj_move_foreground(toast);
 	if (toast_timer) lv_timer_delete(toast_timer);   /* the new one's full time, not what's left of the last */
+	/* deferred-ok: the toast lives on root; an accent change clears root but ui_init makes a new toast at once, so toast is never a deleted object */
 	toast_timer = lv_timer_create(toast_hide, 3500, NULL);
 	lv_timer_set_repeat_count(toast_timer, 1);
 	plog("toast: %s", msg);
@@ -2929,6 +2930,7 @@ static void ua_modal(int kind, const char *header, const char *text, const char 
 	lv_obj_remove_style_all(ua.dim);
 	lv_obj_set_size(ua.dim, W, H);
 	lv_obj_set_style_bg_color(ua.dim, PAL.bg, 0);
+	/* opa-ok: the dimmed screen behind a question, only while it's open */
 	lv_obj_set_style_bg_opa(ua.dim, LV_OPA_80, 0);
 	int pw = theme_lr ? W - L(24) : SW(900);
 	lv_obj_t *p = mk_box(ua.dim, pw, LV_SIZE_CONTENT, PAL.panel, S(18));
@@ -6908,6 +6910,7 @@ static void show_mcards(void)
 			lv_obj_t *row = mk_box(ms.col[s], cw - S(28), S(44), PAL.panel_on, S(8));
 			lv_obj_set_pos(row, S(14), S(80) + r * S(44));
 			ms.row[s][r] = row;
+			/* opa-ok: a memory card save's 32x32 icon has see-through pixels */
 			if (!ms.ibuf[s][r]) ms.ibuf[s][r] = lv_draw_buf_create(32, 32, LV_COLOR_FORMAT_ARGB8888, 0);
 			ms.ric[s][r] = lv_image_create(row);
 			lv_image_set_src(ms.ric[s][r], ms.ibuf[s][r]);
@@ -9195,6 +9198,7 @@ static void upd_poll(void)
 		snprintf(mk, sizeof(mk), "%s/update-restarted", upd_tmp());
 		FILE *f = fopen(mk, "w");
 		if (f) fclose(f);
+		/* deferred-ok: it checks us.box itself, and restarts */
 		lv_timer_t *tm = lv_timer_create(upd_restart_now, 3000, NULL);
 		lv_timer_set_repeat_count(tm, 1);
 	}
@@ -9240,6 +9244,7 @@ static void update_check_got(cJSON *r)
 			char m[200];
 			snprintf(m, sizeof(m), "%s. Restarting the SuperStation to finish...", api_str(st, "msg") ? api_str(st, "msg") : "Updated");
 			toast_show(m);
+			/* deferred-ok: it only restarts the SuperStation */
 			lv_timer_t *tm = lv_timer_create(update_restart, 4000, NULL);
 			lv_timer_set_repeat_count(tm, 1);
 		} else toast_show(api_str(st, "msg") ? api_str(st, "msg") : "Updated");
@@ -9907,6 +9912,7 @@ static void pm_open(void)
 	lv_obj_remove_style_all(pm.dim);
 	lv_obj_set_size(pm.dim, W, H);
 	lv_obj_set_style_bg_color(pm.dim, lv_color_hex(0x08080a), 0);
+	/* opa-ok: the dimmed screen behind the power menu, only while it's open */
 	lv_obj_set_style_bg_opa(pm.dim, LV_OPA_80, 0);
 	pm.box = mk_box(pm.dim, S(480), LV_SIZE_CONTENT, PAL.panel, S(16));
 	lv_obj_set_style_border_width(pm.box, LV_MAX(1, S(1)), 0);

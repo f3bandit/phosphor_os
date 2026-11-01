@@ -3,7 +3,8 @@
  *
  * phosphord stores box art as JPEG (about 60 KB a cover instead of 500 KB as PNG). LVGL's own
  * JPEG decoder (TJPGD) hands out tiles, which can't be scaled to fit the details panel, so covers
- * are decoded in one go here instead, into the same ARGB8888 buffer the PNG decoder gives. */
+ * are decoded in one go here instead. A JPEG has no see-through pixels: XRGB8888, so a cover or a wallpaper is
+ * copied to the screen; as ARGB8888 it was blended pixel by pixel on every redraw (7x the time on the SS1). */
 #include "jpeg.h"
 #include "lvgl.h"
 #include "src/lvgl_private.h"   /* decoder internals, as LVGL's own PNG decoder uses */
@@ -48,17 +49,17 @@ static lv_result_t info(lv_image_decoder_t *dec, lv_image_decoder_dsc_t *dsc, lv
 	int ok = stbi_info_from_memory(buf, (int)len, &w, &h, &n);
 	lv_free(buf);
 	if (!ok) return LV_RESULT_INVALID;
-	header->cf = LV_COLOR_FORMAT_ARGB8888;
+	header->cf = LV_COLOR_FORMAT_XRGB8888;
 	header->w = (uint32_t)w;
 	header->h = (uint32_t)h;
 	header->stride = (uint32_t)w * 4;
 	return LV_RESULT_OK;
 }
 
-/* stb's RGB into LVGL's BGRA */
+/* stb's RGB into LVGL's XRGB8888 (B G R x in memory) */
 static lv_draw_buf_t *to_buf(unsigned char *px, int w, int h)
 {
-	lv_draw_buf_t *db = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_ARGB8888, 0);
+	lv_draw_buf_t *db = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_XRGB8888, 0);
 	if (!db) return NULL;
 	for (int y = 0; y < h; y++) {
 		uint8_t *row = db->data + (size_t)y * db->header.stride;

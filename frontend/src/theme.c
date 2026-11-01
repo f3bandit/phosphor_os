@@ -87,6 +87,7 @@ lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius)
 	lv_obj_set_size(o, w, h);
 	lv_obj_set_style_bg_color(o, bg, 0);
 	int card = lv_color_eq(bg, PAL.panel);
+	/* opa-ok: cards at 90 % show the texture faintly: the look, for now (solid halves a full redraw: docs/menu-rules.md) */
 	lv_obj_set_style_bg_opa(o, card ? theme_card_opa() : LV_OPA_COVER, 0);
 	/* every card the same rounding (a row inside a list, radius 0 or a circle keep theirs) */
 	lv_obj_set_style_radius(o, card && radius >= S(12) && radius != LV_RADIUS_CIRCLE && !theme_lr ? theme_card_radius() : radius, 0);
@@ -100,6 +101,7 @@ lv_opa_t theme_card_opa(void) { return theme_lr ? LV_OPA_COVER : (lv_opa_t)230; 
 void theme_card_style(lv_obj_t *o, int radius)
 {
 	lv_obj_set_style_bg_color(o, PAL.panel, 0);
+	/* opa-ok: as above */
 	lv_obj_set_style_bg_opa(o, theme_card_opa(), 0);
 	lv_obj_set_style_radius(o, radius, 0);
 }
