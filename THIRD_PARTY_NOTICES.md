@@ -10,7 +10,8 @@ Not in this list, because they are separate programs with their own source:
   builds of MiSTer's Main and Menu core; their source and licence are in SOURCE.md and licenses/.
   The menu core's CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's
   menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later).
-- **RetroSpy, Phosphor edition** (RetroSpy\ in Phosphor for Windows' zip, apps/retrospy in this repository)
+- **RetroSpy, Phosphor edition** (its own release, which Phosphor for Windows can install into RetroSpy\ next to
+  Phosphor.exe; apps/retrospy in this repository)
   is RetroSpy by zoggins and the RetroSpy contributors (https://github.com/retrospy/RetroSpy), a fork of
   NintendoSpy by jaburns (https://github.com/jaburns/NintendoSpy), with skins by their authors (each
   skin.xml), plus f3bandit's Phosphor edition: a separate program under the GPL-3.0 (its LICENSE.txt);

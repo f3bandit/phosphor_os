@@ -3,6 +3,16 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.67
+
+### Phosphor for Windows 0.2.55
+- **RetroSpy is its own package now, and updates itself.** Phosphor for Windows' zip no longer carries it and
+  its update no longer touches RetroSpy\. Settings > Controllers > RetroSpy shows the version on this PC and
+  installs RetroSpy's Phosphor edition, or updates an older one, from its release (f3bandit/RetroSpy, checked
+  against the release's SHA256SUMS). From 6.11 RetroSpy keeps itself up to date (Help > Check for updates),
+  sits in the tray, can start with Windows, picks any of Phosphor's layouts, and its Start watching button
+  becomes Stop watching while it watches.
+
 ## 0.27.66
 
 ### Fixed

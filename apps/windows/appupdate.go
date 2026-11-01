@@ -271,7 +271,6 @@ func appDoInstall(s appUpd) error {
 	if len(newExe) < 2 || newExe[0] != 'M' || newExe[1] != 'Z' {
 		return errors.New("the zip has no Phosphor.exe")
 	}
-	rsNote := appUpdateRetroSpy(zr, dir)
 	appSetState("working", "Installing Phosphor for Windows "+s.Latest+"...")
 	tmp := exe + ".new"
 	if err := os.WriteFile(tmp, newExe, 0o755); err != nil {
@@ -288,7 +287,7 @@ func appDoInstall(s appUpd) error {
 		os.Remove(tmp)
 		return errors.New("couldn't put the new Phosphor.exe in place")
 	}
-	appSetState("done", "Phosphor for Windows "+s.Latest+" is installed: it's starting"+rsNote)
+	appSetState("done", "Phosphor for Windows "+s.Latest+" is installed: it's starting")
 	cmd := exec.Command(exe)
 	cmd.Dir = dir
 	if err := cmd.Start(); err != nil {
@@ -351,7 +350,8 @@ func apiAppUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "version": appVersion, "update": s})
 }
 
-// appUpdateRetroSpy puts the zip's RetroSpy\ (RetroSpy's Phosphor edition) next to Phosphor.exe: unpacked into
+// appUpdateRetroSpy puts a zip's RetroSpy\ (RetroSpy's Phosphor edition, its own release: retrospy_install.go;
+// Phosphor's own update no longer brings it) next to Phosphor.exe: unpacked into
 // RetroSpy.new, the old folder set aside as RetroSpy.old (removed at the next start), the new one renamed in.
 // RetroSpy open holds its folder: then the old one stays and the reply says so. "" when all went well.
 func appUpdateRetroSpy(zr *zip.Reader, dir string) string {
