@@ -171,7 +171,7 @@ static void alert_refresh(void)
 	if (dock_stuck) snprintf(t, sizeof(t), "NVMe not responding: unplug the power 10 s");
 	else if (pw.warn) snprintf(t, sizeof(t), "Power supply problem?");
 	else if (guard_resets > 0) snprintf(t, sizeof(t), "%d setting%s reset by an update", guard_resets, guard_resets == 1 ? "" : "s");
-	if (t[0]) lv_label_set_text(sb_alert_text, t);
+	if (t[0]) label_set_if(sb_alert_text, t);
 	lv_obj_set_hidden(sb_alert, !t[0]);
 }
 static void guard_alert_set(int n)
@@ -258,7 +258,7 @@ static void rs_status(void)
 	char t[160];
 	if (pl > 0) snprintf(t, sizeof(t), "RetroSpy \xC2\xB7 Player %d", pl);
 	else snprintf(t, sizeof(t), "RetroSpy");
-	lv_label_set_text(sb_rs_text, t);
+	label_set_if(sb_rs_text, t);
 	lv_obj_set_hidden(sb_rs, false);
 	if (pl > 0) snprintf(t, sizeof(t), "RetroSpy is watching Player %d%s%s%s", pl, name[0] ? " (" : "", name, name[0] ? ")" : "");
 	else snprintf(t, sizeof(t), "RetroSpy is watching controller %d%s%s%s", js, name[0] ? " (" : "", name, name[0] ? ")" : "");
@@ -292,7 +292,7 @@ static void status_update(void)
 		lv_obj_set_style_text_color(sb_bt, s.bt > 0 ? PAL.text : PAL.icon_off, 0);
 		char n[16] = "";
 		if (s.bt > 0) snprintf(n, sizeof(n), "%d", s.bt);
-		lv_label_set_text(sb_btn, n);
+		label_set_if(sb_btn, n);
 	}
 	char clk[16];
 	time_t t = time(NULL);
@@ -304,7 +304,7 @@ static void status_update(void)
 		if (clk[0] == '0') memmove(clk, clk + 1, strlen(clk));
 	}
 	const char *fake = getenv("PHOS_FAKE_CLOCK");
-	lv_label_set_text(sb_clock, fake ? fake : clk);
+	label_set_if(sb_clock, fake ? fake : clk);
 }
 
 /* ---------- footer: button hints ---------- */
@@ -389,7 +389,7 @@ static void toast_show(const char *msg)
 {
 	snprintf(ig_note, sizeof(ig_note), "%s", msg);
 	ig_note_at = lv_tick_get();
-	lv_label_set_text(lv_obj_get_child(toast, 0), msg);
+	label_set_if(lv_obj_get_child(toast, 0), msg);
 	lv_obj_set_hidden(toast, false);
 	lv_obj_move_foreground(toast);
 	if (toast_timer) lv_timer_delete(toast_timer);   /* the new one's full time, not what's left of the last */
@@ -507,9 +507,9 @@ static void vlist_refresh(vlist_t *v)
 		int on = i == v->sel;
 		/* only what changed: every change redraws that part of the screen (a 1080p screen is a lot of
 		   pixels for the MiSTer's ARM, and this runs every second while some screens are open) */
-		if (strcmp(lv_label_get_text(v->lab[r]), t)) lv_label_set_text(v->lab[r], t);
+		if (strcmp(lv_label_get_text(v->lab[r]), t)) label_set_if(v->lab[r], t);
 		if (strcmp(lv_label_get_text(v->val[r]), val)) {
-			lv_label_set_text(v->val[r], val);
+			label_set_if(v->val[r], val);
 			/* the name gets what the value leaves, so a long value (a status) never runs over it */
 			lv_text_attributes_t ta;
 			lv_text_attributes_init(&ta);
@@ -1047,9 +1047,9 @@ static void take_shot(void);
 static void ingame_key(int k);
 static void ingame_open(void);
 static void ingame_close(int to_game);
-static void disc_refresh(void)
+/* the drive's state from phosphord's answer (r is freed here) */
+static void disc_apply(cJSON *r)
 {
-	cJSON *r = api_call("{\"cmd\":\"disc\"}");
 	cJSON *d = api_ok(r) ? cJSON_GetObjectItem(r, "disc") : NULL;
 	int en = dk.enabled, tries = dk.tries;
 	char key[64];
@@ -1077,6 +1077,28 @@ static void disc_refresh(void)
 	if (sb_disc) lv_obj_set_hidden(sb_disc, !dk.in);
 	systems_disc_update();
 	discs_screen_update();
+}
+/* now, waiting for the answer: when a screen opens or the user changed something (Discs on / off) */
+static void disc_refresh(void)
+{
+	disc_apply(api_call("{\"cmd\":\"disc\"}"));   /* poll-ok: Discs opened or switched, after a press */
+}
+/* in the background: a disc went in or out, or its box art may have arrived. ui_tick applies the answer
+   (disc_take) when it's there, so the menu never waits for the drive */
+static uint32_t disc_until;       /* answers are taken until then: 5 s after the last ask (a second ask while
+                                     the first is on its way gets its own answer too) */
+static void disc_ask(void)
+{
+	api_bg_ask("disc", "{\"cmd\":\"disc\"}");
+	disc_until = lv_tick_get() + 5000;
+	if (!disc_until) disc_until = 1;
+}
+static void disc_take(void)
+{
+	if (!disc_until) return;
+	if ((int32_t)(lv_tick_get() - disc_until) > 0) { disc_until = 0; return; }
+	cJSON *r = api_bg_take("disc");
+	if (r) disc_apply(r);
 }
 static void disc_play_now(void)
 {
@@ -1129,22 +1151,22 @@ static void home_counts(void)
 		else if (c == SH_OTHER) snprintf(t, sizeof(t), n ? "%d core%s" : "None yet", n, n == 1 ? "" : "s");
 		else if (c == SH_UTIL) snprintf(t, sizeof(t), n ? "%d tool%s" : "None yet", n, n == 1 ? "" : "s");
 		else snprintf(t, sizeof(t), "%d game%s", n, n == 1 ? "" : "s");
-		lv_label_set_text(home.ct[c], t);
+		label_set_if(home.ct[c], t);
 	}
 }
 
 static void home_continue(void)
 {
 	if (last_game) {
-		lv_label_set_text(home.cont_title, api_str(last_game, "title") ? api_str(last_game, "title") : "");
+		label_set_if(home.cont_title, api_str(last_game, "title") ? api_str(last_game, "title") : "");
 		char sub[160];
 		long secs = (long)api_num(last_game, "play_seconds", 0);
 		if (secs >= 60) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  %ld h %ld m played", api_str(last_game, "system_name"), secs / 3600, secs / 60 % 60);
 		else snprintf(sub, sizeof(sub), "%s", api_str(last_game, "system_name"));
-		lv_label_set_text(home.cont_sub, sub);
+		label_set_if(home.cont_sub, sub);
 	} else {
-		lv_label_set_text(home.cont_title, "Nothing yet");
-		lv_label_set_text(home.cont_sub, "The last game you play will be here");
+		label_set_if(home.cont_title, "Nothing yet");
+		label_set_if(home.cont_sub, "The last game you play will be here");
 	}
 }
 
@@ -1228,11 +1250,11 @@ static void show_home(void)
 	}
 	home_continue();
 	if (mtrack) {
-		lv_label_set_text(home.cont_title, api_str(mtrack, "title") ? api_str(mtrack, "title") : "");
+		label_set_if(home.cont_title, api_str(mtrack, "title") ? api_str(mtrack, "title") : "");
 		char sub[300];
 		snprintf(sub, sizeof(sub), "%s%s%s", api_str(mtrack, "album") ? api_str(mtrack, "album") : "",
 		         api_str(mtrack, "artist") && *api_str(mtrack, "artist") ? "  \xC2\xB7  " : "", api_str(mtrack, "artist") ? api_str(mtrack, "artist") : "");
-		lv_label_set_text(home.cont_sub, sub);
+		label_set_if(home.cont_sub, sub);
 	}
 	cJSON_Delete(mr);
 
@@ -1322,9 +1344,9 @@ static void sys_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 static void sys_detail(void)
 {
 	if (!nsys) {
-		lv_label_set_text(sys_detail_name, "No games yet");
-		lv_label_set_text(sys_detail_count, "Put games in games/<system> on the SD card, a USB drive or your network share");
-		lv_label_set_text(sys_detail_core, "");
+		label_set_if(sys_detail_name, "No games yet");
+		label_set_if(sys_detail_count, "Put games in games/<system> on the SD card, a USB drive or your network share");
+		label_set_if(sys_detail_core, "");
 		static const char *const hints_none[] = { "B", "Back", NULL };
 		footer_set(hints_none);
 		return;
@@ -1343,29 +1365,29 @@ static void sys_detail(void)
 	if (sys_detail_fact) lv_obj_set_hidden(sys_detail_fact, true);
 	lv_obj_set_hidden(sys_detail_core, false);
 	if (s->drive) {
-		lv_label_set_text(sys_detail_name, disc_line());
+		label_set_if(sys_detail_name, disc_line());
 		char t[160];
 		if (dk.system[0] && dk.serial[0]) snprintf(t, sizeof(t), "%s  \xC2\xB7  %s", dk.system, dk.serial);
 		else snprintf(t, sizeof(t), "%s", dk.system[0] ? dk.system : "In the dock's drive");
-		lv_label_set_text(sys_detail_count, t);
-		lv_label_set_text(sys_detail_core, dk.playable ? "In the dock's drive" : dk.reason);
+		label_set_if(sys_detail_count, t);
+		label_set_if(sys_detail_core, dk.playable ? "In the dock's drive" : dk.reason);
 		if (dk.art[0] && sys_detail_art) {
 			snprintf(sys_art_src, sizeof(sys_art_src), "A:%s", dk.art);
 			lv_image_set_src(sys_detail_art, sys_art_src);
 		}
 		return;
 	}
-	lv_label_set_text(sys_detail_name, s->name);
+	label_set_if(sys_detail_name, s->name);
 	char t[64];
 	snprintf(t, sizeof(t), "%d game%s", s->games, s->games == 1 ? "" : "s");
-	lv_label_set_text(sys_detail_count, t);
-	lv_label_set_text(sys_detail_core, s->core ? "" : "Core not installed");
+	label_set_if(sys_detail_count, t);
+	label_set_if(sys_detail_core, s->core ? "" : "Core not installed");
 	lv_obj_set_hidden(sys_detail_core, s->core);
 	const char *ab = "", *fa = "";
 	for (size_t i = 0; i < sizeof(SYS_ABOUT) / sizeof(SYS_ABOUT[0]); i++)
 		if (!strcmp(SYS_ABOUT[i].id, s->id)) { ab = SYS_ABOUT[i].about; fa = SYS_ABOUT[i].fact; }
-	if (sys_detail_about) { lv_label_set_text(sys_detail_about, ab); lv_obj_set_hidden(sys_detail_about, !ab[0]); }
-	if (sys_detail_fact) { lv_label_set_text(sys_detail_fact, fa); lv_obj_set_hidden(sys_detail_fact, !fa[0]); }
+	if (sys_detail_about) { label_set_if(sys_detail_about, ab); lv_obj_set_hidden(sys_detail_about, !ab[0]); }
+	if (sys_detail_fact) { label_set_if(sys_detail_fact, fa); lv_obj_set_hidden(sys_detail_fact, !fa[0]); }
 }
 
 static void screen_title(const char *label, const char *title)
@@ -1493,18 +1515,18 @@ static void dcopy_update(void)
 	const char *st = api_str(c, "state") ? api_str(c, "state") : "";
 	int busy = cJSON_IsTrue(cJSON_GetObjectItem(c, "busy")), done = !strcmp(st, "done");
 	snprintf(dc.sys, sizeof(dc.sys), "%s", api_str(c, "system") ? api_str(c, "system") : "");
-	lv_label_set_text(dc.title, api_str(c, "title") ? api_str(c, "title") : "Disc");
+	label_set_if(dc.title, api_str(c, "title") ? api_str(c, "title") : "Disc");
 	char t[400];
 	const char *dest = api_str(c, "dest");
 	snprintf(t, sizeof(t), "%s%s%s", dc.sys, dest ? "  \xC2\xB7  " : "", dest ? dest : "");
-	lv_label_set_text(dc.where, t);
+	label_set_if(dc.where, t);
 	int pct = (int)api_num(c, "percent", 0);
 	lv_obj_set_width(dc.fill, LV_MAX(1, lv_obj_get_width(dc.bar) * pct / 100));
 	lv_obj_set_hidden(dc.bar, !busy);
 	if (busy) {
 		snprintf(t, sizeof(t), "TRACK %d OF %d  \xC2\xB7  %s", (int)api_num(c, "track", 0), (int)api_num(c, "of", 0),
 		         cJSON_IsTrue(cJSON_GetObjectItem(c, "data")) ? "DATA" : "MUSIC");
-		lv_label_set_text(dc.step, (int)api_num(c, "of", 0) ? t : "READING THE DISC");
+		label_set_if(dc.step, (int)api_num(c, "of", 0) ? t : "READING THE DISC");
 		int rr = (int)api_num(c, "rereads", 0);
 		char re[48] = "";
 		if (rr) snprintf(re, sizeof(re), "  \xC2\xB7  %d spot%s read again", rr, rr == 1 ? "" : "s");
@@ -1512,21 +1534,21 @@ static void dcopy_update(void)
 		char spd[24] = "";
 		if (sp > 0) snprintf(spd, sizeof(spd), "  \xC2\xB7  %.0f\xC3\x97", sp);
 		snprintf(t, sizeof(t), "%d of %d MB%s%s", (int)api_num(c, "mb_done", 0), (int)api_num(c, "mb_total", 0), spd, re);
-		lv_label_set_text(dc.line, t);
+		label_set_if(dc.line, t);
 		int left = (int)api_num(c, "seconds_left", -1);
 		if (left >= 0) snprintf(t, sizeof(t), left >= 90 ? "about %d minutes left" : left > 10 ? "under %d minute left" : "almost done",
 		                        left >= 90 ? (left + 30) / 60 : 2);
 		else t[0] = 0;
 		if (left > 10 && left < 90) snprintf(t, sizeof(t), "about a minute left");
-		lv_label_set_text(dc.left, t);
-		lv_label_set_text(dc.res, api_str(c, "msg") ? api_str(c, "msg") : "");
+		label_set_if(dc.left, t);
+		label_set_if(dc.res, api_str(c, "msg") ? api_str(c, "msg") : "");
 	} else {
-		lv_label_set_text(dc.step, done ? "SAVED" : !strcmp(st, "stopped") ? "STOPPED" : "DIDN'T FINISH");
-		lv_label_set_text(dc.line, "");
-		lv_label_set_text(dc.left, "");
+		label_set_if(dc.step, done ? "SAVED" : !strcmp(st, "stopped") ? "STOPPED" : "DIDN'T FINISH");
+		label_set_if(dc.line, "");
+		label_set_if(dc.left, "");
 		const char *cue = api_str(c, "cue");
 		snprintf(t, sizeof(t), "%s%s%s", api_str(c, "msg") ? api_str(c, "msg") : "", cue ? "\n" : "", cue ? cue : "");
-		lv_label_set_text(dc.res, t);
+		label_set_if(dc.res, t);
 	}
 	int verified = cJSON_IsTrue(cJSON_GetObjectItem(c, "verified"));
 	lv_obj_set_hidden(dc.badge, !(done && verified));
@@ -1770,14 +1792,14 @@ static void game_detail(void)
 	cJSON_Delete(detail);
 	detail = NULL;
 	if (!ngames) {
-		lv_label_set_text(g_title, games_mode == GL_FAV ? "No favorites yet" : games_mode == GL_RECENT ? "Nothing played yet"
+		label_set_if(g_title, games_mode == GL_FAV ? "No favorites yet" : games_mode == GL_RECENT ? "Nothing played yet"
 			: games_mode == GL_SEARCH ? "Nothing with that name" : "No games found");
-		lv_label_set_text(g_info, "");
-		lv_label_set_text(g_desc, games_mode == GL_FAV ? "In any list of games, X marks the selected one as a favorite."
+		label_set_if(g_info, "");
+		label_set_if(g_desc, games_mode == GL_FAV ? "In any list of games, X marks the selected one as a favorite."
 			: games_mode == GL_RECENT ? "Games you play show up here, the last one first."
 			: games_mode == GL_SEARCH ? "Search looks for part of a game's name: try a shorter word."
 			: "Put them in games/ on the SD card, a USB drive or your network share.");
-		lv_label_set_text(g_where, "");
+		label_set_if(g_where, "");
 		lv_obj_set_hidden(g_art, true);
 		lv_obj_set_hidden(g_noart, false);
 		return;
@@ -1787,7 +1809,7 @@ static void game_detail(void)
 	if (api_ok(r)) detail = cJSON_DetachItemFromObject(r, "game");
 	cJSON_Delete(r);
 	const cJSON *d = detail;
-	lv_label_set_text(g_title, d && api_str(d, "title") ? api_str(d, "title") : g->title);
+	label_set_if(g_title, d && api_str(d, "title") ? api_str(d, "title") : g->title);
 
 	/* Based on X · 1997 · Publisher · 1-2 players · Genre */
 	char info[400] = "", players[32] = "", based[300] = "";
@@ -1818,12 +1840,12 @@ static void game_detail(void)
 		snprintf(ra, sizeof(ra), "%sAchievements %d / %d", info[0] ? "  \xC2\xB7  " : "", (int)api_num(rab, "unlocked", 0), (int)api_num(rab, "total", 0));
 		strncat(info, ra, sizeof(info) - strlen(info) - 1);
 	}
-	lv_label_set_text(g_info, info);
+	label_set_if(g_info, info);
 	lv_obj_set_hidden(g_info, !info[0]);
 	lv_obj_set_y(g_desc, info[0] ? info_y + S(28) : info_y);
 	lv_obj_set_height(g_desc, info[0] ? desc_h : desc_h + S(28));
 	const char *desc = d ? api_str(d, "description") : NULL;
-	lv_label_set_text(g_desc, desc ? desc : "");
+	label_set_if(g_desc, desc ? desc : "");
 
 	/* where the file is: SD card · name.ext */
 	char where[600] = "";
@@ -1834,7 +1856,7 @@ static void game_detail(void)
 		snprintf(where, sizeof(where), "%s  \xC2\xB7  %s%s", api_str(f0, "where"), base ? base + 1 : (p ? p : ""),
 		         cJSON_IsTrue(cJSON_GetObjectItem(f0, "online")) ? "" : "  (not connected)");
 	}
-	lv_label_set_text(g_where, where);
+	label_set_if(g_where, where);
 
 	/* keep the old art up until the new one is ready, unless this game has none */
 	if (!d || !api_str(d, "art")) {
@@ -2429,7 +2451,7 @@ static void gd_draw(void)
 		snprintf(t, sizeof(t), "THE LAST LINUX UPDATE  \xC2\xB7  %s \xE2\x86\x92 %s  \xC2\xB7  %s", api_str(st, "updated_from") ? api_str(st, "updated_from") : "?",
 		         api_str(st, "linux") ? api_str(st, "linux") : "?", when);
 	} else snprintf(t, sizeof(t), "YOUR SETTINGS  \xC2\xB7  LINUX %s", api_str(st, "linux") ? api_str(st, "linux") : "?");
-	lv_label_set_text(h, t);
+	label_set_if(h, t);
 	lv_obj_t *intro = mk_label(gd.left, FONT_SMALL, PAL.dim, awaiting
 		? "A Linux update replaces MiSTer's system files, so settings stored there go back to stock. Most people never change these: restore only what you set up yourself. Phosphor kept your copies."
 		: "Nothing was reset. Phosphor keeps copies of these settings, in case a Linux update puts them back to stock. Most people never change them.");
@@ -2504,8 +2526,8 @@ static void gd_draw(void)
 	lv_obj_set_pos(rn, 0, by + S(46));
 	/* the last job */
 	cJSON *j = cJSON_GetObjectItem(st, "job");
-	if (cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"))) lv_label_set_text(gd.note, "Working\xE2\x80\xA6 (a roll back may be downloading Linux: a few minutes)");
-	else lv_label_set_text(gd.note, "");
+	if (cJSON_IsTrue(cJSON_GetObjectItem(j, "busy"))) label_set_if(gd.note, "Working\xE2\x80\xA6 (a roll back may be downloading Linux: a few minutes)");
+	else label_set_if(gd.note, "");
 }
 
 static void gd_load(cJSON *st)
@@ -2762,10 +2784,10 @@ static void ua_detail(void)
 {
 	if (!ua.panel) return;
 	if (ua_is_clean()) {
-		lv_label_set_text(ua.name, "Clean up");
-		lv_label_set_text(ua.badge, "");
-		lv_label_set_text(ua.h1, "LEFTOVERS");
-		lv_label_set_text(ua.h2, "ARCADE ORGANIZER");
+		label_set_if(ua.name, "Clean up");
+		label_set_if(ua.badge, "");
+		label_set_if(ua.h1, "LEFTOVERS");
+		label_set_if(ua.h2, "ARCADE ORGANIZER");
 		char a[700] = "", o[400] = "", sz[40];
 		if (!ua.left) snprintf(a, sizeof(a), "Things Update All installed that you've since turned off: their files stay on the SD card until they're removed. A looks for them.");
 		else {
@@ -2782,21 +2804,21 @@ static void ua_detail(void)
 				cJSON_IsTrue(cJSON_GetObjectItem(ao, "on")) ? " It's on, so the next run makes them again." : "");
 			else snprintf(o, sizeof(o), "No Arcade Organizer folders.");
 		}
-		lv_label_set_text(ua.t1, a);
-		lv_label_set_text(ua.t2, o);
-		lv_label_set_text(ua.foot, ua.busy ? "Uninstalling\xE2\x80\xA6" : "A  Clean up");
+		label_set_if(ua.t1, a);
+		label_set_if(ua.t2, o);
+		label_set_if(ua.foot, ua.busy ? "Uninstalling\xE2\x80\xA6" : "A  Clean up");
 		return;
 	}
-	lv_label_set_text(ua.h1, "UPDATE ALL SAYS");
+	label_set_if(ua.h1, "UPDATE ALL SAYS");
 	cJSON *e = ua_cur();
-	lv_label_set_text(ua.h2, e && !strcmp(ua_status(e), "menu") ? "IN THIS MENU" : "PHOSPHOR SAYS");
-	lv_label_set_text(ua.name, e && api_str(e, "title") ? api_str(e, "title") : "");
+	label_set_if(ua.h2, e && !strcmp(ua_status(e), "menu") ? "IN THIS MENU" : "PHOSPHOR SAYS");
+	label_set_if(ua.name, e && api_str(e, "title") ? api_str(e, "title") : "");
 	const char *s = e ? ua_status(e) : "untested";
 	char b[80];
 	cJSON *stj = cJSON_GetObjectItem(e, "status");
 	snprintf(b, sizeof(b), "%s%s%s", ua_status_word(s), cJSON_IsTrue(cJSON_GetObjectItem(stj, "allowed")) ? "  \xC2\xB7  allowed by you" : "",
 		ua_installed(e) ? "  \xC2\xB7  installed" : "");
-	lv_label_set_text(ua.badge, b);
+	label_set_if(ua.badge, b);
 	lv_obj_set_style_text_color(ua.badge, ua_status_color(s), 0);
 	/* Update All's own words: its description, and its info text when it has one */
 	char said[1200] = "";
@@ -2806,13 +2828,13 @@ static void ua_detail(void)
 		size_t l = strlen(said);
 		snprintf(said + l, sizeof(said) - l, "%s%s", l ? "\n" : "", ln->valuestring);
 	}
-	lv_label_set_text(ua.t1, said);
+	label_set_if(ua.t1, said);
 	const char *note = api_str(stj, "note");
-	lv_label_set_text(ua.t2, note && *note ? note : !strcmp(s, "untested") ? "Nobody has checked this with Phosphor yet. If it changes MiSTer's main menu or starts at boot, the guard catches that after the run." : "");
+	label_set_if(ua.t2, note && *note ? note : !strcmp(s, "untested") ? "Nobody has checked this with Phosphor yet. If it changes MiSTer's main menu or starts at boot, the guard catches that after the run." : "");
 	char f[160] = "";
 	if (e && cJSON_GetObjectItem(e, "uninstall") && ua_installed(e)) snprintf(f, sizeof(f), "X  Uninstall what it installed");
 	if (ua.busy) snprintf(f, sizeof(f), "Uninstalling\xE2\x80\xA6");
-	lv_label_set_text(ua.foot, f);
+	label_set_if(ua.foot, f);
 }
 
 static void ua_hints(void)
@@ -2825,7 +2847,7 @@ static void ua_take(cJSON *r)
 {
 	if (!r) return;
 	if (!api_ok(r)) {
-		lv_label_set_text(ua.wait, api_str(r, "error") ? api_str(r, "error") : "Update All's settings couldn't be read");
+		label_set_if(ua.wait, api_str(r, "error") ? api_str(r, "error") : "Update All's settings couldn't be read");
 		lv_obj_set_hidden(ua.wait, false);
 		cJSON_Delete(r);
 		return;
@@ -2849,7 +2871,7 @@ static void ua_take(cJSON *r)
 		ua_detail();
 	} else {
 		const char *le = api_str(r, "load_error");
-		lv_label_set_text(ua.wait, le ? "Update All's settings didn't load: run Update All once from Scripts, then try again" : "Reading Update All's settings\xE2\x80\xA6");
+		label_set_if(ua.wait, le ? "Update All's settings didn't load: run Update All once from Scripts, then try again" : "Reading Update All's settings\xE2\x80\xA6");
 		lv_obj_set_hidden(ua.wait, false);
 		cJSON_Delete(r);
 	}
@@ -3294,10 +3316,10 @@ static void rs_draw(void)
 	if (rs.busy) snprintf(b, sizeof(b), "WORKING\xE2\x80\xA6");
 	else if (cJSON_IsTrue(cJSON_GetObjectItem(rs.info, "watching"))) snprintf(b, sizeof(b), "INSTALLED  \xC2\xB7  WATCHING CONTROLLER %d", (int)api_num(rs.info, "watching_js", 0));
 	else snprintf(b, sizeof(b), "%s", inst ? "INSTALLED" : "NOT INSTALLED");
-	lv_label_set_text(rs.badge, b);
+	label_set_if(rs.badge, b);
 	lv_obj_set_style_text_color(rs.badge, inst ? lv_color_hex(0x7bd88f) : PAL.dim, 0);
 	if (inst) {
-		lv_label_set_text(rs.t1, "Shows your controller on your PC for streaming and recording. In RetroSpy on the PC, pick the source MiSTer and type these in:");
+		label_set_if(rs.t1, "Shows your controller on your PC for streaming and recording. In RetroSpy on the PC, pick the source MiSTer and type these in:");
 		int js = 0;
 		cJSON *c;
 		cJSON_ArrayForEach(c, cJSON_GetObjectItem(rs.info, "controllers")) if ((int)api_num(c, "player", 0) == 1) js = (int)api_num(c, "js", 0);
@@ -3308,14 +3330,14 @@ static void rs_draw(void)
 		else snprintf(g, sizeof(g), "%s\n%s\n%s\nno controller connected right now",
 			api_str(rs.info, "host") && *api_str(rs.info, "host") ? api_str(rs.info, "host") : "(not on a network)",
 			api_str(rs.info, "user") ? api_str(rs.info, "user") : "root", api_str(rs.info, "password") ? api_str(rs.info, "password") : "1");
-		lv_label_set_text(rs.keys, "Host\nUsername\nPassword\nController");
-		lv_label_set_text(rs.vals, g);
+		label_set_if(rs.keys, "Host\nUsername\nPassword\nController");
+		label_set_if(rs.vals, g);
 		lv_obj_set_hidden(rs.grid, false);
-		lv_label_set_text(rs.note, "Phosphor doesn't run anything for it: RetroSpy on the PC starts the reader on the SS1 while it watches, and it stops when RetroSpy closes.");
+		label_set_if(rs.note, "Phosphor doesn't run anything for it: RetroSpy on the PC starts the reader on the SS1 while it watches, and it stops when RetroSpy closes.");
 	} else {
-		lv_label_set_text(rs.t1, "RetroSpy shows the controller you're playing with on your PC: a picture of the pad that lights up as you press, for streams and recordings (OBS).");
+		label_set_if(rs.t1, "RetroSpy shows the controller you're playing with on your PC: a picture of the pad that lights up as you press, for streams and recordings (OBS).");
 		lv_obj_set_hidden(rs.grid, true);
-		lv_label_set_text(rs.note, "Install puts RetroSpy's small reader on the SD card through Update All, so Update All keeps it up to date. Nothing starts at boot. Get RetroSpy for the PC from retro-spy.com.");
+		label_set_if(rs.note, "Install puts RetroSpy's small reader on the SD card through Update All, so Update All keeps it up to date. Nothing starts at boot. Get RetroSpy for the PC from retro-spy.com.");
 	}
 	rs_vl.count = rs_nctl() + 1;
 	if (rs_vl.sel >= rs_vl.count) rs_vl.sel = rs_vl.count - 1;
@@ -3407,22 +3429,22 @@ static void fo_detail(void)
 {
 	int i = fo.list.sel;
 	if (fo.reg && i == 0) {
-		lv_label_set_text(fo.dtitle, "REGISTER THIS SUPERSTATION");
-		lv_label_set_text(fo.dtext, "Opens Update All's own settings on the TV. Press a button during its countdown for the settings, "
+		label_set_if(fo.dtitle, "REGISTER THIS SUPERSTATION");
+		label_set_if(fo.dtext, "Opens Update All's own settings on the TV. Press a button during its countdown for the settings, "
 		                  "sign in to your account there, then use Link so your supporter cores (Coin-Op Collection, JOTEGO and others) "
 		                  "download on this SuperStation. Phosphor comes back by itself when Update All finishes.");
-		lv_label_set_text(fo.dfile, fo.linked ? "Status: linked" : "Status: not linked yet");
+		label_set_if(fo.dfile, fo.linked ? "Status: linked" : "Status: not linked yet");
 		return;
 	}
 	cJSON *x = fo_core(i);
 	char t[120];
 	spaced_caps(t, sizeof(t), x && api_str(x, "name") ? api_str(x, "name") : "");
-	lv_label_set_text(fo.dtitle, t);
-	lv_label_set_text(fo.dtext, fo.util ? "A test or setup tool. It starts on its own, as from MiSTer's menu."
+	label_set_if(fo.dtitle, t);
+	label_set_if(fo.dtext, fo.util ? "A test or setup tool. It starts on its own, as from MiSTer's menu."
 	                                    : "Starts on its own, as from MiSTer's menu; its own menu (the menu button) picks a file when it uses one.");
 	const char *f = x ? api_str(x, "file") : NULL;
 	const char *rel = f ? strstr(f, fo.util ? "_Utility/" : "_Other/") : NULL;
-	lv_label_set_text(fo.dfile, rel ? rel : "");
+	label_set_if(fo.dfile, rel ? rel : "");
 }
 static void fo_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
@@ -3508,6 +3530,8 @@ static void folder_key(pkey_t k)
  * Y: 16:9 / 4:3 / All; X: what it's for (both menus, Phosphor's only, MiSTer's only); A uses it. */
 #define WG_COLS 4
 #define WG_ROWS 2
+/* wallpaper thumbnails being asked for in the background (wall_tick): the tile, the file, when */
+static struct { int i, scan, left; char file[256]; uint32_t at; } wq = { -1, 0, 0, "", 0 };
 static void show_settings(void);
 static struct {
 	cJSON *cats, *items;
@@ -3604,10 +3628,10 @@ static void wg_draw(void)
 	if (nc > 1) mk_label(wg.tabs, FONT_SMALL, PAL.dim, "R");
 	char a[48];
 	snprintf(a, sizeof(a), "%s  (Y)", wg.aspect == 2 ? "All" : WG_ASP[wg.aspect]);
-	lv_label_set_text(wg.asp, a);
+	label_set_if(wg.asp, a);
 	char u[80];
 	snprintf(u, sizeof(u), "Use for:  %s  (X)", WG_USE[SETTINGS.wall_osd % 3]);
-	lv_label_set_text(wg.use, u);
+	label_set_if(wg.use, u);
 	int n = cJSON_GetArraySize(wg.items), newpage = wg.drawn_top != wg.top;
 	wg.drawn_top = wg.top;
 	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
@@ -3622,16 +3646,16 @@ static void wg_draw(void)
 		lv_obj_set_style_border_color(wg.cell[i], PAL.acc, 0);
 		char c[160];
 		snprintf(c, sizeof(c), "%s%s", inuse ? "\xE2\x9C\x93  " : "", api_str(x, "name") ? api_str(x, "name") : "");
-		lv_label_set_text(wg.cap[i], c);
+		label_set_if(wg.cap[i], c);
 		if (newpage) {
 			lv_image_set_src(wg.img[i], NULL);
 			wg.thumbs[i][0] = 0;
 		}
 	}
-	if (!n) lv_label_set_text(wg.cap[0], "");
+	if (!n) label_set_if(wg.cap[0], "");
 	cJSON *cc = cJSON_GetArrayItem(wg.cats, wg.cat);
 	const char *cid = cc ? api_str(cc, "id") : NULL;
-	lv_label_set_text(wg.empty, n ? ""
+	label_set_if(wg.empty, n ? ""
 		: nc <= 1 && wg.aspect == 2 ? "No wallpapers yet. Put your own in the wallpapers_user folder on the SD card, or turn on a wallpaper collection in Update All's settings (Utility > Register this SuperStation opens it) and run it."
 		: nc <= 1 ? "None in this shape yet: Y shows the others. To get some, put your own in the wallpapers_user folder on the SD card, or turn on a wallpaper collection in Update All's settings and run it."
 		: cid && !strcmp(cid, "user") ? "None of your own in this shape: put pictures in the wallpapers_user folder on the SD card. L and R show the collections."
@@ -3647,34 +3671,51 @@ static void wg_draw(void)
 	char *b = n && newpage ? cJSON_PrintUnformatted(q) : NULL;
 	cJSON_Delete(q);
 	if (b) { cJSON_Delete(api_call("%s", b)); free(b); }
-	if (newpage) { wg.pending = 1; wg.poll_at = 0; }
+	if (newpage) { wg.pending = 1; wg.poll_at = 0; wq.scan = 0; wq.left = 0; }
 }
 /* the page's thumbnails that are ready (wall_tick): a quick check every 300 ms, never a wait */
+/* the page's thumbnails, made by phosphord: asked one at a time in the background (the menu never waits for
+   one), each answer checked against the tile it was asked for (a page turned meanwhile: dropped). A thumbnail
+   still being made is asked again on the next round, 300 ms later */
 static void wall_tick(void)
 {
 	if (cur != SCR_WALL || !wg.pending) return;
 	uint32_t now = lv_tick_get();
+	if (wq.i >= 0) {
+		cJSON *r = api_bg_take("wthumb");
+		if (!r && now - wq.at < 5000) return;            /* (on its way; none in 5 s: asked again) */
+		cJSON *x = cJSON_GetArrayItem(wg.items, wg.top + wq.i);
+		const char *t = api_ok(r) ? api_str(r, "thumb") : NULL;
+		if (x && api_str(x, "file") && !strcmp(api_str(x, "file"), wq.file) && !wg.thumbs[wq.i][0]) {
+			if (t) {
+				snprintf(wg.thumbs[wq.i], sizeof(wg.thumbs[wq.i]), "A:%s", t);
+				lv_image_set_src(wg.img[wq.i], wg.thumbs[wq.i]);
+			} else if (!r || api_ok(r)) wq.left++;   /* still being made (an unreadable one stays empty) */
+		}
+		cJSON_Delete(r);
+		wq.i = -1;
+	}
 	if (wg.poll_at && (int32_t)(now - wg.poll_at) < 0) return;
-	wg.poll_at = now + 300;
-	int left = 0;
-	for (int i = 0; i < WG_COLS * WG_ROWS; i++) {
-		cJSON *x = cJSON_GetArrayItem(wg.items, wg.top + i);
-		if (!x || wg.thumbs[i][0]) continue;
+	/* the next tile without a thumbnail; a round over the page with none left: done */
+	for (; wq.scan < WG_COLS * WG_ROWS; wq.scan++) {
+		cJSON *x = cJSON_GetArrayItem(wg.items, wg.top + wq.scan);
+		if (!x || wg.thumbs[wq.scan][0] || !api_str(x, "file")) continue;
+		wq.i = wq.scan++;
+		snprintf(wq.file, sizeof(wq.file), "%s", api_str(x, "file"));
 		cJSON *q = cJSON_CreateObject();
 		cJSON_AddStringToObject(q, "cmd", "wallpaper_thumb");
-		cJSON_AddStringToObject(q, "file", api_str(x, "file"));
+		cJSON_AddStringToObject(q, "file", wq.file);
 		char *b = cJSON_PrintUnformatted(q);
 		cJSON_Delete(q);
-		cJSON *r = api_call("%s", b);
+		api_bg_ask("wthumb", "%s", b);
 		free(b);
-		const char *t = api_ok(r) ? api_str(r, "thumb") : NULL;
-		if (t) {
-			snprintf(wg.thumbs[i], sizeof(wg.thumbs[i]), "A:%s", t);
-			lv_image_set_src(wg.img[i], wg.thumbs[i]);
-		} else if (api_ok(r)) left++;              /* still being made (an unreadable one stays empty) */
-		cJSON_Delete(r);
+		wq.at = now;
+		return;
 	}
-	if (!left) wg.pending = 0;
+	if (!wq.left) { wg.pending = 0; wq.scan = 0; return; }
+	wq.scan = 0;
+	wq.left = 0;
+	wg.poll_at = now + 300;
 }
 static void show_wallpapers(void)
 {
@@ -3962,24 +4003,24 @@ static void vd_panel(void)
 		cJSON *act = NULL;
 		for (int k = 0; k < vd_profile_count(); k++) if (cJSON_IsTrue(cJSON_GetObjectItem(vd_profile(k), "active"))) act = vd_profile(k);
 		snprintf(t, sizeof(t), "%s isn't in use: Main uses %s now.", pf ? api_str(pf, "label") : "?", act ? api_str(act, "label") : "Main");
-		lv_label_set_text(vd.empty, t);
+		label_set_if(vd.empty, t);
 		snprintf(t, sizeof(t), "Use %s", pf ? api_str(pf, "label") : "?");
-		lv_label_set_text(vd.pname, t);
-		lv_label_set_text(vd.prisk, "");
+		label_set_if(vd.pname, t);
+		label_set_if(vd.prisk, "");
 		snprintf(t, sizeof(t), "%s. Trying it restarts the menu with this profile; it goes back by itself in %d seconds unless you keep it.",
 		         pf ? api_str(pf, "name") : "", (int)api_num(vd.st, "secs", 35));
-		lv_label_set_text(vd.ptext, t);
-		lv_label_set_text(vd.pwarn, "");
+		label_set_if(vd.ptext, t);
+		label_set_if(vd.pwarn, "");
 		cJSON *s = cJSON_GetObjectItem(vd.st, "settings");
 		nd = vd_dip(api_str(cJSON_GetObjectItem(s, "vga_mode"), "value") ? api_str(cJSON_GetObjectItem(s, "vga_mode"), "value") : "",
 		            api_str(cJSON_GetObjectItem(s, "composite_sync"), "value"), api_str(cJSON_GetObjectItem(s, "menu_pal"), "value"), pf ? api_str(pf, "label") : "", dips, 4);
 		footer_set(VD_HINTS_PROF);
 	} else if (vd_crt_row(vd_list.sel) >= 0) {
 		int cr = vd_crt_row(vd_list.sel);
-		lv_label_set_text(vd.pname, cr == 0 ? "CRT mode" : cr == CR_TEXT ? "CRT text" : cr == CR_OVER ? "CRT overscan" : "CRT picture position");
-		lv_label_set_text(vd.prisk, cr == 0 ? "Phosphor's own setting (not MiSTer.ini)" : cr == CR_TEXT || cr == CR_OVER ? "The menu starts again with it" : "Changes right away");
+		label_set_if(vd.pname, cr == 0 ? "CRT mode" : cr == CR_TEXT ? "CRT text" : cr == CR_OVER ? "CRT overscan" : "CRT picture position");
+		label_set_if(vd.prisk, cr == 0 ? "Phosphor's own setting (not MiSTer.ini)" : cr == CR_TEXT || cr == CR_OVER ? "The menu starts again with it" : "Changes right away");
 		lv_obj_set_style_text_color(vd.prisk, PAL.dim, 0);
-		lv_label_set_text(vd.ptext, cr == 0
+		label_set_if(vd.ptext, cr == 0
 			? "Phosphor's menu on a CRT, at the TV's own timing, out of the analog port (VGA, SCART, component). "
 			  "240p, 288p, 480i and 576i are 15 kHz for a TV (288p and 576i for PAL sets); 480p is 31 kHz for a VGA monitor or a PVM / BVM that takes it. "
 			  "HDMI shows the same picture. Games still use their own video and MiSTer.ini's settings. "
@@ -3987,19 +4028,19 @@ static void vd_panel(void)
 			: cr == CR_TEXT ? "How the text looks at 240p and 288p. Smooth: soft edges. Sharp: no soft edges, crisp on a sharp monitor. Legible: a plainer, heavier typeface."
 			: cr == CR_OVER ? "Most TVs cut the edges of the picture off. This keeps Phosphor's menu inside: a few per cent off each edge."
 			: "Moves Phosphor's picture on the CRT so it's in the middle of the screen. Each step is one pixel across, or one line up or down.");
-		lv_label_set_text(vd.pwarn, cr == 0 ? "A TV that can't show a mode shows nothing: the old mode comes back by itself unless you keep it."
+		label_set_if(vd.pwarn, cr == 0 ? "A TV that can't show a mode shows nothing: the old mode comes back by itself unless you keep it."
 		                                   : vd.crt.on ? "" : "Turn CRT mode on first.");
-		if (!mainlink_has_crt()) lv_label_set_text(vd.pwarn, "Needs Phosphor's Main (0.27.42 or later) and Phosphor's menu core.");
+		if (!mainlink_has_crt()) label_set_if(vd.pwarn, "Needs Phosphor's Main (0.27.42 or later) and Phosphor's menu core.");
 		footer_set(cr == 0 ? VD_HINTS_CRT : cr == CR_TEXT || cr == CR_OVER ? VD_HINTS_CRTCH : VD_HINTS_CRTPOS);
 	} else {
 		int o = vd.row2opt[vd_list.sel];
-		lv_label_set_text(vd.pname, VOPTS[o].name);
+		label_set_if(vd.pname, VOPTS[o].name);
 		const char *rw = "";
 		int warn = 0;
 		for (int k = 0; k < NVRISKS; k++) if (!strcmp(VRISKS[k].id, VOPTS[o].risk)) { rw = VRISKS[k].words; warn = VRISKS[k].warn; }
-		lv_label_set_text(vd.prisk, rw);
+		label_set_if(vd.prisk, rw);
 		lv_obj_set_style_text_color(vd.prisk, warn ? PAL.acc : PAL.dim, 0);
-		lv_label_set_text(vd.ptext, VOPTS[o].text);
+		label_set_if(vd.ptext, VOPTS[o].text);
 		char w[400] = "";
 		if (VOPTS[o].warn) snprintf(w, sizeof(w), "%s", VOPTS[o].warn);
 		cJSON *ov = cJSON_GetObjectItem(vd_setting(VOPTS[o].key), "overrides");
@@ -4009,7 +4050,7 @@ static void vd_panel(void)
 			cJSON *x;
 			cJSON_ArrayForEach(x, ov) { l = strlen(w); snprintf(w + l, sizeof(w) - l, " %s", x->valuestring); }
 		}
-		lv_label_set_text(vd.pwarn, w);
+		label_set_if(vd.pwarn, w);
 		if (vd_is_analog(VOPTS[o].key) && vd.edited[o] >= 0) {
 			int m = vd_opt("vga_mode"), c = vd_opt("composite_sync"), p = vd_opt("menu_pal");
 			nd = vd_dip(vd_shown(m), vd_shown(c), vd_shown(p), pf ? api_str(pf, "label") : "", dips, 4);
@@ -4023,14 +4064,14 @@ static void vd_panel(void)
 		size_t l = strlen(d);
 		snprintf(d + l, sizeof(d) - l, "\nSS1 units made after December 2025. The ini and the switches have to agree.");
 	}
-	lv_label_set_text(vd.pdip, d);
+	label_set_if(vd.pdip, d);
 	lv_obj_set_hidden(vd.pdip, !nd);
 	char f[120];
 	if (vd_crt_row(vd_list.sel) >= 0 && using)
 		snprintf(f, sizeof(f), vd_crt_row(vd_list.sel) == 0 ? "Goes back by itself in %d seconds unless you keep it." : "", CRT_KEEP_SECS);
 	else if (cJSON_IsTrue(cJSON_GetObjectItem(vd.st, "game_running"))) snprintf(f, sizeof(f), "A game is running: close it first.");
 	else snprintf(f, sizeof(f), "Goes back by itself in %d seconds unless you keep it.", (int)api_num(vd.st, "secs", 35));
-	lv_label_set_text(vd.pfoot, f);
+	label_set_if(vd.pfoot, f);
 }
 
 static void vd_chips(void)
@@ -4313,7 +4354,7 @@ static void vk_tick(void)
 	int left = ms > 0 ? (ms + 999) / 1000 : 0;
 	char t[16];
 	snprintf(t, sizeof(t), "%d s", left);
-	if (strcmp(lv_label_get_text(vk.secs), t)) lv_label_set_text(vk.secs, t);
+	if (strcmp(lv_label_get_text(vk.secs), t)) label_set_if(vk.secs, t);
 	int tw = lv_obj_get_width(lv_obj_get_parent(vk.bar));
 	lv_obj_set_width(vk.bar, LV_MAX(1, tw * left / (vk.total > 0 ? vk.total : 35)));
 }
@@ -4430,11 +4471,11 @@ static void log_draw(void)
 	}
 	if (k) k--;
 	b[k] = 0;
-	lv_label_set_text(log_lab, b);
+	label_set_if(log_lab, b);
 	free(b);
 	char p[64];
 	snprintf(p, sizeof(p), "lines %d\xE2\x80\x93%d of %d", log_n ? log_top + 1 : 0, LV_MIN(log_top + log_vis, log_n), log_n);
-	lv_label_set_text(log_pos, p);
+	label_set_if(log_pos, p);
 }
 
 static void show_log(void)
@@ -4799,7 +4840,7 @@ static int si_pending(void) { return si.box && cur == SCR_SETTINGS && si_wants_e
 static void si_set(lv_obj_t *l, const char *t)
 {
 	const char *was = lv_label_get_text(l);
-	if (!was || strcmp(was, t)) lv_label_set_text(l, t);
+	if (!was || strcmp(was, t)) label_set_if(l, t);
 }
 
 static void si_update(void)
@@ -5093,27 +5134,27 @@ static void diag_apply(cJSON *r)
 
 	cJSON *sm = cJSON_GetObjectItem(r, "summary");
 	if (!api_ok(r)) {
-		lv_label_set_text(diag_head, "phosphord isn't answering");
-		lv_label_set_text(diag_sub, "");
+		label_set_if(diag_head, "phosphord isn't answering");
+		label_set_if(diag_sub, "");
 	} else if (!cJSON_IsTrue(cJSON_GetObjectItem(r, "installed"))) {
-		lv_label_set_text(diag_head, "The diagnostics module isn't installed");
-		lv_label_set_text(diag_sub, "Install phosphor-modules/diag to /media/fat/phosphor/modules/diag.");
+		label_set_if(diag_head, "The diagnostics module isn't installed");
+		label_set_if(diag_sub, "Install phosphor-modules/diag to /media/fat/phosphor/modules/diag.");
 	} else if (!strcmp(diag_busy, "checking")) {
-		lv_label_set_text(diag_head, "Checking the whole system...");
-		lv_label_set_text(diag_sub, "Board, cores, system, storage, video, sound, controllers, network, USB. About 20 seconds.");
+		label_set_if(diag_head, "Checking the whole system...");
+		label_set_if(diag_sub, "Board, cores, system, storage, video, sound, controllers, network, USB. About 20 seconds.");
 	} else if (sm) {
 		int lv = level_of(api_str(sm, "level"));
-		lv_label_set_text(diag_head, lv == 0 ? "Everything looks fine" : lv == 2 ? "A few things worth a look" : "Some things need fixing");
+		label_set_if(diag_head, lv == 0 ? "Everything looks fine" : lv == 2 ? "A few things worth a look" : "Some things need fixing");
 		char sub[300];
 		const char *b = api_str(r, "bundle"), *e = api_str(r, "error");
 		if (!strcmp(diag_busy, "bundle")) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  making a report for support...", api_str(sm, "text"));
 		else if (e) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  %s", api_str(sm, "text"), e);
 		else if (b) snprintf(sub, sizeof(sub), "%s  \xC2\xB7  report saved: %s", api_str(sm, "text"), b);
 		else snprintf(sub, sizeof(sub), "%s", api_str(sm, "text"));
-		lv_label_set_text(diag_sub, sub);
+		label_set_if(diag_sub, sub);
 	} else {
-		lv_label_set_text(diag_head, api_str(r, "error") ? api_str(r, "error") : "Not checked yet");
-		lv_label_set_text(diag_sub, "");
+		label_set_if(diag_head, api_str(r, "error") ? api_str(r, "error") : "Not checked yet");
+		label_set_if(diag_sub, "");
 	}
 	cJSON_Delete(r);
 	diag_list.count = nditems;
@@ -5256,7 +5297,7 @@ static void osk_draw(void)
 		for (int c = 0; c < OSK_COLS; c++) {
 			const char *row = OSK_LAYOUT[osk.layer][r];
 			char ch[2] = { c < (int)strlen(row) ? row[c] : ' ', 0 };
-			lv_label_set_text(lv_obj_get_child(osk.cell[r][c], 0), ch);
+			label_set_if(lv_obj_get_child(osk.cell[r][c], 0), ch);
 			int on = osk.row == r && osk.col == c;
 			lv_obj_set_style_bg_color(osk.cell[r][c], on ? PAL.acc : PAL.panel_on, 0);
 			lv_obj_set_style_text_color(lv_obj_get_child(osk.cell[r][c], 0), on ? PAL.bg : PAL.text, 0);
@@ -5266,13 +5307,13 @@ static void osk_draw(void)
 		lv_obj_set_style_bg_color(osk.act[a], on ? PAL.acc : PAL.panel_on, 0);
 		lv_obj_set_style_text_color(lv_obj_get_child(osk.act[a], 0), on ? PAL.bg : PAL.text, 0);
 	}
-	lv_label_set_text(lv_obj_get_child(osk.act[OA_SHIFT], 0), osk.layer == 0 ? "ABC" : osk.layer == 1 ? "#+=" : "abc");
+	label_set_if(lv_obj_get_child(osk.act[OA_SHIFT], 0), osk.layer == 0 ? "ABC" : osk.layer == 1 ? "#+=" : "abc");
 	char shown[100];
 	size_t n = strlen(osk.text);
 	if (osk.masked) { memset(shown, '*', n); shown[n] = 0; }
 	else snprintf(shown, sizeof(shown), "%s", osk.text);
 	strncat(shown, "_", sizeof(shown) - strlen(shown) - 1);
-	lv_label_set_text(osk.field, shown);
+	label_set_if(osk.field, shown);
 }
 
 static void osk_close(const char *result)
@@ -5391,7 +5432,7 @@ static const char *signal_word(int dbm) { return dbm >= -55 ? "Strong" : dbm >= 
 static void wifi_apply(cJSON *r)
 {
 	if (!api_ok(r)) {
-		lv_label_set_text(wifi_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		label_set_if(wifi_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
 		cJSON_Delete(r);
 		return;
 	}
@@ -5411,8 +5452,8 @@ static void wifi_apply(cJSON *r)
 	}
 	wscanning = cJSON_IsTrue(cJSON_GetObjectItem(r, "scanning"));
 	if (wscanning) snprintf(sub + strlen(sub), sizeof(sub) - strlen(sub), "%sLooking for networks...", sub[0] ? "  \xC2\xB7  " : "");
-	lv_label_set_text(wifi_head, head);
-	lv_label_set_text(wifi_sub, sub);
+	label_set_if(wifi_head, head);
+	label_set_if(wifi_sub, sub);
 	nwnets = 0;
 	cJSON *it;
 	cJSON_ArrayForEach(it, cJSON_GetObjectItem(r, "networks")) {
@@ -5589,19 +5630,19 @@ static void pair_draw(void)
 	if (!pair_box) return;
 	char c[16];
 	snprintf(c, sizeof(c), "%.3s %.3s", r_code, r_code + 3);
-	lv_label_set_text(pair_code, c);
+	label_set_if(pair_code, c);
 	char info[200];
 	snprintf(info, sizeof(info), "In the Phosphor app, enter this code and the address\n%s:%d", r_addr[0] ? r_addr : "(no network)", r_port);
-	lv_label_set_text(pair_info, info);
+	label_set_if(pair_info, info);
 	char l[48];
 	snprintf(l, sizeof(l), "Closes in %d:%02d", r_left / 60, r_left % 60);
-	lv_label_set_text(pair_left, l);
+	label_set_if(pair_left, l);
 }
 
 static void remote_apply(cJSON *r)
 {
 	if (!api_ok(r)) {
-		if (rem_head) lv_label_set_text(rem_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		if (rem_head) label_set_if(rem_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
 		cJSON_Delete(r);
 		return;
 	}
@@ -5641,8 +5682,8 @@ static void remote_apply(cJSON *r)
 			snprintf(h, sizeof(h), "On  \xC2\xB7  %s:%d", r_addr[0] ? r_addr : "no network yet", r_port);
 			snprintf(sub, sizeof(sub), "Paired devices can see and edit the library, box art and video settings. WiFi and pairing stay here.");
 		}
-		lv_label_set_text(rem_head, h);
-		lv_label_set_text(rem_sub, sub);
+		label_set_if(rem_head, h);
+		label_set_if(rem_sub, sub);
 		rem_list.count = RR_COUNT + nrdevs;
 		vlist_refresh(&rem_list);
 	}
@@ -5790,7 +5831,7 @@ static void cl_split_output(const char *out)
 static void cl_apply(cJSON *r)
 {
 	if (!api_ok(r)) {
-		if (cl_head) lv_label_set_text(cl_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		if (cl_head) label_set_if(cl_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
 		cJSON_Delete(r);
 		return;
 	}
@@ -5893,8 +5934,8 @@ static void cl_apply(cJSON *r)
 	case CL_TYPES: snprintf(sub, sizeof(sub), "Add a storage place. Passwords are kept on this MiSTer only."); break;
 	default: break;
 	}
-	lv_label_set_text(cl_head, h);
-	lv_label_set_text(cl_sub, sub);
+	label_set_if(cl_head, h);
+	label_set_if(cl_sub, sub);
 	switch (cl.mode) {
 	case CL_DEVICES: case CL_PREVIEW: cl_list.count = cl.nlines; break;
 	case CL_PLACES: cl_list.count = cl.nplaces + 1; break;
@@ -6118,7 +6159,7 @@ static void bk_reason(const char *r, char *out, size_t n)
 static void bk_apply(cJSON *r)
 {
 	if (!api_ok(r)) {
-		if (bk_head) lv_label_set_text(bk_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		if (bk_head) label_set_if(bk_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
 		cJSON_Delete(r);
 		return;
 	}
@@ -6173,8 +6214,8 @@ static void bk_apply(cJSON *r)
 	}
 	if (bk.mode == BK_PREVIEW) snprintf(sub, sizeof(sub), "%s: A puts back the saves only; X everything in it, settings too.", bk.pick_label);
 	if (bk.busy) snprintf(sub, sizeof(sub), "%s", !strcmp(bk.job, "now") ? "Backing up..." : !strcmp(bk.job, "restore") ? "Restoring..." : "Looking inside...");
-	lv_label_set_text(bk_head, h);
-	lv_label_set_text(bk_sub, sub);
+	label_set_if(bk_head, h);
+	label_set_if(bk_sub, sub);
 	bk_list.count = bk.mode == BK_PREVIEW ? bk.nlines : bk.installed ? bk.nsnaps + 1 : 0;
 	footer_set(bk.mode == BK_PREVIEW ? BK_PREVIEW_HINTS : BK_HINTS);
 	vlist_refresh(&bk_list);
@@ -6349,7 +6390,7 @@ static void mc_update(const char *map, int busy)
 	else if (written) snprintf(t, sizeof(t), "%d written%s", written, failed ? "  \xC2\xB7  1 failed" : "");
 	else if (failed) snprintf(t, sizeof(t), "%d / 1024  \xC2\xB7  %d failed", done, failed);
 	else snprintf(t, sizeof(t), "%d / 1024  \xC2\xB7  %d retried", done, retried);
-	lv_label_set_text(mc_count, t);
+	label_set_if(mc_count, t);
 }
 static const char *const PT_HINTS[] = { "A", "Choose", "B", "Back", NULL };
 static const char *const PT_CONFIRM_HINTS[] = { "A", "Port 1", "X", "Port 2", "B", "Cancel", NULL };
@@ -6397,7 +6438,7 @@ static void pt_pads(void)
 		cJSON_Delete(r);
 	}
 	for (int p = 0; p < 2; p++) if (pt_padl[p]) {
-		lv_label_set_text(pt_padl[p], pt.pad[p]);
+		label_set_if(pt_padl[p], pt.pad[p]);
 		lv_obj_set_style_text_color(pt_padl[p], pt.pad_conn[p] ? PAL.text : PAL.dim, 0);
 	}
 }
@@ -6444,7 +6485,7 @@ static void mc_name_done(const char *text)
 static void pt_apply(cJSON *r)
 {
 	if (!api_ok(r)) {
-		if (pt_head) lv_label_set_text(pt_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		if (pt_head) label_set_if(pt_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
 		cJSON_Delete(r);
 		return;
 	}
@@ -6510,8 +6551,8 @@ static void pt_apply(cJSON *r)
 		else if (!strcmp(pt.job, "restore")) snprintf(sub, sizeof(sub), "%s... %d%%", pt.done < pt.total / 2 ? "Backing up the card first" : "Writing", pc);
 		else snprintf(sub, sizeof(sub), "Working...");
 	}
-	lv_label_set_text(pt_head, h);
-	lv_label_set_text(pt_sub, sub);
+	label_set_if(pt_head, h);
+	label_set_if(pt_sub, sub);
 	pt_list.count = PT_FIRST_FILE + pt.nfiles;
 	if (!osk.open) footer_set(pt.mode == PT_CONFIRM ? PT_CONFIRM_HINTS : PT_HINTS);     /* the keyboard has its own */
 	vlist_refresh(&pt_list);
@@ -6699,8 +6740,8 @@ static void ms_draw(void)
 		if (!ms.card[s][0]) snprintf(sub, sizeof(sub), "A: read the card in port %d.  Y: open a saved card here.", s + 1);
 		else if (!ms.formatted[s]) snprintf(sub, sizeof(sub), "Not formatted");
 		else snprintf(sub, sizeof(sub), "%d of 15 blocks used", 15 - ms.freeb[s]);
-		lv_label_set_text(ms.head[s], h);
-		lv_label_set_text(ms.sub[s], sub);
+		label_set_if(ms.head[s], h);
+		label_set_if(ms.sub[s], sub);
 		lv_obj_set_style_border_color(ms.col[s], s == ms.side ? PAL.acc : PAL.line, 0);
 		if (ms.sel[s] < ms.top[s]) ms.top[s] = ms.sel[s];
 		if (ms.sel[s] >= ms.top[s] + MCS_ROWS) ms.top[s] = ms.sel[s] - MCS_ROWS + 1;
@@ -6711,11 +6752,11 @@ static void ms_draw(void)
 			mcs_save_t *sv = &ms.saves[s][i];
 			int on = s == ms.side && i == ms.sel[s];
 			lv_obj_set_style_bg_opa(ms.row[s][r], on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-			lv_label_set_text(ms.rti[s][r], sv->title);
+			label_set_if(ms.rti[s][r], sv->title);
 			lv_obj_set_style_text_color(ms.rti[s][r], on ? PAL.text : PAL.dim, 0);
 			char bl[24];
 			snprintf(bl, sizeof(bl), "%d block%s", sv->blocks, sv->blocks == 1 ? "" : "s");
-			lv_label_set_text(ms.rbl[s][r], bl);
+			label_set_if(ms.rbl[s][r], bl);
 			/* the save's own icon, 16x16 drawn at twice the size */
 			lv_draw_buf_t *db = ms.ibuf[s][r];
 			for (int y = 0; y < 32; y++) {
@@ -6789,7 +6830,7 @@ static void ms_job(const char *what, int port, const char *name, int pending)
 	cJSON_Delete(r);
 	ms.pending = pending;
 	ms.job_side = port - 1;
-	lv_label_set_text(ms.status, pending == 1 ? "Reading the card..." : "Backing up the card, then writing...");
+	label_set_if(ms.status, pending == 1 ? "Reading the card..." : "Backing up the card, then writing...");
 }
 
 static void ms_name_done(const char *text);
@@ -6813,11 +6854,11 @@ static void ms_poll(void)
 	if (busy) {
 		char t[120];
 		snprintf(t, sizeof(t), "%s... %d%%", ms.pending == 1 ? "Reading the card" : done < total / 2 ? "Backing up the card first" : "Writing", total ? done * 100 / total : 0);
-		lv_label_set_text(ms.status, t);
+		label_set_if(ms.status, t);
 		return;
 	}
 	if (ask && !osk.open) {
-		lv_label_set_text(ms.status, "A card Phosphor hasn't seen before: give it a name");
+		label_set_if(ms.status, "A card Phosphor hasn't seen before: give it a name");
 		osk_open("Name this memory card", "Next time Phosphor knows it by its saves.", 0, 40, ms_name_done, MS_HINTS);
 		snprintf(osk.text, sizeof(osk.text), "%s", sugg);
 		osk_draw();
@@ -6826,7 +6867,7 @@ static void ms_poll(void)
 	if (ask) return;
 	int side = ms.job_side, pending = ms.pending;
 	ms.pending = 0;
-	lv_label_set_text(ms.status, msg);
+	label_set_if(ms.status, msg);
 	if (!ok) { toast_show(msg[0] ? msg : "That didn't work"); return; }
 	char *sl = strchr(file, '/');
 	if (pending == 1 && sl) {                       /* read: the card it was kept as */
@@ -7284,7 +7325,7 @@ static void sg_refresh(void)
 		sg.last_at = at;
 	}
 	cJSON_Delete(r);
-	cJSON *b = api_call("{\"cmd\":\"backup\"}");
+	cJSON *b = api_poll("backup", "{\"cmd\":\"backup\"}");   /* (the newest answer; none yet: as it was) */
 	if (api_ok(b)) {
 		int was = sg.bk_busy;
 		cJSON *st = cJSON_GetObjectItem(b, "status");
@@ -7359,8 +7400,8 @@ static void sg_fill_row(int i, char *t, size_t n, char *val, size_t vn, int *dim
 
 static void sg_kv(int i, const char *k, const char *v)
 {
-	lv_label_set_text(sg_k[i], k);
-	lv_label_set_text(sg_v[i], v);
+	label_set_if(sg_k[i], k);
+	label_set_if(sg_v[i], v);
 	lv_obj_set_hidden(lv_obj_get_parent(sg_k[i]), !*k);
 }
 
@@ -7370,16 +7411,16 @@ static void sg_panel(void)
 	char a[160], b[160];
 	for (int r = 0; r < 5; r++) sg_kv(r, "", "");
 	lv_obj_set_hidden(sg_bar, true);
-	lv_label_set_text(sg_out, "");
+	label_set_if(sg_out, "");
 	if (!sg.installed) {
-		lv_label_set_text(sg_ptitle, "Storage");
-		lv_label_set_text(sg_note, "Install the storage module (modules/storage/install.sh in the Phosphor release).");
+		label_set_if(sg_ptitle, "Storage");
+		label_set_if(sg_note, "Install the storage module (modules/storage/install.sh in the Phosphor release).");
 		return;
 	}
 	if (i < sg.n) {
 		sg_drive_t *d = &sg.d[i];
 		sg_drive_name(d, a, sizeof(a));
-		lv_label_set_text(sg_ptitle, a);
+		label_set_if(sg_ptitle, a);
 		int r = 0;
 		if (d->mounted && d->size_kb > 0) {
 			lv_obj_set_hidden(sg_bar, false);
@@ -7402,9 +7443,9 @@ static void sg_panel(void)
 			snprintf(b, sizeof(b), "%s %s \xC2\xB7 %s", sg_jobname(x->job), x->ok ? "passed" : "didn't pass", w);
 			sg_kv(r++, "Last check", b);
 		} else sg_kv(r++, "Last check", "Not since Phosphor started");
-		if (!d->mounted) lv_label_set_text(sg_note, "A: mount it again, as MiSTer does at start-up. Nothing on it is changed.");
-		else if (!strcmp(d->kind, "sd")) lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair offline (Repair all drives, a restart). X: a quick check now.");
-		else lv_label_set_text(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair. X: a quick check now.");
+		if (!d->mounted) label_set_if(sg_note, "A: mount it again, as MiSTer does at start-up. Nothing on it is changed.");
+		else if (!strcmp(d->kind, "sd")) label_set_if(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair offline (Repair all drives, a restart). X: a quick check now.");
+		else label_set_if(sg_note, "A: checks for this drive: quick, file system, speed, health, and repair. X: a quick check now.");
 	} else {
 		static const char *const T[] = { "Quick check of everything", "Speed test", "Repair a drive", "Repair all drives", "Back up saves & settings" };
 		static const char *const N[] = {
@@ -7414,8 +7455,8 @@ static void sg_panel(void)
 			"",
 			"A snapshot of your saves, save states and settings now, the same as after a game. Restore it from Settings > Backups." };
 		int k = i - sg.n;
-		lv_label_set_text(sg_ptitle, T[k]);
-		lv_label_set_text(sg_note, N[k]);
+		label_set_if(sg_ptitle, T[k]);
+		label_set_if(sg_note, N[k]);
 		if (k == SG_SDREPAIR) {
 			const sg_rescue_t *x = &sg.sr;
 			int r = 0;
@@ -7433,20 +7474,20 @@ static void sg_panel(void)
 				if (r < 5) sg_kv(r++, "Repair drive after", x->self_running ? "Repairing now..." : x->self_res[0] ? sg_rescue_res(x->self_res) : "Not checked");
 			} else sg_kv(r++, "SD card at start-up", x->dirty ? "Wasn't shut down safely" : "Clean");
 			if ((!x->drive || x->nvme) && !x->ncand)
-				lv_label_set_text(sg_note, "Plug a spare USB drive into the SuperStation (exFAT, 1 GB free) to repair all drives without a PC: Phosphor puts a copy of MiSTer's Linux on it, and a restart repairs the SD card, the NVMe drive and any other USB drives from there. Why not the NVMe drive: the drive the repair runs from can't be repaired in the same pass, and the NVMe drive holds your games.");
+				label_set_if(sg_note, "Plug a spare USB drive into the SuperStation (exFAT, 1 GB free) to repair all drives without a PC: Phosphor puts a copy of MiSTer's Linux on it, and a restart repairs the SD card, the NVMe drive and any other USB drives from there. Why not the NVMe drive: the drive the repair runs from can't be repaired in the same pass, and the NVMe drive holds your games.");
 			else if (!x->drive || x->nvme)
-				lv_label_set_text(sg_note, "A: choose the USB drive the repair starts from. Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart repairs the SD card, the NVMe drive and any other USB drives while nothing is using them, and starts Phosphor again.");
+				label_set_if(sg_note, "A: choose the USB drive the repair starts from. Phosphor puts a copy of MiSTer's Linux on it (about 400 MB, nothing else changes). Then a restart repairs the SD card, the NVMe drive and any other USB drives while nothing is using them, and starts Phosphor again.");
 			else if (!x->present && x->newp[0])
-				lv_label_set_text(sg_note, "The repair drive isn't plugged in, but another USB drive is. A: make it the repair drive (a copy of MiSTer's Linux goes on it, about 400 MB).");
+				label_set_if(sg_note, "The repair drive isn't plugged in, but another USB drive is. A: make it the repair drive (a copy of MiSTer's Linux goes on it, about 400 MB).");
 			else if (!x->present)
-				lv_label_set_text(sg_note, "Plug the repair drive back in, or another spare USB drive (exFAT, 1 GB free) to use instead.");
+				label_set_if(sg_note, "Plug the repair drive back in, or another spare USB drive (exFAT, 1 GB free) to use instead.");
 			else if (x->nextra)
-				lv_label_set_text(sg_note, "Something else put files on the repair drive (MiSTer's downloader puts games folders on the first USB drive it finds). It should only hold repair copies: A, then Move the other files to the games drive.");
+				label_set_if(sg_note, "Something else put files on the repair drive (MiSTer's downloader puts games folders on the first USB drive it finds). It should only hold repair copies: A, then Move the other files to the games drive.");
 			else {
 				char nb[320];
 				snprintf(nb, sizeof(nb), "A: restart and repair the SD card%s while nothing is using them. The TV shows the repair as it runs, then Phosphor starts again; the repair drive itself is repaired after that.",
 					x->nother ? " and the other drives plugged in" : "");
-				lv_label_set_text(sg_note, nb);
+				label_set_if(sg_note, nb);
 			}
 		} else if (k == SG_BACKUP) {
 			sg_kv(0, "Last backup", sg.bk_last[0] ? sg.bk_last : "None yet");
@@ -7471,7 +7512,7 @@ static void sg_panel(void)
 		static const char *const D[] = { ".", "..", "..." };
 		snprintf(b, sizeof(b), "%s on the %s%s", sg_jobname(sg.job), nm[0] ? nm : sg.target, D[(lv_tick_get() / 1000) % 3]);
 		if (sg.nqueue) snprintf(b + strlen(b), sizeof(b) - strlen(b), "\n%d more drive%s after this", sg.nqueue, sg.nqueue == 1 ? "" : "s");
-		lv_label_set_text(sg_out, b);
+		label_set_if(sg_out, b);
 	}
 }
 
@@ -7777,7 +7818,7 @@ static void padtest_poll(void)
 	if (analog != ptst.layout) { ptst.layout = analog; padview_layout(ptst.pv, analog ? "dualshock" : "psx"); }
 	char h[120];
 	snprintf(h, sizeof(h), ptst.conn ? "Port %d  \xC2\xB7  %s" : "Port %d  \xC2\xB7  nothing plugged in", ptst.port, pt_type(ptst.id));
-	lv_label_set_text(ptst.head, h);
+	label_set_if(ptst.head, h);
 	/* the controller's bits: Select L3 R3 Start Up Right Down Left L2 R2 L1 R1 Triangle Circle Cross Square */
 	static const char *const ID[16] = { "back", "ls", "rs", "start", "up", "right", "down", "left", "l2", "r2", "l1", "r1", "y", "b", "a", "x" };
 	padstate_t st;
@@ -7794,7 +7835,7 @@ static void padtest_poll(void)
 	char a[120];
 	if (analog) snprintf(a, sizeof(a), "L  x %+.2f  y %+.2f        R  x %+.2f  y %+.2f", st.lx, st.ly, st.rx, st.ry);
 	else snprintf(a, sizeof(a), ptst.conn ? "Digital controller: no sticks" : "Plug a controller into port %d", ptst.port);
-	lv_label_set_text(ptst.axis, a);
+	label_set_if(ptst.axis, a);
 }
 
 static void show_padtest(void)
@@ -7851,7 +7892,7 @@ static int bt_confirm_row = -1;
 static void bt_apply(cJSON *r)
 {
 	if (!api_ok(r)) {
-		if (bt_head) lv_label_set_text(bt_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
+		if (bt_head) label_set_if(bt_head, r && api_str(r, "error") ? api_str(r, "error") : "phosphord isn't answering");
 		cJSON_Delete(r);
 		return;
 	}
@@ -7884,22 +7925,22 @@ static void bt_apply(cJSON *r)
 		lv_obj_set_style_border_color(bt_ring, c, 0);
 		lv_obj_set_style_text_color(bt_ic, c, 0);
 		if (!bt.present) {
-			lv_label_set_text(bt_title, "No Bluetooth adapter");
-			lv_label_set_text(bt_note, "Plug one in: it shows up here by itself.");
+			label_set_if(bt_title, "No Bluetooth adapter");
+			label_set_if(bt_note, "Plug one in: it shows up here by itself.");
 		} else if (bt.busy) {
-			lv_label_set_text(bt_title, "Looking for controllers");
-			lv_label_set_text(bt_note, "Put the controller in pairing mode now.");
+			label_set_if(bt_title, "Looking for controllers");
+			label_set_if(bt_note, "Put the controller in pairing mode now.");
 		} else if (bt_paired[0]) {
 			char t[96];
 			snprintf(t, sizeof(t), "%s paired", bt_paired);
-			lv_label_set_text(bt_title, t);
-			lv_label_set_text(bt_note, "It connects by itself from now on.\nCheck its buttons in Settings \xE2\x80\xBA Controllers.");
+			label_set_if(bt_title, t);
+			label_set_if(bt_note, "It connects by itself from now on.\nCheck its buttons in Settings \xE2\x80\xBA Controllers.");
 		} else if (bt.seen_at && !bt.ok && bt.message[0]) {
-			lv_label_set_text(bt_title, "Pairing didn't work");
-			lv_label_set_text(bt_note, "Put it in pairing mode again, then Pair a controller.");
+			label_set_if(bt_title, "Pairing didn't work");
+			label_set_if(bt_note, "Put it in pairing mode again, then Pair a controller.");
 		} else {
-			lv_label_set_text(bt_title, "Pair a controller");
-			lv_label_set_text(bt_note, "Put the controller in pairing mode, then press A.");
+			label_set_if(bt_title, "Pair a controller");
+			label_set_if(bt_note, "Put the controller in pairing mode, then press A.");
 		}
 		lv_obj_set_hidden(bt_tips, !bt.present || (bt_paired[0] && !bt.busy));
 	}
@@ -7921,8 +7962,8 @@ static void bt_apply(cJSON *r)
 	}
 	if (bt.mode == BT_ACTION && bt.pick < bt.ndev)
 		snprintf(sub, sizeof(sub), "%s: A disconnects it (it reconnects when you turn it on), X deletes it.", bt.name[bt.pick]);
-	lv_label_set_text(bt_head, h);
-	lv_label_set_text(bt_sub, sub);
+	label_set_if(bt_head, h);
+	label_set_if(bt_sub, sub);
 	bt_list.count = bt.present ? 1 + bt.ndev + (bt.ndev ? 1 : 0) : 0;    /* (Delete all pairings last) */
 	footer_set(bt.mode == BT_ACTION ? BT_ACTION_HINTS : bt_list.sel >= 1 && bt_list.sel <= bt.ndev ? BT_DEV_HINTS : BT_HINTS);
 	vlist_refresh(&bt_list);
@@ -8194,17 +8235,17 @@ static void ct_side(void)
 		padview_layout(ct.pv, ct.style[s]);
 		char b[96];
 		snprintf(b, sizeof(b), "<  %s%s  >", padview_name(ct.style[s]), ct.style_set[s] ? "" : " (automatic)");
-		lv_label_set_text(ct.style_lab, b);
-		lv_label_set_text(ct.desc, !strcmp(ct.uses[s], "custom") ?
+		label_set_if(ct.style_lab, b);
+		label_set_if(ct.desc, !strcmp(ct.uses[s], "custom") ?
 			"Uses its own button mapping in MiSTer's menu and every core. Map buttons to change it; Reset to automatic goes back to MiSTer's controller list." :
 			!strcmp(ct.uses[s], "database") ? "MiSTer knows this controller and maps it by itself. Map buttons to set it up your way." :
 			"MiSTer doesn't know this controller yet: map its buttons once and it works in the menu and every core.");
 		/* (the drawing also says which face buttons are A, B, X and Y in Phosphor's menu) */
 	} else if (ct.mode == 1) {
-		lv_label_set_text(ct.desc, "Every backup holds all the mapping files and your controller profiles as they were. Restoring one backs up the current ones first.");
+		label_set_if(ct.desc, "Every backup holds all the mapping files and your controller profiles as they were. Restoring one backs up the current ones first.");
 	} else {
 		int a = s - ct.n;
-		lv_label_set_text(ct.desc, a == CT_BACKUP_NOW ? "Saves every controller's mapping and your controller profiles in phosphor/backups on the SD card." :
+		label_set_if(ct.desc, a == CT_BACKUP_NOW ? "Saves every controller's mapping and your controller profiles in phosphor/backups on the SD card." :
 			"Put back the mappings from an earlier backup.");
 	}
 	lv_obj_set_hidden(ct.empty, ct.n > 0 || ct.mode == 1);
@@ -8325,7 +8366,7 @@ static void tw_poll(void)
 	else if (!l) snprintf(a, sizeof(a), "Not connected");
 	else if (n) snprintf(a, sizeof(a), "Pressing %s", t);
 	else snprintf(a, sizeof(a), "Press anything");
-	lv_label_set_text(tw.ask, a);
+	label_set_if(tw.ask, a);
 	/* the sticks and triggers */
 	char v[64];
 	float sx[2] = { s.lx, s.rx }, sy[2] = { s.ly, s.ry };
@@ -8333,10 +8374,10 @@ static void tw_poll(void)
 		int px = (int)(sx[k] * 100 + (sx[k] < 0 ? -0.5f : 0.5f)), py = (int)(sy[k] * 100 + (sy[k] < 0 ? -0.5f : 0.5f));
 		if (abs(px) < 3 && abs(py) < 3) snprintf(v, sizeof(v), "centred");
 		else snprintf(v, sizeof(v), "%s %d%%, %s %d%%", px < 0 ? "left" : "right", abs(px), py < 0 ? "up" : "down", abs(py));
-		lv_label_set_text(tw.v[k], v);
+		label_set_if(tw.v[k], v);
 	}
-	snprintf(v, sizeof(v), "%d%%", (int)(s.l2 * 100 + 0.5f)); lv_label_set_text(tw.v[2], v);
-	snprintf(v, sizeof(v), "%d%%", (int)(s.r2 * 100 + 0.5f)); lv_label_set_text(tw.v[3], v);
+	snprintf(v, sizeof(v), "%d%%", (int)(s.l2 * 100 + 0.5f)); label_set_if(tw.v[2], v);
+	snprintf(v, sizeof(v), "%d%%", (int)(s.r2 * 100 + 0.5f)); label_set_if(tw.v[3], v);
 	cJSON_Delete(r);
 }
 
@@ -8350,7 +8391,7 @@ static void tw_got(pkey_t k)
 	char t[120] = "";
 	size_t n = 0;
 	for (int i = 0; i < tw.ngot; i++) n += (size_t)snprintf(t + n, sizeof(t) - n, "%s%s", i ? ", " : "", tw.got[i]);
-	lv_label_set_text(tw.v[4], t);
+	label_set_if(tw.v[4], t);
 }
 
 static void show_ctrl(void);
@@ -8591,7 +8632,7 @@ static void map_show_step(void)
 	char b[64];
 	snprintf(b, sizeof(b), "%s  \xC2\xB7  %d OF %d", MSTEPS[i].what, i + 1, MSTEP_N);
 	for (char *c = b; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;
-	lv_label_set_text(mw.what, b);
+	label_set_if(mw.what, b);
 	/* MiSTer's A, B, X and Y are a SNES pad's: A is the right-hand face button. Asked by the name this
 	   controller has on the button the ring shows, so "Press A" never points at a button printed B */
 	const char *mn = mw.step == 4 ? "A" : mw.step == 5 ? "B" : mw.step == 6 ? "X" : mw.step == 7 ? "Y" : NULL;
@@ -8601,13 +8642,13 @@ static void map_show_step(void)
 		snprintf(ask, sizeof(ask), "Press %s", lab);
 		snprintf(hint, sizeof(hint), "MiSTer's %s button: MiSTer names them as on a SNES pad, so on this controller that's %s (the ring shows it).%s",
 			mn, lab, mw.step >= 6 ? " Not on this controller? Press a button you've already used." : " Any button works.");
-		lv_label_set_text(mw.ask, ask);
-		lv_label_set_text(mw.hint, hint);
+		label_set_if(mw.ask, ask);
+		label_set_if(mw.hint, hint);
 		snprintf(mw.ask_now, sizeof(mw.ask_now), "%s", ask);
 	} else {
 		mw.ask_now[0] = 0;
-		lv_label_set_text(mw.ask, MSTEPS[i].ask);
-		lv_label_set_text(mw.hint, MSTEPS[i].hint ? MSTEPS[i].hint : "");
+		label_set_if(mw.ask, MSTEPS[i].ask);
+		label_set_if(mw.hint, MSTEPS[i].hint ? MSTEPS[i].hint : "");
 	}
 	lv_bar_set_value(mw.bar, (i * 100) / MSTEP_N, LV_ANIM_OFF);
 	map_state_file(NULL);
@@ -8666,9 +8707,9 @@ static void map_finish(int saved, const char *err)
 {
 	mw.finished = 1;
 	mw.end_at = lv_tick_get();
-	lv_label_set_text(mw.what, saved ? "SAVED" : "CANCELLED");
-	lv_label_set_text(mw.ask, saved ? "All set" : "Nothing changed");
-	lv_label_set_text(mw.hint, saved ? "This controller now works this way in MiSTer's menu, Phosphor and every core. The old mapping is in Backups." :
+	label_set_if(mw.what, saved ? "SAVED" : "CANCELLED");
+	label_set_if(mw.ask, saved ? "All set" : "Nothing changed");
+	label_set_if(mw.hint, saved ? "This controller now works this way in MiSTer's menu, Phosphor and every core. The old mapping is in Backups." :
 	                  err && *err ? err : "The controller keeps the mapping it had.");
 	lv_bar_set_value(mw.bar, saved ? 100 : 0, LV_ANIM_OFF);
 	char ex[160];
@@ -8871,8 +8912,8 @@ static void up_apply(cJSON *r)
 	cJSON_Delete(r);
 	char h[160];
 	snprintf(h, sizeof(h), "Installed: Phosphor %s", up.ver);
-	if (up.head) lv_label_set_text(up.head, h);
-	if (up.note) lv_label_set_text(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
+	if (up.head) label_set_if(up.head, h);
+	if (up.note) label_set_if(up.note, up.busy ? up.msg : !strcmp(upo.state, "working") || !strcmp(upo.state, "failed") ? upo.msg :
 		"Newer versions come from Phosphor's releases on GitHub (looked at every 30 min while no game runs, or right now with Check GitHub for updates, at the top). "
 		"A release package (phosphor-<version>-armhf.tar.gz) put in phosphor/updates over the network share, sent from the Phosphor app or on a USB drive works too. "
 		"The newest 3 packages are kept after an update.");
@@ -9025,7 +9066,7 @@ static void up_key(pkey_t k)
 	if (!r) { toast_show("Updating..."); return; }    /* no answer in time: it may well have started (the screen follows its state) */
 	if (!api_ok(r)) { up.busy = 0; toast_show(api_str(r, "error") ? api_str(r, "error") : "The updater didn't start"); cJSON_Delete(r); return; }
 	cJSON_Delete(r);
-	lv_label_set_text(up.note, "Updating: Phosphor closes, then the SuperStation restarts by itself to finish.");
+	label_set_if(up.note, "Updating: Phosphor closes, then the SuperStation restarts by itself to finish.");
 	toast_show("Updating...");
 }
 
@@ -9129,12 +9170,12 @@ static void upd_draw(void)
 	if (us.failed) snprintf(t, sizeof(t), "%s didn't finish", rb ? "Going back" : "The update");
 	else if (done) snprintf(t, sizeof(t), "%s", us.msg[0] ? us.msg : "Updated");
 	else snprintf(t, sizeof(t), rb ? "Going back to Phosphor %s" : "Updating Phosphor", us.version);
-	lv_label_set_text(us.title, t);
+	label_set_if(us.title, t);
 	if (us.failed) snprintf(t, sizeof(t), "%s", us.msg);
 	else if (us.from[0] && us.version[0])
 		snprintf(t, sizeof(t), "%s \xE2\x86\x92 %s. Your library, box art and settings stay as they are. Don't switch off: the SuperStation restarts by itself when it's done.", us.from, us.version);
 	else snprintf(t, sizeof(t), "Your library, box art and settings stay as they are. Don't switch off: the SuperStation restarts by itself when it's done.");
-	lv_label_set_text(us.sub, t);
+	label_set_if(us.sub, t);
 	/* the bar: each step's share, the modules counted */
 	static const int AT[5] = { 3, 12, 30, 60, 96 };
 	int pct = done ? 100 : AT[cur_i];
@@ -9149,7 +9190,7 @@ static void upd_draw(void)
 	snprintf(k[4], 80, "Restarting the SuperStation");
 	for (int i = 0; i < 5; i++) {
 		lv_obj_set_hidden(us.rows[i], (rb && (i == 0 || i == 3)));
-		lv_label_set_text(us.rk[i], k[i]);
+		label_set_if(us.rk[i], k[i]);
 		char v[40];
 		lv_color_t c;
 		if (i < cur_i || (done && i < 4)) { snprintf(v, sizeof(v), "Done"); c = lv_color_hex(0x5cf08a); }
@@ -9159,10 +9200,10 @@ static void upd_draw(void)
 			else snprintf(v, sizeof(v), i == 4 ? "Now" : "Working");
 			c = PAL.acc;
 		} else { snprintf(v, sizeof(v), us.failed ? "" : "Next"); c = PAL.faint; }
-		lv_label_set_text(us.rv[i], v);
+		label_set_if(us.rv[i], v);
 		lv_obj_set_style_text_color(us.rv[i], c, 0);
 	}
-	lv_label_set_text(us.hint, "A  Back to Phosphor");
+	label_set_if(us.hint, "A  Back to Phosphor");
 	lv_obj_set_hidden(us.hint, !us.failed);
 }
 
@@ -9393,7 +9434,9 @@ static void wl_refresh_net(void)
 {
 	sysinfo_t si;
 	sysinfo_read(&si);
-	cJSON *w = api_call("{\"cmd\":\"wifi\"}");
+	/* the newest answer from the background (asked every 3 s while Welcome shows): none yet, the line stays */
+	cJSON *w = api_poll("wifi", "{\"cmd\":\"wifi\"}");
+	if (!w && wl_net[0]) { cores_refresh(); return; }
 	cJSON *st = w ? cJSON_GetObjectItem(w, "status") : NULL;
 	if (st && cJSON_IsTrue(cJSON_GetObjectItem(st, "connected")))
 		snprintf(wl_net, sizeof(wl_net), "WiFi: %s", api_str(st, "ssid") ? api_str(st, "ssid") : "connected");
@@ -9508,28 +9551,28 @@ static void scan_update(void)
 	char t[200];
 	if (listing || ident) sc.seen_busy = 1;
 	if (listing) {
-		lv_label_set_text(sc.step, "STEP 1 OF 2  \xC2\xB7  LISTING THE GAME FILES");
-		lv_label_set_text(sc.sys, cur_sys && *cur_sys ? cur_sys : "Looking...");
+		label_set_if(sc.step, "STEP 1 OF 2  \xC2\xB7  LISTING THE GAME FILES");
+		label_set_if(sc.sys, cur_sys && *cur_sys ? cur_sys : "Looking...");
 		snprintf(t, sizeof(t), "%d files so far", listed);
-		lv_label_set_text(sc.file, t);
+		label_set_if(sc.file, t);
 		lv_bar_set_value(sc.bar, 0, LV_ANIM_OFF);
-		lv_label_set_text(sc.count, "");
-		lv_label_set_text(sc.eta, "");
+		label_set_if(sc.count, "");
+		label_set_if(sc.eta, "");
 	} else if (ident) {
-		lv_label_set_text(sc.step, "STEP 2 OF 2  \xC2\xB7  WORKING OUT WHAT EACH GAME IS");
-		lv_label_set_text(sc.sys, cur_sys && *cur_sys ? cur_sys : "");
-		lv_label_set_text(sc.file, file ? file : "");
+		label_set_if(sc.step, "STEP 2 OF 2  \xC2\xB7  WORKING OUT WHAT EACH GAME IS");
+		label_set_if(sc.sys, cur_sys && *cur_sys ? cur_sys : "");
+		label_set_if(sc.file, file ? file : "");
 		int pct = total ? done * 100 / total : 0;
 		lv_bar_set_value(sc.bar, pct, LV_ANIM_OFF);
 		snprintf(t, sizeof(t), "%d of %d games", done, total);
-		lv_label_set_text(sc.count, t);
+		label_set_if(sc.count, t);
 		uint32_t el = (lv_tick_get() - sc.t0) / 1000;
 		if (done >= 5 && done < total) {
 			uint32_t left = (uint32_t)((uint64_t)el * (uint64_t)(total - done) / (uint64_t)done);
 			if (left < 60) snprintf(t, sizeof(t), "%d%%  \xC2\xB7  less than a minute left", pct);
 			else snprintf(t, sizeof(t), "%d%%  \xC2\xB7  about %u minute%s left", pct, (left + 30) / 60, (left + 30) / 60 == 1 ? "" : "s");
 		} else snprintf(t, sizeof(t), "%d%%", pct);
-		lv_label_set_text(sc.eta, t);
+		label_set_if(sc.eta, t);
 	}
 	/* the systems: done, the one it's on, waiting (a window of 9 around the current one) */
 	lv_obj_clean(sc.list);
@@ -9560,12 +9603,12 @@ static void scan_update(void)
 		if ((sc.seen_busy && sc.quiet >= 2) || sc.quiet >= 20) {
 			int games = (int)api_num(r, "games", 0);
 			snprintf(t, sizeof(t), sc.stop_sent ? "Stopped: %d games so far" : "Found %d games", games);
-			lv_label_set_text(sc.step, "DONE");
-			lv_label_set_text(sc.sys, t);
-			lv_label_set_text(sc.file, "");
+			label_set_if(sc.step, "DONE");
+			label_set_if(sc.sys, t);
+			label_set_if(sc.file, "");
 			lv_bar_set_value(sc.bar, 100, LV_ANIM_OFF);
-			lv_label_set_text(sc.count, "");
-			lv_label_set_text(sc.eta, "");
+			label_set_if(sc.count, "");
+			label_set_if(sc.eta, "");
 			footer_set(SCAN_DONE_HINTS);
 			sc.done_at = (int)lv_tick_get() | 1;
 		}
@@ -9641,7 +9684,7 @@ static void scan_key(pkey_t k)
 	sc.b_asked = 0;
 	sc.stop_sent = 1;
 	cJSON_Delete(api_call("{\"cmd\":\"rescan\",\"stop\":true}"));
-	lv_label_set_text(sc.step, "STOPPING");
+	label_set_if(sc.step, "STOPPING");
 }
 
 static void scan_tick(uint32_t now)
@@ -9683,15 +9726,15 @@ static void art_update(void)
 		if (src && *src) snprintf(t, sizeof(t), "ASKING %s", src);
 		else snprintf(t, sizeof(t), "%s", status ? status : "STARTING");
 		upper(t);
-		lv_label_set_text(ar.step, t);
-		lv_label_set_text(ar.sys, cur_sys && *cur_sys ? cur_sys : "");
-		lv_label_set_text(ar.game, game ? game : "");
-		lv_label_set_text(ar.src, src && *src ? "Looking it up..." : (status ? status : ""));
+		label_set_if(ar.step, t);
+		label_set_if(ar.sys, cur_sys && *cur_sys ? cur_sys : "");
+		label_set_if(ar.game, game ? game : "");
+		label_set_if(ar.src, src && *src ? "Looking it up..." : (status ? status : ""));
 		int pct = total ? done * 100 / total : 0;
 		if (pct > 100) pct = 100;
 		lv_bar_set_value(ar.bar, pct, LV_ANIM_OFF);
 		snprintf(t, sizeof(t), "%d of %d games", done, total);
-		lv_label_set_text(ar.count, t);
+		label_set_if(ar.count, t);
 		uint32_t el = (lv_tick_get() - ar.t0) / 1000;
 		if (done >= 5 && done < total) {
 			uint32_t left = (uint32_t)((uint64_t)el * (uint64_t)(total - done) / (uint64_t)done);
@@ -9699,11 +9742,11 @@ static void art_update(void)
 			else if (left < 5400) snprintf(t, sizeof(t), "%d%%  \xC2\xB7  about %u minute%s left", pct, (left + 30) / 60, (left + 30) / 60 == 1 ? "" : "s");
 			else snprintf(t, sizeof(t), "%d%%  \xC2\xB7  about %u hours left", pct, (left + 1800) / 3600);
 		} else snprintf(t, sizeof(t), "%d%%", pct);
-		lv_label_set_text(ar.eta, t);
+		label_set_if(ar.eta, t);
 	}
 	if (later) snprintf(t, sizeof(t), "Found  %d        Not found  %d        No connection  %d (tried again next time)", found, nf, later);
 	else snprintf(t, sizeof(t), "Found  %d        Not found  %d", found, nf);
-	lv_label_set_text(ar.tally, t);
+	label_set_if(ar.tally, t);
 	/* the systems: art found of games; the one it's on; waiting (a window of 9 around the current one) */
 	lv_obj_clean(ar.list);
 	cJSON *arr = cJSON_GetObjectItem(r, "systems"), *e;
@@ -9731,19 +9774,19 @@ static void art_update(void)
 		ar.quiet++;
 		/* (the worker starts at once when asked, so 3 quiet looks means it's finished, or had nothing to do) */
 		if ((ar.seen_running && ar.quiet >= 2) || ar.quiet >= 3) {
-			lv_label_set_text(ar.step, "DONE");
+			label_set_if(ar.step, "DONE");
 			if (!done && !ar.stop_sent) {
-				lv_label_set_text(ar.sys, "Nothing new to look up");
-				lv_label_set_text(ar.game, "Every game has been looked up. Added games? Look for games first.");
+				label_set_if(ar.sys, "Nothing new to look up");
+				label_set_if(ar.game, "Every game has been looked up. Added games? Look for games first.");
 			} else {
 				snprintf(t, sizeof(t), ar.stop_sent ? "Stopped: box art for %d more games" : "Found box art and details for %d games", found);
-				lv_label_set_text(ar.sys, t);
-				lv_label_set_text(ar.game, status ? status : "");
+				label_set_if(ar.sys, t);
+				label_set_if(ar.game, status ? status : "");
 			}
-			lv_label_set_text(ar.src, "");
+			label_set_if(ar.src, "");
 			lv_bar_set_value(ar.bar, 100, LV_ANIM_OFF);
-			lv_label_set_text(ar.count, "");
-			lv_label_set_text(ar.eta, "");
+			label_set_if(ar.count, "");
+			label_set_if(ar.eta, "");
 			footer_set(SCAN_DONE_HINTS);
 			ar.done_at = (int)lv_tick_get() | 1;
 		}
@@ -9833,7 +9876,7 @@ static void art_key(pkey_t k)
 	ar.b_asked = 0;
 	ar.stop_sent = 1;
 	cJSON_Delete(api_call("{\"cmd\":\"scrape\",\"on\":false}"));
-	lv_label_set_text(ar.step, "STOPPING");
+	label_set_if(ar.step, "STOPPING");
 }
 
 static void art_tick(uint32_t now)
@@ -10006,9 +10049,9 @@ static void splash_drives(cJSON *r)
 		lv_obj_t *v = mk_label(row, FONT_NAME, c, clean ? "Clean" : na ? "Done" : !strcmp(st, "DIRTY") ? "Still marked dirty" : st);
 		lv_obj_align(v, LV_ALIGN_RIGHT_MID, 0, 0);
 	}
-	if (!any) lv_label_set_text(sp_sub, "Everything is written to the card.");
-	else if (!bad) lv_label_set_text(sp_sub, "Everything is written and the drives are marked clean: Windows won't ask to scan the card.");
-	else if (bad) lv_label_set_text(sp_sub, "Everything is written, but a drive is still marked dirty (nothing is lost). Phosphor checks an NVMe or USB drive when it starts; for the SD card, repair it on a PC with Phosphor for Windows (SD card flash & health).");
+	if (!any) label_set_if(sp_sub, "Everything is written to the card.");
+	else if (!bad) label_set_if(sp_sub, "Everything is written and the drives are marked clean: Windows won't ask to scan the card.");
+	else if (bad) label_set_if(sp_sub, "Everything is written, but a drive is still marked dirty (nothing is lost). Phosphor checks an NVMe or USB drive when it starts; for the SD card, repair it on a PC with Phosphor for Windows (SD card flash & health).");
 }
 
 static void power_run(int restart)
@@ -10021,10 +10064,10 @@ static void power_run(int restart)
 	lv_refr_now(NULL);
 	cJSON *r = api_call_slow(90000, "{\"cmd\":\"system\",\"do\":\"safe_stop\"}");
 	if (r && api_ok(r)) splash_drives(r);
-	else lv_label_set_text(sp_sub, "Couldn't check the drives; everything was flushed.");
+	else label_set_if(sp_sub, "Couldn't check the drives; everything was flushed.");
 	cJSON_Delete(r);
 	if (restart) {
-		lv_label_set_text(sp_title, "Restarting");
+		label_set_if(sp_title, "Restarting");
 		lv_refr_now(NULL);
 		usleep(1200000);
 		cJSON *rr = api_call("{\"cmd\":\"system\",\"do\":\"reboot_now\"}");
@@ -10035,7 +10078,7 @@ static void power_run(int restart)
 		}
 		cJSON_Delete(rr);
 	} else {
-		lv_label_set_text(sp_title, "Safe to switch off");
+		label_set_if(sp_title, "Safe to switch off");
 		lv_obj_set_style_text_color(sp_title, PAL.acc, 0);
 		icon_set(sp_ic, ICON_CHECK);
 		lv_refr_now(NULL);
@@ -10409,7 +10452,6 @@ static void discs_screen_update(void)
 static void show_discs(void)
 {
 	cur = SCR_DISCS;
-	disc_refresh();
 	lv_obj_clean(body);
 	screen_title("SETTINGS", "Discs");
 	vlist_create(&disc_list, body, S(56), S(176), SW(700), S(440));
@@ -10417,6 +10459,9 @@ static void show_discs(void)
 	disc_list.fill = ds_fill;
 	disc_list.sel = 0;
 	disc_list.top = 0;
+	/* the drive's state after the list is made: its answer redraws disc_list (discs_screen_update), and before
+	   this that was still the list from the last visit, deleted when it was left (a crash, Nov 1 2026) */
+	disc_refresh();
 	vlist_refresh(&disc_list);
 	/* 16:9: as designed; narrower (4:3): stacked and as tall as its text, which wraps onto more lines */
 	lv_obj_t *panel = mk_box(body, SW(444), NARROW ? LV_SIZE_CONTENT : S(300), PAL.panel, S(16));
@@ -10556,6 +10601,7 @@ static void show_shotgrid(void)
 	cur = SCR_SHOTGRID;
 	shot_del_armed = 0;
 	int n = shots_n();
+	/* build-ok: none left: Screenshots instead, which clears and builds its own screen */
 	if (!n) { show_shots(); return; }
 	if (shot_sel >= n) shot_sel = n - 1;
 	if (shot_sel < shot_top * SHOT_COLS) shot_top = shot_sel / SHOT_COLS;
@@ -10634,6 +10680,7 @@ static void show_shotview(void)
 {
 	cur = SCR_SHOTVIEW;
 	shot_del_armed = 0;
+	/* build-ok: none left: Screenshots instead, which clears and builds its own screen */
 	if (!shots_n()) { show_shots(); return; }
 	lv_obj_clean(body);
 	lv_obj_t *bg = mk_box(body, W, H, lv_color_hex(0x000000), 0);
@@ -10682,17 +10729,18 @@ static int mu_playing(void)
 	cJSON *st = mu_status ? cJSON_GetObjectItem(mu_status, "track") : NULL;
 	return st != NULL;
 }
-static void mu_load(void)
+/* the list from phosphord's answers (both freed here): "music_albums" and "music" (NULL: the status as it was) */
+static void mu_build(cJSON *r, cJSON *m)
 {
-	cJSON *r = api_call("{\"cmd\":\"music_albums\"}");
 	cJSON_Delete(mu_albums); mu_albums = NULL;
 	cJSON_Delete(mu_cd); mu_cd = NULL;
 	if (api_ok(r)) { mu_albums = cJSON_DetachItemFromObject(r, "albums"); mu_cd = cJSON_DetachItemFromObject(r, "cd"); }
 	cJSON_Delete(r);
-	r = api_call("{\"cmd\":\"music\"}");
-	cJSON_Delete(mu_status);
-	mu_status = api_ok(r) ? cJSON_DetachItemFromObject(r, "music") : NULL;
-	cJSON_Delete(r);
+	if (m) {
+		cJSON_Delete(mu_status);
+		mu_status = api_ok(m) ? cJSON_DetachItemFromObject(m, "music") : NULL;
+		cJSON_Delete(m);
+	}
 	/* the rows: Now playing, the CD, then the albums this view shows */
 	mu_n = 0;
 	if (mu_playing() && mu_show == 0) mu_rows[mu_n++] = MR_NOW;
@@ -10705,6 +10753,11 @@ static void mu_load(void)
 		if (keep && mu_n < 2100) mu_rows[mu_n++] = i;
 		i++;
 	}
+}
+/* now, waiting for the answers: Music opened, or a press (a view, a rip started) */
+static void mu_load(void)
+{
+	mu_build(api_call("{\"cmd\":\"music_albums\"}"), api_call("{\"cmd\":\"music\"}"));
 }
 static cJSON *mu_row_album(int row)
 {
@@ -10738,27 +10791,31 @@ static void mu_panel(void)
 	int row = mu_list.sel;
 	if (row < mu_n && mu_rows[row] == MR_NOW) {
 		cJSON *tr = cJSON_GetObjectItem(mu_status, "track");
-		lv_label_set_text(mu_title, api_str(tr, "album") ? api_str(tr, "album") : "");
+		label_set_if(mu_title, api_str(tr, "album") ? api_str(tr, "album") : "");
 		char t[300];
 		snprintf(t, sizeof(t), "%s\nTrack %d of %d", api_str(tr, "artist") ? api_str(tr, "artist") : "", (int)api_num(tr, "index", 0) + 1, (int)api_num(tr, "count", 0));
-		lv_label_set_text(mu_info, t);
-		lv_label_set_text(mu_tl, "A opens Now playing");
+		label_set_if(mu_info, t);
+		label_set_if(mu_tl, "A opens Now playing");
 		const char *cv = api_str(tr, "cover");
 		lv_obj_set_hidden(mu_cover, !cv);
 		if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
 		return;
 	}
 	cJSON *a = mu_row_album(row);
-	if (!a) { lv_label_set_text(mu_title, mu_n ? "" : "No music yet"); lv_label_set_text(mu_info, mu_n ? "" : "Put albums in a Music folder on the SD card or a drive, rip a CD, or send soundtracks from Phosphor for Windows."); lv_label_set_text(mu_tl, ""); lv_obj_set_hidden(mu_cover, true); return; }
-	cJSON_Delete(mu_album);
-	mu_album = NULL;
-	if (mu_rows[row] == MR_CD) mu_album = cJSON_Duplicate(a, 1);
-	else {
-		cJSON *r = api_call("{\"cmd\":\"music_album\",\"id\":\"%s\"}", api_str(a, "id") ? api_str(a, "id") : "");
+	if (!a) { label_set_if(mu_title, mu_n ? "" : "No music yet"); label_set_if(mu_info, mu_n ? "" : "Put albums in a Music folder on the SD card or a drive, rip a CD, or send soundtracks from Phosphor for Windows."); label_set_if(mu_tl, ""); lv_obj_set_hidden(mu_cover, true); return; }
+	/* an album's tracks: asked when the cursor lands on another album, not again for the one shown (the
+	   rip's refresh comes back here every few seconds) */
+	static char shown_id[200];
+	const char *aid = api_str(a, "id") ? api_str(a, "id") : "";
+	if (mu_rows[row] == MR_CD) { cJSON_Delete(mu_album); mu_album = cJSON_Duplicate(a, 1); shown_id[0] = 0; }
+	else if (!mu_album || strcmp(shown_id, aid)) {
+		cJSON_Delete(mu_album);
+		cJSON *r = api_call("{\"cmd\":\"music_album\",\"id\":\"%s\"}", aid);   /* poll-ok: once per album the cursor lands on */
 		mu_album = api_ok(r) ? cJSON_DetachItemFromObject(r, "album") : NULL;
 		cJSON_Delete(r);
+		snprintf(shown_id, sizeof(shown_id), "%s", aid);
 	}
-	lv_label_set_text(mu_title, api_str(a, "title") ? api_str(a, "title") : "");
+	label_set_if(mu_title, api_str(a, "title") ? api_str(a, "title") : "");
 	char t[300];
 	const char *ar = api_str(a, "artist"), *yr = api_str(a, "year");
 	snprintf(t, sizeof(t), "%s%s%s%s%d tracks%s", ar && *ar ? ar : "", ar && *ar ? "  \xC2\xB7  " : "", yr && *yr ? yr : "", yr && *yr ? "  \xC2\xB7  " : "",
@@ -10771,7 +10828,7 @@ static void mu_panel(void)
 			snprintf(t + l, sizeof(t) - l, "\n\n%s\n%d%% done (B stops)", api_str(rp, "message") ? api_str(rp, "message") : "", (int)api_num(rp, "percent", 0));
 		else snprintf(t + l, sizeof(t) - l, "\n\n%s", api_str(rp, "message"));
 	}
-	lv_label_set_text(mu_info, t);
+	label_set_if(mu_info, t);
 	char tl[700] = "";
 	cJSON *x;
 	int k = 0;
@@ -10782,7 +10839,7 @@ static void mu_panel(void)
 		strncat(tl, line, sizeof(tl) - strlen(tl) - 1);
 		k++;
 	}
-	lv_label_set_text(mu_tl, tl);
+	label_set_if(mu_tl, tl);
 	const char *cv = api_str(a, "cover");
 	lv_obj_set_hidden(mu_cover, !cv);
 	if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
@@ -10850,7 +10907,7 @@ static void mu_draw(void)
 		mu_tracks.fill = mu_tracks_fill;
 		mu_tracks.count = cJSON_GetArraySize(cJSON_GetObjectItem(mu_album, "track_list"));
 		vlist_refresh(&mu_tracks);
-		lv_label_set_text(mu_title, api_str(mu_album, "title") ? api_str(mu_album, "title") : "");
+		label_set_if(mu_title, api_str(mu_album, "title") ? api_str(mu_album, "title") : "");
 		const char *cv = api_str(mu_album, "cover");
 		lv_obj_set_hidden(mu_cover, !cv);
 		if (cv) { snprintf(mu_cover_src, sizeof(mu_cover_src), "A:%s", cv); lv_image_set_src(mu_cover, mu_cover_src); }
@@ -10868,6 +10925,8 @@ static void show_music(void)
 {
 	cur = SCR_MUSIC;
 	mu_tracks_view = 0;
+	cJSON_Delete(mu_album);                          /* (asked again: the library may have changed meanwhile) */
+	mu_album = NULL;
 	mu_load();
 	mu_list.sel = 0;
 	mu_list.top = 0;
@@ -10929,9 +10988,9 @@ static void np_update(void)
 	cJSON *m = api_ok(r) ? cJSON_GetObjectItem(r, "music") : NULL;
 	cJSON *t = m ? cJSON_GetObjectItem(m, "track") : NULL;
 	if (!t) {
-		lv_label_set_text(np_eyebrow, "MUSIC");
-		lv_label_set_text(np_title, "Nothing playing");
-		lv_label_set_text(np_sub, "Pick an album in Music");
+		label_set_if(np_eyebrow, "MUSIC");
+		label_set_if(np_title, "Nothing playing");
+		label_set_if(np_sub, "Pick an album in Music");
 		lv_obj_set_hidden(np_cover, true);
 		lv_obj_set_width(np_fill, 0);
 		cJSON_Delete(r);
@@ -10941,22 +11000,22 @@ static void np_update(void)
 	snprintf(e, sizeof(e), "%s%s%s", !strcmp(api_str(m, "state"), "paused") ? "PAUSED" : "NOW PLAYING",
 	         cJSON_IsTrue(cJSON_GetObjectItem(t, "cd")) ? "  \xC2\xB7  MUSIC CD" : "",
 	         cJSON_IsTrue(cJSON_GetObjectItem(m, "shuffle")) ? "  \xC2\xB7  SHUFFLE" : "");
-	lv_label_set_text(np_eyebrow, e);
-	lv_label_set_text(np_title, api_str(t, "title") ? api_str(t, "title") : "");
+	label_set_if(np_eyebrow, e);
+	label_set_if(np_title, api_str(t, "title") ? api_str(t, "title") : "");
 	char sub[400];
 	const char *ar = api_str(t, "artist");
 	snprintf(sub, sizeof(sub), "%s%s%s", ar && *ar ? ar : "", ar && *ar ? "  \xC2\xB7  " : "", api_str(t, "album") ? api_str(t, "album") : "");
-	lv_label_set_text(np_sub, sub);
+	label_set_if(np_sub, sub);
 	long pos = (long)api_num(t, "pos_ms", 0), len = (long)api_num(t, "len_ms", 0);
 	char b[32];
-	snprintf(b, sizeof(b), "%ld:%02ld", pos / 60000, pos / 1000 % 60); lv_label_set_text(np_pos, b);
-	snprintf(b, sizeof(b), "%ld:%02ld", len / 60000, len / 1000 % 60); lv_label_set_text(np_len, b);
-	snprintf(b, sizeof(b), "track %d of %d", (int)api_num(t, "index", 0) + 1, (int)api_num(t, "count", 0)); lv_label_set_text(np_idx, b);
+	snprintf(b, sizeof(b), "%ld:%02ld", pos / 60000, pos / 1000 % 60); label_set_if(np_pos, b);
+	snprintf(b, sizeof(b), "%ld:%02ld", len / 60000, len / 1000 % 60); label_set_if(np_len, b);
+	snprintf(b, sizeof(b), "track %d of %d", (int)api_num(t, "index", 0) + 1, (int)api_num(t, "count", 0)); label_set_if(np_idx, b);
 	int bw = lv_obj_get_width(np_bar);
 	lv_obj_set_width(np_fill, len > 0 ? (int)((long long)bw * pos / len) : 0);
 	char nx[300];
 	snprintf(nx, sizeof(nx), "%s%s", api_str(t, "next") ? "Next: " : "", api_str(t, "next") ? api_str(t, "next") : "");
-	lv_label_set_text(np_next, nx);
+	label_set_if(np_next, nx);
 	const char *cv = api_str(t, "cover");
 	lv_obj_set_hidden(np_cover, !cv);
 	if (cv && strcmp(np_src + 2, cv)) { snprintf(np_src, sizeof(np_src), "A:%s", cv); lv_image_set_src(np_cover, np_src); }
@@ -11047,15 +11106,17 @@ static void music_tick(void)
 		static int tick;
 		if (++tick % 3) return;
 		int had_cd = mu_cd != NULL, was_named = mu_cd && cJSON_IsTrue(cJSON_GetObjectItem(mu_cd, "named"));
-		cJSON *r = api_call("{\"cmd\":\"music_albums\"}");
+		/* the newest answers from the background: none yet, nothing changes this time */
+		cJSON *r = api_poll("music_albums", "{\"cmd\":\"music_albums\"}");
+		if (!r) return;
 		cJSON *c = api_ok(r) ? cJSON_GetObjectItem(r, "cd") : NULL;
 		int has = c != NULL, named = c && cJSON_IsTrue(cJSON_GetObjectItem(c, "named"));
-		cJSON_Delete(r);
 		cJSON *rp = mu_status ? cJSON_GetObjectItem(mu_status, "rip") : NULL;
 		int ripping = rp && cJSON_IsTrue(cJSON_GetObjectItem(rp, "busy"));
 		static int was_ripping;
-		if (has != had_cd || named != was_named) { mu_load(); mu_draw(); }
-		else if (ripping || was_ripping) { int sel = mu_list.sel; mu_load(); mu_list.sel = sel; mu_panel(); }
+		if (has != had_cd || named != was_named) { mu_build(r, api_poll("music", "{\"cmd\":\"music\"}")); mu_draw(); }
+		else if (ripping || was_ripping) { int sel = mu_list.sel; mu_build(r, api_poll("music", "{\"cmd\":\"music\"}")); mu_list.sel = sel; mu_panel(); }
+		else cJSON_Delete(r);
 		was_ripping = ripping;
 	}
 }
@@ -11275,14 +11336,14 @@ static cJSON *rv_games(void) { return rv ? cJSON_GetObjectItem(rv, "games") : NU
 static void rv_panel(void)
 {
 	cJSON *g = cJSON_GetArrayItem(rv_games(), rv_list.sel);
-	if (!g) { lv_label_set_text(rv_title, ""); lv_label_set_text(rv_info, ""); return; }
-	lv_label_set_text(rv_title, api_str(g, "title") ? api_str(g, "title") : "");
+	if (!g) { label_set_if(rv_title, ""); label_set_if(rv_info, ""); return; }
+	label_set_if(rv_title, api_str(g, "title") ? api_str(g, "title") : "");
 	char t[300];
 	int tot = (int)api_num(g, "total", 0), un = (int)api_num(g, "unlocked", 0);
 	snprintf(t, sizeof(t), "%s\n%d of %d achievements (%d%%)%s%s\n%s", api_str(g, "console") ? api_str(g, "console") : "",
 	         un, tot, tot ? un * 100 / tot : 0, api_num(g, "hardcore", 0) > 0 ? ", hardcore " : "", "",
 	         api_num(g, "game_id", 0) > 0 ? "In your library: X plays it" : "Not matched to your library");
-	lv_label_set_text(rv_info, t);
+	label_set_if(rv_info, t);
 }
 static void rv_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
@@ -11302,7 +11363,7 @@ static void rv_ach_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim
 	snprintf(t, n, "%s%s", got ? "\xE2\x9C\x93  " : "", a && api_str(a, "title") ? api_str(a, "title") : "");
 	snprintf(val, vn, "%d pts%s", a ? (int)api_num(a, "points", 0) : 0, a && cJSON_IsTrue(cJSON_GetObjectItem(a, "hardcore")) ? "  \xC2\xB7  hardcore" : "");
 	*dim = !got;
-	if (i == rv_ach.sel && rv_desc) lv_label_set_text(rv_desc, a && api_str(a, "description") ? api_str(a, "description") : "");
+	if (i == rv_ach.sel && rv_desc) label_set_if(rv_desc, a && api_str(a, "description") ? api_str(a, "description") : "");
 }
 static const char *const RV_HINTS[] = { "A", "Achievements", "X", "Play", "B", "Back", NULL };
 static const char *const RV_ACH_HINTS[] = { "\xE2\x86\x95", "Look", "B", "Back", NULL };
@@ -11334,7 +11395,7 @@ static void rv_draw(void)
 		rv_list.fill = rv_fill;
 		rv_list.count = cJSON_GetArraySize(rv_games());
 		vlist_refresh(&rv_list);
-		if (!rv_list.count) { lv_label_set_text(rv_title, "No games yet"); lv_label_set_text(rv_info, "Play a game on a RetroAchievements core and it shows here."); }
+		if (!rv_list.count) { label_set_if(rv_title, "No games yet"); label_set_if(rv_info, "Play a game on a RetroAchievements core and it shows here."); }
 		footer_set(RV_HINTS);
 	} else {
 		cJSON *g = cJSON_GetArrayItem(rv_games(), rv_list.sel);
@@ -11467,7 +11528,7 @@ static void ig_ach_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim
 	snprintf(val, vn, "%s%s%d pts", pr && *pr && !got ? pr : "", pr && *pr && !got ? "  \xC2\xB7  " : "", a ? (int)api_num(a, "points", 0) : 0);
 	*dim = !got;
 	if (ig_ach_desc && i == ig_ach_list.sel)
-		lv_label_set_text(ig_ach_desc, a && api_str(a, "description") ? api_str(a, "description") : "");
+		label_set_if(ig_ach_desc, a && api_str(a, "description") ? api_str(a, "description") : "");
 }
 /* the left side: the game (box art, what it's about) */
 static void ig_left_game(void)
@@ -11558,7 +11619,7 @@ static void ig_left_ach(void)
 	lv_label_set_long_mode(ig_ach_desc, LV_LABEL_LONG_MODE_WRAP);
 	lv_obj_set_width(ig_ach_desc, W - S(460) - S(112));
 	lv_obj_set_pos(ig_ach_desc, S(56), S(590));
-	if (!n) lv_label_set_text(ig_ach_desc, igra.list ? "No achievements for this game." : "RetroAchievements didn't answer.");
+	if (!n) label_set_if(ig_ach_desc, igra.list ? "No achievements for this game." : "RetroAchievements didn't answer.");
 	vlist_refresh(&ig_ach_list);
 	static const char *const hints[] = { "\xE2\x86\x95", "Look", "B", "Back", NULL };
 	footer_set(hints);
@@ -12184,7 +12245,8 @@ void ui_tick(void)
 	{ static uint32_t lq; if (now - lq >= 250) { lq = now; map_requests(); } }
 	TT("screen");
 	/* the dock's drive changed; the menu button in a game; Main took the in-game screen back */
-	if (mainlink_disc_changed()) disc_refresh();
+	if (mainlink_disc_changed()) disc_ask();
+	disc_take();
 	if (mainlink_bt_pair() && cur != SCR_MAP) {          /* the SS1's Bluetooth button: Phosphor's own pairing (not over a
 	                                                        mapping in progress: MiSTer's Main is in the middle of it) */
 		saver_hide();
@@ -12193,7 +12255,7 @@ void ui_tick(void)
 		if (bt.present && !bt.busy) bt_do("pair", NULL);
 		else if (!bt.present) toast_show("No Bluetooth adapter found");
 	}
-	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_refresh(); } }
+	{ static uint32_t la; if (dk.in && !dk.art[0] && !strcmp(dk.state, "ready") && dk.tries < 6 && now - la >= 3000 && (cur == SCR_SYSTEMS || cur == SCR_HOME)) { la = now; dk.tries++; disc_ask(); } }
 	ui_game_events();
 	TT("maps");
 	vk_check(0);

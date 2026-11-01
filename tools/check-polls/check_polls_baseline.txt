@@ -1,8 +1,2 @@
 # check_polls.py: synchronous phosphord calls on repeating paths that were there when the check
 # was added (Oct 31 2026), as '<function>: <its line>'. Move each to api_bg_ask / api_bg_take, then take its line out.
-disc_refresh: cJSON *r = api_call("{\"cmd\":\"disc\"}");
-mu_panel: cJSON *r = api_call("{\"cmd\":\"music_album\",\"id\":\"%s\"}", api_str(a, "id") ? api_str(a, "id") : "");
-music_tick: cJSON *r = api_call("{\"cmd\":\"music_albums\"}");
-sg_refresh: cJSON *b = api_call("{\"cmd\":\"backup\"}");
-wall_tick: cJSON *r = api_call("%s", b);
-wl_refresh_net: cJSON *w = api_call("{\"cmd\":\"wifi\"}");

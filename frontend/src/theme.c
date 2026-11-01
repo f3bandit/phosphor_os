@@ -76,6 +76,7 @@ lv_obj_t *mk_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, co
 	lv_obj_t *l = lv_label_create(parent);
 	lv_obj_set_style_text_font(l, font, 0);
 	lv_obj_set_style_text_color(l, color, 0);
+	/* text-ok: a new label, its first text */
 	lv_label_set_text(l, text ? text : "");
 	return l;
 }
@@ -97,6 +98,13 @@ lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius)
 
 int theme_card_radius(void) { return S(16); }
 lv_opa_t theme_card_opa(void) { return theme_lr ? LV_OPA_COVER : (lv_opa_t)230; }   /* (90 %) */
+
+void label_set_if(lv_obj_t *l, const char *t)
+{
+	const char *now = lv_label_get_text(l);
+	if (now && t && !strcmp(now, t)) return;
+	lv_label_set_text(l, t);
+}
 
 void theme_card_style(lv_obj_t *o, int radius)
 {
