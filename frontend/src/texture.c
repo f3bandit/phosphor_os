@@ -287,16 +287,20 @@ void texture_apply(lv_obj_t *obj, texture_t t)
 	int pw, ph;
 	uint8_t *a8 = texture_alpha(t, scale, &pw, &ph);
 	if (!a8) return;
-	tile = lv_draw_buf_create((uint32_t)pw, (uint32_t)ph, LV_COLOR_FORMAT_ARGB8888, 0);
+	/* the accent mixed into the object's background colour here, once: an opaque tile (XRGB8888) is copied to
+	   the screen, while a see-through one (ARGB8888) was blended pixel by pixel on every redraw, which made a
+	   full-screen redraw 300-550 ms on the SS1 (scrolling Settings, the Home cards, a library list) */
+	tile = lv_draw_buf_create((uint32_t)pw, (uint32_t)ph, LV_COLOR_FORMAT_XRGB8888, 0);
 	if (!tile) { free(a8); return; }
-	lv_color_t c = PAL.acc;
+	lv_color_t c = PAL.acc, bg = lv_obj_get_style_bg_color(obj, LV_PART_MAIN);
 	for (int y = 0; y < ph; y++) {
 		uint8_t *row = tile->data + (size_t)y * tile->header.stride;
 		for (int x = 0; x < pw; x++) {
-			row[x * 4 + 0] = c.blue;
-			row[x * 4 + 1] = c.green;
-			row[x * 4 + 2] = c.red;
-			row[x * 4 + 3] = a8[(size_t)y * pw + x];
+			int a = a8[(size_t)y * pw + x];
+			row[x * 4 + 0] = (uint8_t)(bg.blue + (c.blue - bg.blue) * a / 255);
+			row[x * 4 + 1] = (uint8_t)(bg.green + (c.green - bg.green) * a / 255);
+			row[x * 4 + 2] = (uint8_t)(bg.red + (c.red - bg.red) * a / 255);
+			row[x * 4 + 3] = 0xff;
 		}
 	}
 	free(a8);
