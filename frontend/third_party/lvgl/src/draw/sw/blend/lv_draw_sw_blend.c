@@ -8,6 +8,9 @@
  *********************/
 #include "../../../misc/lv_area_private.h"
 #include "lv_draw_sw_blend_private.h"
+#ifdef PHOS_PROFILE
+#include "prof.h"
+#endif
 #include "../../lv_draw_private.h"
 #if LV_DRAW_SW_SUPPORT_A8
     #include "lv_draw_sw_blend_to_a8.h"
@@ -113,7 +116,18 @@ void lv_draw_sw_blend(lv_draw_task_t * t, const lv_draw_sw_blend_dsc_t * dsc)
                                  (blend_area.x1 - dsc->mask_area->x1);
         }
 
+#ifdef PHOS_PROFILE
+        {
+            static const char * const fn[4] = {"blend fill", "blend fill opa", "blend fill mask", "blend fill mask opa"};
+            const char * tg = fn[(fill_dsc.mask_buf ? 2 : 0) + (fill_dsc.opa < LV_OPA_MAX ? 1 : 0)];
+            prof_px(tg, (uint64_t)fill_dsc.dest_w * fill_dsc.dest_h);
+            prof_begin(tg);
+            lv_draw_sw_blend_color(layer->color_format, &fill_dsc);
+            prof_end(tg);
+        }
+#else
         lv_draw_sw_blend_color(layer->color_format, &fill_dsc);
+#endif
     }
     else {
         if(!lv_area_intersect(&blend_area, &blend_area, dsc->src_area)) {
@@ -164,7 +178,25 @@ void lv_draw_sw_blend(lv_draw_task_t * t, const lv_draw_sw_blend_dsc_t * dsc)
         image_dsc.dest_buf = lv_draw_layer_go_to_xy(layer, blend_area.x1 - layer->buf_area.x1,
                                                     blend_area.y1 - layer->buf_area.y1);
 
+#ifdef PHOS_PROFILE
+        {
+            static const char * const fn[5][4] = {
+                {"blend img XRGB8888", "blend img XRGB8888 opa", "blend img XRGB8888 mask", "blend img XRGB8888 mask opa"},
+                {"blend img ARGB8888", "blend img ARGB8888 opa", "blend img ARGB8888 mask", "blend img ARGB8888 mask opa"},
+                {"blend img RGB565", "blend img RGB565 opa", "blend img RGB565 mask", "blend img RGB565 mask opa"},
+                {"blend img A8/L8", "blend img A8/L8 opa", "blend img A8/L8 mask", "blend img A8/L8 mask opa"},
+                {"blend img other", "blend img other opa", "blend img other mask", "blend img other mask opa"}};
+            int cf = image_dsc.src_color_format == LV_COLOR_FORMAT_XRGB8888 ? 0 : image_dsc.src_color_format == LV_COLOR_FORMAT_ARGB8888 ? 1 :
+                     image_dsc.src_color_format == LV_COLOR_FORMAT_RGB565 ? 2 : (image_dsc.src_color_format == LV_COLOR_FORMAT_A8 || image_dsc.src_color_format == LV_COLOR_FORMAT_L8) ? 3 : 4;
+            const char * tg = fn[cf][(image_dsc.mask_buf ? 2 : 0) + (image_dsc.opa < LV_OPA_MAX ? 1 : 0)];
+            prof_px(tg, (uint64_t)image_dsc.dest_w * image_dsc.dest_h);
+            prof_begin(tg);
+            lv_draw_sw_blend_image(layer->color_format, &image_dsc);
+            prof_end(tg);
+        }
+#else
         lv_draw_sw_blend_image(layer->color_format, &image_dsc);
+#endif
     }
     LV_PROFILER_DRAW_END;
 }

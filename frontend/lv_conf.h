@@ -299,7 +299,7 @@
 /** The circumference of a 1/4 circle is cached for anti-aliasing, costing
  *  radius * 4 bytes per circle. Set to 0 to disable caching.
  */
-#define LV_DRAW_SW_CIRCLE_CACHE_SIZE 4
+#define LV_DRAW_SW_CIRCLE_CACHE_SIZE 32
 
 #endif /*LV_DRAW_SW_COMPLEX*/
 
@@ -2167,7 +2167,11 @@
 #endif /*LV_USE_SYSMON*/
 
 /** Instrument LVGL internals with trace hooks to measure runtime performance. */
+#ifdef PHOS_PROFILE                    /* Phosphor's test build that times the drawing (src/prof.h) */
+#define LV_USE_PROFILER 1
+#else
 #define LV_USE_PROFILER 0
+#endif
 
 /** Built-in profiler
  *
@@ -2209,7 +2213,11 @@
  *  The default header provides these via the built-in profiler.
  *  Set this to your own header to use a custom profiler backend.
  */
+#ifdef PHOS_PROFILE
+#define LV_PROFILER_INCLUDE "prof.h"
+#else
 #define LV_PROFILER_INCLUDE "lvgl/debugging/profiler/lv_profiler_builtin.h"
+#endif
 
 /** Layout */
 #define LV_PROFILER_LAYOUT 1
