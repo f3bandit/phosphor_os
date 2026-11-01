@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 
 #define NT 512
 #define DEPTH 64
@@ -13,6 +14,11 @@ static struct { const char *tag; uint64_t self, total, n, px; } t[NT];
 static struct { int i; uint64_t start, child; } st[DEPTH];
 static int sp;
 static volatile sig_atomic_t want_dump, want_clear;
+static pthread_t main_thread;
+static int have_main;
+/* the main thread only: LVGL's drawing threads (LV_USE_OS) would tangle the stack; their time shows in the main
+   thread's wait for them (refr_invalid_areas and the like) */
+static int other_thread(void) { if (!have_main) { main_thread = pthread_self(); have_main = 1; } return !pthread_equal(pthread_self(), main_thread); }
 
 static uint64_t now_ns(void)
 {
@@ -31,10 +37,11 @@ static int slot(const char *tag)
 	return -1;
 }
 
-void prof_px(const char *tag, uint64_t px) { int i = slot(tag); if (i >= 0) t[i].px += px; }
+void prof_px(const char *tag, uint64_t px) { if (other_thread()) return; int i = slot(tag); if (i >= 0) t[i].px += px; }
 
 void prof_begin(const char *tag)
 {
+	if (other_thread()) return;
 	if (sp >= DEPTH) { sp++; return; }
 	st[sp].i = slot(tag);
 	st[sp].child = 0;
@@ -45,6 +52,7 @@ void prof_begin(const char *tag)
 void prof_end(const char *tag)
 {
 	(void)tag;
+	if (other_thread()) return;
 	if (sp <= 0) return;
 	sp--;
 	if (sp >= DEPTH) return;
