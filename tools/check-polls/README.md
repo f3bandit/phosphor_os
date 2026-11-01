@@ -14,7 +14,7 @@ then arrive all at once (fixed Oct 29 2026; it kept coming back as screens were 
   screen is still showing, be stopped when its objects are deleted, or carry `/* deferred-ok: why */`.
   The rules and why: `docs/menu-rules.md`.
 - `menu_walk.py`: the same on the SuperStation (copy it there, `python3 menu_walk.py --cold`): walks the
-  Settings list, opens every Settings screen that's safe to open (never Look for games, Update, MiSTer
+  Settings list, opens every Settings screen that's safe to open (never Look for games, Get box art, Update, MiSTer
   menu, Restart, Shut down or a toggle), the Home cards and a library list, and reports every stall of
   250 ms or more the shell logged meanwhile ("slow:" / "poll:" in /tmp/phosphor/frontend.log). It finds
   its way by the shell's `/tmp/phosphor/screen` (the screen and the Settings row). It also fails a screen that
