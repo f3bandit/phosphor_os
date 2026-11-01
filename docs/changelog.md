@@ -3,6 +3,18 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.65
+
+### Fixed
+- **Menu lag: scrolling Settings, the Home cards and the library lists no longer stall.** The background
+  texture was blended pixel by pixel on every redraw (300-550 ms for a full-screen redraw on the SS1); its
+  tile is now mixed into the background colour once and copied. A menu walk on the SS1 went from 11 stalls
+  to 2.
+- **The controller test no longer freezes.** It repainted the whole controller 10-16 times a second; now
+  only the buttons, sticks and triggers that changed are redrawn.
+- **The menu could crash on Home.** Pressing Left or Right and then opening another screen within a moment
+  (Start, A) left the cards' slide running on cards that were gone, and the shell crashed.
+
 ## 0.27.64
 
 ### New
