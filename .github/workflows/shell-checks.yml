@@ -1,5 +1,6 @@
-# Checks for the TV's shell (frontend/): the menu must never wait for phosphord on something it asks again
-# and again (tools/check-polls: a synchronous api_call on a repeating path; the menu lag fixed Oct 29 2026).
+# Checks for the TV's shell (frontend/), docs/menu-rules.md: the menu must never wait for phosphord on something it
+# asks again and again (check_polls.py), and draws opaque, with no timer or animation outliving its screen
+# (check_drawing.py).
 name: Shell checks
 on:
   push:
@@ -14,3 +15,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: No new synchronous polls on the menu's repeating paths
         run: python3 tools/check-polls/check_polls.py
+      - name: Drawing and lifetime rules (opaque drawing, deferred callbacks)
+        run: python3 tools/check-polls/check_drawing.py

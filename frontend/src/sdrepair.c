@@ -284,5 +284,6 @@ void sdrepair_build(int w, int h, const char *state)
 
 	read_state();
 	draw();
+	/* deferred-ok: the SD repair screen is the whole program while it runs: nothing clears it */
 	lv_timer_create(tick_cb, 33, NULL);
 }

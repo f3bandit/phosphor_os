@@ -244,6 +244,7 @@ void padview_state(padview_t *p, const padstate_t *s)
 				if (lk == e->arm_look[k]) continue;
 				e->arm_look[k] = lk;
 				lv_obj_set_hidden(e->arm[k], !o && !t && !dn);
+				/* opa-ok: a D-pad arm, small, and only set when it changes */
 				lv_obj_set_style_bg_opa(e->arm[k], o ? LV_OPA_COVER : t ? LV_OPA_50 : LV_OPA_20, 0);
 			}
 		} else if (!strcmp(e->id, "lever")) {
@@ -286,6 +287,7 @@ void padview_state(padview_t *p, const padstate_t *s)
 		int look = 1 + (has ? 1 : 0) + (on ? 2 : 0) + (tgt ? 4 : 0) + (done ? 8 : 0) + (knob_on ? 16 : 0);
 		if (look == e->look) continue;               /* (nothing about it changed: not repainted) */
 		e->look = look;
+		/* opa-ok: a control the controller doesn't have, dimmed; small, set only when its look changes */
 		lv_obj_set_style_opa(o, has ? LV_OPA_COVER : LV_OPA_40, 0);
 		lv_obj_set_style_bg_color(o, on ? PAL.acc : tgt ? PAL.panel_on : PAL.panel, 0);
 		lv_obj_set_style_border_color(o, on || tgt ? PAL.acc : done ? lv_color_mix(PAL.acc, PAL.line, 110) : PAL.line, 0);
