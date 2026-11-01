@@ -67,9 +67,9 @@ def drawn():
         return None
 
 
-def idle(name, secs=3.0):
+def idle(name, secs=3.0, settle=1.2):
     # nobody touching it: a screen should repaint (almost) nothing
-    time.sleep(1.2)                          # (what the press itself started: an opening, a fade)
+    time.sleep(settle)                       # (what the press itself started: an opening, a fade)
     a = drawn()
     time.sleep(secs)
     time.sleep(1.1)                          # (<tmp>/draw is written once a second)
@@ -211,8 +211,12 @@ def main():
                  "SHOTS", "VIDEO", "ACCENT", "TEXTURE", "WALLPAPER", "WALL_PICK", "CLOCK", "SAVER", "RESCAN", "SCRAPE",
                  "SCRAPE_INFO", "SOURCES", "CORES", "UPDATE_ALL", "PHOSUPD", "GUARD", "SCRIPTS", "UPDLOG", "DIAG",
                  "MISTER", "RESTART", "SHUTDOWN", "ABOUT"]
+        # (not SCRAPE: A there starts getting box art, it isn't just a screen; walked by mistake until Nov 1 2026)
         safe = {"WIFI", "BT", "CTRL", "RETROSPY", "REMOTE", "CLOUD", "BACKUP", "PORTS", "STORAGE", "DISCS", "RA", "VIDEO",
-                "SCRAPE", "SOURCES", "UPDATE_ALL", "PHOSUPD", "GUARD", "SCRIPTS", "UPDLOG", "DIAG", "ABOUT"}
+                "SOURCES", "UPDATE_ALL", "PHOSUPD", "GUARD", "SCRIPTS", "UPDLOG", "DIAG", "ABOUT"}
+        # screens that do something when they open: their idle check after it's done (Diagnostics runs its checks
+        # on the first visit)
+        settle = {"DIAG": 10.0}
         for sid, nm in enumerate(names):          # (sid: the SET_ id, as <tmp>/screen gives it)
             if nm not in safe:
                 continue
@@ -224,7 +228,7 @@ def main():
                 print(f"{nm}: didn't open a screen (skipped)")
                 continue
             n += phase(f"{nm}: on the screen", "down down up up", GAP)
-            n += idle(nm)
+            n += idle(nm, settle=settle.get(nm, 1.2))
             if nm == "CTRL" and controllers():
                 n += phase("CTRL: the controller test (Y)", "y", 0.35, opening=True)
                 if screen()[0] == 25:
