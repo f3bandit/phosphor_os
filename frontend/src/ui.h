@@ -9,7 +9,8 @@ void ui_init(int w, int h);
 void ui_key(pkey_t k);
 /* how long the main loop may sleep (ms) when nothing comes in: short only while a screen needs it */
 int ui_max_sleep(void);
-int ui_screen(void);       /* the screen showing (screen_t), for the log */
+int ui_screen(void);
+extern const char *ui_where;   /* the part of ui_tick running now, for the log */       /* the screen showing (screen_t), for the log */
 /* a script run through Main is done (its exit status): Phosphor has the screen again */
 void ui_script_done(int status);
 /* the console in text mode (main.c), so Main can switch to MiSTer's terminal for a script */

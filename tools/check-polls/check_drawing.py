@@ -17,6 +17,9 @@
              text is different), not lv_label_set_text: the same text still repaints the label, and a status
              answer every second or a controller 16 times a second kept whole panels repainting with nobody
              touching the menu (the controller test, Front ports, Nov 1 2026). /* text-ok: why */
+  rebuild    Code that runs over and over clears and rebuilds widgets (lv_obj_clean) only when what they show
+             changed: Get box art rebuilt its systems list twice a second, 7 screens' worth of repainting a
+             second with nobody touching it (Nov 1 2026). Compare first (sysrows_show), or /* rebuild-ok: why */
   build-first  A screen's show_ function sets cur = SCR_... and then clears the body: a call in between that
              can redraw widgets (a vlist_refresh, lv_obj_/lv_label_ calls, reached through the screen's update
              functions, which pass their cur check by then) redraws the last visit's widgets, already deleted.
@@ -146,6 +149,16 @@ def main():
                     continue
                 problems.append(f"{f}:{ln}: lv_label_set_text in {name}(), which runs over and over: the same text "
                                 f"repaints it too. label_set_if(label, text), or /* text-ok: why */")
+
+        # rebuild: lv_obj_clean in what runs over and over
+        for name, (fl, body) in funcs.items():
+            if name not in rep or name.startswith("show_"):
+                continue
+            for m in re.finditer(r"\blv_obj_clean\s*\(", body):
+                ln = fl + body.count("\n", 0, m.start())
+                if not marked(rl, ln, "rebuild-ok"):
+                    problems.append(f"{f}:{ln}: lv_obj_clean in {name}(), which runs over and over: rebuilt each time, "
+                                    f"repainted with nobody touching it. Rebuild only on a change, or /* rebuild-ok: why */")
 
         # build-first: show_* that call, between cur = SCR_ and lv_obj_clean(body), something that redraws
         def reach(fn, seen):
