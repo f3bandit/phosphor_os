@@ -3,6 +3,28 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.66
+
+### Fixed
+- **Discs could crash the menu.** Opening Settings > Discs and leaving it at once redrew the list from the
+  last visit, already deleted.
+- **Screens that kept repainting with nobody touching them** (CPU and lag for nothing): the controller test
+  (its readouts set 16 times a second, the same text each time), Front ports & memory cards (the port lines'
+  colour 10 times a second), Get box art and Look for games (their systems list rebuilt twice a second). Every
+  label in the menu is now only set when its text changes.
+- **The menu never waits for phosphord on anything it asks again and again**: the last six (the Welcome
+  screen's network line, Storage's backup status, the disc drive, Music's albums, an album's tracks,
+  wallpaper thumbnails) are asked in the background.
+- **Box art and wallpapers draw faster**: decoded as solid pictures (copied to the screen, not blended), and
+  rounded corners are cached for more sizes.
+
+### For developers
+- `docs/menu-rules.md`: the rules for the TV menu, and `CLAUDE.md`. `tools/check-polls/check_drawing.py` in
+  "Shell checks" (see-through drawing, timers and animations outliving their screen, labels set over and over,
+  lists rebuilt over and over, a screen updated before it's built); `check_polls.py` follows calls all the way
+  down. `menu_walk.py` on the SS1 also fails crashes, screens repainting while idle and quick in-and-out
+  presses, and walks the controller test. A profiling build (`-DPHOS_PROFILE=ON`) and `<tmp>/debug-draw`.
+
 ## 0.27.65
 
 ### Fixed
