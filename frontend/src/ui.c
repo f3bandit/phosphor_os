@@ -314,6 +314,7 @@ static void footer_set(const char *const *hints)
 {
 	if (hints == footer_now && lv_obj_get_child_count(footer)) return;     /* the same: nothing to redraw */
 	footer_now = hints;
+	/* rebuild-ok: returns above when the hints are the same */
 	lv_obj_clean(footer);
 	lv_obj_set_hidden(footer, !hints || !hints[0]);     /* (a card: none when there's nothing on it) */
 	if (!hints || !hints[0]) return;
@@ -2438,7 +2439,9 @@ static void gd_button(lv_obj_t *par, int x, int y, int w, const char *t, int pri
 
 static void gd_draw(void)
 {
+	/* rebuild-ok: when Guard opens, after a press, or when a job finishes */
 	lv_obj_clean(gd.left);
+	/* rebuild-ok: as gd.left */
 	lv_obj_clean(gd.right);
 	cJSON *st = gd.st;
 	int awaiting = cJSON_IsTrue(cJSON_GetObjectItem(st, "awaiting"));
@@ -4076,6 +4079,7 @@ static void vd_panel(void)
 
 static void vd_chips(void)
 {
+	/* rebuild-ok: when Video's settings were (re)loaded, after a press */
 	lv_obj_clean(vd.chips);
 	for (int k = 0; k < vd_profile_count(); k++) {
 		cJSON *f = vd_profile(k);
@@ -6437,9 +6441,11 @@ static void pt_pads(void)
 		}
 		cJSON_Delete(r);
 	}
+	/* ten times a second: the colour only when it changes (a style set repaints the line even when it's the same) */
 	for (int p = 0; p < 2; p++) if (pt_padl[p]) {
 		label_set_if(pt_padl[p], pt.pad[p]);
-		lv_obj_set_style_text_color(pt_padl[p], pt.pad_conn[p] ? PAL.text : PAL.dim, 0);
+		lv_color_t want = pt.pad_conn[p] ? PAL.text : PAL.dim;
+		if (!lv_color_eq(lv_obj_get_style_text_color(pt_padl[p], LV_PART_MAIN), want)) lv_obj_set_style_text_color(pt_padl[p], want, 0);
 	}
 }
 
@@ -9540,6 +9546,25 @@ static void scan_row(lv_obj_t *list, int y, const char *mark, const char *name, 
 	lv_obj_align(v, LV_ALIGN_TOP_RIGHT, -S(14), y);
 }
 
+/* a progress screen's systems list (Look for games, Get box art): rebuilt only when what it shows changed.
+   Their status comes twice a second, and rebuilding the list each time repainted it with nobody touching the
+   menu (Get box art: 7 screens' worth a second, Nov 1 2026) */
+typedef struct { int n; const char *mark[9]; char name[9][96], val[9][48]; int st[9]; } sysrows_t;
+static void sysrows_show(lv_obj_t *list, sysrows_t *rw, lv_obj_t **last_list, char *last, size_t ln)
+{
+	char key[1600];
+	size_t k = 0;
+	for (int r = 0; r < rw->n && k < sizeof(key) - 200; r++)
+		k += (size_t)snprintf(key + k, sizeof(key) - k, "%s|%s|%s|%d;", rw->mark[r], rw->name[r], rw->val[r], rw->st[r]);
+	key[k < sizeof(key) ? k : sizeof(key) - 1] = 0;
+	if (*last_list == list && !strcmp(last, key) && (rw->n == 0 || lv_obj_get_child_count(list))) return;   /* (a new list, even at the old one's address: built) */
+	*last_list = list;
+	snprintf(last, ln, "%s", key);
+	/* rebuild-ok: returns above when the rows are the same */
+	lv_obj_clean(list);
+	for (int r = 0, y = 0; r < rw->n; r++, y += S(40)) scan_row(list, y, rw->mark[r], rw->name[r], rw->val[r], rw->st[r]);
+}
+
 static void scan_update(void)
 {
 	cJSON *r = api_poll("scan_progress", "{\"cmd\":\"scan_progress\"}");
@@ -9575,28 +9600,32 @@ static void scan_update(void)
 		label_set_if(sc.eta, t);
 	}
 	/* the systems: done, the one it's on, waiting (a window of 9 around the current one) */
-	lv_obj_clean(sc.list);
 	cJSON *arr = cJSON_GetObjectItem(r, "systems"), *e;
 	int n = cJSON_GetArraySize(arr), curi = -1, i = 0;
 	cJSON_ArrayForEach(e, arr) { const char *nm = api_str(e, "name"); if (cur_sys && nm && !strcmp(nm, cur_sys)) curi = i; i++; }
 	int from = curi > 4 ? curi - 4 : 0;
 	if (from + 9 > n) from = n > 9 ? n - 9 : 0;
 	i = 0;
-	int y = 0;
+	static sysrows_t rw;
+	static lv_obj_t *rw_list;
+	static char rw_last[1600];
+	rw.n = 0;
 	cJSON_ArrayForEach(e, arr) {
-		if (i >= from && i < from + 9) {
+		if (i >= from && i < from + 9 && rw.n < 9) {
 			const char *nm = api_str(e, "name");
 			int f = (int)api_num(e, "files", 0), id = (int)api_num(e, "identified", 0);
-			char v[48];
+			char *v = rw.val[rw.n];
 			int st;
-			if (i == curi) { st = 1; if (ident) snprintf(v, sizeof(v), "%d of %d", id, f); else snprintf(v, sizeof(v), "%d", f); }
-			else if (listing || id >= f) { st = 2; snprintf(v, sizeof(v), "%d", f); }
-			else { st = 0; snprintf(v, sizeof(v), "waiting"); }
-			scan_row(sc.list, y, st == 2 ? "\xE2\x9C\x93" : st == 1 ? "\xE2\x80\xBA" : "\xC2\xB7", nm ? nm : "", v, st);
-			y += S(40);
+			if (i == curi) { st = 1; if (ident) snprintf(v, 48, "%d of %d", id, f); else snprintf(v, 48, "%d", f); }
+			else if (listing || id >= f) { st = 2; snprintf(v, 48, "%d", f); }
+			else { st = 0; snprintf(v, 48, "waiting"); }
+			rw.mark[rw.n] = st == 2 ? "\xE2\x9C\x93" : st == 1 ? "\xE2\x80\xBA" : "\xC2\xB7";
+			snprintf(rw.name[rw.n], sizeof(rw.name[0]), "%s", nm ? nm : "");
+			rw.st[rw.n++] = st;
 		}
 		i++;
 	}
+	sysrows_show(sc.list, &rw, &rw_list, rw_last, sizeof(rw_last));
 	/* finished: quiet twice in a row after it was seen working (or never got going in 20 s) */
 	if (!listing && !ident && !(stage && !strcmp(stage, "waiting"))) {
 		sc.quiet++;
@@ -9748,27 +9777,30 @@ static void art_update(void)
 	else snprintf(t, sizeof(t), "Found  %d        Not found  %d", found, nf);
 	label_set_if(ar.tally, t);
 	/* the systems: art found of games; the one it's on; waiting (a window of 9 around the current one) */
-	lv_obj_clean(ar.list);
 	cJSON *arr = cJSON_GetObjectItem(r, "systems"), *e;
 	int n = cJSON_GetArraySize(arr), curi = -1, i = 0;
 	cJSON_ArrayForEach(e, arr) { const char *nm = api_str(e, "name"); if (running && cur_sys && nm && !strcmp(nm, cur_sys)) curi = i; i++; }
 	int from = curi > 4 ? curi - 4 : 0;
 	if (from + 9 > n) from = n > 9 ? n - 9 : 0;
 	i = 0;
-	int y = 0;
+	static sysrows_t rw;
+	static lv_obj_t *rw_list;
+	static char rw_last[1600];
+	rw.n = 0;
 	cJSON_ArrayForEach(e, arr) {
-		if (i >= from && i < from + 9) {
+		if (i >= from && i < from + 9 && rw.n < 9) {
 			const char *nm = api_str(e, "name");
 			int g = (int)api_num(e, "games", 0), a = (int)api_num(e, "art", 0), p = (int)api_num(e, "pending", 0);
-			char v[48];
 			int st = i == curi ? 1 : (!p || !running) ? 2 : 0;
-			if (st) snprintf(v, sizeof(v), "%d of %d", a, g);
-			else snprintf(v, sizeof(v), "waiting");
-			scan_row(ar.list, y, st == 2 ? "\xE2\x9C\x93" : st == 1 ? "\xE2\x80\xBA" : "\xC2\xB7", nm ? nm : "", v, st);
-			y += S(40);
+			if (st) snprintf(rw.val[rw.n], 48, "%d of %d", a, g);
+			else snprintf(rw.val[rw.n], 48, "waiting");
+			rw.mark[rw.n] = st == 2 ? "\xE2\x9C\x93" : st == 1 ? "\xE2\x80\xBA" : "\xC2\xB7";
+			snprintf(rw.name[rw.n], sizeof(rw.name[0]), "%s", nm ? nm : "");
+			rw.st[rw.n++] = st;
 		}
 		i++;
 	}
+	sysrows_show(ar.list, &rw, &rw_list, rw_last, sizeof(rw_last));
 	/* finished: not running twice in a row after it was seen working (or never got going in 10 s) */
 	if (!running) {
 		ar.quiet++;
@@ -10872,6 +10904,7 @@ static void mu_mk_chips(void)
 }
 static void mu_draw(void)
 {
+	/* rebuild-ok: Music opened, a press, or a CD put in / taken out (music_tick compares first) */
 	lv_obj_clean(body);
 	screen_title("LIBRARY", "Music");
 	mu_mk_chips();
@@ -11369,6 +11402,7 @@ static const char *const RV_HINTS[] = { "A", "Achievements", "X", "Play", "B", "
 static const char *const RV_ACH_HINTS[] = { "\xE2\x86\x95", "Look", "B", "Back", NULL };
 static void rv_draw(void)
 {
+	/* rebuild-ok: after a press, or each answer while RetroAchievements is still sending (new data each time) */
 	lv_obj_clean(body);
 	rv_desc = NULL;
 	char sub[200] = "";
@@ -12077,6 +12111,7 @@ int ui_ingame_open(void) { return cur == SCR_INGAME; }
 static uint32_t last_status, last_poll;
 
 int ui_screen(void) { return (int)cur; }
+const char *ui_where = "";      /* the part of ui_tick running now (for the big-repaint log: main.c) */
 
 int ui_max_sleep(void)
 {
@@ -12226,7 +12261,8 @@ void ui_tick(void)
 	uint32_t now = lv_tick_get();
 	/* where a slow pass went (for the log: the menu not answering the controller) */
 	static const char *tn[16]; static uint32_t tt[16]; int ti = 0; uint32_t tlast = mono_ms_ui(), tstart = tlast;
-#define TT(name) do { uint32_t t_ = mono_ms_ui(); if (ti < 16) { tn[ti] = (name); tt[ti++] = t_ - tlast; } tlast = t_; } while (0)
+#define TT(name) do { uint32_t t_ = mono_ms_ui(); if (ti < 16) { tn[ti] = (name); tt[ti++] = t_ - tlast; } tlast = t_; ui_where = "after " name; } while (0)
+	ui_where = "tick start";
 	{ static uint32_t lu; if (now - lu >= 500) { lu = now; upd_poll(); } }
 	{ static uint32_t lb; if (now - lb >= 200) { lb = now; body_cards(); } }
 	TT("upd");

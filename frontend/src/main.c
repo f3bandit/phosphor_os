@@ -287,6 +287,18 @@ static void inv_count(lv_event_t *e)
 		uint64_t n = (uint64_t)lv_area_get_width(a) * (uint64_t)lv_area_get_height(a);
 		inv_px += n;
 		inv_total += n;
+		/* <tmp>/debug-draw there when the shell starts: who asked for a repaint of 0.5 % of the screen or more (the
+		   part of ui_tick running then), in the log */
+		static int dbg = -1;
+		if (dbg < 0) {
+			char p[300];
+			const char *tp = getenv("PHOS_TMP");
+			snprintf(p, sizeof(p), "%s/debug-draw", tp && *tp ? tp : "/tmp/phosphor");
+			dbg = access(p, F_OK) == 0;
+		}
+		lv_display_t *d = lv_display_get_default();
+		if (dbg && d && n * 1000 >= (uint64_t)lv_display_get_horizontal_resolution(d) * lv_display_get_vertical_resolution(d) * 5)
+			plog("big repaint: %d,%d %dx%d, %s (screen %d)", a->x1, a->y1, lv_area_get_width(a), lv_area_get_height(a), ui_where, ui_screen());
 	}
 }
 
@@ -466,10 +478,12 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		}
 		pkey_t k;
 		uint32_t t_a = mono_ms();
+		ui_where = "a key";
 		while ((k = input_poll(now)) != KEY_NONE_) ui_key(k);
 		uint32_t t_b = mono_ms();
 		ui_tick();
 		uint32_t t_c = mono_ms();
+		ui_where = "LVGL's timers (an animation, a timer callback)";
 		/* sleep until input (controllers through Main, keyboards, remote keys) or the next screen timer:
 		   at idle that's up to half a second, not 60 wake-ups a second */
 		uint32_t wait = lv_timer_handler();

@@ -135,6 +135,7 @@ void padview_layout(padview_t *p, const char *key)
 	if (li < 0) li = 0;
 	if (li == p->layout) return;
 	p->layout = li;
+	/* rebuild-ok: only for another layout (returns above when it's the same) */
 	lv_obj_clean(p->box);
 	memset(p->el, 0, sizeof(p->el));
 	const pl_layout_t *L = &PLAYOUTS[li];
