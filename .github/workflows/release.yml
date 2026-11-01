@@ -3,6 +3,9 @@
 #   release/notes.md                  the release notes
 #   release/phosphor-<v>-armhf.tar.gz built with install/build-release.sh (phosphord from "Secret builds")
 #   release/Phosphor_win_<v>.zip      Phosphor.exe from "Secret builds", THIRD_PARTY_NOTICES.md, LICENSE.md
+#   release/retrospy.txt (optional)   "<url> <sha256>" of RetroSpy's Phosphor edition zip (f3bandit/RetroSpy's
+#                                     release): downloaded, checked and added to the Windows zip as RetroSpy\
+#                                     (too big for a file in the branch)
 # This checks the package was built from that commit, builds the SD card image from it, writes
 # SHA256SUMS.txt, tags the commit and publishes the release, then removes the branch. Published as
 # f3bandit when the RELEASE_TOKEN secret is set (a fine-grained token for this repo, Contents: read and
@@ -49,6 +52,19 @@ jobs:
           ls -l dist
       - name: Tools
         run: sudo apt-get update -q && sudo apt-get install -y -q p7zip-full mtools dosfstools zip
+      - name: RetroSpy into the Windows zip
+        run: |
+          set -e
+          [ -f release/retrospy.txt ] || exit 0
+          read -r url sum < release/retrospy.txt
+          curl -fsSL -o rs.zip "$url"
+          echo "$sum  rs.zip" | sha256sum -c --quiet
+          mkdir rs && unzip -q rs.zip -d rs
+          test -f rs/RetroSpy/RetroSpy.exe && test -f rs/RetroSpy/LICENSE.txt
+          z="$(ls "$PWD"/dist/Phosphor_win_*.zip)"
+          (cd rs && zip -q -r -X "$z" RetroSpy)
+          unzip -l "$z" | grep -q "RetroSpy/RetroSpy.exe"
+          ls -l dist
       - name: SD card image
         run: image/build-image.sh dist/phosphor-*-armhf.tar.gz
       - name: Publish
