@@ -75,8 +75,8 @@ static void commas(const char *n, char *out, size_t on)
 
 static void kv_row(int i, const char *k, const char *v)
 {
-	lv_label_set_text(kv_k[i], k);
-	lv_label_set_text(kv_v[i], v);
+	label_set_if(kv_k[i], k);
+	label_set_if(kv_v[i], v);
 	lv_obj_set_hidden(kv_k[i], !*k);
 	lv_obj_set_hidden(kv_v[i], !*k);
 }
@@ -97,22 +97,22 @@ static void draw(void)
 	if (!done) {
 		icon_set(ic, ICON_SDCARD);
 		lv_obj_set_style_text_color(ic, PAL.acc, 0);
-		lv_label_set_text(lab, "O F F L I N E   R E P A I R");
-		lv_label_set_text(title, multi ? "Repairing the drives" : "Repairing the SD card");
+		label_set_if(lab, "O F F L I N E   R E P A I R");
+		label_set_if(title, multi ? "Repairing the drives" : "Repairing the SD card");
 		snprintf(b, sizeof(b), multi ? "Started from the %s so the SD card and the other drives can be checked while nothing is using them. Phosphor starts again by itself when it's done."
 		                             : "Started from the %s so the SD card can be checked while nothing is using it. Phosphor starts again by itself when it's done.",
 			st.drive[0] ? st.drive : "repair drive");
-		lv_label_set_text(body, b);
-		if (multi && st.step[0]) { snprintf(b, sizeof(b), "%s \xC2\xB7 %d of %d", st.step, st.stepn, st.steps); lv_label_set_text(sub, b); }
-		else lv_label_set_text(sub, "Checking files and folders \xC2\xB7 usually under a minute");
-		lv_label_set_text(note_txt, "Don't switch off or unplug the SuperStation");
+		label_set_if(body, b);
+		if (multi && st.step[0]) { snprintf(b, sizeof(b), "%s \xC2\xB7 %d of %d", st.step, st.stepn, st.steps); label_set_if(sub, b); }
+		else label_set_if(sub, "Checking files and folders \xC2\xB7 usually under a minute");
+		label_set_if(note_txt, "Don't switch off or unplug the SuperStation");
 		icon_set(note_ic, ICON_POWER);
 		lv_obj_set_style_text_color(note_ic, PAL.acc, 0);
 		lv_obj_set_style_bg_color(note, C(0x2a1f12), 0);
 		lv_obj_set_style_border_color(note, C(0x6b4a1f), 0);
 		return;
 	}
-	lv_label_set_text(lab, "O F F L I N E   R E P A I R   \xC2\xB7   D O N E");
+	label_set_if(lab, "O F F L I N E   R E P A I R   \xC2\xB7   D O N E");
 	if ((!strcmp(r, "clean") || !strcmp(r, "repaired")) && multi) {
 		/* the SD card and the other drives, one row each */
 		int fixed = !strcmp(r, "repaired");
@@ -120,8 +120,8 @@ static void draw(void)
 		int bad = st.others_bad;
 		icon_set(ic, bad ? ICON_WARN : fixed ? ICON_UTILITY : ICON_DONE);
 		lv_obj_set_style_text_color(ic, C(bad ? AMBER : GREEN), 0);
-		lv_label_set_text(title, bad ? "Some errors couldn't be fixed here" : fixed ? "The drives are repaired" : "All drives are fine");
-		lv_label_set_text(body, bad ? "Phosphor still starts, and what it fixed stays fixed. For a drive with errors left, back up what's on it and repair it on a PC."
+		label_set_if(title, bad ? "Some errors couldn't be fixed here" : fixed ? "The drives are repaired" : "All drives are fine");
+		label_set_if(body, bad ? "Phosphor still starts, and what it fixed stays fixed. For a drive with errors left, back up what's on it and repair it on a PC."
 		                            : fixed ? "The errors found are fixed. Your games, saves and settings are where they were, and the drives are marked clean again."
 		                                    : "No errors found. They're marked clean again, so Windows won't ask to scan them.");
 		lv_obj_set_hidden(note, true);
@@ -137,8 +137,8 @@ static void draw(void)
 		int fixed = !strcmp(r, "repaired");
 		icon_set(ic, fixed ? ICON_UTILITY : ICON_DONE);
 		lv_obj_set_style_text_color(ic, C(GREEN), 0);
-		lv_label_set_text(title, fixed ? "The SD card is repaired" : "The SD card is fine");
-		lv_label_set_text(body, fixed ? "The file system had errors and they're fixed. Your games, saves and settings are where they were. It's marked clean again."
+		label_set_if(title, fixed ? "The SD card is repaired" : "The SD card is fine");
+		label_set_if(body, fixed ? "The file system had errors and they're fixed. Your games, saves and settings are where they were. It's marked clean again."
 		                              : "No errors found. It's marked clean again, so Windows won't ask to scan it.");
 		int n = 0;
 		if (fixed && st.fixed[0]) kv_row(n++, "Fixed", st.fixed);
@@ -153,9 +153,9 @@ static void draw(void)
 	} else if (!strcmp(r, "errors_left")) {
 		icon_set(ic, ICON_WARN);
 		lv_obj_set_style_text_color(ic, C(AMBER), 0);
-		lv_label_set_text(title, "Some errors couldn't be fixed here");
-		lv_label_set_text(body, "Phosphor still starts, and what it fixed stays fixed. For the rest, put the card in a PC and use Phosphor for Windows: SD card flash & health \xE2\x80\xBA Card health \xE2\x80\xBA Deep repair.");
-		lv_label_set_text(note_txt, "Back up your saves first: Settings \xE2\x80\xBA Storage \xE2\x80\xBA Back up saves & settings");
+		label_set_if(title, "Some errors couldn't be fixed here");
+		label_set_if(body, "Phosphor still starts, and what it fixed stays fixed. For the rest, put the card in a PC and use Phosphor for Windows: SD card flash & health \xE2\x80\xBA Card health \xE2\x80\xBA Deep repair.");
+		label_set_if(note_txt, "Back up your saves first: Settings \xE2\x80\xBA Storage \xE2\x80\xBA Back up saves & settings");
 		icon_set(note_ic, ICON_UPDATE);
 		lv_obj_set_style_text_color(note_ic, C(0x6cb6ff), 0);
 		lv_obj_set_style_bg_color(note, PAL.panel, 0);
@@ -163,11 +163,11 @@ static void draw(void)
 	} else {
 		icon_set(ic, ICON_FAILED);
 		lv_obj_set_style_text_color(ic, C(RED), 0);
-		lv_label_set_text(lab, "O F F L I N E   R E P A I R");
-		lv_label_set_text(title, "The repair didn't run");
+		label_set_if(lab, "O F F L I N E   R E P A I R");
+		label_set_if(title, "The repair didn't run");
 		snprintf(b, sizeof(b), "%s%s Nothing on it was changed. Try again from Settings \xE2\x80\xBA Storage, or repair it on a PC with Phosphor for Windows.",
 			st.reason[0] ? st.reason : "The SD card couldn't be checked", st.reason[0] && st.reason[strlen(st.reason) - 1] == '.' ? "" : ".");
-		lv_label_set_text(body, b);
+		label_set_if(body, b);
 	}
 }
 
@@ -189,7 +189,7 @@ static void tick_cb(lv_timer_t *t)
 		char b[64];
 		if (left > 0) snprintf(b, sizeof(b), "Starting Phosphor again in %d s", left);
 		else snprintf(b, sizeof(b), "Starting Phosphor again...");
-		lv_label_set_text(foot, b);
+		label_set_if(foot, b);
 	}
 }
 

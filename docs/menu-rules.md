@@ -48,7 +48,19 @@ The checks that enforce them are in `tools/check-polls/` (README there). Run the
    An animation whose `var` is an `lv_obj_t` is safe: LVGL deletes it with the object. Enforced by
    `check_drawing.py` in CI; `menu_walk.py`'s quick pass tries to trigger these crashes on the SS1.
 
-5. **Keep repaints small.** Change only the rows or labels that changed (the `vlist` does this). Don't
+5. **Set a label's text through `label_set_if`, never `lv_label_set_text`.** The same text set again still
+   repaints the label. A status answer every second, or a controller 16 times a second, kept whole panels
+   repainting with nobody touching the menu (the controller test at 156% of the screen a second, Front ports
+   at 247%, Nov 1 2026). Every label in the shell goes through it; `check_drawing.py` flags a plain
+   `lv_label_set_text` in code that runs over and over (`/* text-ok: why */` for a new label's first text).
+
+6. **Build a screen before asking for anything that redraws it.** A `show_` function sets `cur = SCR_...`,
+   which lets that screen's update functions through their `cur` check. A call before `lv_obj_clean(body)`
+   and the new widgets can redraw the last visit's widgets, which were deleted when the screen was left.
+   Discs did this and crashed when opened and left quickly (Nov 1 2026). Clear and build first, then ask.
+   Enforced by `check_drawing.py` (`/* build-ok: why */`).
+
+7. **Keep repaints small.** Change only the rows or labels that changed (the `vlist` does this). Don't
    invalidate a whole panel to update one number.
 
 ## Before a release

@@ -61,6 +61,10 @@ lv_obj_t *mk_box(lv_obj_t *parent, int w, int h, lv_color_t bg, int radius);
  * on them is always solid. Solid on a low-resolution CRT (240p / 288p), where blending looks poor: the one
  * place to change it for CRTs */
 lv_opa_t theme_card_opa(void);
+/* a label's text, set only when it's different: the same text set again still repaints the label, and code
+   that runs over and over (a status every second, a controller 16 times a second) kept panels repainting with
+   nobody touching the menu. Every label in the shell is set through this (docs/menu-rules.md) */
+void label_set_if(lv_obj_t *l, const char *t);
 int theme_card_radius(void);      /* every card's rounding */
 /* a card behind things that sit straight on the background (a list, the title, the status icons, the
    button hints): in the panel colour, as see-through as the rest */

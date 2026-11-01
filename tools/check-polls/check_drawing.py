@@ -12,6 +12,16 @@
              7x a plain fill on the SS1 (20 ns a pixel against 2.75). Only for something small or short-lived,
              with /* opa-ok: why */. (0.27.65: the background texture blended on every redraw: the menu lag.)
 
+  same-text  Code that runs over and over (the main loop's timers, *_tick / *_poll, the status bar, list fill
+             callbacks, and what they call, *_apply included) sets a label with label_set_if (only when the
+             text is different), not lv_label_set_text: the same text still repaints the label, and a status
+             answer every second or a controller 16 times a second kept whole panels repainting with nobody
+             touching the menu (the controller test, Front ports, Nov 1 2026). /* text-ok: why */
+  build-first  A screen's show_ function sets cur = SCR_... and then clears the body: a call in between that
+             can redraw widgets (a vlist_refresh, lv_obj_/lv_label_ calls, reached through the screen's update
+             functions, which pass their cur check by then) redraws the last visit's widgets, already deleted.
+             Build the screen first, then ask. /* build-ok: why */ (Discs, Nov 1 2026: a crash.)
+
 A marker goes on the line or the line above (for a callback: its create call or the callback itself).
 
   check_drawing.py [src_dir]
@@ -32,11 +42,41 @@ def marked(raw_lines, ln, word):
     return any(word in raw_lines[i - 1] for i in (ln, ln - 1) if 0 < i <= len(raw_lines))
 
 
+# what runs over and over: the same roots as check_polls.py, followed into *_apply / *_take too (they redraw
+# what an answer says), not into what only runs on a press or once (a screen opened, a job started)
+ONCE = re.compile(r"^(show_|open_)|_(key|start|begin|run|do|open|close|init|create|build|install|uninstall|pair|"
+                  r"play|launch|confirm|save)$")
+
+
+def repeating(src_dir):
+    funcs, fill_cbs = {}, set()
+    for f in sorted(os.listdir(src_dir)):
+        if not f.endswith(".c") or f == "prof.c":
+            continue
+        code, _ = strip_comments_keep_lines(open(os.path.join(src_dir, f), encoding="utf-8", errors="replace").read())
+        for name, (line, body) in functions(code).items():
+            funcs.setdefault(name, (f, line, body))
+        fill_cbs.update(re.findall(r"\.fill\s*=\s*([A-Za-z_]\w*)\s*;", code))
+    roots = set(fill_cbs) | {"status_update", "si_update", "ui_tick"}
+    roots |= {n for n in funcs if n.endswith("_tick") or n.endswith("_poll")}
+    seen, todo = set(), [r for r in roots if r in funcs]
+    while todo:
+        fn = todo.pop()
+        if fn in seen:
+            continue
+        seen.add(fn)
+        for c in re.findall(r"\b([A-Za-z_]\w*)\s*\(", funcs[fn][2]):
+            if c in funcs and c not in seen and not ONCE.search(c):
+                todo.append(c)
+    return seen
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     src_dir = args[0] if args else os.path.join(HERE, "..", "..", "frontend", "src")
     problems = []
-    nd = no = 0
+    nd = no = nt = 0
+    rep = repeating(src_dir)
     for f in sorted(os.listdir(src_dir)):
         if not f.endswith(".c") or f == "prof.c":
             continue
@@ -95,9 +135,48 @@ def main():
             if not marked(rl, ln, "opa-ok"):
                 problems.append(f"{f}:{ln}: an ARGB8888 (see-through) buffer: blended on every redraw. "
                                 f"XRGB8888 with the colours mixed in once, or /* opa-ok: why */")
+        # same-text: lv_label_set_text in what runs over and over
+        for name, (fl, body) in funcs.items():
+            if name not in rep or name == "label_set_if":
+                continue
+            for m in re.finditer(r"\blv_label_set_text\s*\(", body):
+                nt += 1
+                ln = fl + body.count("\n", 0, m.start())
+                if marked(rl, ln, "text-ok"):
+                    continue
+                problems.append(f"{f}:{ln}: lv_label_set_text in {name}(), which runs over and over: the same text "
+                                f"repaints it too. label_set_if(label, text), or /* text-ok: why */")
+
+        # build-first: show_* that call, between cur = SCR_ and lv_obj_clean(body), something that redraws
+        def reach(fn, seen):
+            if fn in seen or fn not in funcs:
+                return
+            seen.add(fn)
+            for c in re.findall(r"\b([a-z_]\w*)\s*\(", funcs[fn][1]):
+                reach(c, seen)
+        for name, (fl, body) in funcs.items():
+            if not name.startswith("show_"):
+                continue
+            k = re.search(r"\bcur\s*=\s*SCR_\w+\s*;", body)
+            c = body.find("lv_obj_clean(body)")
+            if not k or c < 0 or k.start() > c:
+                continue
+            for cm in re.finditer(r"\b([a-z_]\w*)\s*\(", body[k.end():c]):
+                seen = set()
+                reach(cm.group(1), seen)
+                bad = sorted(g for g in seen if g not in ("toast_show", "plog") and
+                             re.search(r"\bvlist_refresh\s*\(|\blv_(obj|label|image)_\w+\s*\(", funcs[g][1]))
+                if not bad:
+                    continue
+                ln = fl + body.count("\n", 0, k.end() + cm.start())
+                if marked(rl, ln, "build-ok"):
+                    continue
+                problems.append(f"{f}:{ln}: {name}() calls {cm.group(1)}() before it clears and builds the screen, and "
+                                f"that can redraw widgets ({', '.join(bad[:3])}): the last visit's, deleted. Build first, "
+                                f"or /* build-ok: why */")
     for p in problems:
         print(p)
-    print(f"check_drawing: {nd} deferred callbacks, {no} see-through styles, {len(problems)} problem(s)")
+    print(f"check_drawing: {nd} deferred callbacks, {no} see-through styles, {nt} labels set over and over, {len(problems)} problem(s)")
     return 1 if problems else 0
 
 
