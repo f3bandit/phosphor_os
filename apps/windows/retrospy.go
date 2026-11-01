@@ -9,9 +9,9 @@ package main
 // write its own over them). The source (MiSTer) and the controller number are picked in RetroSpy: its
 // source list is the user's own (some hidden, reordered), so it isn't guessed here.
 //
-// Phosphor's release also brings RetroSpy's Phosphor edition (f3bandit/RetroSpy, GPL-3.0, a separate
-// program: Phosphor's zip has it in RetroSpy\ next to Phosphor.exe). That one is opened with
-// --phosphor <address> --go: it finds the SS1's active controller itself and draws it as Phosphor does.
+// RetroSpy's Phosphor edition (f3bandit/RetroSpy, GPL-3.0, a separate program and its own release) is installed
+// into RetroSpy\ next to Phosphor.exe from this page (retrospy_install.go) and then updates itself. That one is
+// opened with --phosphor <address> --go: it finds the SS1's active controller itself and draws it as Phosphor does.
 
 import (
 	"errors"
@@ -153,7 +153,25 @@ var errNotFilled = errors.New("not filled")
 
 func apiRetrospy(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		writeJSON(w, map[string]any{"ok": true, "found": retrospyExe() != "", "edition": retrospyBundled() != "", "running": retrospyRunning()})
+		out := map[string]any{"ok": true, "found": retrospyExe() != "", "edition": retrospyBundled() != "", "running": retrospyRunning(),
+			"version": retrospyVersion()}
+		if r.URL.Query().Get("latest") != "" {
+			if rel, err := retrospyLatest(r.URL.Query().Get("latest") == "force"); err == nil {
+				out["latest"], out["page"] = rel.Version, rel.Page
+			} else {
+				out["latest_error"] = err.Error()
+			}
+		}
+		writeJSON(w, out)
+		return
+	}
+	if r.URL.Query().Get("do") == "install" {
+		v, err := retrospyInstall()
+		if err != nil {
+			fail(w, err.Error())
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "version": v})
 		return
 	}
 	var q struct {

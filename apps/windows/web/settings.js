@@ -1339,7 +1339,7 @@ class AppSettings {
 			let r, pc = {};
 			try { r = await ss1({ cmd: "retrospy" }); }
 			catch (e) { if (alive()) $("#rsl").innerHTML = `<div class="empty">${esc(/unknown/i.test(e.message) ? "Update Phosphor on the SS1 for RetroSpy's page." : e.message)}</div>`; return false; }
-			try { pc = await api("/api/retrospy"); } catch (e) {}
+			try { pc = await api("/api/retrospy?latest=1"); } catch (e) {}
 			if (!alive()) return false;
 			const ctl = r.controllers || [], p1 = ctl.find(c => c.player === 1) || ctl[0];
 			const tag = (t, ok) => `<span class="tag ${ok ? "g" : ""}">${t}</span>`;
@@ -1377,7 +1377,35 @@ class AppSettings {
 			const w = r.watching ? ctl.find(c => c.js === r.watching_js) : null;
 			R.innerHTML = `<div class="panel"><h2>Live</h2><p>${r.watching ? `<span style="color:#ff5f56">●</span> RetroSpy is watching ${w && w.player ? "Player " + w.player : "controller " + r.watching_js}${w ? " (" + esc(w.name) + ")" : ""}` : "RetroSpy isn't watching right now."}</p>
 				<p class="note">From the SS1: RetroSpy's reader running. The TV shows it in its top bar too.</p></div>
-				${pc.found ? "" : `<div class="panel" style="margin-top:1rem"><h2>Not on this PC?</h2><p class="note">RetroSpy for Windows is free from retro-spy.com. Phosphor finds it once it's installed.</p></div>`}`;
+				${rsPanel(pc)}`;
+			const g = $("#rs_get"); if (g) g.onclick = rsGet;
+		};
+		/* RetroSpy's Phosphor edition on this PC: its own package (f3bandit/RetroSpy), installed or brought up to date
+		   from here into RetroSpy\ next to Phosphor.exe; from 6.11 it updates itself (retrospy_install.go) */
+		const newer = (a, b) => { const x = String(a).split("."), y = String(b).split("."); for (let i = 0; i < Math.max(x.length, y.length); i++) { const p = parseInt(x[i] || 0, 10), q = parseInt(y[i] || 0, 10); if (p !== q) return p > q; } return false; };
+		let rsBusy = false;
+		const rsPanel = pc => {
+			const v = pc.version || "", L = pc.latest || "";
+			let body, btn = "";
+			if (rsBusy) body = `<p>Downloading and installing RetroSpy${L ? " " + esc(L) : ""}…</p>`;
+			else if (!v) {
+				body = `<p>RetroSpy's Phosphor edition isn't on this PC.</p><p class="note">It shows the SS1's active controller drawn as Phosphor draws it (green-screen or transparent for OBS), and keeps itself up to date. A separate program (GPL-3.0).</p>`;
+				btn = `<button class="btn primary" id="rs_get" data-nav>Install RetroSpy${L ? " " + esc(L) : ""}</button>`;
+			} else if (L && newer(L, v)) {
+				body = `<p>RetroSpy ${esc(v)} is on this PC; ${esc(L)} is out.</p><p class="note">From 6.11 RetroSpy updates itself (Help › Check for updates in it).</p>`;
+				btn = `<button class="btn primary" id="rs_get" data-nav>Update RetroSpy to ${esc(L)}</button>`;
+			} else body = `<p>RetroSpy ${esc(v)}${L ? " (the newest)" : ""} is on this PC.</p><p class="note">It updates itself: Help › Check for updates in RetroSpy.</p>`;
+			if (pc.latest_error && !rsBusy) body += `<p class="note">${esc(pc.latest_error)}</p>`;
+			return `<div class="panel" style="margin-top:1rem"><h2>RetroSpy on this PC</h2>${body}${btn ? `<div class="acts">${btn}</div>` : ""}</div>`;
+		};
+		const rsGet = async () => {
+			if (rsBusy) return;
+			rsBusy = true; draw();
+			try { const x = await api("/api/retrospy?do=install", {}); if (!x.ok) throw new Error(x.error); toast("RetroSpy " + x.version + " is installed"); }
+			catch (e) { toast(e.message); }
+			rsBusy = false;
+			try { pcNow = await api("/api/retrospy?latest=1"); } catch (e) {}
+			draw();
 		};
 		const job = async what => {
 			if (busy) return;
@@ -1394,7 +1422,7 @@ class AppSettings {
 			}, 2000);
 		};
 		let pcNow = {};
-		try { pcNow = await api("/api/retrospy"); } catch (e) {}
+		try { pcNow = await api("/api/retrospy?latest=1"); } catch (e) {}
 		if (await draw()) this.every(4000, async () => {      /* the Live card follows RetroSpy (the rest stays) */
 			try { live(await ss1({ cmd: "retrospy" }), pcNow); } catch (e) {}
 			return true;
