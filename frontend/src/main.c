@@ -24,6 +24,9 @@
 #include "theme.h"
 #include "jpeg.h"
 #include "ui.h"
+#ifdef PHOS_PROFILE
+#include "prof.h"
+#endif
 #include "sdrepair.h"
 #include "lvgl.h"
 #include <signal.h>
@@ -276,11 +279,36 @@ static void restart_self(void)
 
 /* what the screen had to redraw since the last stall check: its invalidated area, in pixels (a stall that
    repaints the whole 1080p screen shows up here, for the log) */
-static uint64_t inv_px;
+static uint64_t inv_px, inv_total;
 static void inv_count(lv_event_t *e)
 {
 	const lv_area_t *a = lv_event_get_param(e);
-	if (a) inv_px += (uint64_t)lv_area_get_width(a) * (uint64_t)lv_area_get_height(a);
+	if (a) {
+		uint64_t n = (uint64_t)lv_area_get_width(a) * (uint64_t)lv_area_get_height(a);
+		inv_px += n;
+		inv_total += n;
+	}
+}
+
+/* everything the screen repainted, in <tmp>/draw for tests (tools/check-polls/menu_walk.py): "<ms> <screens
+   repainted, in % of the screen, since start-up> <screen>", once a second when it changed. A screen nobody
+   touches should repaint (almost) nothing: the walk sits on each screen and fails one that keeps repainting
+   (the controller test repainted the whole controller 10-16 times a second, Oct 31 2026) */
+static void draw_report(uint32_t now)
+{
+	static uint32_t last;
+	static uint64_t last_total = ~0ull;
+	if (now - last < 1000 || inv_total == last_total) return;
+	last = now;
+	last_total = inv_total;
+	lv_display_t *d = lv_display_get_default();
+	uint64_t scr = (uint64_t)lv_display_get_horizontal_resolution(d) * lv_display_get_vertical_resolution(d) + 1;
+	char p[300], t[310];
+	const char *tp = getenv("PHOS_TMP");
+	snprintf(p, sizeof(p), "%s/draw", tp && *tp ? tp : "/tmp/phosphor");
+	snprintf(t, sizeof(t), "%s.new", p);
+	FILE *f = fopen(t, "w");
+	if (f) { fprintf(f, "%u %llu %d\n", now, (unsigned long long)(inv_total * 100 / scr), ui_screen()); fclose(f); rename(t, p); }
 }
 
 static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
@@ -450,6 +478,10 @@ static int run_fbdev(const char *fbdev, const char *fb_mode, int fb_rb)
 		if (t_d - t_a >= 250) plog("slow: %u ms (keys %u, timers %u, drawing %u, %u%% of the screen) (screen %d)", t_d - t_a, t_b - t_a, t_c - t_b, t_d - t_c,
 		                           (unsigned)(inv_px * 100 / ((uint64_t)lv_display_get_horizontal_resolution(lv_display_get_default()) * lv_display_get_vertical_resolution(lv_display_get_default()) + 1)), ui_screen());
 		inv_px = 0;
+		draw_report(t_d);
+#ifdef PHOS_PROFILE
+		prof_poll();
+#endif
 		uint32_t cap = (uint32_t)ui_max_sleep();
 		if (input_held() || redraw_at) cap = 16;
 		if (crt_flip_waiting()) cap = 10;

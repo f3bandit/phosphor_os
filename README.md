@@ -79,7 +79,7 @@ By bringing the console form factor back to MiSTer with the SS1, Taki Udon and R
 | Website | The page for phosphor-os.github.io | `site/` |
 | PC tool | Phosphor Link: the SuperStation One's debug port and Claude library tools on a PC | `tools/phosphor-link/` |
 
-Current: Phosphor 0.17.0 (shell), phosphord 0.12.4, Phosphor for Android 0.7.0. Hardware testing:
+Current: Phosphor 0.27.65 (shell; phosphord 0.27.60), Phosphor for Windows 0.2.54, Phosphor for Android 0.9.14 (the newest of each: [Releases](https://github.com/f3bandit/phosphor_os/releases)). Hardware testing:
 [`docs/testing.md`](docs/testing.md).
 
 ## Modules

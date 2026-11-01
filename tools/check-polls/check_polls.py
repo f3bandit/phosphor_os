@@ -117,7 +117,8 @@ def main():
     roots |= {n for n in funcs if n.endswith("_tick") or n.endswith("_poll")}
     roots |= {n for n, (_, _, b) in funcs.items() if "last_status" in b and "status_update" in b}
 
-    # the functions those call, two levels down: what a tick does each time round. Not followed: what only
+    # the functions those call, all the way down (the visited set stops loops): what a tick does each time
+    # round. Two levels used to be the limit, and a call three helpers deep slipped through. Not followed: what only
     # happens once, on a change or a press (a screen opened, a key handled, a job started or asked about)
     ONE_OFF = re.compile(r"^(show_|open_)|_(key|ask|start|begin|run|do|open|close|apply|take|init|create|build|load|save|"
                          r"check|confirm|install|uninstall|pair|play|launch)$")
@@ -128,8 +129,6 @@ def main():
         if fn in via:
             continue
         via[fn] = root
-        if depth >= 2:
-            continue
         for c in CALL_RE.findall(funcs[fn][2]):
             if c in funcs and c not in via and c not in SYNC and not ONE_OFF.search(c):
                 todo.append((c, root, depth + 1))

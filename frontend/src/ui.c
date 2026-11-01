@@ -1278,6 +1278,7 @@ static char sys_art_src[720];
 static void load_systems(category_t c)
 {
 	nsys = 0;
+	/* poll-ok: when a category opens, or when the disc drive changes (systems_disc_update), not every tick */
 	cJSON *r = api_call("{\"cmd\":\"systems\",\"category\":%d}", (int)c);
 	if (api_ok(r)) {
 		cJSON *it;

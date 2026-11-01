@@ -17,6 +17,11 @@ file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS ${LVGL_DIR}/src/*.c)
 add_library(lvgl STATIC ${LVGL_SOURCES})
 target_include_directories(lvgl PUBLIC ${LVGL_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
+# a test build that times LVGL's drawing on the SS1 (src/prof.h): cmake -DPHOS_PROFILE=ON
+option(PHOS_PROFILE "time LVGL's functions (a test build)" OFF)
+if(PHOS_PROFILE)
+  target_compile_definitions(lvgl PUBLIC PHOS_PROFILE)
+endif()
 target_compile_options(lvgl PRIVATE -w)
 
 
