@@ -15,6 +15,9 @@ typedef struct {
 	const char *id;                /* "a", or alternatives "c|r1" */
 	lv_obj_t *shape, *lab, *knob, *fill, *arm[4], *sym;
 	int kx, ky, kr, full;          /* stick / lever knob centre and travel; trigger fill width */
+	/* what it shows now: set again only when it changes (each style or position set makes LVGL repaint
+	   the element, and the state comes 10-16 times a second: the whole controller was repainted each time) */
+	int look, kpx, kpy, fillw, arm_look[4];
 } el_t;
 
 struct padview {
@@ -216,6 +219,15 @@ static int any(const char *const *list, int n, const char *ids)
 	return 0;
 }
 
+/* a stick's or lever's knob: moved only when it lands on another pixel */
+static void knob_to(el_t *e, float x, float y)
+{
+	int px = e->kx + (int)(x * e->kr) - lv_obj_get_width(e->knob) / 2, py = e->ky + (int)(y * e->kr) - lv_obj_get_height(e->knob) / 2;
+	if (px == e->kpx && py == e->kpy) return;
+	e->kpx = px; e->kpy = py;
+	lv_obj_set_pos(e->knob, px, py);
+}
+
 void padview_state(padview_t *p, const padstate_t *s)
 {
 	const char *dirs[4] = { "up", "down", "left", "right" };
@@ -228,6 +240,9 @@ void padview_state(padview_t *p, const padstate_t *s)
 			   whole pad's outline */
 			for (int k = 0; k < 4; k++) {
 				int o = in(s->on, s->non, dirs[k]), t = s->target && !strcmp(s->target, dirs[k]), dn = in(s->done, s->ndone, dirs[k]);
+				int lk = 1 + (o ? 1 : 0) + (t ? 2 : 0) + (dn ? 4 : 0);
+				if (lk == e->arm_look[k]) continue;
+				e->arm_look[k] = lk;
 				lv_obj_set_hidden(e->arm[k], !o && !t && !dn);
 				lv_obj_set_style_bg_opa(e->arm[k], o ? LV_OPA_COVER : t ? LV_OPA_50 : LV_OPA_20, 0);
 			}
@@ -236,14 +251,14 @@ void padview_state(padview_t *p, const padstate_t *s)
 			float y = (in(s->on, s->non, "down") ? 1.f : 0) - (in(s->on, s->non, "up") ? 1.f : 0);
 			if (!x && !y) { x = s->lx; y = s->ly; }
 			on = x * x + y * y > 0.09f;
-			lv_obj_set_pos(e->knob, e->kx + (int)(x * e->kr) - lv_obj_get_width(e->knob) / 2, e->ky + (int)(y * e->kr) - lv_obj_get_height(e->knob) / 2);
+			knob_to(e, x, y);
 			tgt = s->target && (!strcmp(s->target, "up") || !strcmp(s->target, "down") || !strcmp(s->target, "left") || !strcmp(s->target, "right"));
 		} else if (e->t == 's') {
 			int right = !strcmp(e->id, "rs");
 			float x = right ? s->rx : s->lx, y = right ? s->ry : s->ly;
 			if (s->nhas >= 0) has = in(s->has, s->nhas, right ? "rsx" : "lsx");
 			on = any(s->on, s->non, right ? "r3" : "l3") || x * x + y * y > 0.09f;
-			lv_obj_set_pos(e->knob, e->kx + (int)(x * e->kr) - lv_obj_get_width(e->knob) / 2, e->ky + (int)(y * e->kr) - lv_obj_get_height(e->knob) / 2);
+			knob_to(e, x, y);
 			tgt = s->target && !strcmp(s->target, e->id);
 		} else {
 			/* N64's C buttons: the right stick's directions */
@@ -260,13 +275,17 @@ void padview_state(padview_t *p, const padstate_t *s)
 			if (e->fill) {
 				float v = !strcmp(e->id, "l2") ? s->l2 : !strcmp(e->id, "r2") ? s->r2 : 0;
 				if (on && v < 1) v = v > 0 ? v : 1;
-				lv_obj_set_width(e->fill, (int)(e->full * (v < 0 ? 0 : v > 1 ? 1 : v)));
+				int fw = (int)(e->full * (v < 0 ? 0 : v > 1 ? 1 : v));
+				if (fw != e->fillw) { e->fillw = fw; lv_obj_set_width(e->fill, fw); }
 				on = 0;                          /* the fill shows it */
 			}
 		}
 		lv_obj_t *o = e->shape;
 		int knob_on = 0;
 		if (e->knob) { knob_on = on; on = 0; }       /* a stick or lever: the knob lights, not the ring */
+		int look = 1 + (has ? 1 : 0) + (on ? 2 : 0) + (tgt ? 4 : 0) + (done ? 8 : 0) + (knob_on ? 16 : 0);
+		if (look == e->look) continue;               /* (nothing about it changed: not repainted) */
+		e->look = look;
 		lv_obj_set_style_opa(o, has ? LV_OPA_COVER : LV_OPA_40, 0);
 		lv_obj_set_style_bg_color(o, on ? PAL.acc : tgt ? PAL.panel_on : PAL.panel, 0);
 		lv_obj_set_style_border_color(o, on || tgt ? PAL.acc : done ? lv_color_mix(PAL.acc, PAL.line, 110) : PAL.line, 0);
