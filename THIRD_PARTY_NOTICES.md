@@ -7,7 +7,8 @@ notices follow in full.
 Not in this list, because they are separate programs with their own source:
 
 - **MiSTer_phosphor** (Phosphor's Main) and **menu_phosphor.rbf** (Phosphor's menu core) are GPL
-  builds of MiSTer's Main and Menu core; their source and licence are in SOURCE.md and licenses/.
+  builds of MiSTer's Main and Menu core by Alexey Melnikov (Sorgelig) and the MiSTer-devel contributors,
+  with Main_MiSTer_Physical_Disc by Anime0t4ku and bonna79 and odelot's RetroAchievements Main merged in; their source and licence are in SOURCE.md and licenses/.
   The menu core's CRT modes use the native video path (rtl/native_video_*) from Retro-Remake's
   menu_ConsoleMode (https://github.com/Retro-Remake/menu_consolemode, GPL-3.0-or-later).
 - **RetroSpy, Phosphor edition** (its own release, which Phosphor for Windows can install into RetroSpy\ next to
