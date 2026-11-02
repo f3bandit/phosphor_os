@@ -105,7 +105,11 @@ See [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/
 ## Credits
 
 - **Taki and Retro Remake**, for making the SuperStation One, such excellent hardware.
-- **MiSTer-devel** and the MiSTer community: MiSTer's Linux, Main, the menu core and the cores.
+- **Alexey Melnikov (Sorgelig)**, **MiSTer-devel** and the MiSTer community: MiSTer's Linux, Main, the menu core
+  and the cores. Phosphor's Main and menu core are forks of theirs, with their history and authors kept.
+- **Retro Remake**'s menu_ConsoleMode: the native video path for the menu core's CRT modes (GPL-3.0).
+- **RetroSpy** by **zoggins** and the RetroSpy contributors, a fork of **jaburns**' NintendoSpy (GPL-3.0): the
+  base of RetroSpy's Phosphor edition.
 - **Disc support:** Main_MiSTer_Physical_Disc by **Anime0t4ku and bonna79** (GPL-3.0), in phosphor-main.
 - **RetroAchievements:** **odelot**'s MiSTer RetroAchievements Main and cores (GPL-3.0), and
   **rcheevos** by the RetroAchievements team (MIT); achievements and badges from retroachievements.org.
