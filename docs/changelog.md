@@ -3,6 +3,15 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.68
+
+### Fixed
+- **Memory cards that answer in software weren't seen** (the PSxMemCard Gen2 and other sd2psx-based cards,
+  the same firmware Retro Remake's cards use). Phosphor's front ports sent a card's bytes back to back; a PS1
+  leaves a short pause between them, and these cards need it to get the next byte ready. The menu core now
+  leaves 30 µs between a memory card's bytes, as a PS1 does (controllers unchanged). A full backup takes
+  about 4 seconds longer.
+
 ## 0.27.67
 
 ### Phosphor for Windows 0.2.55
