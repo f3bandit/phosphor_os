@@ -202,6 +202,22 @@ static void name_disc(sqlite3 *db, const char *type, const char *serial, const c
 	pthread_mutex_unlock(&lk);
 }
 
+/* naming a disc can take half a minute the first time a system's disc goes in (libretro's list for it is
+   fetched and loaded, ref_load): it's done here, with its own connection to the library, so phosphord keeps
+   answering everything else (the TV menu waited on it: 27 s frozen, Nov 3 2026). Until it's done the disc
+   shows under Main's name for it. */
+static void *name_thread(void *arg)
+{
+	char *job = arg;                       /* key \t type \t serial \t label */
+	char *f[4] = { job };
+	for (int i = 1; i < 4; i++) { f[i] = f[i - 1] ? strchr(f[i - 1], '\t') : NULL; if (f[i]) *f[i]++ = 0; }
+	sqlite3 *db = db_open();
+	if (db && f[3]) name_disc(db, f[1], f[2], f[3], f[0]);
+	if (db) sqlite3_close_v2(db);
+	free(job);
+	return NULL;
+}
+
 static const char *reason(const char *state, const char *type, const char *mgl, int core_ok)
 {
 	if (!strcmp(state, "unreadable")) return "can't be read: clean it and try again";
@@ -267,7 +283,14 @@ cJSON *disc_json(sqlite3 *db)
 		int fresh = strcmp(k.key, key) != 0;
 		if (fresh) { memset(&k, 0, sizeof(k)); snprintf(k.key, sizeof(k.key), "%s", key); }
 		pthread_mutex_unlock(&lk);
-		if (fresh) name_disc(db, type, serial, label, key);
+		if (fresh) {
+			size_t cap = strlen(key) + strlen(type) + strlen(serial) + strlen(label) + 4;
+			char *job = malloc(cap);
+			pthread_t t;
+			if (job) snprintf(job, cap, "%s\t%s\t%s\t%s", key, type, serial, label);
+			if (job && pthread_create(&t, NULL, name_thread, job) == 0) pthread_detach(t);
+			else { free(job); name_disc(db, type, serial, label, key); }   /* no thread: as before */
+		}
 		pthread_mutex_lock(&lk);
 		cJSON_AddStringToObject(o, "title", k.title[0] ? k.title : (*msys ? msys : "Disc"));
 		if (k.game_id) cJSON_AddNumberToObject(o, "game_id", (double)k.game_id);

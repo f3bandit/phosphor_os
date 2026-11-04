@@ -237,6 +237,20 @@ static int ref_load(sqlite3 *db, const char *lr, int disc)
 	snprintf(url, sizeof(url), "%s/%s/%s.dat", LR_DB, disc ? "redump" : "no-intro", esc);
 	int rc = net_get_file(url, dest);
 	if (rc < 0) return -1;
+	/* every list is fetched before the library is written to: a write is never held open over the network
+	   (the TV menu's own writes would wait on it) */
+	char dl[8][800];
+	int drc[8] = { 0 };
+	for (int i = 0; DETAIL_LISTS[i]; i++) {
+		snprintf(url, sizeof(url), "%s/%s/%s.dat", LR_DB, DETAIL_LISTS[i], esc);
+		snprintf(dl[i], sizeof(dl[i]), "%s/%s.dat", dir, DETAIL_LISTS[i]);
+		drc[i] = net_get_file(url, dl[i]);
+		if (drc[i] < 0) {
+			for (int j = 0; j <= i; j++) unlink(dl[j]);
+			unlink(dest);
+			return -1;
+		}
+	}
 	load_t l = { .db = db, .lr = lr };
 	db_exec(db, "BEGIN");
 	sqlite3_stmt *del;
@@ -262,13 +276,8 @@ static int ref_load(sqlite3 *db, const char *lr, int disc)
 	sqlite3_prepare_v2(db, q1, -1, &l.upd_crc, NULL);
 	sqlite3_prepare_v2(db, q2, -1, &l.upd_serial, NULL);
 	sqlite3_prepare_v2(db, q3, -1, &l.upd_name, NULL);
-	for (int i = 0; DETAIL_LISTS[i]; i++) {
-		snprintf(url, sizeof(url), "%s/%s/%s.dat", LR_DB, DETAIL_LISTS[i], esc);
-		snprintf(dest, sizeof(dest), "%s/%s.dat", dir, DETAIL_LISTS[i]);
-		int r = net_get_file(url, dest);
-		if (r < 0) { db_exec(db, "ROLLBACK"); sqlite3_finalize(l.upd_crc); sqlite3_finalize(l.upd_serial); sqlite3_finalize(l.upd_name); return -1; }
-		if (r == 0) { parse_dat(dest, on_detail, &l); unlink(dest); }
-	}
+	for (int i = 0; DETAIL_LISTS[i]; i++)
+		if (drc[i] == 0) { parse_dat(dl[i], on_detail, &l); unlink(dl[i]); }
 	sqlite3_finalize(l.upd_crc);
 	sqlite3_finalize(l.upd_serial);
 	sqlite3_finalize(l.upd_name);
