@@ -8,6 +8,7 @@
  * anywhere.
  *   PHOS_BTCTL, PHOS_BLUETOOTHCTL, PHOS_BT_SYS: the tools and /sys/class/bluetooth, for tests */
 #include "bt.h"
+#include "btfix.h"
 #include "log.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -207,6 +208,7 @@ static void *pair_thread(void *arg)
 int bt_pair_start(void)
 {
 	if (!adapter_present()) return -1;
+	if (btfix_busy()) return 2;                   /* Bluetooth is being repaired or changed */
 	pthread_mutex_lock(&lk);
 	if (st.busy) { pthread_mutex_unlock(&lk); return 1; }
 	st.busy = 1;

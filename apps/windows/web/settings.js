@@ -1626,11 +1626,36 @@ class AppSettings {
 		this.every(3000, async () => { await au(); return true; });
 	}
 
-	/* ---------- Devices (view only: pairing and changes are made on the SS1 itself) ---------- */
+	/* ---------- Devices (view only: pairing and changes are made on the SS1 itself; Bluetooth can be checked and repaired) ---------- */
 	async tDevBt(b) {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>
-			<div class="panel"><h2>Bluetooth</h2><p class="note">What's paired with the SuperStation, and what's connected now. Pairing, forgetting and disconnecting are done on the SS1 itself (Settings › Bluetooth), so nothing here can change them.</p></div></div>`));
+			<div class="panel"><h2>Bluetooth</h2><p class="note">What's paired with the SuperStation, and what's connected now. Pairing, forgetting and disconnecting are done on the SS1 itself (Settings › Bluetooth), so nothing here can change them.</p>
+			<h2 style="margin-top:1.2rem">Bluetooth not working?</h2><p class="note">Controllers won't pair, pairings are gone after every restart, or Bluetooth won't switch on: <b>Check</b> looks for what's wrong and changes nothing; <b>Repair Bluetooth</b> fixes it. The repair keeps a copy of the pairings on the SD card first, repairs or rebuilds MiSTer's pairings image, takes back pairings saved where they'd be lost, makes room in it, switches Bluetooth back on and checks again. Bluetooth controllers disconnect for a few seconds. It's the same repair as SS1 Tool's.</p>
+			<div class="acts"><button class="btn" id="bt_check" data-nav>Check</button><button class="btn primary" id="bt_fix" data-nav>Repair Bluetooth</button></div>
+			<div id="bt_fixout" class="note"></div></div></div>`));
+		const fixOut = (j, done) => {
+			const f = j.found || [], L = j.log || [];
+			$("#bt_fixout").innerHTML = (j.result ? `<p><b>${j.good ? "✓" : "⚠"} ${esc(j.result)}</b></p>` : "")
+				+ (f.length ? `<ul>${f.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "")
+				+ (done && L.length ? `<details><summary>What was done</summary><pre style="white-space:pre-wrap">${esc(L.join("\n"))}</pre></details>` : "");
+		};
+		$("#bt_check").onclick = async () => {
+			$("#bt_fixout").innerHTML = `<span class="spin"></span> Checking…`;
+			try { fixOut(await ss1({ cmd: "bt_repair", do: "check" }), false); } catch (e) { $("#bt_fixout").textContent = e.message; }
+		};
+		$("#bt_fix").onclick = async () => {
+			if (await askChoice("Repair Bluetooth?", "A copy of the pairings is kept on the SD card first. Bluetooth controllers disconnect for a few seconds.", ["Not now", "Repair"], 1) !== 1) return;
+			$("#bt_fixout").innerHTML = `<span class="spin"></span> Repairing…`;
+			try {
+				await ss1({ cmd: "bt_repair", do: "repair" });
+				for (let i = 0; i < 120 && alive(); i++) {
+					await new Promise(r => setTimeout(r, 1500));
+					const j = await ss1({ cmd: "bt_repair" });
+					if (!j.busy) { fixOut(j, true); toast(j.result || "Done"); return; }
+				}
+			} catch (e) { $("#bt_fixout").textContent = e.message; }
+		};
 		const draw = async () => {
 			let s;
 			try { s = await ss1({ cmd: "bluetooth" }); } catch (e) { if (alive()) $("#bt").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
