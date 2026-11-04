@@ -16,7 +16,7 @@ documentation, mockups and artwork):
 Not covered: everything LICENSE.md lists as not Phosphor's own, which keeps its own licence: the
 third-party code in frontend/third_party/ and system/third_party/, the fonts, the fan-made box art in
 apps/windows/fanart/ and achievement.wav (see THIRD_PARTY_NOTICES.md). The MiSTer Main and menu core
-forks are separate repositories (phosphor-main, phosphor-menu) with their own permission files.
+forks are separate repositories (phosphor-main, phosphor-menu) under the GNU GPL only.
 
 This permission is personal to Retro Remake and Taki Udon and isn't transferable, except to people
 working on Retro Remake products for them. Everyone else gets this code under the PolyForm Noncommercial License only.
