@@ -3,6 +3,18 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.69
+
+### Fixed
+- **The menu froze for up to half a minute when a disc went in.** The first disc of a system (the first
+  PlayStation disc, the first Saturn disc...) fetches libretro's list of that system's games to name it, and
+  phosphord did that while every other request waited, so the menu stopped answering. The disc is now named
+  in the background: the menu keeps working, and the disc shows its system's name for a moment, then the
+  game's name and box art.
+- **The disc drive logged read errors every minute** with a game disc in (a PlayStation disc in the dock's
+  drive). The SD card repair's check asked every drive on the system who it was, the disc drive included;
+  it now asks only the drives that are mounted.
+
 ## 0.27.68
 
 ### Fixed
