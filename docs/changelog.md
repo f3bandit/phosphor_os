@@ -3,6 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.70
+
+### Bluetooth repair (Phosphor for Windows 0.2.56)
+- **Devices › Bluetooth › Bluetooth not working?** in Phosphor for Windows, for when controllers won't pair,
+  pairings are gone after every restart, or Bluetooth won't switch on. **Check** finds what's wrong and changes
+  nothing; **Repair Bluetooth** keeps a copy of MiSTer's pairings image on the SD card, repairs it (or rebuilds it
+  with every pairing that can be read), takes back pairings saved where they'd be lost, makes room in it, switches
+  Bluetooth back on and checks again; **Start fresh** starts over with a blank pairings image (MiSTer's own reset).
+- The new bt-repair module does it: the same repair as SS1 Tool's. Pairing on the TV waits while Bluetooth is
+  being repaired or changed.
+
 ## 0.27.69
 
 ### Fixed
