@@ -72,7 +72,7 @@
 static const char *ALLOWED[] = {
 	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "not_game", "scrape_sources", "scrape_accounts", "scrape_progress",
-	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth",
+	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth", "bt_repair",
 	"system", "samba", "power", "guard", "ua", "retrospy", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_local", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
 	"disc", "disc_play", "disc_eject", "disc_enable", "disc_copy",
 	/* RetroAchievements: looking and the Web API key; logging in (a password) only on the MiSTer itself */

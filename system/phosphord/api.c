@@ -119,6 +119,7 @@
 #include "backup.h"
 #include "memcard.h"
 #include "bt.h"
+#include "btfix.h"
 #include "cores.h"
 #include "samba.h"
 #include "storage.h"
@@ -1034,6 +1035,7 @@ static char *cmd_bluetooth(cJSON *req)
 		if (!strcmp(d, "pair")) {
 			int r = bt_pair_start();
 			if (r < 0) return fail("No Bluetooth adapter");
+			if (r == 2) return fail("Bluetooth is being repaired or changed: try again in a moment");
 		}
 		else if (!strcmp(d, "cancel")) bt_pair_cancel();
 		else if (!strcmp(d, "forget")) { if (bt_forget(mac, err, sizeof(err))) return fail(err); }
@@ -1364,6 +1366,58 @@ static char *cmd_update(cJSON *req)
 	return reply(o);
 }
 
+/* the script's lines: found[] (problems), log[] (what it did), result and whether it's ok */
+static void btfix_lines(cJSON *o, char *out)
+{
+	cJSON *found = cJSON_AddArrayToObject(o, "found"), *logs = cJSON_AddArrayToObject(o, "log");
+	char *save = NULL;
+	const char *res = NULL;
+	int good = 0;
+	for (char *l = out ? strtok_r(out, "\n", &save) : NULL; l; l = strtok_r(NULL, "\n", &save)) {
+		char *bar = strchr(l, '|');
+		if (!bar) continue;
+		*bar = 0;
+		const char *t = bar + 1;
+		if (!strcmp(l, "FOUND")) cJSON_AddItemToArray(found, cJSON_CreateString(t));
+		else if (!strcmp(l, "LOG") || !strcmp(l, "STEP")) cJSON_AddItemToArray(logs, cJSON_CreateString(t));
+		else if (!strcmp(l, "RESULT")) {
+			good = !strncmp(t, "ok|", 3);
+			res = strchr(t, '|') ? strchr(t, '|') + 1 : t;
+		}
+	}
+	cJSON_AddStringToObject(o, "result", res ? res : "");
+	cJSON_AddBoolToObject(o, "good", good);
+}
+
+/* {"cmd":"bt_repair"}: the last repair; "do":"check" what's wrong now; "do":"repair" starts the repair */
+static char *cmd_bt_repair(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (!btfix_installed()) return fail("The bt-repair module isn't installed: update Phosphor");
+	cJSON *o = ok();
+	if (d && !strcmp(d, "check")) {
+		char *out = btfix_check();
+		if (!out) { cJSON_Delete(o); return fail("The Bluetooth check didn't run"); }
+		btfix_lines(o, out);
+		free(out);
+		return reply(o);
+	}
+	if (d && !strcmp(d, "repair")) {
+		int r = btfix_repair_start();
+		if (r == 1) { cJSON_Delete(o); return fail("Bluetooth is already being repaired"); }
+		if (r < 0) { cJSON_Delete(o); return fail("The repair couldn't start"); }
+	} else if (d && *d) { cJSON_Delete(o); return fail("do: check or repair"); }
+	int busy = 0;
+	time_t at = 0;
+	char *out = NULL;
+	btfix_last(&busy, &at, &out);
+	cJSON_AddBoolToObject(o, "busy", busy);
+	cJSON_AddNumberToObject(o, "at", (double)at);
+	if (!busy && out) btfix_lines(o, out);
+	free(out);
+	return reply(o);
+}
+
 static char *cmd_backup(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -1673,6 +1727,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	}
 	else if (!strcmp(c->valuestring, "memcard")) out = cmd_memcard(req);
 	else if (!strcmp(c->valuestring, "bluetooth")) out = cmd_bluetooth(req);
+	else if (!strcmp(c->valuestring, "bt_repair")) out = cmd_bt_repair(req);
 	else if (!strcmp(c->valuestring, "cores")) {
 		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 		if (d && !strcmp(d, "update")) {
