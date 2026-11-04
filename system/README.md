@@ -49,7 +49,7 @@ it from the command line.
   anywhere: pairings stay in MiSTer's `linux/bluetooth`.
 - **Bluetooth repair** (`btfix.c`): the bt-repair module (SS1 Tool's own `ss1_bt_repair.sh`) checks for and fixes a
   "soft bricked" Bluetooth: a damaged, unmounted, read-only or full pairings image, pairings saved under it where
-  they'd be lost, Bluetooth left off. `{"cmd":"bt_repair","do":"check"}` answers at once; `"do":"repair"` runs in
+  they'd be lost, Bluetooth left off. `{"cmd":"bt_repair","do":"check"}` answers at once; `"do":"repair"` (or `"reset"`, a blank pairings image) runs in
   the background, `{"cmd":"bt_repair"}` gives the last one (found, log, result, good). Pairing waits while it runs
   (and while SS1 Tool or Console Mode for Windows change Bluetooth: `/tmp/ss1_bt.busy`).
 - **Backups**: drives the backup-agent module: its snapshots (SD card, NVMe or NAS), back up now, preview

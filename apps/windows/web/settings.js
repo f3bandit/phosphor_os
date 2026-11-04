@@ -1632,7 +1632,8 @@ class AppSettings {
 		b.append(h(`<div class="split"><div class="list" id="bt"><div class="empty"><span class="spin"></span></div></div>
 			<div class="panel"><h2>Bluetooth</h2><p class="note">What's paired with the SuperStation, and what's connected now. Pairing, forgetting and disconnecting are done on the SS1 itself (Settings › Bluetooth), so nothing here can change them.</p>
 			<h2 style="margin-top:1.2rem">Bluetooth not working?</h2><p class="note">Controllers won't pair, pairings are gone after every restart, or Bluetooth won't switch on: <b>Check</b> looks for what's wrong and changes nothing; <b>Repair Bluetooth</b> fixes it. The repair keeps a copy of the pairings on the SD card first, repairs or rebuilds MiSTer's pairings image, takes back pairings saved where they'd be lost, makes room in it, switches Bluetooth back on and checks again. Bluetooth controllers disconnect for a few seconds. It's the same repair as SS1 Tool's.</p>
-			<div class="acts"><button class="btn" id="bt_check" data-nav>Check</button><button class="btn primary" id="bt_fix" data-nav>Repair Bluetooth</button></div>
+			<div class="acts"><button class="btn" id="bt_check" data-nav>Check</button><button class="btn primary" id="bt_fix" data-nav>Repair Bluetooth</button><button class="btn" id="bt_reset" data-nav>Start fresh</button></div>
+			<p class="note"><b>Start fresh</b>, when a repair isn't enough: Bluetooth starts over with a blank pairings image (MiSTer's own reset), so every controller is unpaired and has to be paired again. A copy of the old image is kept on the SD card.</p>
 			<div id="bt_fixout" class="note"></div></div></div>`));
 		const fixOut = (j, done) => {
 			const f = j.found || [], L = j.log || [];
@@ -1644,11 +1645,11 @@ class AppSettings {
 			$("#bt_fixout").innerHTML = `<span class="spin"></span> Checking…`;
 			try { fixOut(await ss1({ cmd: "bt_repair", do: "check" }), false); } catch (e) { $("#bt_fixout").textContent = e.message; }
 		};
-		$("#bt_fix").onclick = async () => {
-			if (await askChoice("Repair Bluetooth?", "A copy of the pairings is kept on the SD card first. Bluetooth controllers disconnect for a few seconds.", ["Not now", "Repair"], 1) !== 1) return;
-			$("#bt_fixout").innerHTML = `<span class="spin"></span> Repairing…`;
+		const runFix = async (what, title, text, button, busyText) => {
+			if (await askChoice(title, text, ["Not now", button], 1) !== 1) return;
+			$("#bt_fixout").innerHTML = `<span class="spin"></span> ${busyText}`;
 			try {
-				await ss1({ cmd: "bt_repair", do: "repair" });
+				await ss1({ cmd: "bt_repair", do: what });
 				for (let i = 0; i < 120 && alive(); i++) {
 					await new Promise(r => setTimeout(r, 1500));
 					const j = await ss1({ cmd: "bt_repair" });
@@ -1656,6 +1657,8 @@ class AppSettings {
 				}
 			} catch (e) { $("#bt_fixout").textContent = e.message; }
 		};
+		$("#bt_fix").onclick = () => runFix("repair", "Repair Bluetooth?", "A copy of the pairings is kept on the SD card first. Bluetooth controllers disconnect for a few seconds.", "Repair", "Repairing…");
+		$("#bt_reset").onclick = () => runFix("reset", "Start Bluetooth fresh?", "Every controller is unpaired: MiSTer makes a blank pairings image, and each controller has to be paired again. A copy of the old image is kept on the SD card.", "Start fresh", "Starting fresh…");
 		const draw = async () => {
 			let s;
 			try { s = await ss1({ cmd: "bluetooth" }); } catch (e) { if (alive()) $("#bt").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }

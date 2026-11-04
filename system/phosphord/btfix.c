@@ -27,6 +27,12 @@ int btfix_repair_start(void)
 	return modjob_start(&mj, "repair", a, 180);
 }
 
+int btfix_reset_start(void)
+{
+	const char *a[] = { "reset", NULL };
+	return modjob_start(&mj, "reset", a, 120);
+}
+
 void btfix_last(int *busy, time_t *at, char **out)
 {
 	char job[24];
