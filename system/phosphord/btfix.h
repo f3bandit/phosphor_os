@@ -10,6 +10,8 @@ int btfix_installed(void);
 char *btfix_check(void);
 /* the repair, in the background: 0 started, 1 already running, -1 not installed */
 int btfix_repair_start(void);
+/* start over with a blank pairings image (MiSTer's S45bluetooth renew): 0 started, 1 busy, -1 not installed */
+int btfix_reset_start(void);
 /* the last repair: busy, when it ended, its output (malloc'd, caller frees) */
 void btfix_last(int *busy, time_t *at, char **out);
 /* MiSTer's Bluetooth is being changed (a repair here, or SS1 Tool / Console Mode for Windows): don't pair */

@@ -1389,7 +1389,8 @@ static void btfix_lines(cJSON *o, char *out)
 	cJSON_AddBoolToObject(o, "good", good);
 }
 
-/* {"cmd":"bt_repair"}: the last repair; "do":"check" what's wrong now; "do":"repair" starts the repair */
+/* {"cmd":"bt_repair"}: the last repair; "do":"check" what's wrong now; "do":"repair" starts the repair; "do":"reset"
+   starts over with a blank pairings image */
 static char *cmd_bt_repair(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -1402,11 +1403,11 @@ static char *cmd_bt_repair(cJSON *req)
 		free(out);
 		return reply(o);
 	}
-	if (d && !strcmp(d, "repair")) {
-		int r = btfix_repair_start();
+	if (d && (!strcmp(d, "repair") || !strcmp(d, "reset"))) {
+		int r = !strcmp(d, "reset") ? btfix_reset_start() : btfix_repair_start();
 		if (r == 1) { cJSON_Delete(o); return fail("Bluetooth is already being repaired"); }
 		if (r < 0) { cJSON_Delete(o); return fail("The repair couldn't start"); }
-	} else if (d && *d) { cJSON_Delete(o); return fail("do: check or repair"); }
+	} else if (d && *d) { cJSON_Delete(o); return fail("do: check, repair or reset"); }
 	int busy = 0;
 	time_t at = 0;
 	char *out = NULL;
