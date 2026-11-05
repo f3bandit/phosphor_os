@@ -12360,15 +12360,23 @@ void ui_tick(void)
 	wall_tick();
 	TT("info+alerts+wall");
 	/* Phosphor's releases on GitHub: a minute after start-up, then every 30 min, never while a game runs
-	   (phosphord asks in the background; its answer is read 20 s later) */
+	   (phosphord asks GitHub in the background; its answer is read 20 s later). Both asked in the background:
+	   just after start-up phosphord can take a second to answer, and the menu stood still (menu_walk --cold) */
 	{
 		static uint32_t next = 60000, follow;
+		static int asked;                          /* 1 the check sent, 2 its answer asked for */
 		if (now >= next && !mainlink_in_game()) {
 			next = now + 30u * 60u * 1000u;
-			cJSON_Delete(api_call("{\"cmd\":\"update\",\"do\":\"check\"}"));   /* poll-ok: every 30 min */
+			api_bg_ask("upd_check", "{\"cmd\":\"update\",\"do\":\"check\"}");
 			follow = now + 20000;
+			asked = 1;
 		}
-		if (follow && now >= follow) { follow = 0; cJSON *r = api_call("{\"cmd\":\"update\"}");   /* poll-ok: once, 20 s after that */ upo_apply(r); cJSON_Delete(r); }
+		if (follow && now >= follow) { follow = 0; api_bg_ask("upd_follow", "{\"cmd\":\"update\"}"); asked = 2; }
+		if (asked) {
+			cJSON_Delete(api_bg_take("upd_check"));
+			cJSON *r = asked == 2 ? api_bg_take("upd_follow") : NULL;
+			if (r) { upo_apply(r); cJSON_Delete(r); asked = 0; }
+		}
 	}
 	saver_tick(now);
 	{ static uint32_t pn_next; if (now >= pn_next) { pn_next = now + 500; pn_check(); } }   /* a game port's note */
