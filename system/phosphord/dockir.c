@@ -64,6 +64,38 @@ static int usb_find(const char *product, char *dev, size_t n, char *bcd, size_t 
 	return found;
 }
 
+/* the receiver: product pico_ir_keyboard, or, switched off (deauthorized; older kernels drop its name then),
+   1c4f:0002 with authorized 0. *auth: 1 on, 0 switched off. 0 found */
+static int ir_find(char *dev, size_t n, char *bcd, size_t bn, int *auth)
+{
+	DIR *d = opendir(usb_sys());
+	if (!d) return -1;
+	struct dirent *e;
+	int found = -1;
+	while ((e = readdir(d)) && found) {
+		if (e->d_name[0] == '.' || strchr(e->d_name, ':')) continue;
+		char p[512], v[96], vid[8], pid[8], a[8];
+		snprintf(p, sizeof(p), "%s/%s/authorized", usb_sys(), e->d_name);
+		if (read_line(p, a, sizeof(a))) continue;
+		snprintf(p, sizeof(p), "%s/%s/product", usb_sys(), e->d_name);
+		if (read_line(p, v, sizeof(v))) v[0] = 0;
+		int on = atoi(a) != 0;
+		if (strcmp(v, "pico_ir_keyboard")) {
+			if (on) continue;
+			snprintf(p, sizeof(p), "%s/%s/idVendor", usb_sys(), e->d_name);
+			if (read_line(p, vid, sizeof(vid)) || strcmp(vid, "1c4f")) continue;
+			snprintf(p, sizeof(p), "%s/%s/idProduct", usb_sys(), e->d_name);
+			if (read_line(p, pid, sizeof(pid)) || strcmp(pid, "0002")) continue;
+		}
+		snprintf(dev, n, "%s", e->d_name);
+		if (bcd) { snprintf(p, sizeof(p), "%s/%s/bcdDevice", usb_sys(), e->d_name); if (read_line(p, bcd, bn)) bcd[0] = 0; }
+		if (auth) *auth = on;
+		found = 0;
+	}
+	closedir(d);
+	return found;
+}
+
 /* /dev/hidrawN of the receiver's keyboard interface (<dev>:1.0) */
 static int hidraw_of(const char *dev, char *out, size_t n)
 {
@@ -130,13 +162,93 @@ int dockir_check_uf2(const char *path, char *err, size_t n)
 	return 0;
 }
 
-cJSON *dockir_json(void)
+/* on/off: config/dock_ir.off switches the receiver off (USB deauthorized), kept off by the watcher below
+   through re-plugs and restarts. The TV menu and Phosphor for Windows both set it here, so they agree */
+static const char *off_flag(void)
+{
+	static char p[600];
+	snprintf(p, sizeof(p), "%s/dock_ir.off", p_config());
+	return p;
+}
+int dockir_enabled(void) { return access(off_flag(), F_OK) != 0; }
+
+static pthread_cond_t wake = PTHREAD_COND_INITIALIZER;
+static int check_now;
+
+/* the receiver switched on or off to match the setting (only when it differs: a sysfs read otherwise) */
+static void ir_apply(void)
+{
+	char dev[64], p[512];
+	int auth = 1;
+	if (ir_find(dev, sizeof(dev), NULL, 0, &auth)) return;
+	int want = dockir_enabled();
+	if (auth == want) return;
+	pthread_mutex_lock(&lk);
+	int busy = job.busy;
+	pthread_mutex_unlock(&lk);
+	if (busy) return;                                          /* (updating: it restarts by itself) */
+	snprintf(p, sizeof(p), "%s/%s/authorized", usb_sys(), dev);
+	int fd = open(p, O_WRONLY | O_CLOEXEC);
+	if (fd < 0 || write(fd, want ? "1" : "0", 1) != 1) plog("dock IR: couldn't switch the receiver %s: %s", want ? "on" : "off", strerror(errno));
+	else plog("dock IR: receiver switched %s", want ? "on" : "off");
+	if (fd >= 0) close(fd);
+}
+
+/* every 3 s, or at once when the setting changes: a dock plugged back in (or a restart) comes up on */
+static void *ir_watch(void *u)
+{
+	(void)u;
+	for (;;) {
+		ir_apply();
+		pthread_mutex_lock(&lk);
+		if (!check_now) {
+			struct timespec ts;
+			clock_gettime(CLOCK_REALTIME, &ts);
+			ts.tv_sec += 3;
+			pthread_cond_timedwait(&wake, &lk, &ts);
+		}
+		check_now = 0;
+		pthread_mutex_unlock(&lk);
+	}
+	return NULL;
+}
+
+void dockir_start(void)
+{
+	pthread_t t;
+	if (pthread_create(&t, NULL, ir_watch, NULL) == 0) pthread_detach(t);
+}
+
+int dockir_set_enabled(int on, char *err, size_t n)
+{
+	pthread_mutex_lock(&lk);
+	int busy = job.busy;
+	pthread_mutex_unlock(&lk);
+	if (busy) { snprintf(err, n, "The IR receiver is being updated"); return -1; }
+	if (on) {
+		if (unlink(off_flag()) && errno != ENOENT) { snprintf(err, n, "couldn't change the setting: %s", strerror(errno)); return -1; }
+	} else {
+		mkdirs(p_config());
+		FILE *f = fopen(off_flag(), "w");
+		if (!f) { snprintf(err, n, "couldn't change the setting: %s", strerror(errno)); return -1; }
+		fclose(f);
+	}
+	pthread_mutex_lock(&lk);
+	check_now = 1;
+	pthread_cond_signal(&wake);                                /* (switched by the watcher, not here) */
+	pthread_mutex_unlock(&lk);
+	return 0;
+}
+
+cJSON *dockir_json(int brief)
 {
 	cJSON *o = cJSON_CreateObject();
 	char dev[64], bcd[16] = "", id[16] = "";
-	int present = usb_find("pico_ir_keyboard", dev, sizeof(dev), bcd, sizeof(bcd)) == 0;
-	if (present) read_id(dev, id, sizeof(id));
+	int auth = 1;
+	int present = ir_find(dev, sizeof(dev), bcd, sizeof(bcd), &auth) == 0;
+	if (present && auth && !brief) read_id(dev, id, sizeof(id));   /* (a USB request: not for the TV's poll) */
 	cJSON_AddBoolToObject(o, "present", present);
+	cJSON_AddBoolToObject(o, "enabled", dockir_enabled());
 	cJSON_AddStringToObject(o, "firmware", id);
 	cJSON_AddBoolToObject(o, "updatable", !strncmp(id, UPDATABLE, strlen(UPDATABLE)));
 	cJSON_AddStringToObject(o, "version", bcd);
@@ -260,6 +372,7 @@ done:
 int dockir_update_start(char *err, size_t n)
 {
 	char dev[64], id[16];
+	if (!dockir_enabled()) { snprintf(err, n, "Turn the dock IR remote on first"); return -1; }
 	if (usb_find("pico_ir_keyboard", dev, sizeof(dev), NULL, 0)) { snprintf(err, n, "The dock's IR receiver isn't there"); return -1; }
 	read_id(dev, id, sizeof(id));
 	if (strncmp(id, UPDATABLE, strlen(UPDATABLE))) { snprintf(err, n, "This IR receiver's firmware can't be updated from the SS1: flash it once from a PC (BOOTSEL + MCU RST in the dock's NVMe slot)"); return -1; }

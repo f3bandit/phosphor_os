@@ -6,8 +6,13 @@
 #include "cJSON.h"
 
 /* {present, firmware ("DIRUP001": updatable from here; "" DockIR without it), version, file (a .uf2 sent
-   from the PC, waiting), job {busy, state, message, ok}} */
-cJSON *dockir_json(void);
+   from the PC, waiting), job {busy, state, message, ok}}; 
+   enabled: the on/off setting. brief: without the firmware id (a USB request), for a repeating poll */
+cJSON *dockir_json(int brief);
+/* the on/off setting (config/dock_ir.off), the receiver switched by phosphord's watcher in the background */
+int dockir_enabled(void);
+int dockir_set_enabled(int on, char *err, size_t n);
+void dockir_start(void);      /* the watcher: keeps the receiver on or off as set, through re-plugs */
 /* the .uf2 that was sent (phosphor/updates/dockir.uf2) onto the receiver, in the background: 0 started,
    -1 with err (not present, not updatable, no file, busy) */
 int dockir_update_start(char *err, size_t n);

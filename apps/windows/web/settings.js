@@ -1705,8 +1705,10 @@ class AppSettings {
 		const alive = this.alive;
 		b.append(h(`<div class="split"><div class="list" id="dirl"><div class="empty"><span class="spin"></span></div></div>
 			<div class="panel"><h2>Dock IR remote <button class="btn" id="dir_help" data-nav title="How to put the receiver in flash mode">?</button></h2>
-			<p class="note">The SuperDock's IR receiver turns the remote's buttons into keys for the SS1. Its firmware can be updated from here: choose a firmware file (.uf2) on this PC, and the SS1 puts it on.</p>
-			<div class="acts"><button class="btn primary" id="dir_pick" data-nav>Update from a file…</button><input type="file" id="dir_file" accept=".uf2" hidden></div>
+			<p class="note">The SuperDock's IR receiver turns the remote's buttons into keys for the SS1. Turn it off if the remote also works another box (a RetroTink 4K) and the SS1 reacts to it too: it's the same switch as Settings › Dock IR remote on the SS1, and stays off after a restart.</p>
+			<div class="acts"><button class="btn primary" id="dir_t" data-nav disabled>Turn off</button></div>
+			<p class="note" style="margin-top:1.2rem">Its firmware can be updated from here: choose a firmware file (.uf2) on this PC, and the SS1 puts it on.</p>
+			<div class="acts"><button class="btn" id="dir_pick" data-nav>Update from a file…</button><input type="file" id="dir_file" accept=".uf2" hidden></div>
 			<p class="note" id="dir_st"></p></div></div>`));
 		$("#dir_help").onclick = () => askChoice("Flashing the receiver by hand",
 			"Its first firmware that can be updated from here (and a way back, whatever it runs) goes on from a PC:\n\n" +
@@ -1716,17 +1718,32 @@ class AppSettings {
 			"4. A drive called RPI-RP2 appears on this PC. Copy the .uf2 file onto it: it flashes and the drive goes away by itself.\n" +
 			"5. Close the cover, connect the dock to the SS1 again and switch it on.\n\n" +
 			"The receiver's bootloader is built into its chip, so this always works, whatever firmware is on it.", ["OK"]);
+		let fw = null, on = true, wasBusy = false;           /* the firmware id is a USB request on the SS1: asked only when it can have changed */
 		const draw = async () => {
 			let s;
-			try { s = await ss1({ cmd: "dockir" }); } catch (e) { if (alive()) $("#dirl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			const brief = fw !== null && !wasBusy;
+			try { s = await ss1({ cmd: "dockir", brief }); } catch (e) { if (alive()) $("#dirl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
 			if (!alive()) return false;
 			const j = s.job || {};
-			$("#dirl").innerHTML = !s.present ? `<div class="empty">No dock IR receiver: is the SS1 on its dock?</div>`
-				: `<div class="row net"><span class="n"><b>IR receiver</b><small>on the dock's USB hub</small></span><span class="v"><span class="mpill good">connected</span></span></div>
-				<div class="row net"><span class="n"><b>Firmware</b><small>${s.updatable ? "can be updated from here" : "can't be updated from here yet: flash it once from a PC (?)"}</small></span><span class="v">${esc(s.firmware || "DockIR")} ${s.version ? "· " + esc(s.version) : ""}</span></div>`;
-			$("#dir_pick").disabled = !s.present || !s.updatable || !!j.busy;
+			if (!brief) fw = s.present && s.enabled !== false && !j.busy ? { firmware: s.firmware, updatable: s.updatable } : null;
+			wasBusy = !!j.busy;
+			on = s.enabled !== false;
+			const f = fw || { firmware: "", updatable: false };
+			const html = !s.present ? `<div class="row net"><span class="n"><b>IR remote</b><small>${on ? "on" : "off"} (the SS1's setting)</small></span><span class="v"><span class="mpill ${on ? "good" : "muted"}">${on ? "on" : "off"}</span></span></div><div class="empty">No dock IR receiver: is the SS1 on its dock?</div>`
+				: `<div class="row net"><span class="n"><b>IR remote</b><small>${on ? "the SS1 takes the remote's buttons" : "switched off: the SS1 ignores the remote"}</small></span><span class="v"><span class="mpill ${on ? "good" : "muted"}">${on ? "on" : "off"}</span></span></div>
+				<div class="row net"><span class="n"><b>Firmware</b><small>${!on ? "turn the remote on to see it" : f.updatable ? "can be updated from here" : "can't be updated from here yet: flash it once from a PC (?)"}</small></span><span class="v">${on ? esc(f.firmware || "DockIR") : ""} ${s.version ? "· " + esc(s.version) : ""}</span></div>`;
+			if ($("#dirl").dataset.h !== html) { $("#dirl").innerHTML = html; $("#dirl").dataset.h = html; }
+			$("#dir_t").textContent = on ? "Turn off" : "Turn on";
+			$("#dir_t").disabled = !!j.busy;
+			$("#dir_pick").disabled = !s.present || !on || !f.updatable || !!j.busy;
 			$("#dir_st").innerHTML = j.busy ? `<span class="spin"></span> ${esc(j.message || "Updating…")}` : j.state ? `${j.ok ? "✓" : "⚠"} ${esc(j.message)}` : "";
 			return true;
+		};
+		$("#dir_t").onclick = async () => {
+			$("#dir_t").disabled = true;
+			try { await ss1({ cmd: "dockir", do: on ? "off" : "on", brief: true }); toast(on ? "Dock IR remote off" : "Dock IR remote on"); fw = null; }
+			catch (e) { toast(e.message); }
+			draw();
 		};
 		$("#dir_pick").onclick = () => $("#dir_file").click();
 		$("#dir_file").onchange = async () => {
