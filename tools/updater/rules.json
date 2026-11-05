@@ -206,8 +206,8 @@
   "MultiDatabases/solarus": {
    "category": "hybrid cores",
    "tag": "patch",
-   "why": "Takes over the screen: rebuilt with Phosphor's hooks",
-   "ready": false
+   "why": "Hybrid core: Phosphor's Main starts and stops its engine (tested on the SS1)",
+   "ready": true
   },
   "MultiDatabases/mister-dvd": {
    "category": "hybrid cores",
