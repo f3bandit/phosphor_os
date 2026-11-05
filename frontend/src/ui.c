@@ -85,7 +85,7 @@ static void bg_apply(lv_obj_t *obj)
 
 /* ---------- status bar ---------- */
 
-static lv_obj_t *sb_rs, *sb_rs_text, *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc, *sb_upd;
+static lv_obj_t *sb_rs, *sb_rs_text, *sb_share, *sb_eth, *sb_wifi, *sb_bt, *sb_btn, *sb_clock, *sb_alert, *sb_alert_text, *sb_disc, *sb_upd, *sb_ir;
 
 static void status_bar(void)
 {
@@ -150,6 +150,8 @@ static void status_bar(void)
 	sb_btn = mk_label(btg, FONT_LABEL, PAL.acc, "");   /* superscript count: top-aligned in the row */
 	lv_obj_set_flex_align(btg, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 	lv_obj_set_style_pad_column(btg, S(2), 0);
+	sb_ir = icon_create(right, ICON_IR, is);              /* the dock's IR remote: on, or off (Settings > Dock IR remote) */
+	lv_obj_set_hidden(sb_ir, true);
 	sb_clock = mk_label(right, FONT_BODY, PAL.text, "");
 	lv_obj_set_style_margin_left(sb_clock, S(6), 0);
 }
@@ -293,6 +295,17 @@ static void status_update(void)
 		char n[16] = "";
 		if (s.bt > 0) snprintf(n, sizeof(n), "%d", s.bt);
 		label_set_if(sb_btn, n);
+	}
+	{ /* (set only when it changes: this runs every 2 s) */
+		static int ir_was = -2;
+		if (s.dockir != ir_was) {
+			ir_was = s.dockir;
+			lv_obj_set_hidden(sb_ir, s.dockir < 0);
+			if (s.dockir >= 0) {
+				lv_obj_set_style_text_color(sb_ir, s.dockir ? PAL.text : PAL.icon_off, 0);
+				icon_set_level(sb_ir, s.dockir);
+			}
+		}
 	}
 	char clk[16];
 	time_t t = time(NULL);
@@ -2177,6 +2190,7 @@ static int samba_b(const char *k) { return samba_st && cJSON_IsTrue(cJSON_GetObj
    rest of Settings' once-a-second refresh. dockir_want: a change sent and not answered yet (-1 none) */
 static cJSON *dockir_st;
 static int dockir_want = -1;
+static int status_soon;          /* the status bar checked again on the main loop's next pass */
 static int dockir_on(void) { return dockir_want >= 0 ? dockir_want : !dockir_st || !cJSON_IsFalse(cJSON_GetObjectItem(dockir_st, "enabled")); }
 static void my_ip(char *out, size_t n);
 static void samba_take(cJSON *x)
@@ -2223,6 +2237,7 @@ static void scrape_refresh(void)
 		if (api_ok(x)) { cJSON_Delete(dockir_st); dockir_st = x; } else cJSON_Delete(x);
 		dockir_want = -1;
 		cJSON_Delete(api_bg_take("dockir"));            /* (an answer from before the change) */
+		status_soon = 1;                                 /* (the status bar's IR icon on the next pass, not in 2 s) */
 	} else if (dockir_want < 0 && (x = api_bg_take("dockir"))) {
 		if (api_ok(x)) { cJSON_Delete(dockir_st); dockir_st = x; } else cJSON_Delete(x);
 	}
@@ -12357,7 +12372,7 @@ void ui_tick(void)
 	TT("updcheck");
 	const char *note = input_notice();
 	if (note) toast_show(note);
-	if (now - last_status > 2000 || last_status == 0) { status_update(); last_status = now ? now : 1; }
+	if (now - last_status > 2000 || last_status == 0 || status_soon) { status_soon = 0; status_update(); last_status = now ? now : 1; }
 	TT("saver");
 	/* the controllers on the front ports, live */
 	TT("status");

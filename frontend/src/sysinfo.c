@@ -117,14 +117,56 @@ static int bt_connected(void)
 	return adapters ? conns : -1;
 }
 
+static int read_str(const char *path, char *out, size_t n)
+{
+	FILE *f = fopen(path, "r");
+	if (!f) return -1;
+	if (!fgets(out, (int)n, f)) out[0] = 0;
+	fclose(f);
+	out[strcspn(out, "\r\n")] = 0;
+	return 0;
+}
+
+/* the dock's IR receiver (as phosphord's dockir.c finds it: product pico_ir_keyboard, or 1c4f:0002 switched
+   off) and its setting (phosphor/config/dock_ir.off): sysfs and one file, nothing asked of phosphord */
+static int dockir_state(void)
+{
+	DIR *d = opendir("/sys/bus/usb/devices");
+	if (!d) return -1;
+	struct dirent *e;
+	int found = -1;
+	while (found < 0 && (e = readdir(d))) {
+		if (e->d_name[0] == '.' || strchr(e->d_name, ':')) continue;
+		char p[300], v[64], a[8];
+		snprintf(p, sizeof(p), "/sys/bus/usb/devices/%s/authorized", e->d_name);
+		if (read_str(p, a, sizeof(a))) continue;
+		snprintf(p, sizeof(p), "/sys/bus/usb/devices/%s/product", e->d_name);
+		if (read_str(p, v, sizeof(v))) v[0] = 0;
+		if (!strcmp(v, "pico_ir_keyboard")) { found = atoi(a) != 0; break; }
+		if (atoi(a)) continue;
+		snprintf(p, sizeof(p), "/sys/bus/usb/devices/%s/idVendor", e->d_name);
+		if (read_str(p, v, sizeof(v)) || strcmp(v, "1c4f")) continue;
+		snprintf(p, sizeof(p), "/sys/bus/usb/devices/%s/idProduct", e->d_name);
+		if (!read_str(p, v, sizeof(v)) && !strcmp(v, "0002")) found = 0;
+	}
+	closedir(d);
+	if (found < 0) return -1;
+	const char *fat = getenv("PHOS_FAT");
+	char f[300];
+	snprintf(f, sizeof(f), "%s/phosphor/config/dock_ir.off", fat && *fat ? fat : "/media/fat");
+	return access(f, F_OK) == 0 ? 0 : found;
+}
+
 void sysinfo_read(sysinfo_t *s)
 {
 	s->share = share_mounted();
 	s->ethernet = ethernet_up();
 	s->wifi = wifi_bars();
 	s->bt = bt_connected();
+	s->dockir = dockir_state();
 	fake_value("share", &s->share);
 	fake_value("eth", &s->ethernet);
 	fake_value("wifi", &s->wifi);
 	fake_value("bt", &s->bt);
+	fake_value("ir", &s->dockir);
 }

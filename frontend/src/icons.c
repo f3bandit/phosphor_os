@@ -127,6 +127,23 @@ static void draw_cb(lv_event_t *e)
 		poly(&p, b, 6, 0);
 		break;
 	}
+	case ICON_IR: {                                     /* the dock's IR remote: level 0 off (slashed, no arcs) */
+		rect(&p, 7.5f, 11.5f, 9, 10.5f, 2);
+		circle(&p, 12, 15, 1.3f, 1);
+		line(&p, 10, 18.8f, 14, 18.8f);
+		if (id->level != 0) {
+			arc(&p, 12, 11, 3.6f, 235, 305, p.col);
+			arc(&p, 12, 11, 7.4f, 232, 308, p.col);
+		} else {
+			lv_color_t c = p.col;
+			int w = p.w;
+			p.col = PAL.bg; p.w = w + LV_MAX(2, w);   /* (a gap cut either side of the slash: drawn opaque) */
+			line(&p, 4.5f, 4.5f, 19.5f, 19.5f);
+			p.col = c; p.w = w;
+			line(&p, 4.5f, 4.5f, 19.5f, 19.5f);
+		}
+		break;
+	}
 	case ICON_DISC:
 		circle(&p, 36, 36, 26, 0); circle(&p, 36, 36, 6, 0);
 		break;
