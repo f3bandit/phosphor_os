@@ -34,7 +34,8 @@ Checked 2026-11-05 against Update All 10f9b9a (2026-10-09).
 | Physical CD Support | in Phosphor | Anime0t4ku's disc Main is in Phosphor's Main |
 | Sonic Mania, 3S-ARM, Duke3D, Quake, Maldita Castilla | in Phosphor | Game ports with Phosphor's Main |
 | NBlood | patch | Its own Main (source not published): launcher until the source is out |
-| Diablo, DreamSTer, Solarus | patch | Same as the game ports: their Mains rebuilt with Phosphor's hooks (licences to check per item) |
+| Solarus | patch, ready | Hybrid core: Phosphor's Main starts and stops its engine itself (tested on the SS1, 2026-11-05) |
+| Diablo, DreamSTer | patch | Same as the game ports: their Mains rebuilt with Phosphor's hooks (licences to check per item) |
 | MiSTer Hi-Fi, MiSTerFin | launcher | Started from Phosphor; MiSTerFin's boot hook patched out |
 | mrext (MiSTer Extensions), Shmup Deck | patch | Launch games through phosphord's API |
 | CIFS Scripts | patch | Mount points kept clear of Phosphor's library and backup folders |
