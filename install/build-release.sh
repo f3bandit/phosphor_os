@@ -91,6 +91,7 @@ fi
 mkdir -p "$D/wallpaper" && cp install/wallpaper/phosphor-wallpaper.png "$D/wallpaper/"
 # MiSTer's updaters, started from Phosphor: a restore point of MiSTer's system files first (when
 # update-guard is installed), then the updater itself, one after the other in MiSTer's terminal
+mkdir -p "$D/compat" && cp system/compat/killall system/compat/pidof "$D/compat/"
 mkdir -p "$D/scripts"
 for u in update update_all; do
 	label=before-get-cores; [ "$u" = update_all ] && label=before-update-all

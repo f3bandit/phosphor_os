@@ -98,6 +98,10 @@ fi
 if [ -d "$HERE/scripts" ]; then
 	mkdir -p "$ROOT/scripts" && cp "$HERE"/scripts/*.sh "$ROOT/scripts/" && chmod 755 "$ROOT"/scripts/*.sh
 fi
+# killall / pidof for the scripts Phosphor's Main runs: "MiSTer" there is Phosphor's Main (DreamSTer)
+if [ -d "$HERE/compat" ]; then
+	mkdir -p "$ROOT/compat" && cp "$HERE"/compat/* "$ROOT/compat/" && chmod 755 "$ROOT"/compat/*
+fi
 cp "$HERE/VERSION" "$ROOT/VERSION"
 # the licences: Phosphor's, the notices of the libraries in it, and the GPL programs' licence and source
 for f in LICENSE.md THIRD_PARTY_NOTICES.md SOURCE.md; do [ -f "$HERE/$f" ] && cp "$HERE/$f" "$ROOT/$f"; done
