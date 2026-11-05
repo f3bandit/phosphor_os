@@ -1,0 +1,82 @@
+# Database watch: the first stage of Phosphor's own updater (docs/updater-inventory.md).
+# Once a day, tools/updater/db_watch.py reads Update All's database list from its source, downloads every
+# database and checks it against Phosphor's verdicts (system/ua/status.json) and the paths Phosphor owns
+# (tools/updater/rules.json): databases not reviewed yet, files on Phosphor's paths, a new MiSTer Linux, and
+# what changed since the last run. Mondays it checks the game artwork and manuals databases too.
+# Each database gets a category (cores, special cores, hybrid cores, wallpapers, bios, game art, tools, not
+# needed) and a tag (ok, patch, launcher, warn, block, in phosphor, not needed, opt-in, review) from
+# tools/updater/rules.json, written to db_watch_catalog.json: what Phosphor's updater on the SS1 will install
+# from, by the categories the user has switched on (patched parts from Phosphor, the rest from the original).
+# The report is the run's summary; when something needs a look, one issue here says what (GitHub emails it),
+# updated only when the list changes. It never pushes or publishes anything (the same rule as upstream-watch).
+name: Database watch (Update All's databases)
+on:
+  schedule:
+    - cron: "41 12 * * 2-7"
+    - cron: "41 12 * * 1"
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "The artwork and manuals databases too"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  issues: write
+  actions: read
+concurrency:
+  group: db-watch
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            tools/updater
+            system/ua/status.json
+          sparse-checkout-cone-mode: false
+      - name: The last run's state
+        run: |
+          mkdir -p prev
+          id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow db-watch.yml --status success -L 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$id" ]; then gh run download "$id" -R "$GITHUB_REPOSITORY" -n db-watch -D prev || true; fi
+          ls prev
+      - name: Check the databases
+        id: check
+        run: |
+          all=""
+          if [ "${{ github.event.schedule }}" = "41 12 * * 1" ] || [ "${{ inputs.all }}" = "true" ]; then all="--all"; fi
+          python3 -I tools/updater/db_watch.py $all --previous prev/db_watch_state.json --state db_watch_state.json --report db_watch_report.md --catalog db_watch_catalog.json
+          cat db_watch_report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-watch
+          path: |
+            db_watch_state.json
+            db_watch_report.md
+            db_watch_catalog.json
+          retention-days: 30
+      - name: The issue
+        if: steps.check.outputs.attention == 'yes'
+        run: |
+          gh label create db-watch -R "$GITHUB_REPOSITORY" -c FBCA04 -d "Update All's databases: something for Phosphor to look at" 2>/dev/null || true
+          now=$(python3 -I -c "import json; print(' '.join(json.load(open('db_watch_state.json'))['needs_a_look']))")
+          was=""
+          [ -f prev/db_watch_state.json ] && was=$(python3 -I -c "import json; print(' '.join(json.load(open('prev/db_watch_state.json')).get('needs_a_look', [])))")
+          n=$(echo $now | wc -w)
+          title="Database watch: $n need a look"
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" -l db-watch -s open --json number --jq '.[0].number // empty')
+          { cat db_watch_report.md; echo; echo "From [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). Nothing was changed or published: review, then update \`system/ua/status.json\` or \`tools/updater/rules.json\`."; } > body.md
+          if [ -z "$existing" ]; then
+            gh issue create -R "$GITHUB_REPOSITORY" -l db-watch --title "$title" --body-file body.md
+          elif [ "$now" != "$was" ]; then
+            gh issue edit "$existing" -R "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+            gh issue comment "$existing" -R "$GITHUB_REPOSITORY" --body "The list changed: now $n need a look ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
+          else
+            echo "Same list as last time: issue #$existing left as it is"
+          fi
