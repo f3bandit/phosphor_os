@@ -1,0 +1,90 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 6e48603..de2f4cb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -29,6 +29,7 @@ target_include_directories(pico_ir_keyboard PUBLIC
+ 
+ target_link_libraries(pico_ir_keyboard LINK_PUBLIC
+         pico_stdlib
++        pico_bootrom
+         hardware_pio
+         nec_receive_library
+         )
+diff --git a/src/main.c b/src/main.c
+index 99ab768..3bf8d72 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -5,6 +5,18 @@
+ #include "bsp/board.h"
+ #include "tusb.h"
+ #include "nec_receive.h"
++#include "pico/bootrom.h"
++
++/* Updating from the SuperStation (f3bandit): a HID feature report with exactly UPDATE_MAGIC, sent to the
++ * keyboard interface (Linux: HIDIOCSFEATURE on its /dev/hidraw), restarts the RP2040 into its USB
++ * bootloader. The RPI-RP2 drive then appears on the SS1 itself and the next firmware is copied onto it.
++ * Nothing else sends this report, so it can't happen by accident; the bootloader is in the chip's ROM,
++ * so BOOTSEL + MCU RST in the NVMe slot always works too. A feature report read (HIDIOCGFEATURE) answers
++ * FW_ID, so the SS1 can tell this firmware can be updated that way. */
++#define UPDATE_MAGIC "DIRBOOT!"      /* 8 bytes: TinyUSB's HID control buffer is 8 (tusb_config.h) */
++#define FW_ID        "DIRUP001"      /* DockIR 9403adc + updating from the SS1, version 1 (8 bytes too) */
++static volatile bool boot_requested = false;
++static uint32_t boot_at = 0;
+ 
+ #define key_power          0x00
+ #define key_contrast_minus 0x01
+@@ -161,6 +173,10 @@ int main(void)
+     tud_task();
+     uint32_t now = board_millis();
+ 
++    /* an update asked for: after the USB request has been answered, into the ROM bootloader (its drive,
++       no activity LED, both interfaces) */
++    if (boot_requested && (int32_t)(now - boot_at) >= 0) reset_usb_boot(0, 0);
++
+     /* === 1. 超时释放 === */
+     if (active && (now - last_ir_time >= RELEASE_TIMEOUT_MS)) {
+       active = false;
+@@ -206,19 +222,22 @@ int main(void)
+ 
+ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
+ {
+-  (void) itf;
+   (void) report_id;
+-  (void) report_type;
+-  (void) buffer;
+-  (void) reqlen;
++  if (itf == 0 && report_type == HID_REPORT_TYPE_FEATURE) {
++    uint16_t n = (uint16_t) strlen(FW_ID);
++    if (n > reqlen) n = reqlen;
++    memcpy(buffer, FW_ID, n);
++    return n;
++  }
+   return 0;
+ }
+ 
+ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
+ {
+-  (void) itf;
+   (void) report_id;
+-  (void) report_type;
+-  (void) buffer;
+-  (void) bufsize;
++  size_t n = strlen(UPDATE_MAGIC);
++  if (itf == 0 && report_type == HID_REPORT_TYPE_FEATURE && bufsize >= n && memcmp(buffer, UPDATE_MAGIC, n) == 0) {
++    boot_at = board_millis() + 100;
++    boot_requested = true;
++  }
+ }
+diff --git a/src/usb_descriptors.c b/src/usb_descriptors.c
+index 28ba2a3..fd5c38f 100644
+--- a/src/usb_descriptors.c
++++ b/src/usb_descriptors.c
+@@ -50,7 +50,7 @@ tusb_desc_device_t const desc_device =
+ 
+     .idVendor           = 0x1c4f,//0x046D,//0xCafe,
+     .idProduct          = 0x0002,//0xC31C,//USB_PID,
+-    .bcdDevice          = 0x0100,
++    .bcdDevice          = 0x0101,   /* 1.01: can be updated from the SuperStation (main.c) */
+ 
+     .iManufacturer      = 0x01,
+     .iProduct           = 0x02,
