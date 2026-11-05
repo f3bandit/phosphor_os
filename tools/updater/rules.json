@@ -309,16 +309,14 @@
    "ready": false
   },
   "MultiDatabases/mister-hifi": {
-   "category": "tools",
-   "tag": "launcher",
-   "why": "Takes over the screen: started from Phosphor, which takes the screen back",
-   "ready": false
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "A music player: Phosphor has its own"
   },
   "MultiDatabases/misterfin": {
-   "category": "tools",
-   "tag": "launcher",
-   "why": "Starts at boot and takes over the screen: boot hook left out, started from Phosphor",
-   "ready": false
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "A streaming (Jellyfin) player: not offered on Phosphor"
   },
   "theypsilon/RetroAchievementsDB_MiSTer": {
    "category": "not needed",
