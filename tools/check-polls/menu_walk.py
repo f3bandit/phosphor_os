@@ -92,12 +92,12 @@ def keys(seq, gap=GAP):
 
 
 def screen():
-    # the shell's screen (screen_t) and Settings row (SET_ id), from <tmp>/screen
+    # the shell's screen (screen_t), Settings row (SET_ id) and that row's title, from <tmp>/screen
     try:
-        a, b = open("/tmp/phosphor/screen").read().split()
-        return int(a), int(b)
-    except (OSError, ValueError):
-        return -1, -1
+        parts = open("/tmp/phosphor/screen").read().strip().split(" ", 2)
+        return int(parts[0]), int(parts[1]), (parts[2] if len(parts) > 2 else "")
+    except (OSError, ValueError, IndexError):
+        return -1, -1, ""
 
 
 def go_home():
@@ -108,16 +108,17 @@ def go_home():
     return screen()[0] == 0
 
 
-def to_row(sid):
-    # into Settings, then down to that row (set_id), however the list is (wallpaper rows, a moved list)
+def to_row(title):
+    # into Settings, then down to the row with that title, however the list is (rows added, wallpaper rows):
+    # by title, never by number (a number off by one pressed A on toggles, Cores and nearly Shut down, Nov 4 2026)
     if not go_home():
         return False
     keys("start", 0.8)
     for _ in range(45):
-        c, r = screen()
+        c, r, t = screen()
         if c != 3:
             return False
-        if r == sid:
+        if t == title:
             return True
         keys("down", 0.3)
     return False
@@ -204,24 +205,25 @@ def main():
     n += idle("Settings")
     go_home()
     if "--quick" not in sys.argv:
-        # the Settings rows that open a screen of their own, never one that does something on A (Look for
-        # games, Update, MiSTer menu, Restart, Shut down, toggles): their order in ui.c's SET_ list, with
-        # Wallpaper's picker row only there while wallpapers are on
-        names = ["WIFI", "BT", "CTRL", "DOCKIR", "RETROSPY", "REMOTE", "SAMBA", "CLOUD", "BACKUP", "PORTS", "STORAGE", "DISCS", "RA",
-                 "SHOTS", "VIDEO", "ACCENT", "TEXTURE", "WALLPAPER", "WALL_PICK", "CLOCK", "SAVER", "RESCAN", "SCRAPE",
-                 "SCRAPE_INFO", "SOURCES", "CORES", "UPDATE_ALL", "PHOSUPD", "GUARD", "SCRIPTS", "UPDLOG", "DIAG",
-                 "MISTER", "RESTART", "SHUTDOWN", "ABOUT"]
-        # (not SCRAPE: A there starts getting box art, it isn't just a screen; walked by mistake until Nov 1 2026)
-        safe = {"WIFI", "BT", "CTRL", "RETROSPY", "REMOTE", "CLOUD", "BACKUP", "PORTS", "STORAGE", "DISCS", "RA", "VIDEO",
-                "SOURCES", "UPDATE_ALL", "PHOSUPD", "GUARD", "SCRIPTS", "UPDLOG", "DIAG", "ABOUT"}
+        # the Settings rows that open a screen of their own, by their title on screen: never one that does
+        # something on A (Look for games, Get box art, Cores, Update, MiSTer menu, Restart, Shut down, toggles)
+        safe = [("WIFI", "WiFi"), ("BT", "Bluetooth"), ("CTRL", "Controllers"), ("RETROSPY", "RetroSpy"),
+                ("REMOTE", "Remote access"), ("CLOUD", "Cloud saves"), ("BACKUP", "Backups"),
+                ("PORTS", "Front ports & memory cards"), ("STORAGE", "Storage"), ("DISCS", "Discs"),
+                ("RA", "RetroAchievements"), ("VIDEO", "Video"), ("SOURCES", "Box art sources"),
+                ("UPDATE_ALL", "Update All"), ("PHOSUPD", "Update Phosphor"), ("GUARD", "Updates & restore points"),
+                ("SCRIPTS", "Scripts"), ("UPDLOG", "Last update's log"), ("DIAG", "Diagnostics"),
+                ("ABOUT", "About this system")]
         # screens that do something when they open: their idle check after it's done (Diagnostics runs its checks
         # on the first visit)
         settle = {"DIAG": 10.0}
-        for sid, nm in enumerate(names):          # (sid: the SET_ id, as <tmp>/screen gives it)
-            if nm not in safe:
+        # (an older shell gives no titles: nothing matches, so nothing is opened)
+        for nm, title in safe:
+            if not to_row(title):
+                print(f"{nm}: '{title}' not found in Settings (skipped)")
                 continue
-            if not to_row(sid):
-                print(f"{nm}: not found in Settings (skipped)")
+            if screen()[2] != title:          # (checked again right before A)
+                print(f"{nm}: not on '{title}' (skipped)")
                 continue
             n += phase(f"{nm}: open", "a", 0.35, opening=True)
             if screen()[0] == 3:
@@ -238,7 +240,7 @@ def main():
                     print("the controller test didn't open (skipped)")
             go_home()
             # out again at once, before it has finished opening
-            if to_row(sid):
+            if to_row(title) and screen()[2] == title:
                 keys("a", 0.05)
                 keys("b", 0.8)
                 n += crashed(f"quick: {nm} opened and left at once")
