@@ -96,10 +96,21 @@ server. It's patches on MiSTer-devel's NES core (`49a0a66`, 3 patches) and on Ma
 | MiSTer-devel Menu_MiSTer | merged (latest upstream `fa83dc1`, 2026-10-14) | Nothing new |
 | MiSTer Linux | 260912 (pinned by the default distribution) | Nothing new |
 
+## Built (2026-11-05)
+
+- **Stage 1, the Database watch** (`.github/workflows/db-watch.yml`, `tools/updater/db_watch.py`,
+  `tools/updater/rules.json`): daily, every database in Update All's list gets a category and a tag; files on
+  Phosphor's paths, new databases and changes open one `db-watch` issue.
+- **Stage 2, the catalog** (`tools/updater/build_catalog.py`): published on the `updater-catalog` branch after each
+  watch: `catalog.json`, the patch databases (`dbs/`: the original with Phosphor's parts in place, same path with
+  Phosphor's md5, size and URL, never left out) and Phosphor's parts (`parts/`, from its latest release).
+- **Stage 3, the updater on the SS1** (phosphor-modules `updater/`, phosphord `{"cmd":"updater"}`): the user's
+  categories and databases (their `downloader.ini` imported the first time, its options kept), warn/block/review
+  only once OK'd, Linux updates off until OK'd, a restore point, then MiSTer's own Downloader.
+
 ## Next
 
-1. The CI job: read every database daily, apply the verdicts above, report conflicts and changes, and publish
-   Phosphor's database.
+1. The screens: Settings in Phosphor's menu and in Phosphor for Windows (mockups first), then a test on the SS1.
 2. Merge the upstream Main changes (joymap v4 first: it's the one that touches Phosphor's input).
 3. The NES netplay port into phosphor-main.
 4. The patches and launchers, item by item, with each item's licence checked first.

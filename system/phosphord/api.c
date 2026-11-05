@@ -120,6 +120,7 @@
 #include "memcard.h"
 #include "bt.h"
 #include "btfix.h"
+#include "updr.h"
 #include "dockir.h"
 #include "cores.h"
 #include "samba.h"
@@ -1420,6 +1421,53 @@ static char *cmd_bt_repair(cJSON *req)
 	return reply(o);
 }
 
+/* {"cmd":"updater"}: Phosphor's own updater (the updater module): the last run {busy, at, result, good, log};
+   "do":"plan" | "settings" | "catalog" (with "refresh":true, downloads the catalog again) its JSON;
+   "do":"set" with "section" (categories, databases, allow, options), "key" and "value" (on, off, yes, no);
+   "do":"run" or "dry_run" starts one in the background */
+static char *cmd_updater(cJSON *req)
+{
+	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+	if (!updr_installed()) return fail("The updater module isn't installed: update Phosphor");
+	if (d && (!strcmp(d, "plan") || !strcmp(d, "settings") || !strcmp(d, "catalog"))) {
+		char *out = updr_query(d, cJSON_IsTrue(cJSON_GetObjectItem(req, "refresh")));
+		cJSON *j = out ? cJSON_Parse(out) : NULL;
+		free(out);
+		if (!j) return fail(!strcmp(d, "settings") ? "The updater's settings couldn't be read" : "The updater's catalog couldn't be read (no network?)");
+		cJSON *o = ok();
+		cJSON_AddItemToObject(o, !strcmp(d, "plan") ? "plan" : d, j);
+		return reply(o);
+	}
+	if (d && !strcmp(d, "set")) {
+		const char *sec = cJSON_GetStringValue(cJSON_GetObjectItem(req, "section"));
+		const char *key = cJSON_GetStringValue(cJSON_GetObjectItem(req, "key"));
+		const char *val = cJSON_GetStringValue(cJSON_GetObjectItem(req, "value"));
+		static const char *secs[] = { "categories", "databases", "allow", "options", NULL };
+		static const char *vals[] = { "on", "off", "yes", "no", NULL };
+		int sok = 0, vok = 0;
+		for (int i = 0; sec && secs[i]; i++) sok |= !strcmp(sec, secs[i]);
+		for (int i = 0; val && vals[i]; i++) vok |= !strcmp(val, vals[i]);
+		if (!sok || !vok || !key || !arg_ok(key) || strpbrk(key, "[]=")) return fail("section, key and value (on, off, yes or no) needed");
+		if (updr_set(sec, key, val)) return fail("The updater's settings couldn't be saved");
+		return reply(ok());
+	}
+	if (d && (!strcmp(d, "run") || !strcmp(d, "dry_run"))) {
+		int r = updr_run_start(!strcmp(d, "dry_run"));
+		if (r == 1) return fail("An update is already running");
+		if (r < 0) return fail("The update couldn't start");
+	} else if (d && *d) return fail("do: plan, settings, catalog, set, run or dry_run");
+	cJSON *o = ok();
+	int busy = 0;
+	time_t at = 0;
+	char *out = NULL;
+	updr_last(&busy, &at, &out);
+	cJSON_AddBoolToObject(o, "busy", busy);
+	cJSON_AddNumberToObject(o, "at", (double)at);
+	if (out) btfix_lines(o, out);                          /* (the same STEP/LOG/RESULT lines; while busy, so far) */
+	free(out);
+	return reply(o);
+}
+
 static char *cmd_backup(cJSON *req)
 {
 	const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
@@ -1730,6 +1778,7 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "memcard")) out = cmd_memcard(req);
 	else if (!strcmp(c->valuestring, "bluetooth")) out = cmd_bluetooth(req);
 	else if (!strcmp(c->valuestring, "bt_repair")) out = cmd_bt_repair(req);
+	else if (!strcmp(c->valuestring, "updater")) out = cmd_updater(req);
 	else if (!strcmp(c->valuestring, "dockir")) {      /* the dock's IR receiver: on/off, what it runs; "do":"on"|"off"|"update"; "brief":true (no firmware id) */
 		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 		char err[300];
