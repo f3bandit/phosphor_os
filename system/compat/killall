@@ -1,0 +1,16 @@
+#!/bin/sh
+# Phosphor: on the PATH of the scripts Phosphor's Main runs (menu.cpp). MiSTer's Main is MiSTer_phosphor here,
+# so a script that stops or looks for "MiSTer" (DreamSTer's "killall MiSTer" before it takes the FPGA over)
+# means Phosphor's Main. Starting /media/fat/MiSTer again afterwards needs nothing: that Main follows main= in
+# MiSTer.ini to Phosphor's, as at boot. Any other name goes straight to the real killall.
+# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+real=/usr/bin/killall
+[ -x "$real" ] || real=/bin/killall
+for a; do
+	if [ "$a" = MiSTer ] && ! /usr/bin/pidof MiSTer > /dev/null 2>&1 && /usr/bin/pidof MiSTer_phosphor > /dev/null 2>&1; then
+		a=MiSTer_phosphor
+	fi
+	set -- "$@" "$a"
+	shift
+done
+exec "$real" "$@"
