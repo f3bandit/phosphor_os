@@ -12287,8 +12287,8 @@ static void body_cards(void)
 
 void ui_tick(void)
 {
-	/* the screen showing and, in Settings, the row: in <tmp>/screen for tests (tools/check-polls/menu_walk.py
-	   walks the menus by it), written only when it changes */
+	/* the screen showing and, in Settings, the row and its title: in <tmp>/screen for tests
+	   (tools/check-polls/menu_walk.py walks the menus by it, by title), written only when it changes */
 	{
 		static int ls = -1, lr = -2;
 		int r = cur == SCR_SETTINGS ? set_id(set_list.sel) : -1;
@@ -12299,7 +12299,10 @@ void ui_tick(void)
 			snprintf(p, sizeof(p), "%s/screen", tp && *tp ? tp : "/tmp/phosphor");
 			snprintf(t, sizeof(t), "%s.new", p);
 			FILE *f = fopen(t, "w");
-			if (f) { fprintf(f, "%d %d\n", ls, lr); fclose(f); rename(t, p); }
+			char ti[96] = "", tv[96];
+			int dim = 0;
+			if (r >= 0) set_fill(set_list.sel, ti, sizeof(ti), tv, sizeof(tv), &dim);
+			if (f) { fprintf(f, "%d %d %s\n", ls, lr, ti); fclose(f); rename(t, p); }
 		}
 	}
 	uint32_t now = lv_tick_get();
