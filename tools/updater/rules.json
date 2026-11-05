@@ -1,0 +1,372 @@
+{
+ "_about": "Phosphor's own paths and the exceptions, for db_watch.py. 'protected': a pattern (fnmatch, or re: a regular expression) and why a file there matters. 'expected': files a database may install there because Phosphor deals with them (the main distribution's Main and menu core, swapped for Phosphor's; MiSTer Linux, behind the Linux update warning). 'var_ids': Update All settings in status.json and the databases they switch on. 'catalog' (by title, then database id) and 'catalog_prefix': each database's category (cores, special cores, hybrid cores, wallpapers, bios, game art, tools, not needed) and tag (ok, patch, launcher, warn, block, in phosphor, not needed, opt-in, review), with why; for patch and launcher, 'ready' says whether Phosphor's parts exist yet and 'parts' which files Phosphor's replace (the rest come from the original database).",
+ "protected": {
+  "MiSTer": "replaces Phosphor's Main",
+  "re:(?i)^mister_[^/.]+$": "ships a Main of its own (MiSTer.ini main= can switch to it)",
+  "re:^menu[^/]*\\.rbf$": "replaces Phosphor's menu core",
+  "linux/*": "changes MiSTer Linux",
+  "phosphor/*": "Phosphor's own folder",
+  "Scripts/.config/phosphor*": "Phosphor's own settings"
+ },
+ "expected": {
+  "Main Distribution: MiSTer-devel": [
+   "MiSTer",
+   "menu.rbf",
+   "linux/*"
+  ],
+  "Main Distribution: MiSTer-devel (Edge Linux)": [
+   "MiSTer",
+   "menu.rbf",
+   "linux/*"
+  ],
+  "MultiDatabases/nblood": [
+   "Mister_NBlood"
+  ]
+ },
+ "var_ids": {
+  "main_updater": [
+   "distribution_mister"
+  ],
+  "jotego_updater": [
+   "jtcores"
+  ],
+  "coin_op_collection_downloader": [
+   "Coin-OpCollection/Distribution-MiSTerFPGA"
+  ],
+  "unofficial_updater": [
+   "theypsilon_unofficial_distribution"
+  ],
+  "arcade_offset_downloader": [
+   "arcade_offset_folder"
+  ],
+  "llapi_updater": [
+   "llapi_folder"
+  ],
+  "mistersam_files_downloader": [
+   "MiSTer_SAM_files"
+  ],
+  "i2c2oled_files_downloader": [
+   "i2c2oled_files"
+  ],
+  "tty2oled_files_downloader": [
+   "tty2oled_files"
+  ],
+  "anime0t4ku_mister_scripts": [
+   "anime0t4ku_mister_scripts"
+  ],
+  "uberyoji_mister_boot_roms_mgl": [
+   "uberyoji_mister_boot_roms_mgl"
+  ]
+ },
+ "catalog": {
+  "Main Distribution: MiSTer-devel": {
+   "category": "cores",
+   "tag": "patch",
+   "why": "MiSTer-devel's cores; Phosphor's Main and menu core in place of MiSTer and menu.rbf",
+   "ready": true,
+   "parts": [
+    "MiSTer",
+    "menu.rbf"
+   ]
+  },
+  "Main Distribution: MiSTer-devel (Edge Linux)": {
+   "category": "cores",
+   "tag": "warn",
+   "why": "Same as the main distribution with an untested MiSTer Linux"
+  },
+  "jtcores": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "JOTEGO's arcade cores (private releases with the user's RetroAccount)"
+  },
+  "Coin-OpCollection/Distribution-MiSTerFPGA": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "Coin-Op Collection (beta / alpha with the user's RetroAccount)"
+  },
+  "theypsilon_unofficial_distribution": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "Unofficial cores"
+  },
+  "arcade_offset_folder": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "Arcade hacks (MRAs)"
+  },
+  "MultiDatabases/mms2-gb": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "A Game Boy core"
+  },
+  "MultiDatabases/paprium": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "A Mega Drive core fork for Paprium"
+  },
+  "MultiDatabases/megavgmdrive": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "A music player core"
+  },
+  "ajgowans/240p": {
+   "category": "cores",
+   "tag": "ok",
+   "why": "240p test suites"
+  },
+  "llapi_folder": {
+   "category": "special cores",
+   "tag": "ok",
+   "why": "LLAPI core forks"
+  },
+  "MikeS11/YC_Builds-MiSTer": {
+   "category": "special cores",
+   "tag": "ok",
+   "why": "Y/C core builds"
+  },
+  "ajgowans/alt-cores": {
+   "category": "special cores",
+   "tag": "ok",
+   "why": "Alternative core builds"
+  },
+  "TheJesusFish/Dual-Ram-Console-Cores": {
+   "category": "special cores",
+   "tag": "ok",
+   "why": "Dual RAM core builds"
+  },
+  "Main Distribution: DB9 / SNAC8": {
+   "category": "special cores",
+   "tag": "not needed",
+   "why": "DB9 / SNAC8 support is built into Phosphor's Main; this one would replace it"
+  },
+  "Main Distribution: AitorGomez Fork": {
+   "category": "special cores",
+   "tag": "block",
+   "why": "A fork of MiSTer's Main that would replace Phosphor's"
+  },
+  "MultiDatabases/3s-arm": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Phosphor's own build of its Main",
+   "ready": true,
+   "parts": [
+    "MiSTer_3S-ARM"
+   ]
+  },
+  "MultiDatabases/sonic-mania": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Phosphor's own build of its Main",
+   "ready": true,
+   "parts": [
+    "MiSTer_SonicMania"
+   ]
+  },
+  "MultiDatabases/duke3d": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Runs inside Phosphor's Main: its own Main left out",
+   "ready": true,
+   "parts": [
+    "Mister_duke3d"
+   ]
+  },
+  "MultiDatabases/mister-quake": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Runs inside Phosphor's Main: its own Main left out",
+   "ready": true,
+   "parts": [
+    "MiSTer_Quake"
+   ]
+  },
+  "MultiDatabases/maldita-castilla": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Phosphor's Main starts its engine: its own Main left out",
+   "ready": true,
+   "parts": []
+  },
+  "MultiDatabases/nblood": {
+   "category": "hybrid cores",
+   "tag": "warn",
+   "why": "Its own Main (source not published): Phosphor's in-game menu isn't there while it runs"
+  },
+  "MultiDatabases/diablo": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Its launcher takes over the screen: Main rebuilt with Phosphor's hooks",
+   "ready": false
+  },
+  "MultiDatabases/dreamster": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Takes over the screen: rebuilt with Phosphor's hooks",
+   "ready": false
+  },
+  "MultiDatabases/solarus": {
+   "category": "hybrid cores",
+   "tag": "patch",
+   "why": "Takes over the screen: rebuilt with Phosphor's hooks",
+   "ready": false
+  },
+  "MultiDatabases/mister-dvd": {
+   "category": "hybrid cores",
+   "tag": "review",
+   "why": "Ships MiSTer_DVDcss, a Main of its own: Phosphor doesn't start it yet"
+  },
+  "Ranny-Snice/Ranny-Snice-Wallpapers": {
+   "category": "wallpapers",
+   "tag": "ok",
+   "why": "Wallpapers"
+  },
+  "anime0t4ku_wallpapers": {
+   "category": "wallpapers",
+   "tag": "ok",
+   "why": "Wallpapers"
+  },
+  "pcn_challenge_wallpapers": {
+   "category": "wallpapers",
+   "tag": "ok",
+   "why": "Wallpapers"
+  },
+  "Dinierto/MiSTer-GBA-Borders": {
+   "category": "wallpapers",
+   "tag": "ok",
+   "why": "Borders for the GBA core"
+  },
+  "bios_db": {
+   "category": "bios",
+   "tag": "opt-in",
+   "why": "BIOS files: the user turns it on, straight from its own database"
+  },
+  "arcade_roms_db": {
+   "category": "bios",
+   "tag": "opt-in",
+   "why": "Arcade ROMs: the user turns it on, straight from its own database"
+  },
+  "uberyoji_mister_boot_roms_mgl": {
+   "category": "bios",
+   "tag": "ok",
+   "why": "Boot ROMs and MGLs"
+  },
+  "MiSTer_SAM_files": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "Screen saver: Phosphor's can hand over to it"
+  },
+  "tty2oled_files": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "Core art on a small USB display"
+  },
+  "i2c2oled_files": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "Core art on a small i2c display"
+  },
+  "retrospy/retrospy-MiSTer": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "Controller viewer"
+  },
+  "chipster6502/MiSTer_monitor_DB": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "Game art on a second screen"
+  },
+  "ZaparooProject/Zaparoo_MiSTer": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "Zaparoo Core: Phosphor tracks the games its cards start"
+  },
+  "MultiDatabases/disc-tools": {
+   "category": "tools",
+   "tag": "ok",
+   "why": "CD rip and burn scripts, started by hand"
+  },
+  "mrext/all": {
+   "category": "tools",
+   "tag": "patch",
+   "why": "Its remote starts cores behind Phosphor's back: made to launch through phosphord",
+   "ready": false
+  },
+  "MultiDatabases/shmup-deck": {
+   "category": "tools",
+   "tag": "patch",
+   "why": "Starts games behind Phosphor's back: made to launch through phosphord",
+   "ready": false
+  },
+  "MultiDatabases/cifs-scripts": {
+   "category": "tools",
+   "tag": "patch",
+   "why": "Mounts over Phosphor's folders: mount points moved",
+   "ready": false
+  },
+  "anime0t4ku_mister_scripts": {
+   "category": "tools",
+   "tag": "patch",
+   "why": "FTP save sync, Syncthing, DAV and clock made to take turns with Phosphor's",
+   "ready": false
+  },
+  "MultiDatabases/mister-hifi": {
+   "category": "tools",
+   "tag": "launcher",
+   "why": "Takes over the screen: started from Phosphor, which takes the screen back",
+   "ready": false
+  },
+  "MultiDatabases/misterfin": {
+   "category": "tools",
+   "tag": "launcher",
+   "why": "Starts at boot and takes over the screen: boot hook left out, started from Phosphor",
+   "ready": false
+  },
+  "theypsilon/RetroAchievementsDB_MiSTer": {
+   "category": "not needed",
+   "tag": "in phosphor",
+   "why": "odelot's RetroAchievements Main is in Phosphor's Main; phosphord fetches his cores"
+  },
+  "MultiDatabases/physical-disc": {
+   "category": "not needed",
+   "tag": "in phosphor",
+   "why": "Physical CD support is in Phosphor's Main"
+  },
+  "names_txt": {
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "Core names for MiSTer's own menu: Phosphor uses its own"
+  },
+  "arcade_names_txt": {
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "Arcade names for MiSTer's own menu: Phosphor uses its own"
+  },
+  "update_all_mister": {
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "Update All itself"
+  },
+  "degauss": {
+   "category": "not needed",
+   "tag": "block",
+   "why": "Another frontend: it replaces Phosphor"
+  },
+  "MiSTerOrganize/MiSTer_Frontier": {
+   "category": "not needed",
+   "tag": "block",
+   "why": "Another frontend: it replaces Phosphor"
+  }
+ },
+ "catalog_prefix": {
+  "chipster6502/artworkdb": {
+   "category": "game art",
+   "tag": "ok",
+   "why": "Box art, screenshots and title screens (Phosphor's Local files source can use them)"
+  },
+  "ajgowans/manualsdb": {
+   "category": "game art",
+   "tag": "ok",
+   "why": "Game manuals"
+  }
+ }
+}
