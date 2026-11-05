@@ -207,7 +207,7 @@ def main():
         # the Settings rows that open a screen of their own, never one that does something on A (Look for
         # games, Update, MiSTer menu, Restart, Shut down, toggles): their order in ui.c's SET_ list, with
         # Wallpaper's picker row only there while wallpapers are on
-        names = ["WIFI", "BT", "CTRL", "RETROSPY", "REMOTE", "SAMBA", "CLOUD", "BACKUP", "PORTS", "STORAGE", "DISCS", "RA",
+        names = ["WIFI", "BT", "CTRL", "DOCKIR", "RETROSPY", "REMOTE", "SAMBA", "CLOUD", "BACKUP", "PORTS", "STORAGE", "DISCS", "RA",
                  "SHOTS", "VIDEO", "ACCENT", "TEXTURE", "WALLPAPER", "WALL_PICK", "CLOCK", "SAVER", "RESCAN", "SCRAPE",
                  "SCRAPE_INFO", "SOURCES", "CORES", "UPDATE_ALL", "PHOSUPD", "GUARD", "SCRIPTS", "UPDLOG", "DIAG",
                  "MISTER", "RESTART", "SHUTDOWN", "ABOUT"]
