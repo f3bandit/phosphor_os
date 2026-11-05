@@ -57,7 +57,8 @@ static int ndev, ino_fd = -1, started;
 static char notice[96];           /* "Connected: ..." for the screen, once */
 
 /* MiSTer Main's own virtual devices come and go with every core: not news */
-static int newsworthy(const char *label) { return !strstr(label, "MiSTer") && !strstr(label, "uinput") && !strstr(label, "virtual"); }
+/* (not the dock's IR receiver: it's part of the dock, and switching it off in Settings disconnects it) */
+static int newsworthy(const char *label) { return !strstr(label, "MiSTer") && !strstr(label, "uinput") && !strstr(label, "virtual") && !strstr(label, "pico_ir_keyboard"); }
 
 const char *input_notice(void)
 {
