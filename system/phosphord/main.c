@@ -18,6 +18,7 @@
 #include "storage.h"
 #include "memcard.h"
 #include "wifi.h"
+#include "dockir.h"
 #include "db.h"
 #include "dump.h"
 #include "indexer.h"
@@ -164,6 +165,7 @@ int main(int argc, char **argv)
 	api_prime_updates();                      /* the update packages too */
 	memcard_start();
 	wifi_start();
+	dockir_start();                           /* (the dock IR remote's on/off) */
 	{ /* the heartbeat log (a testing aid until 0.27.30) is gone: its files go too */
 		char hb[512];
 		snprintf(hb, sizeof(hb), "%s/phosphor/logs/heartbeat.log", p_fat()); unlink(hb);

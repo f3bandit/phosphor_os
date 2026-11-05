@@ -2154,7 +2154,7 @@ static void shutdown_ask(void)
 /* ---------- Settings ---------- */
 
 static vlist_t set_list;
-enum { SET_WIFI, SET_BT, SET_CTRL, SET_RETROSPY, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_WALLPAPER, SET_WALL_PICK, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
+enum { SET_WIFI, SET_BT, SET_CTRL, SET_DOCKIR, SET_RETROSPY, SET_REMOTE, SET_SAMBA, SET_CLOUD, SET_BACKUP, SET_PORTS, SET_STORAGE, SET_DISCS, SET_RA, SET_SHOTS, SET_VIDEO, SET_ACCENT, SET_TEXTURE, SET_WALLPAPER, SET_WALL_PICK, SET_CLOCK, SET_SAVER, SET_RESCAN, SET_SCRAPE, SET_SCRAPE_INFO, SET_SOURCES, SET_CORES, SET_UPDATE_ALL, SET_PHOSUPD, SET_GUARD, SET_SCRIPTS, SET_UPDLOG, SET_DIAG, SET_MISTER, SET_RESTART, SET_SHUTDOWN, SET_ABOUT, SET_COUNT };
 /* the rows shown: every setting, but Choose wallpaper only while Wallpapers is on */
 static int set_ids[SET_COUNT], set_n;
 static void set_build(void)
@@ -2173,6 +2173,11 @@ static cJSON *scrape_state;      /* phosphord's scrape reply, refreshed while Se
 static cJSON *samba_st;          /* phosphord's samba reply, likewise */
 
 static int samba_b(const char *k) { return samba_st && cJSON_IsTrue(cJSON_GetObjectItem(samba_st, k)); }
+/* the dock IR remote's on/off: phosphord's (the Windows app sets the same), asked in the background with the
+   rest of Settings' once-a-second refresh. dockir_want: a change sent and not answered yet (-1 none) */
+static cJSON *dockir_st;
+static int dockir_want = -1;
+static int dockir_on(void) { return dockir_want >= 0 ? dockir_want : !dockir_st || !cJSON_IsFalse(cJSON_GetObjectItem(dockir_st, "enabled")); }
 static void my_ip(char *out, size_t n);
 static void samba_take(cJSON *x)
 {
@@ -2207,10 +2212,20 @@ static void scrape_refresh(void)
 {
 	api_bg_ask("scrape", "{\"cmd\":\"scrape\"}");
 	api_bg_ask("samba", "{\"cmd\":\"samba\"}");
+	if (dockir_want < 0) api_bg_ask("dockir", "{\"cmd\":\"dockir\",\"brief\":true}");
 	cJSON *x = api_bg_take("scrape");
 	if (x) { cJSON_Delete(scrape_state); scrape_state = x; }
 	x = api_bg_take("samba");
 	if (x) samba_take(x);
+	x = api_bg_take("dockir_set");                     /* (the change sent: its answer is the new state) */
+	if (x) {
+		if (!api_ok(x)) toast_show(api_str(x, "error") ? api_str(x, "error") : "phosphord isn't answering");
+		if (api_ok(x)) { cJSON_Delete(dockir_st); dockir_st = x; } else cJSON_Delete(x);
+		dockir_want = -1;
+		cJSON_Delete(api_bg_take("dockir"));            /* (an answer from before the change) */
+	} else if (dockir_want < 0 && (x = api_bg_take("dockir"))) {
+		if (api_ok(x)) { cJSON_Delete(dockir_st); dockir_st = x; } else cJSON_Delete(x);
+	}
 }
 
 static void set_fill(int row, char *t, size_t n, char *val, size_t vn, int *dim)
@@ -2282,6 +2297,7 @@ static void set_fill(int row, char *t, size_t n, char *val, size_t vn, int *dim)
 	case SET_WIFI: snprintf(t, n, "WiFi"); snprintf(val, vn, ">"); break;
 	case SET_BT: snprintf(t, n, "Bluetooth"); snprintf(val, vn, ">"); break;
 	case SET_CTRL: snprintf(t, n, "Controllers"); snprintf(val, vn, ">"); break;
+	case SET_DOCKIR: snprintf(t, n, "Dock IR remote"); snprintf(val, vn, "<  %s  >", dockir_on() ? "On" : "Off"); break;
 	case SET_REMOTE: snprintf(t, n, "Remote access"); snprintf(val, vn, ">"); break;
 	case SET_SAMBA:
 		snprintf(t, n, "Network share (Samba)");
@@ -4582,6 +4598,13 @@ static void settings_change(int dir)
 		cJSON_Delete(samba_st);
 		samba_st = r;
 		vlist_refresh(&set_list);
+	} else if (set_id(set_list.sel) == SET_DOCKIR) {
+		if (dockir_want >= 0) return;                 /* (still sending the last change) */
+		dockir_want = !dockir_on();
+		api_bg_ask("dockir_set", "{\"cmd\":\"dockir\",\"do\":\"%s\",\"brief\":true}", dockir_want ? "on" : "off");
+		toast_show(dockir_want ? "Dock IR remote on" : "Dock IR remote off: a controller turns it back on");
+		vlist_refresh(&set_list);
+		si_update();
 	} else if (set_id(set_list.sel) == SET_CLOCK) {
 		SETTINGS.clock24 = !SETTINGS.clock24;
 		settings_save();
@@ -4661,6 +4684,8 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	[SET_MISTER] = { "Leaves Phosphor for MiSTer's own menu, the OSD, and MiSTer's own settings. Launch Phosphor in its System page to come back here.", NULL },
 	[SET_CTRL] = { "Your USB and Bluetooth controllers: map their buttons for MiSTer's menu and every core, see them work live, or put them back to automatic.",
 	               "Every change is backed up first, and can be put back from Backups there." },
+	[SET_DOCKIR] = { "The IR receiver in the dock, for the dock's remote. Turn it off if the remote also works another box, like a RetroTink 4K, and the SS1 reacts to it too.",
+	                 "Off stays off after a restart. Phosphor for Windows has the same switch, and updates the receiver's firmware." },
 	[SET_RETROSPY] = { "Shows the controller you're playing with on your PC, for streams and recordings, with RetroSpy (retro-spy.com).",
 	                   "Installed through Update All; here are the details to type into RetroSpy on the PC." },
 	[SET_RESTART] = { "Restarts the MiSTer.", "Saves are written as they happen, so nothing is lost." },
@@ -4733,6 +4758,10 @@ static int si_state(int row, char k[][40], char v[][96], int *hi)
 		LINE("Paired devices", "%d", cJSON_GetArraySize(cJSON_GetObjectItem(e, "devices")));
 		break;
 	}
+	case SET_DOCKIR:
+		LINE("Status", "%s", dockir_on() ? "On" : "Off");
+		if (dockir_st) LINE("Receiver", "%s", cJSON_IsTrue(cJSON_GetObjectItem(dockir_st, "present")) ? "In the dock" : "Not found (no dock?)");
+		break;
 	case SET_SAMBA:
 		if (!api_ok(samba_st) || !samba_b("available")) { LINE("Status", "Not on this system"); break; }
 		*hi = 0;
