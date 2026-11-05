@@ -27,6 +27,10 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   updated this way goes on once from a PC (BOOTSEL + MCU RST under the dock's SSD cover; the **?** there says how).
 - No "Connected / Disconnected" messages for the receiver.
 
+### Fixed
+- **The menu stood still for about a second a minute after start-up** while it asked phosphord about Phosphor
+  updates on GitHub; it asks in the background now.
+
 ## 0.27.69
 
 ### Fixed
