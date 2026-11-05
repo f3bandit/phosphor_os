@@ -137,7 +137,7 @@ M=../phosphor-modules
 if [ -d "$M/lib" ]; then
 	mkdir -p "$D/modules"
 	cp -r "$M/lib" "$D/modules/"
-	for m in diag storage bt-repair cifs-helper backup-agent health-watch update-guard cloud-sync; do [ -d "$M/$m" ] && cp -r "$M/$m" "$D/modules/"; done
+	for m in diag storage bt-repair updater cifs-helper backup-agent health-watch update-guard cloud-sync; do [ -d "$M/$m" ] && cp -r "$M/$m" "$D/modules/"; done
 fi
 printf '%s (%s)\n' "$V" "$(git rev-parse --short HEAD)" > "$D/VERSION"
 chmod 755 "$D"/*.sh "$D"/bin/*

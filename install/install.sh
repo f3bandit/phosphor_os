@@ -109,10 +109,11 @@ for f in "$HERE"/config/*.ini; do
 	[ -e "$ROOT/config/$n" ] || cp "$f" "$ROOT/config/$n.example"
 done
 # diag (whole-system checks, Settings > Diagnostics), storage (SD / NVMe / USB checks, Settings >
-# Storage) and bt-repair (Bluetooth check and repair, the PC app) only run when asked: always installed.
+# Storage), bt-repair (Bluetooth check and repair, the PC app) and updater (what Update All installs, from
+# Phosphor's catalog, with MiSTer's own Downloader) only run when asked: always installed.
 # The other modules change how the MiSTer boots, so they're installed one by one, by hand:
 #   modules/<name>/install.sh  (cifs-helper, backup-agent, health-watch, update-guard, cloud-sync)
-for m in diag storage bt-repair; do
+for m in diag storage bt-repair updater; do
 	if [ -x "$HERE/modules/$m/install.sh" ]; then
 		PHOSPHOR_ROOT="$ROOT" "$HERE/modules/$m/install.sh" > /dev/null || echo "note: the $m module didn't install" >&2
 	fi
