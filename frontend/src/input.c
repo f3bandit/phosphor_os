@@ -50,6 +50,7 @@ typedef struct {
 	unsigned short vid, pid;
 	int generic;         /* on Linux's plain HID driver (hid-generic): its button codes are just its buttons in
 	                        order (BTN_TL2 can be its Select), so only Main's mapping says what they are */
+	int ir;              /* the dock's IR remote receiver (DockIR): its keys mapped by map_ir */
 } dev_t_;
 
 static dev_t_ devs[MAX_DEV];
@@ -365,6 +366,7 @@ static void open_dev(const char *name)
 	ioctl(fd, EVIOCGNAME(sizeof(dname)), dname);
 	snprintf(d->label, sizeof(d->label), "%.63s", dname);
 	d->virt = strstr(dname, "MiSTer virtual input") != NULL;
+	d->ir = strstr(dname, "pico_ir_keyboard") != NULL;
 	char sp[160], drv[256] = "";
 	snprintf(sp, sizeof(sp), "/sys/class/input/%s/device/device/driver", name);
 	ssize_t dl = readlink(sp, drv, sizeof(drv) - 1);
@@ -420,6 +422,27 @@ static pkey_t map_virt(int code)
 	case KEY_TAB: return K_Y;
 	case KEY_PAGEUP: return K_L;
 	case KEY_PAGEDOWN: return K_R;
+	default: return KEY_NONE_;
+	}
+}
+
+/* the dock's IR remote: the keys Retro-Remake's DockIR firmware sends for each button (its README, PR #4),
+   for the menu. Keys left out (Pause/Space, Eject/C, Zoom/G, Contrast/M T, TV-AV/D, P.N.S/V, numbers, volume)
+   do nothing here: games and MiSTer's own menu still get them */
+static pkey_t map_ir(int code)
+{
+	switch (code) {
+	case KEY_UP: return K_UP;
+	case KEY_DOWN: return K_DOWN;
+	case KEY_LEFT: return K_LEFT;
+	case KEY_RIGHT: return K_RIGHT;
+	case KEY_ENTER: case KEY_A: return K_A;                            /* OK, Play */
+	case KEY_ESC: case KEY_BACKSPACE: case KEY_B: return K_B;          /* Exit, Cancel, Stop */
+	case KEY_F: case KEY_N: case KEY_PAGEDOWN: return K_R;              /* Fast forward, Next, P Down */
+	case KEY_R: case KEY_P: case KEY_PAGEUP: return K_L;                /* Rewind, Previous, P Up */
+	case KEY_S: return K_X;                                             /* Info */
+	case KEY_TAB: return K_Y;                                           /* L/R */
+	case KEY_F12: return K_MENU;                                        /* Menu */
 	default: return KEY_NONE_;
 	}
 }
@@ -564,6 +587,7 @@ pkey_t input_poll(unsigned now)
 				dev_t_ *d = &devs[i];
 				pkey_t k;
 				if (d->virt) k = map_virt(ev.code);
+				else if (d->ir) k = map_ir(ev.code);
 				else if (d->pad && virt_feeds() && ev.code >= BTN_MISC && ev.code != BTN_START &&
 				         ev.code != BTN_MODE && ev.code != BTN_SELECT) k = KEY_NONE_;  /* Main passes these on */
 				else if (d->pad && own_button(ev.code) && ev.code != BTN_SELECT && ev.code != BTN_START) k = face_key(d, ev.code);
