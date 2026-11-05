@@ -21,6 +21,7 @@
  * address; more get 503), so a slow client only holds its own. These threads don't touch the
  * database: commands go through phosphord's own socket like any local client, so they run one at
  * a time in the main loop. Wrong keys or codes from one address: 5, then it waits 30 s. */
+#include "dockir.h"
 #include "remote.h"
 #include "music.h"
 #include "shot.h"
@@ -72,7 +73,7 @@
 static const char *ALLOWED[] = {
 	"status", "gen", "categories", "systems", "games", "game", "last", "launch", "favorite", "rescan",
 	"link", "unlink", "candidates", "edit", "scrape", "rescrape", "not_game", "scrape_sources", "scrape_accounts", "scrape_progress",
-	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth", "bt_repair",
+	"vset", "look", "sysbk", "diag", "cloud", "backup", "memcard", "pads", "pad_analog", "ports", "bluetooth", "bt_repair", "dockir",
 	"system", "samba", "power", "guard", "ua", "retrospy", "storage", "dashboard", "controllers", "update", "scrape_todo", "scrape_result", "scrape_local", "scrape_undo", "scrape_pc_done", "press", "network", "usb", "ini", "scripts",
 	"disc", "disc_play", "disc_eject", "disc_enable", "disc_copy",
 	/* RetroAchievements: looking and the Web API key; logging in (a password) only on the MiSTer itself */
@@ -783,6 +784,32 @@ static void do_update_put(req_t *r)
 	respond_json(r->fd, 200, out);
 }
 
+/* PUT /dockir/<name>.uf2: firmware for the dock's IR receiver, from Phosphor for Windows; kept as
+   phosphor/updates/dockir.uf2 until {"cmd":"dockir","do":"update"} puts it on (dockir.c) */
+#define DOCKIR_BODY_MAX (2L * 1024 * 1024)
+static void do_dockir_put(req_t *r)
+{
+	const char *name = r->path + 8;
+	size_t n = strlen(name);
+	if (n < 5 || n > 96 || strcmp(name + n - 4, ".uf2") || strchr(name, '/')) { respond_error(r->fd, 400, "send a .uf2 file"); return; }
+	if (r->clen > DOCKIR_BODY_MAX) { respond_error(r->fd, 413, "too big for the IR receiver's firmware"); return; }
+	r->deadline_ms = now_ms() + 30000;
+	char dir[PATH_MAX], tmp[PATH_MAX], err[200];
+	snprintf(dir, sizeof(dir), "%s/phosphor/updates", p_fat());
+	mkdirs(dir);
+	snprintf(tmp, sizeof(tmp), "%s/.dockir.XXXXXX", dir);
+	int fd = mkstemp(tmp);
+	if (fd < 0) { respond_error(r->fd, 500, "no room for the upload"); return; }
+	int bad = read_body(r, NULL, fd);
+	if (!bad && fsync(fd)) bad = 1;
+	close(fd);
+	if (bad) { unlink(tmp); return; }
+	if (dockir_check_uf2(tmp, err, sizeof(err))) { unlink(tmp); respond_error(r->fd, 400, err); return; }
+	if (rename(tmp, dockir_file())) { unlink(tmp); respond_error(r->fd, 500, "couldn't save the firmware"); return; }
+	plog("remote access: dock IR firmware %s received (%lld bytes)", name, (long long)r->clen);
+	respond_json(r->fd, 200, "{\"ok\":true}");
+}
+
 /* ---------- music: soundtracks sent from Phosphor for Windows, and album covers for the apps ----------
  *   PUT /music/<album>/<file>   a file of an album (audio, cover, album.json) into <drive>/Music/Steam/<album>
  *   GET /music/cover/<album id> an album's cover (music_albums gives the ids; "cd": the CD in the drive) */
@@ -930,14 +957,14 @@ static void handle(int fd, uint32_t ip)
 		goto done;
 	}
 	int is_api = !strcmp(r->path, "/api"), is_pair = !strcmp(r->path, "/pair"), is_art = !strncmp(r->path, "/art/", 5);
-	int is_upd = !strncmp(r->path, "/update/", 8);
+	int is_upd = !strncmp(r->path, "/update/", 8), is_dockir = !strncmp(r->path, "/dockir/", 8);
 	int is_mcover = !strncmp(r->path, "/music/cover/", 13), is_music = !is_mcover && !strncmp(r->path, "/music/", 7);
 	int is_shot = !strncmp(r->path, "/shots/thumb/", 13) || !strncmp(r->path, "/shots/file/", 12);
-	if (!is_api && !is_pair && !is_art && !is_upd && !is_music && !is_mcover && !is_shot) { respond_error(fd, 404, "no such path"); goto done; }
+	if (!is_api && !is_pair && !is_art && !is_upd && !is_dockir && !is_music && !is_mcover && !is_shot) { respond_error(fd, 404, "no such path"); goto done; }
 	if (is_shot && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
 	if (is_music && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
 	if (is_mcover && strcmp(r->method, "GET")) { respond_error(fd, 405, "GET"); goto done; }
-	if (is_upd && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
+	if ((is_upd || is_dockir) && strcmp(r->method, "PUT")) { respond_error(fd, 405, "PUT"); goto done; }
 	if ((is_api || is_pair) && strcmp(r->method, "POST")) { respond_error(fd, 405, "POST"); goto done; }
 	if (is_art && strcmp(r->method, "GET") && strcmp(r->method, "PUT")) { respond_error(fd, 405, "GET or PUT"); goto done; }
 
@@ -968,6 +995,11 @@ static void handle(int fd, uint32_t ip)
 	if (is_upd) {
 		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
 		else do_update_put(r);
+		goto done;
+	}
+	if (is_dockir) {
+		if (r->clen < 0) respond_error(fd, 411, "send Content-Length");
+		else do_dockir_put(r);
 		goto done;
 	}
 	if (is_art) {

@@ -53,7 +53,7 @@ func routes(mux *http.ServeMux) {
 	})
 	h("/api/state", apiState)
 	h("/api/app_update", apiAppUpdate) // Phosphor for Windows updating itself (appupdate.go)
-	h("/api/retrospy", apiRetrospy)     // RetroSpy on this PC: found, opened with the SS1 filled in (retrospy.go)
+	h("/api/retrospy", apiRetrospy)    // RetroSpy on this PC: found, opened with the SS1 filled in (retrospy.go)
 	h("/api/automatch", apiAutomatch)
 	h("/api/discover", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "found": discover()})
@@ -134,6 +134,7 @@ func routes(mux *http.ServeMux) {
 		writeJSON(w, map[string]any{"ok": true, "auto": autoReconnect()})
 	})
 	h("/api/upload", apiUpload)                                   // a Phosphor package to the SS1 (Settings > Update Phosphor)
+	h("/api/dockir_upload", apiDockirUpload)                      // firmware for the dock's IR receiver (Settings > Devices > Dock IR remote)
 	h("/api/quit", func(w http.ResponseWriter, r *http.Request) { // Settings > About > Exit Phosphor
 		writeJSON(w, map[string]any{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); quitApp() }()
@@ -330,6 +331,33 @@ func apiUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, err := authed("PUT", "/update/"+name, bytes.NewReader(body), 5*time.Minute)
+	if err != nil {
+		fail(w, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
+}
+
+// apiDockirUpload: firmware for the dock's IR receiver (a .uf2 for its RP2040) from this PC to the SS1, which
+// keeps it until {"cmd":"dockir","do":"update"} puts it on. ?name=<file>.uf2, the file as the body.
+func apiDockirUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if !regexp.MustCompile(`^[A-Za-z0-9._ ()-]{1,90}\.uf2$`).MatchString(name) {
+		fail(w, "That isn't a firmware file (.uf2)")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20+1))
+	if err != nil || len(body) < 512 || len(body) > 2<<20 || len(body)%512 != 0 {
+		fail(w, "That isn't firmware for the dock's IR receiver (a .uf2 for its RP2040)")
+		return
+	}
+	resp, err := authed("PUT", "/dockir/"+url.PathEscape(strings.ReplaceAll(name, " ", "_")), bytes.NewReader(body), time.Minute)
 	if err != nil {
 		fail(w, err.Error())
 		return

@@ -14,7 +14,7 @@ const SET_SECTIONS = [
 	{ id: "storage", name: "Storage", tabs: [["SD card", "tSD"], ["NVMe / USB", "tExt"]] },
 	{ id: "saves", name: "Saves & memory cards", tabs: [["Memory cards", "tMc"], ["Backups", "tSnaps"], ["Cloud saves", "tCloud"]] },
 	{ id: "controllers", name: "Controllers", tabs: [["Controllers", "tCtrl"], ["Backups", "tCtrlBk"], ["RetroSpy", "tRS"]] },
-	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"]] },
+	{ id: "devices", name: "Devices", tabs: [["Bluetooth", "tDevBt"], ["Front ports", "tDevPorts"], ["USB", "tDevUsb"], ["Dock IR remote", "tDockIr"]] },
 	{ id: "discs", name: "Discs", tabs: [["Discs", "tDiscs"]] },
 	{ id: "ra", name: "RetroAchievements", tabs: [["Account & options", "tRa"], ["Your progress", "tRaProg"]] },
 	{ id: "network", name: "Network", tabs: [["Network", "tNet"]] },
@@ -1696,6 +1696,53 @@ class AppSettings {
 				return `<div class="row net"><span class="n"><b>Port ${n}</b><small>${x.connected ? esc(T[x.id] || "Controller") : "Nothing plugged in"}</small></span><span class="v">${x.connected ? '<span class="mpill good">connected</span>' : ""}</span></div>`;
 			}).join("");
 			return true;
+		};
+		if (await draw()) this.every(1500, draw);
+	}
+	/* ---------- Devices › Dock IR remote: the dock's IR receiver (an RP2040 running DockIR) and updating its
+	   firmware from here (phosphord dockir.c); the first flash is by hand, the ? says how ---------- */
+	async tDockIr(b) {
+		const alive = this.alive;
+		b.append(h(`<div class="split"><div class="list" id="dirl"><div class="empty"><span class="spin"></span></div></div>
+			<div class="panel"><h2>Dock IR remote <button class="btn" id="dir_help" data-nav title="How to put the receiver in flash mode">?</button></h2>
+			<p class="note">The SuperDock's IR receiver turns the remote's buttons into keys for the SS1. Its firmware can be updated from here: choose a firmware file (.uf2) on this PC, and the SS1 puts it on.</p>
+			<div class="acts"><button class="btn primary" id="dir_pick" data-nav>Update from a file…</button><input type="file" id="dir_file" accept=".uf2" hidden></div>
+			<p class="note" id="dir_st"></p></div></div>`));
+		$("#dir_help").onclick = () => askChoice("Flashing the receiver by hand",
+			"Its first firmware that can be updated from here (and a way back, whatever it runs) goes on from a PC:\n\n" +
+			"1. Switch the SS1 off and connect the dock's USB port to this PC (not the debug port).\n" +
+			"2. Open the dock's SSD cover. Next to the SSD there are two small buttons: BOOTSEL and MCU RST (you may need to take the SSD out to reach them).\n" +
+			"3. Hold BOOTSEL, tap MCU RST, then let go of BOOTSEL.\n" +
+			"4. A drive called RPI-RP2 appears on this PC. Copy the .uf2 file onto it: it flashes and the drive goes away by itself.\n" +
+			"5. Close the cover, connect the dock to the SS1 again and switch it on.\n\n" +
+			"The receiver's bootloader is built into its chip, so this always works, whatever firmware is on it.", ["OK"]);
+		const draw = async () => {
+			let s;
+			try { s = await ss1({ cmd: "dockir" }); } catch (e) { if (alive()) $("#dirl").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return false; }
+			if (!alive()) return false;
+			const j = s.job || {};
+			$("#dirl").innerHTML = !s.present ? `<div class="empty">No dock IR receiver: is the SS1 on its dock?</div>`
+				: `<div class="row net"><span class="n"><b>IR receiver</b><small>on the dock's USB hub</small></span><span class="v"><span class="mpill good">connected</span></span></div>
+				<div class="row net"><span class="n"><b>Firmware</b><small>${s.updatable ? "can be updated from here" : "can't be updated from here yet: flash it once from a PC (?)"}</small></span><span class="v">${esc(s.firmware || "DockIR")} ${s.version ? "· " + esc(s.version) : ""}</span></div>`;
+			$("#dir_pick").disabled = !s.present || !s.updatable || !!j.busy;
+			$("#dir_st").innerHTML = j.busy ? `<span class="spin"></span> ${esc(j.message || "Updating…")}` : j.state ? `${j.ok ? "✓" : "⚠"} ${esc(j.message)}` : "";
+			return true;
+		};
+		$("#dir_pick").onclick = () => $("#dir_file").click();
+		$("#dir_file").onchange = async () => {
+			const f = $("#dir_file").files[0];
+			$("#dir_file").value = "";
+			if (!f) return;
+			if (!/\.uf2$/i.test(f.name)) return toast("That isn't a firmware file (.uf2)");
+			if (await askChoice("Update the dock IR receiver?", `${f.name} goes on the receiver. The remote doesn't work for a few seconds while it restarts.`, ["Not now", "Update"], 1) !== 1) return;
+			try {
+				const r = await fetch("/api/dockir_upload?name=" + encodeURIComponent(f.name), { method: "POST", headers: { "X-Phosphor-Key": KEY }, body: await f.arrayBuffer() });
+				const u = await r.json();
+				if (!u.ok) throw new Error(u.error || "the SS1 didn't take it");
+				await ss1({ cmd: "dockir", do: "update" });
+				toast("Updating the dock IR receiver…");
+			} catch (e) { toast(e.message); }
+			draw();
 		};
 		if (await draw()) this.every(1500, draw);
 	}
