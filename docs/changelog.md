@@ -14,6 +14,19 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 - The new bt-repair module does it: the same repair as SS1 Tool's. Pairing on the TV waits while Bluetooth is
   being repaired or changed.
 
+### Dock IR remote
+- **Settings › Dock IR remote** turns the dock's IR receiver off or on: off when the remote also works another box
+  (a RetroTink 4K) and the SS1 reacts to it too. It stays off after a restart or after the dock is plugged back in.
+  Phosphor for Windows has the same switch in **Devices › Dock IR remote**; the two stay in step.
+- **The remote's buttons work in the menu** (Retro Remake's DockIR firmware with its full keymap): OK and Play
+  choose, Exit, Cancel and Stop go back, ⏩ ⏭ P Down and ⏪ ⏮ P Up page through lists, Info is X, L/R is Y, Menu
+  is the menu. The other buttons are left to games and MiSTer's own menu.
+- **A status bar icon** shows the remote: on, off (slashed) or no icon without a dock.
+- **Firmware updates for the receiver from Phosphor for Windows** (Devices › Dock IR remote › Update from a file):
+  the SS1 restarts the receiver into its bootloader and puts the new firmware on. Its first firmware that can be
+  updated this way goes on once from a PC (BOOTSEL + MCU RST under the dock's SSD cover; the **?** there says how).
+- No "Connected / Disconnected" messages for the receiver.
+
 ## 0.27.69
 
 ### Fixed
