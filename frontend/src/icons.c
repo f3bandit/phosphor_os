@@ -137,7 +137,8 @@ static void draw_cb(lv_event_t *e)
 		} else {
 			lv_color_t c = p.col;
 			int w = p.w;
-			p.col = PAL.bg; p.w = w + LV_MAX(2, w);   /* (a gap cut either side of the slash: drawn opaque) */
+			lv_obj_t *par = lv_obj_get_parent(obj);    /* (a gap cut either side of the slash, in what it sits on: opaque) */
+			p.col = par ? lv_obj_get_style_bg_color(par, 0) : PAL.bg; p.w = w + LV_MAX(2, w);
 			line(&p, 4.5f, 4.5f, 19.5f, 19.5f);
 			p.col = c; p.w = w;
 			line(&p, 4.5f, 4.5f, 19.5f, 19.5f);
