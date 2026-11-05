@@ -8,6 +8,7 @@ typedef struct {
 	int ethernet;   /* wired link up */
 	int wifi;       /* -1 = no WiFi adapter, 0 = not connected, 1..3 = signal bars */
 	int bt;         /* -1 = no Bluetooth adapter, else connected devices */
+	int dockir;     /* -1 = no dock IR receiver, 0 = switched off (Settings > Dock IR remote), 1 = on */
 } sysinfo_t;
 
 void sysinfo_read(sysinfo_t *s);
