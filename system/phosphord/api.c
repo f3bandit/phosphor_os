@@ -120,6 +120,7 @@
 #include "memcard.h"
 #include "bt.h"
 #include "btfix.h"
+#include "dockir.h"
 #include "cores.h"
 #include "samba.h"
 #include "storage.h"
@@ -1729,6 +1730,13 @@ char *api_handle(sqlite3 *db, const char *request)
 	else if (!strcmp(c->valuestring, "memcard")) out = cmd_memcard(req);
 	else if (!strcmp(c->valuestring, "bluetooth")) out = cmd_bluetooth(req);
 	else if (!strcmp(c->valuestring, "bt_repair")) out = cmd_bt_repair(req);
+	else if (!strcmp(c->valuestring, "dockir")) {      /* the dock's IR receiver: what it runs; "do":"update" */
+		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
+		char err[300];
+		if (d && strcmp(d, "update")) out = fail("do: update");
+		else if (d && dockir_update_start(err, sizeof(err))) out = fail(err);
+		else { cJSON *o = ok(), *j = dockir_json(); cJSON *x; cJSON_ArrayForEach(x, j) cJSON_AddItemReferenceToObject(o, x->string, x); out = reply(o); cJSON_Delete(j); }
+	}
 	else if (!strcmp(c->valuestring, "cores")) {
 		const char *d = cJSON_GetStringValue(cJSON_GetObjectItem(req, "do"));
 		if (d && !strcmp(d, "update")) {
