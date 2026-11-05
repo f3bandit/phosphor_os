@@ -8,7 +8,11 @@
 # tools/updater/rules.json, written to db_watch_catalog.json: what Phosphor's updater on the SS1 will install
 # from, by the categories the user has switched on (patched parts from Phosphor, the rest from the original).
 # The report is the run's summary; when something needs a look, one issue here says what (GitHub emails it),
-# updated only when the list changes. It never pushes or publishes anything (the same rule as upstream-watch).
+# updated only when the list changes.
+# Then the publish job builds what the SS1's updater installs from (tools/updater/build_catalog.py, with
+# Phosphor's latest release for the patched parts) and puts it on the updater-catalog branch, replaced whole
+# each time (one commit, no history): catalog.json, dbs/ (the patch databases) and parts/ (Phosphor's files).
+# It never touches main or any code: reviewing still goes through rules.json and status.json.
 name: Database watch (Update All's databases)
 on:
   schedule:
@@ -80,3 +84,40 @@ jobs:
           else
             echo "Same list as last time: issue #$existing left as it is"
           fi
+  publish:
+    needs: watch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/updater
+      - uses: actions/download-artifact@v4
+        with:
+          name: db-watch
+          path: watch
+      - name: Phosphor's latest release
+        run: |
+          tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10" --jq '[.[] | select(.draft | not)][0].tag_name')
+          echo "release $tag"
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p 'phosphor-*-armhf.tar.gz' -D rel
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p SHA256SUMS.txt -D rel
+          (cd rel && sha256sum -c --ignore-missing SHA256SUMS.txt)
+      - name: Build the catalog
+        id: build
+        run: |
+          python3 -I tools/updater/build_catalog.py --catalog watch/db_watch_catalog.json --release rel/phosphor-*-armhf.tar.gz --out site || echo "some patches aren't ready (see catalog.json)"
+          ls -R site | head -20
+      - name: Publish on the updater-catalog branch
+        run: |
+          cd site
+          { echo "# Phosphor's updater catalog"; echo; echo "Built by the Database watch workflow on main (.github/workflows/db-watch.yml); replaced whole each run. Phosphor's updater on the SS1 reads catalog.json."; } > README.md
+          git init -q -b updater-catalog
+          git config user.name "f3bandit"; git config user.email "4943324+f3bandit@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Updater catalog: $(python3 -I -c "import json; c=json.load(open('catalog.json')); print('Phosphor', c['phosphor'] + ',', 'Update All', c['update_all'] + ',', c['checked'])")"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/$GITHUB_REPOSITORY.git" updater-catalog

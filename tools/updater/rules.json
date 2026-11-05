@@ -1,5 +1,5 @@
 {
- "_about": "Phosphor's own paths and the exceptions, for db_watch.py. 'protected': a pattern (fnmatch, or re: a regular expression) and why a file there matters. 'expected': files a database may install there because Phosphor deals with them (the main distribution's Main and menu core, swapped for Phosphor's; MiSTer Linux, behind the Linux update warning). 'var_ids': Update All settings in status.json and the databases they switch on. 'catalog' (by title, then database id) and 'catalog_prefix': each database's category (cores, special cores, hybrid cores, wallpapers, bios, game art, tools, not needed) and tag (ok, patch, launcher, warn, block, in phosphor, not needed, opt-in, review), with why; for patch and launcher, 'ready' says whether Phosphor's parts exist yet and 'parts' which files Phosphor's replace (the rest come from the original database).",
+ "_about": "Phosphor's own paths and the exceptions, for db_watch.py. 'protected': a pattern (fnmatch, or re: a regular expression) and why a file there matters. 'expected': files a database may install there because Phosphor deals with them (the main distribution's Main and menu core, swapped for Phosphor's; MiSTer Linux, behind the Linux update warning). 'var_ids': Update All settings in status.json and the databases they switch on. 'catalog' (by title, then database id) and 'catalog_prefix': each database's category (cores, special cores, hybrid cores, wallpapers, bios, game art, tools, not needed) and tag (ok, patch, launcher, warn, block, in phosphor, not needed, opt-in, review), with why; for patch and launcher, 'ready' says whether Phosphor's parts exist yet and 'parts' which files Phosphor deals with: 'phosphor:<file in Phosphor's release>' (Phosphor's file goes in its place: same path, Phosphor's hash and URL, so MiSTer's downloader installs and keeps it) or 'original' (installed as it comes, not used by Phosphor). The rest come from the original database. A part is never just removed: the downloader would delete the file as obsolete.",
  "protected": {
   "MiSTer": "replaces Phosphor's Main",
   "re:(?i)^mister_[^/.]+$": "ships a Main of its own (MiSTer.ini main= can switch to it)",
@@ -62,12 +62,11 @@
   "Main Distribution: MiSTer-devel": {
    "category": "cores",
    "tag": "patch",
-   "why": "MiSTer-devel's cores; Phosphor's Main and menu core in place of MiSTer and menu.rbf",
+   "why": "MiSTer-devel's cores; Phosphor's menu core as menu.rbf (MiSTer's own Main stays: it hands over to Phosphor's through MiSTer.ini main=)",
    "ready": true,
-   "parts": [
-    "MiSTer",
-    "menu.rbf"
-   ]
+   "parts": {
+    "menu.rbf": "phosphor:cores/menu_phosphor.rbf"
+   }
   },
   "Main Distribution: MiSTer-devel (Edge Linux)": {
    "category": "cores",
@@ -149,43 +148,43 @@
    "tag": "patch",
    "why": "Phosphor's own build of its Main",
    "ready": true,
-   "parts": [
-    "MiSTer_3S-ARM"
-   ]
+   "parts": {
+    "MiSTer_3S-ARM": "phosphor:bin/MiSTer_3S-ARM"
+   }
   },
   "MultiDatabases/sonic-mania": {
    "category": "hybrid cores",
    "tag": "patch",
    "why": "Phosphor's own build of its Main",
    "ready": true,
-   "parts": [
-    "MiSTer_SonicMania"
-   ]
+   "parts": {
+    "MiSTer_SonicMania": "phosphor:bin/MiSTer_SonicMania"
+   }
   },
   "MultiDatabases/duke3d": {
    "category": "hybrid cores",
    "tag": "patch",
-   "why": "Runs inside Phosphor's Main: its own Main left out",
+   "why": "Runs inside Phosphor's Main: its own Main is installed but not used",
    "ready": true,
-   "parts": [
-    "Mister_duke3d"
-   ]
+   "parts": {
+    "Mister_duke3d": "original"
+   }
   },
   "MultiDatabases/mister-quake": {
    "category": "hybrid cores",
    "tag": "patch",
-   "why": "Runs inside Phosphor's Main: its own Main left out",
+   "why": "Runs inside Phosphor's Main: its own Main is installed but not used",
    "ready": true,
-   "parts": [
-    "MiSTer_Quake"
-   ]
+   "parts": {
+    "MiSTer_Quake": "original"
+   }
   },
   "MultiDatabases/maldita-castilla": {
    "category": "hybrid cores",
    "tag": "patch",
    "why": "Phosphor's Main starts its engine: its own Main left out",
    "ready": true,
-   "parts": []
+   "parts": {}
   },
   "MultiDatabases/nblood": {
    "category": "hybrid cores",
