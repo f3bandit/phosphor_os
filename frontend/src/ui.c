@@ -38,7 +38,7 @@
 #include <dirent.h>
 #include <netinet/in.h>
 
-typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY, SCR_UA, SCR_RS } screen_t;
+typedef enum { SCR_HOME, SCR_SYSTEMS, SCR_GAMES, SCR_SETTINGS, SCR_SOURCES, SCR_DIAG, SCR_WIFI, SCR_REMOTE, SCR_CLOUD, SCR_WELCOME, SCR_BACKUP, SCR_PORTS, SCR_BT, SCR_ABOUT, SCR_LOG, SCR_SCRIPTS, SCR_SCAN, SCR_GUARD, SCR_ART, SCR_CTRL, SCR_MAP, SCR_PUPD, SCR_MCARDS, SCR_PADTEST, SCR_STORAGE, SCR_CTEST, SCR_VIDEO, SCR_DISCS, SCR_INGAME, SCR_RA, SCR_RAVIEW, SCR_MUSIC, SCR_NOWPLAY, SCR_SHOTS, SCR_SHOTGRID, SCR_SHOTVIEW, SCR_FOLDER, SCR_WALL, SCR_DCOPY, SCR_UA, SCR_RS, SCR_RACCT } screen_t;
 
 static int W, H;
 static lv_obj_t *root, *body, *footer;
@@ -2755,10 +2755,16 @@ static cJSON *ua_entries(void)
 	cJSON *menus = cJSON_GetObjectItem(ua.list, "menus");
 	return m ? cJSON_GetObjectItem(cJSON_GetObjectItem(menus, m), "entries") : NULL;
 }
-static cJSON *ua_cur(void) { return cJSON_GetArrayItem(ua_entries(), ua_vl.sel); }
-/* the main menu ends with Phosphor's Clean up row */
-static int ua_count(void) { return cJSON_GetArraySize(ua_entries()) + (ua.depth == 0 && ua.list ? 1 : 0); }
-static int ua_is_clean(void) { return ua.depth == 0 && ua.list && ua_vl.sel == cJSON_GetArraySize(ua_entries()); }
+/* the main menu starts with Phosphor's RetroAccount row and ends with its Clean up row */
+static int ua_off(void) { return ua.depth == 0 && ua.list ? 1 : 0; }
+static cJSON *ua_cur(void) { return ua_vl.sel < ua_off() ? NULL : cJSON_GetArrayItem(ua_entries(), ua_vl.sel - ua_off()); }
+static int ua_count(void) { return cJSON_GetArraySize(ua_entries()) + 2 * ua_off(); }
+static int ua_is_clean(void) { return ua_off() && ua_vl.sel == cJSON_GetArraySize(ua_entries()) + 1; }
+static int ua_is_racct(void) { return ua_off() && ua_vl.sel == 0; }
+static void racct_row(char *t, size_t n, char *val, size_t vn);
+static void racct_row_detail(lv_obj_t *name, lv_obj_t *badge, lv_obj_t *h1, lv_obj_t *t1, lv_obj_t *h2, lv_obj_t *t2, lv_obj_t *foot);
+static void show_racct(void);
+static void racct_status_tick(void);
 
 static const char *ua_status(cJSON *e) { cJSON *s = cJSON_GetObjectItem(e, "status"); const char *v = api_str(s, "status_now"); return v ? v : api_str(s, "status") ? api_str(s, "status") : "untested"; }
 static const char *ua_status_word(const char *s)
@@ -2796,13 +2802,14 @@ static int ua_acts(cJSON *e)
 
 static void ua_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
 {
-	if (ua.depth == 0 && i == cJSON_GetArraySize(ua_entries())) {
+	if (ua_off() && i == 0) { racct_row(t, n, val, vn); *dim = 0; return; }
+	if (ua_off() && i == cJSON_GetArraySize(ua_entries()) + 1) {
 		snprintf(t, n, "Clean up");
 		snprintf(val, vn, ">");
 		*dim = 0;
 		return;
 	}
-	cJSON *e = cJSON_GetArrayItem(ua_entries(), i);
+	cJSON *e = cJSON_GetArrayItem(ua_entries(), i - ua_off());
 	snprintf(t, n, "%s", api_str(e, "title") ? api_str(e, "title") : "");
 	const char *st = ua_status_word(ua_status(e)), *v = api_str(e, "value");
 	*dim = 0;
@@ -2818,6 +2825,7 @@ static void ua_size(char *o, size_t n, double b);
 static void ua_detail(void)
 {
 	if (!ua.panel) return;
+	if (ua_is_racct()) { racct_row_detail(ua.name, ua.badge, ua.h1, ua.t1, ua.h2, ua.t2, ua.foot); lv_obj_set_style_text_color(ua.badge, PAL.dim, 0); return; }
 	if (ua_is_clean()) {
 		label_set_if(ua.name, "Clean up");
 		label_set_if(ua.badge, "");
@@ -3281,6 +3289,7 @@ static void ua_key(pkey_t k)
 	if (!ua.list) return;
 	if (vlist_key(&ua_vl, k)) { ua_detail(); return; }
 	if (ua_is_clean()) { if (k == K_A && !ua.busy) ua_cleanup(); return; }
+	if (ua_is_racct()) { if (k == K_A) show_racct(); return; }
 	cJSON *e = ua_cur();
 	if (!e) return;
 	if (k == K_X) { ua_uninstall_ask(e); return; }
@@ -3305,6 +3314,302 @@ static void ua_tick(void)
 	if (ua.loading || ua.busy || !ua.list) api_bg_ask("ua", "{\"cmd\":\"ua\"}");
 	cJSON *r = api_bg_take("ua");
 	if (r) ua_take(r);
+	if (ua.list) racct_status_tick();             /* the RetroAccount row's status */
+}
+
+/* ---------- Settings > Update All > RetroAccount ----------
+ * Update All's sign-in (retroaccount.com), for its Patreon extras, JOTEGO's private cores and the Coin-Op
+ * Collection's license: Update All's own RetroAccount code, through phosphord's "ua" bridge (ra_status,
+ * ra_sync, ra_login / ra_poll, ra_logout, ra_link). Signing in shows a code and a QR code for the phone;
+ * Link reads this SS1's FPGA ID with Update All's own linker (the Linker core for a few seconds, then the
+ * menu core again). Every Update All run syncs the account by itself. */
+static vlist_t racct_vl;
+static struct {
+	cJSON *st;                         /* the last ra_status / ra_sync answer */
+	int signing, synced_asked, sure_out, sure_link;
+	char code[24], url[200];
+	uint32_t until, next_poll, last_ask;
+	int interval;
+	lv_obj_t *badge, *t1, *qr, *codel, *t2;
+} racct;
+
+static int racct_in(void) { return cJSON_IsTrue(cJSON_GetObjectItem(racct.st, "signed_in")); }
+static int racct_linked(void) { return cJSON_IsTrue(cJSON_GetObjectItem(racct.st, "verified")); }
+static const char *racct_word(const char *s)
+{
+	if (!s) return "Not checked yet";
+	return !strcmp(s, "active") ? "Active" : !strcmp(s, "inactive") ? "Not on this account" : !strcmp(s, "need_login") ? "Sign in first" :
+	       !strcmp(s, "connection_failed") ? "Couldn't reach RetroAccount" : "Checking";
+}
+/* the benefits in one line or one per line */
+static void racct_benefits(char *o, size_t n, const char *sep)
+{
+	cJSON *b = cJSON_GetObjectItem(racct.st, "benefits");
+	if (!b) { snprintf(o, n, "%s", racct_in() ? "Checking what the account gives\xE2\x80\xA6" : ""); return; }
+	const char *co = api_str(b, "coin_op"), *rel = api_str(b, "coin_op_releases");
+	char cop[80];
+	if (co && !strcmp(co, "active") && rel && *rel) snprintf(cop, sizeof(cop), "Active (%s)", rel);
+	else snprintf(cop, sizeof(cop), "%s", racct_word(co));
+	snprintf(o, n, "Update All Patreon: %s%sJOTEGO private: %s%sCoin-Op Collection: %s", racct_word(api_str(b, "update_all_extras")), sep,
+		racct_word(api_str(b, "jotego_private")), sep, cop);
+}
+
+/* Update All's main menu: the row on top */
+static void racct_row(char *t, size_t n, char *val, size_t vn)
+{
+	snprintf(t, n, "RetroAccount");
+	snprintf(val, vn, "%s  >", !racct.st ? "" : racct_in() ? (racct_linked() ? "Signed in" : "Signed in  \xC2\xB7  not linked") : "Sign in");
+}
+static void racct_row_detail(lv_obj_t *name, lv_obj_t *badge, lv_obj_t *h1, lv_obj_t *t1, lv_obj_t *h2, lv_obj_t *t2, lv_obj_t *foot)
+{
+	label_set_if(name, "RetroAccount");
+	label_set_if(badge, !racct.st ? "" : racct_in() ? (racct_linked() ? "Signed in  \xC2\xB7  this SS1 linked" : "Signed in  \xC2\xB7  this SS1 not linked") : "Not signed in");
+	label_set_if(h1, "WHAT IT GIVES");
+	char b[300];
+	racct_benefits(b, sizeof(b), "\n");
+	label_set_if(t1, racct.st && racct_in() && cJSON_GetObjectItem(racct.st, "benefits") ? b :
+		"Update All's account: sign in to get your Update All Patreon extras, JOTEGO's private cores and the Coin-Op Collection license on this SS1.");
+	label_set_if(h2, "PHOSPHOR SAYS");
+	label_set_if(t2, "Update All's own sign-in and sync. Every Update All run keeps the keys and licenses current.");
+	label_set_if(foot, "A  Open");
+}
+
+/* the row's status, asked in the background while Update All's page is open (the bridge may still be loading) */
+static void racct_status_tick(void)
+{
+	if (racct.st && !racct.signing) return;
+	cJSON *r = api_bg_take("racct");
+	if (r) {
+		if (api_ok(r) && cJSON_GetObjectItem(r, "signed_in")) { cJSON_Delete(racct.st); racct.st = r; r = NULL; }
+		cJSON_Delete(r);
+		if (racct.st && cur == SCR_UA) { vlist_refresh(&ua_vl); ua_detail(); }
+	}
+	if (!racct.st) api_bg_ask("racct", "{\"cmd\":\"ua\",\"do\":\"ra_status\"}");
+}
+
+static int racct_nrows(void) { return !racct.st ? 0 : racct.signing ? 2 : racct_in() ? 3 : 1; }
+static void racct_fill(int i, char *t, size_t n, char *val, size_t vn, int *dim)
+{
+	*dim = 0;
+	val[0] = 0;
+	if (racct.signing) { snprintf(t, n, "%s", i == 0 ? "New code" : "Cancel"); return; }
+	if (!racct_in()) { snprintf(t, n, "Sign in"); return; }
+	if (i == 0) snprintf(t, n, "Sync now");
+	else if (i == 1) { snprintf(t, n, "Link this SS1"); snprintf(val, vn, "%s", racct_linked() ? "Linked" : "Not linked"); }
+	else snprintf(t, n, "Sign out");
+}
+
+static void racct_draw(void)
+{
+	if (cur != SCR_RACCT) return;
+	char b[400], c[400];
+	int sign = racct.signing;
+	if (lv_obj_is_hidden(racct.qr) == sign) {   /* (only when it changes) */
+		lv_obj_set_hidden(racct.qr, !sign);
+		lv_obj_set_hidden(racct.codel, !sign);
+	}
+	if (!racct.st) {
+		label_set_if(racct.badge, "");
+		label_set_if(racct.t1, "Reading the account\xE2\x80\xA6");
+		label_set_if(racct.t2, "");
+	} else if (sign) {
+		uint32_t now = lv_tick_get();
+		int left = racct.until > now ? (int)((racct.until - now) / 1000) : 0;
+		label_set_if(racct.badge, "Signing in");
+		snprintf(b, sizeof(b), "Scan the code with your phone, or go to %s and enter:", racct.url);
+		label_set_if(racct.t1, b);
+		label_set_if(racct.codel, racct.code);
+		snprintf(c, sizeof(c), "Waiting for you to approve it  \xC2\xB7  %d:%02d left", left / 60, left % 60);
+		label_set_if(racct.t2, c);
+	} else if (racct_in()) {
+		const char *dev = api_str(racct.st, "device");
+		snprintf(c, sizeof(c), "Signed in%s%s  \xC2\xB7  %s", dev && *dev ? " as " : "", dev && *dev ? dev : "", racct_linked() ? "this SS1 linked" : "this SS1 not linked");
+		label_set_if(racct.badge, c);
+		racct_benefits(b, sizeof(b), "\n");
+		label_set_if(racct.t1, b);
+		int ri = racct_vl.sel;
+		label_set_if(racct.t2,
+			ri == 0 ? "Gets the latest keys and licenses now. Every Update All run does this too." :
+			ri == 1 ? (racct.sure_link ? "The screen goes dark for a few seconds while the FPGA ID is read. Press A again to link." :
+			           "Links this SS1's FPGA ID to the account, as Update All's Link does. The screen goes dark for a few seconds.") :
+			racct.sure_out ? "Press A again to sign out." : "Signs this SS1 out of RetroAccount: its keys and licenses stop being renewed.");
+	} else {
+		label_set_if(racct.badge, "Not signed in");
+		label_set_if(racct.t1, "Sign in to get your Update All Patreon extras, JOTEGO's private cores and the Coin-Op Collection license on this SS1. "
+			"A shows a code to enter on your phone or computer.");
+		label_set_if(racct.t2, "");
+	}
+	racct_vl.count = racct_nrows();
+	if (racct_vl.sel >= racct_vl.count) racct_vl.sel = LV_MAX(0, racct_vl.count - 1);
+	vlist_refresh(&racct_vl);
+}
+
+static void racct_take(cJSON *r)
+{
+	if (api_ok(r) && cJSON_GetObjectItem(r, "signed_in")) { cJSON_Delete(racct.st); racct.st = r; return; }
+	toast_show(r && api_str(r, "error") ? api_str(r, "error") : "RetroAccount didn't answer: try again");
+	cJSON_Delete(r);
+}
+
+/* a blocking step the person asked for: what's happening shown first */
+static cJSON *racct_ask(const char *what, const char *doing, int ms)
+{
+	label_set_if(racct.t2, doing);
+	lv_refr_now(NULL);
+	return api_call_slow(ms, "{\"cmd\":\"ua\",\"do\":\"%s\"}", what);   /* poll-ok: once, on a press */
+}
+
+static void racct_sign_in(void)
+{
+	cJSON *r = racct_ask("ra_login", "Asking RetroAccount for a code\xE2\x80\xA6", 20000);
+	if (!api_ok(r) || !api_str(r, "user_code")) {
+		toast_show(r && api_str(r, "error") ? api_str(r, "error") : "Couldn't reach RetroAccount: is the network on?");
+		cJSON_Delete(r);
+		racct_draw();
+		return;
+	}
+	snprintf(racct.code, sizeof(racct.code), "%s", api_str(r, "user_code"));
+	snprintf(racct.url, sizeof(racct.url), "%s", api_str(r, "url") ? api_str(r, "url") : "retroaccount.com/code");
+	racct.until = lv_tick_get() + (uint32_t)api_num(r, "expires_in", 600) * 1000;
+	racct.interval = LV_MAX(3, (int)api_num(r, "interval", 5));
+	racct.next_poll = lv_tick_get() + (uint32_t)racct.interval * 1000;
+	cJSON_Delete(r);
+	lv_qrcode_update(racct.qr, racct.url, strlen(racct.url));
+	racct.signing = 1;
+	racct_vl.sel = 0;
+	racct_draw();
+}
+
+static void racct_tick(void)
+{
+	if (cur != SCR_RACCT) return;
+	uint32_t now = lv_tick_get();
+	cJSON *r = api_bg_take("racct");
+	if (r) {
+		int was = racct.st != NULL;
+		if (api_ok(r) && cJSON_GetObjectItem(r, "signed_in")) { cJSON_Delete(racct.st); racct.st = r; r = NULL; }
+		cJSON_Delete(r);
+		if (racct.st || was) racct_draw();
+	}
+	if (!racct.st) {                                 /* the bridge may still be loading Update All's code */
+		if (now - racct.last_ask >= 1000) { racct.last_ask = now; api_bg_ask("racct", "{\"cmd\":\"ua\",\"do\":\"ra_status\"}"); }
+		return;
+	}
+	/* signed in, nothing synced yet: once, in the background (the bridge keeps the answer if this one is lost) */
+	if (racct_in() && !cJSON_GetObjectItem(racct.st, "benefits") && !racct.signing) {
+		if (!racct.synced_asked) { racct.synced_asked = 1; api_bg_ask("racct", "{\"cmd\":\"ua\",\"do\":\"ra_sync\"}"); }
+		else if (now - racct.last_ask >= 10000 && !api_bg_waiting("racct")) { racct.last_ask = now; api_bg_ask("racct", "{\"cmd\":\"ua\",\"do\":\"ra_status\"}"); }
+	}
+	if (!racct.signing) return;
+	cJSON *p = api_bg_take("racct_poll");
+	if (p) {
+		if (api_ok(p) && cJSON_IsTrue(cJSON_GetObjectItem(p, "signed_in"))) {
+			racct.signing = 0;
+			cJSON_Delete(racct.st);
+			racct.st = p;
+			p = NULL;
+			toast_show("Signed in to RetroAccount");
+			racct_vl.sel = 1;                          /* Link this SS1 next */
+		} else if (!api_ok(p) && !cJSON_IsTrue(cJSON_GetObjectItem(p, "wait"))) {
+			racct.signing = 0;
+			toast_show(api_str(p, "error") ? api_str(p, "error") : "The sign-in didn't go through");
+		}
+		cJSON_Delete(p);
+	}
+	if (racct.signing && now >= racct.until) { racct.signing = 0; toast_show("The code ran out: press A for a new one"); }
+	else if (racct.signing && now >= racct.next_poll && !api_bg_waiting("racct_poll")) {
+		racct.next_poll = now + (uint32_t)racct.interval * 1000;
+		api_bg_ask("racct_poll", "{\"cmd\":\"ua\",\"do\":\"ra_poll\",\"args\":[\"%s\"]}", racct.code);
+	}
+	racct_draw();                                    /* (the countdown: label_set_if changes only what changed) */
+}
+
+static void racct_key(pkey_t k)
+{
+	if (k == K_B || k == K_MENU) {
+		if (racct.signing) { racct.signing = 0; racct_draw(); return; }
+		show_ua();
+		return;
+	}
+	if (vlist_key(&racct_vl, k)) { racct.sure_out = racct.sure_link = 0; racct_draw(); return; }
+	if (k != K_A || !racct.st) return;
+	int i = racct_vl.sel;
+	if (racct.signing) {
+		if (i == 0) racct_sign_in();
+		else { racct.signing = 0; racct_draw(); }
+		return;
+	}
+	if (!racct_in()) { racct_sign_in(); return; }
+	if (i == 0) {
+		cJSON *r = racct_ask("ra_sync", "Syncing with RetroAccount\xE2\x80\xA6", 60000);
+		int ok = api_ok(r);
+		cJSON *m = ok ? cJSON_GetArrayItem(cJSON_GetObjectItem(r, "messages"), 0) : NULL;
+		racct_take(r);
+		if (ok) toast_show(cJSON_IsString(m) ? m->valuestring : "Synced: everything was already current");
+	} else if (i == 1) {
+		if (!racct.sure_link) { racct.sure_link = 1; racct_draw(); return; }
+		racct.sure_link = 0;
+		cJSON *r = racct_ask("ra_link", "Reading the FPGA ID: the screen goes dark for a few seconds\xE2\x80\xA6", 130000);
+		int ok = api_ok(r);
+		racct_take(r);
+		if (ok) toast_show("This SS1 is linked to your RetroAccount");
+	} else {
+		if (!racct.sure_out) { racct.sure_out = 1; racct_draw(); return; }
+		racct.sure_out = 0;
+		cJSON *r = racct_ask("ra_logout", "Signing out\xE2\x80\xA6", 30000);
+		int ok = api_ok(r);
+		cJSON_Delete(r);
+		if (ok) {
+			cJSON_Delete(racct.st);
+			racct.st = NULL;
+			racct.synced_asked = 0;
+			api_bg_ask("racct", "{\"cmd\":\"ua\",\"do\":\"ra_status\"}");
+			toast_show("Signed out of RetroAccount");
+		} else toast_show("Couldn't sign out: try again");
+	}
+	racct_draw();
+}
+
+static void show_racct(void)
+{
+	cur = SCR_RACCT;
+	lv_obj_clean(body);
+	memset(&racct_vl, 0, sizeof(racct_vl));
+	racct.signing = racct.sure_out = racct.sure_link = 0;
+	screen_title("UPDATE ALL", "RetroAccount");
+	int x = S(56), w = SW(640), iw = w - 2 * S(22);
+	lv_obj_t *p = mk_box(body, w, S(452), PAL.panel, S(10));
+	lv_obj_set_pos(p, x, S(170));
+	lv_obj_set_style_pad_all(p, S(22), 0);
+	lv_obj_set_style_pad_row(p, S(12), 0);
+	lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
+	racct.badge = mk_label(p, FONT_SMALL, PAL.acc, "");
+	racct.t1 = mk_label(p, FONT_BODY, PAL.text, "");
+	lv_obj_set_width(racct.t1, iw);
+	lv_label_set_long_mode(racct.t1, LV_LABEL_LONG_MODE_WRAP);
+	lv_obj_t *row = lv_obj_create(p);                 /* the QR code and the code, while signing in */
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, iw, LV_SIZE_CONTENT);
+	lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+	lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+	lv_obj_set_style_pad_column(row, S(28), 0);
+	racct.qr = lv_qrcode_create(row);
+	lv_qrcode_set_size(racct.qr, theme_lr ? L(90) : S(200));
+	lv_qrcode_set_dark_color(racct.qr, lv_color_hex(0x000000));
+	lv_qrcode_set_light_color(racct.qr, lv_color_hex(0xffffff));
+	lv_obj_set_style_border_color(racct.qr, lv_color_hex(0xffffff), 0);   /* the quiet zone a phone needs */
+	lv_obj_set_style_border_width(racct.qr, theme_lr ? L(4) : S(10), 0);
+	racct.codel = mk_label(row, FONT_HEADING, PAL.acc, "");
+	lv_obj_set_style_text_letter_space(racct.codel, S(6), 0);
+	racct.t2 = mk_label(p, FONT_SMALL, PAL.dim, "");
+	lv_obj_set_width(racct.t2, iw);
+	lv_label_set_long_mode(racct.t2, LV_LABEL_LONG_MODE_WRAP);
+	vlist_create(&racct_vl, body, theme_lr ? S(56) : SX(740), S(176), theme_lr ? SW(1168) : SW(484), S(440));
+	racct_vl.fill = racct_fill;
+	static const char *const h[] = { "A", "Select", "B", "Back", NULL };
+	footer_set(h);
+	if (!racct.st) api_bg_ask("racct", "{\"cmd\":\"ua\",\"do\":\"ra_status\"}");
+	racct_draw();
 }
 
 
@@ -10426,6 +10731,9 @@ void ui_key(pkey_t k)
 	case SCR_RS:
 		rs_key(k);
 		break;
+	case SCR_RACCT:
+		racct_key(k);
+		break;
 	case SCR_SCRIPTS:
 		scripts_key(k);
 		break;
@@ -12404,6 +12712,7 @@ void ui_tick(void)
 		gd_tick();                                    /* (only while one of its jobs runs) */
 		ua_tick();                                    /* (while Update All's settings load, or an uninstall runs) */
 		rs_tick();                                    /* (RetroSpy's page: while it installs) */
+		racct_tick();                                 /* (RetroAccount's page: its status, a sign-in waiting) */
 		/* the Welcome screen's Network line follows WiFi coming up by itself */
 		{ static int wl_tick; if (cur == SCR_WELCOME && !osk.open && ++wl_tick % 3 == 0) { wl_refresh_net(); vlist_refresh(&wl_list); } }
 		if (cur == SCR_BACKUP && bk.busy) { cJSON *r_ = api_poll("backup", "{\"cmd\":\"backup\"}"); if (r_) bk_apply(r_); }
