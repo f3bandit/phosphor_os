@@ -12,7 +12,10 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   clears the dirty mark after a run that got all the way through, so a damaged card needed Repair twice. Problems a
   Repair leaves still go to Deep repair, which is never started without you.
 - **DreamSTer and other scripts that stop MiSTer's Main** (`killall MiSTer`) stop Phosphor's Main the same way,
-  and come back to Phosphor afterwards (phosphor/compat, on the PATH of the scripts Phosphor runs).
+  and come back to Phosphor afterwards (phosphor/compat, on the PATH of the scripts Phosphor runs), with "Back from
+  the script" instead of "The script ended with an error". Tested on the SS1 with DreamSTer r6b.
+- **A notification cleared in Phosphor for Windows stays cleared**: "Drives repaired offline" came back after every
+  Clear until the SS1 restarted. The app now remembers the last 500 events it told (notifications-told.json).
 
 ## 0.27.70
 

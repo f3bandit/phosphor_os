@@ -24,6 +24,7 @@ int mainlink_pads(void);
 int mainlink_script(const char *path);
 int mainlink_script_running(void);
 int mainlink_script_result(void);
+#define SCRIPT_MAIN_RESTARTED 1000   /* the script stopped Main and started it again (no exit status) */
 
 /* MiSTer's controller mapping, run by Main for the shell (phosphor-main api 4): what is "start VVVV:PPPP",
  * "skip" or "cancel"; 0 sent. mainlink_map_state: 1 while it runs; step is MiSTer's (-100 before the

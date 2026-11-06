@@ -346,7 +346,9 @@ int mainlink_poll(void)
 			plog("phosphor-main went away; trying again");
 			close(fd);
 			fd = -1;
-			if (script_on) { script_on = 0; script_done_status = 1; }
+			/* a script that stops Main itself (DreamSTer: "killall MiSTer") and starts it again: no result to
+			   tell, only that it's over */
+			if (script_on) { script_on = 0; script_done_status = SCRIPT_MAIN_RESTARTED; }
 			if (mp.on) { mp.on = 0; mp.done = 1; mp.saved = 0; snprintf(mp.err, sizeof(mp.err), "MiSTer's Main restarted"); }
 			next_try = now_ms() + 2000;
 			return 0;
