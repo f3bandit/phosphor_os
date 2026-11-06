@@ -291,10 +291,9 @@
    "ready": false
   },
   "MultiDatabases/shmup-deck": {
-   "category": "tools",
-   "tag": "patch",
-   "why": "Starts games behind Phosphor's back: made to launch through phosphord",
-   "ready": false
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "A phone menu for arcade shooters Phosphor's menu already starts; a web server running at every boot"
   },
   "MultiDatabases/cifs-scripts": {
    "category": "tools",
