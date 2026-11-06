@@ -262,7 +262,10 @@ class Bridge:
             for i, e in enumerate(it.get('entries', []) or []):
                 if not e or not e.get('title') or self._update_all_only(e):
                     continue
-                entries.append(self.entry_info(mid, i, e))
+                info = self.entry_info(mid, i, e)
+                if info['status'].get('status') == 'out' and not info.get('on'):
+                    continue                     # not used on Phosphor: not offered (turned on: shown, to turn off)
+                entries.append(info)
             menus[mid] = {'title': self.clean(self.interpolate(it.get('header', ''))), 'entries': entries}
         # a menu entry with no word of its own: what's inside it, counted (its menus' items, all the way down)
         def inside(mid, seen):

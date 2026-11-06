@@ -2770,11 +2770,11 @@ static const char *ua_status(cJSON *e) { cJSON *s = cJSON_GetObjectItem(e, "stat
 static const char *ua_status_word(const char *s)
 {
 	return !strcmp(s, "merged") ? "Built in" : !strcmp(s, "safe") ? "Safe" : !strcmp(s, "guard") ? "Guarded" : !strcmp(s, "warn") ? "Warning" :
-	       !strcmp(s, "keep") ? "Left alone" : !strcmp(s, "menu") ? "Menu" : "Untested";
+	       !strcmp(s, "keep") ? "Left alone" : !strcmp(s, "menu") ? "Menu" : !strcmp(s, "out") ? "Not used" : "Untested";
 }
 static lv_color_t ua_status_color(const char *s)
 {
-	return !strcmp(s, "safe") || !strcmp(s, "merged") ? lv_color_hex(0x7bd88f) : !strcmp(s, "guard") ? PAL.acc : !strcmp(s, "warn") ? lv_color_hex(0xff9a66) : PAL.dim;
+	return !strcmp(s, "safe") || !strcmp(s, "merged") ? lv_color_hex(0x7bd88f) : !strcmp(s, "guard") ? PAL.acc : !strcmp(s, "warn") || !strcmp(s, "out") ? lv_color_hex(0xff9a66) : PAL.dim;
 }
 static int ua_installed(cJSON *e)
 {
