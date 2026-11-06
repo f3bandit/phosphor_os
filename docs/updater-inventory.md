@@ -37,7 +37,8 @@ Checked 2026-11-05 against Update All 10f9b9a (2026-10-09).
 | Solarus | patch, ready | Hybrid core: Phosphor's Main starts and stops its engine itself (tested on the SS1, 2026-11-05) |
 | Diablo, DreamSTer | patch | Same as the game ports: their Mains rebuilt with Phosphor's hooks (licences to check per item) |
 | MiSTer Hi-Fi, MiSTerFin | launcher | Started from Phosphor; MiSTerFin's boot hook patched out |
-| mrext (MiSTer Extensions), Shmup Deck | patch | Launch games through phosphord's API |
+| mrext (MiSTer Extensions) | patch | Games it starts are counted in Phosphor's play history (tested with Shmup Deck: launches and returns work, history doesn't) |
+| Shmup Deck | not needed | A phone menu for arcade games Phosphor already starts, as a web server running at every boot (tested 2026-11-06) |
 | CIFS Scripts | patch | Mount points kept clear of Phosphor's library and backup folders |
 | Anime0t4ku MiSTer Scripts | patch | FTP save sync, Syncthing, DAV and clock made to take turns with Phosphor's |
 | MiSTer DVD, Disc Tools, MiSTer Monitor, tty2oled, i2c2oled, MiSTer SAM, RetroSpy, Zaparoo Core | include | Phosphor already works with each |
