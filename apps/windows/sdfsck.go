@@ -12,6 +12,11 @@ package main
 //   repair  fsck.exfat -p   repairs what's safe to repair without asking (and clears the dirty mark)
 //   deep    fsck.exfat -y   repairs everything it finds (broken entries are deleted)
 //
+// A repair runs fsck.exfat again by itself (up to 3 passes) while it reports fixes and the card is still
+// marked dirty: fsck.exfat stops at a problem it has to cut around and only clears the dirty mark at the
+// end of a run that got all the way through (exfatprogs fsck.c), so a damaged card needed a second click.
+// Problems a repair (-p) leaves for asking still go to Deep repair, never run without the user.
+//
 // Runs in the administrator helper (opening a volume directly needs it), like the flash.
 
 import (
@@ -88,14 +93,66 @@ func fsckCard(d disk, mode string) error {
 	}
 	defer cleanup()
 	what := map[string]string{"check": "Checking", "repair": "Repairing", "deep": "Repairing everything on"}[mode]
+	maxPass := 3
+	if mode == "check" {
+		maxPass = 1
+	}
+	var code, pass int
+	var after string
+	fixed := false
+	for pass = 1; pass <= maxPass; pass++ {
+		p := pass
+		sdSet(func(s *sdState) {
+			s.Phase, s.Message = "check", fmt.Sprintf("%s %s (%s)", what, fsckName(target), d.FriendlyName)
+			if p > 1 {
+				s.Message += fmt.Sprintf(", pass %d", p)
+				s.Log = append(s.Log, fmt.Sprintf("--- pass %d ---", p))
+			}
+		})
+		if code, err = fsckRun(exe, flags, target); err != nil {
+			return err
+		}
+		if code&1 != 0 {
+			fixed = true
+		}
+		after, _ = exfatState(target)
+		// done: nothing left to fix, or what's left needs Deep repair (or couldn't run), or it's clean now
+		if code == 0 || code&^1 != 0 || after != "dirty" {
+			break
+		}
+	}
+	if pass > maxPass {
+		pass = maxPass
+	}
+	if code == 0 && fixed {
+		code = 1 // fixed in an earlier pass, nothing left in the last one
+	}
+	msg, rerr := fsckResult(code, mode)
 	sdSet(func(s *sdState) {
-		s.Phase, s.Message = "check", fmt.Sprintf("%s %s (%s)", what, fsckName(target), d.FriendlyName)
+		s.DirtyAfter = after
+		s.Message = msg
+		switch {
+		case mode != "check" && after == "dirty" && rerr == nil:
+			s.Message += " The card is still marked dirty."
+		case mode != "check" && before == "dirty" && after == "clean" && code == 0:
+			s.Message = "Nothing was broken: the card was only marked dirty, and the mark is cleared."
+		case mode == "check" && after == "dirty" && code == 0:
+			s.Message = "Nothing is broken, but the card is marked dirty (Windows offers to scan it): Repair clears the mark."
+		}
+		if pass > 1 && rerr == nil {
+			s.Message += fmt.Sprintf(" (%d passes)", pass)
+		}
 	})
+	return rerr
+}
+
+// fsckRun runs fsck.exfat once, its output into the log, and returns its exit code
+func fsckRun(exe string, flags []string, target string) (int, error) {
 	cmd := hidden(exec.Command(exe, append(flags, target)...))
 	out, _ := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("couldn't start the check: %v", err)
+		return 0, fmt.Errorf("couldn't start the check: %v", err)
 	}
 	// still here: the status file's time keeps moving while a long, quiet part runs
 	tick := time.NewTicker(5 * time.Second)
@@ -122,29 +179,14 @@ func fsckCard(d disk, mode string) error {
 			}
 		})
 	}
-	err = cmd.Wait()
+	err := cmd.Wait()
 	tick.Stop()
 	close(done)
-	code := 0
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
-		code = ee.ExitCode()
+		return ee.ExitCode(), nil
 	} else if err != nil {
-		return fmt.Errorf("the check stopped: %v", err)
+		return 0, fmt.Errorf("the check stopped: %v", err)
 	}
-	after, _ := exfatState(target)
-	msg, rerr := fsckResult(code, mode)
-	sdSet(func(s *sdState) {
-		s.DirtyAfter = after
-		s.Message = msg
-		switch {
-		case mode != "check" && after == "dirty" && rerr == nil:
-			s.Message += " The card is still marked dirty."
-		case mode != "check" && before == "dirty" && after == "clean" && code == 0:
-			s.Message = "Nothing was broken: the card was only marked dirty, and the mark is cleared."
-		case mode == "check" && after == "dirty" && code == 0:
-			s.Message = "Nothing is broken, but the card is marked dirty (Windows offers to scan it): Repair clears the mark."
-		}
-	})
-	return rerr
+	return 0, nil
 }

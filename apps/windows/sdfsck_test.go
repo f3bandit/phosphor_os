@@ -74,3 +74,41 @@ func TestFsckResult(t *testing.T) {
 		}
 	}
 }
+
+// a repair that fixes something but leaves the card dirty runs again by itself (fsck.exfat stops at a problem
+// and only clears the mark after a run that got through): a stand-in fsck.exfat, fixing in its first pass and
+// clearing the mark in its second
+func TestFsckCardPasses(t *testing.T) {
+	dir := t.TempDir()
+	img := filepath.Join(dir, "card.img")
+	b := make([]byte, 4096)
+	copy(b[3:], "EXFAT   ")
+	b[106] = 2
+	os.WriteFile(img, b, 0o644)
+	fake := filepath.Join(dir, "fsck.sh")
+	os.WriteFile(fake, []byte(`#!/bin/sh
+n=$(cat "`+dir+`/n" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "`+dir+`/n"
+for t; do :; done
+echo "pass $n"
+if [ $n -ge 2 ]; then printf '\000' | dd of="$t" bs=1 seek=106 conv=notrunc 2>/dev/null; exit 0; fi
+exit 1
+`), 0o755)
+	t.Setenv("PHOS_TEST_FSCK", fake)
+	t.Setenv("PHOS_TEST_DISK", img)
+	sd = sdState{}
+	if err := fsckCard(disk{Number: 7, FriendlyName: "Test card reader"}, "repair"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := os.ReadFile(filepath.Join(dir, "n")); string(n) != "2\n" {
+		t.Fatalf("passes: %q", n)
+	}
+	if sd.DirtyAfter != "clean" || sd.Message != "Problems found and fixed. (2 passes)" {
+		t.Fatalf("%+v", sd)
+	}
+	// errors left for Deep repair: one pass, and the error says so
+	os.WriteFile(filepath.Join(dir, "n"), []byte("0\n"), 0o644)
+	os.WriteFile(fake, []byte("#!/bin/sh\necho left\nexit 4\n"), 0o755)
+	if err := fsckCard(disk{Number: 7}, "repair"); err == nil {
+		t.Fatal("errors left, no error")
+	}
+}
