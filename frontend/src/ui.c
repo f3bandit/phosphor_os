@@ -2390,7 +2390,8 @@ void ui_script_done(int status)
 	guard_check();                 /* a restore point was saved; and the alert may have changed */
 	power_check();
 	if (cur == SCR_SETTINGS) vlist_refresh(&set_list);
-	toast_show(status ? "The script ended with an error (Settings > Last update's log)" : "Done");
+	toast_show(status == SCRIPT_MAIN_RESTARTED ? "Back from the script"
+		: status ? "The script ended with an error (Settings > Last update's log)" : "Done");
 }
 
 /* ---------- Updates & restore points (update-guard) ----------

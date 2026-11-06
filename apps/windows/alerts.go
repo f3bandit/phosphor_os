@@ -6,7 +6,10 @@ package main
 // problem, settings an update reset, a storage check that failed, a Gen 4 NVMe drive in the dock, box
 // art finishing, the SS1 going away. Each becomes a notification in the app (Notifications, the bell)
 // and, unless turned off, a Windows notification from the tray icon. The tray icon has a dot while a
-// warning hasn't been seen. Kept in %APPDATA%\Phosphor\notifications.json (the last 60).
+// warning hasn't been seen. Kept in %APPDATA%\Phosphor\notifications.json (the last 60), and the events
+// already told in notifications-told.json (the last 500), so one cleared from the list (Clear, or the
+// oldest dropped past 60) isn't told again while the SS1 still reports it (a repair is "fresh" until the
+// next restart).
 
 import (
 	"encoding/json"
@@ -31,9 +34,13 @@ type note struct {
 var notes struct {
 	sync.Mutex
 	list []note
+	told []string // event IDs already told, oldest first
 }
 
+const toldMax = 500
+
 func notesPath() string { return filepath.Join(configDir(), "notifications.json") }
+func toldPath() string  { return filepath.Join(configDir(), "notifications-told.json") }
 
 func loadNotes() {
 	notes.Lock()
@@ -41,13 +48,40 @@ func loadNotes() {
 	if b, err := os.ReadFile(notesPath()); err == nil {
 		_ = json.Unmarshal(b, &notes.list)
 	}
+	if b, err := os.ReadFile(toldPath()); err == nil {
+		_ = json.Unmarshal(b, &notes.told)
+	}
+	for i := len(notes.list) - 1; i >= 0; i-- { // (notifications from before this list existed)
+		toldAddLocked(notes.list[i].ID)
+	}
+}
+
+func toldLocked(id string) bool {
+	for _, t := range notes.told {
+		if t == id {
+			return true
+		}
+	}
+	return false
+}
+
+func toldAddLocked(id string) {
+	if toldLocked(id) {
+		return
+	}
+	notes.told = append(notes.told, id)
+	if len(notes.told) > toldMax {
+		notes.told = notes.told[len(notes.told)-toldMax:]
+	}
 }
 
 func saveNotesLocked() {
-	b, _ := json.MarshalIndent(notes.list, "", " ")
 	_ = os.MkdirAll(configDir(), 0o700)
-	_ = os.WriteFile(notesPath()+".tmp", b, 0o600)
-	_ = os.Rename(notesPath()+".tmp", notesPath())
+	for path, v := range map[string]any{notesPath(): notes.list, toldPath(): notes.told} {
+		b, _ := json.MarshalIndent(v, "", " ")
+		_ = os.WriteFile(path+".tmp", b, 0o600)
+		_ = os.Rename(path+".tmp", path)
+	}
 }
 
 func unseenWarnings() (warn, all int) {
@@ -67,12 +101,11 @@ func unseenWarnings() (warn, all int) {
 // addNote: a new notification (nothing if that event was already told)
 func addNote(id, level, title, body, goTo string) {
 	notes.Lock()
-	for _, n := range notes.list {
-		if n.ID == id {
-			notes.Unlock()
-			return
-		}
+	if toldLocked(id) {
+		notes.Unlock()
+		return
 	}
+	toldAddLocked(id)
 	notes.list = append([]note{{ID: id, At: time.Now().Unix(), Level: level, Title: title, Body: body, Go: goTo}}, notes.list...)
 	if len(notes.list) > 60 {
 		notes.list = notes.list[:60]
