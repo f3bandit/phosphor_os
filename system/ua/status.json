@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "checked": "2026-10-31",
+  "checked": "2026-11-06",
   "checked_with": "Update All 2.11",
-  "about": "Phosphor's status for Update All's items: merged (built into Phosphor: its own Main runs it), safe, guard (Phosphor blocks it; Allow overrides), warn (works, with a catch), keep (Phosphor leaves it alone). Anything not here is untested; a menu shows what's inside it. Keys: var:<variable>, db:<database id>, entry:<menu>/<title>; menus: a menu id prefix for all of its entries.",
+  "about": "Phosphor's status for Update All's items: merged (built into Phosphor: its own Main runs it), safe, guard (Phosphor blocks it; Allow overrides), warn (works, with a catch), keep (Phosphor leaves it alone), out (not used on Phosphor: not offered while it's off). Anything not here is untested; a menu shows what's inside it. Keys: var:<variable>, db:<database id>, entry:<menu>/<title>; menus: a menu id prefix for all of its entries.",
   "menus": {
     "game_artwork_": {
       "status": "safe",
@@ -21,8 +21,8 @@
       "note": "Wallpapers for MiSTer's menu."
     },
     "arcade_organizer_": {
-      "status": "safe",
-      "note": "Arcade Organizer options: Phosphor's library skips its _Organized folders."
+      "status": "out",
+      "note": "Not used on Phosphor."
     },
     "pocket_": {
       "status": "safe",
@@ -72,11 +72,11 @@
     },
     "db:theypsilon/RetroAchievementsDB_MiSTer": {
       "status": "merged",
-      "note": "Built into Phosphor: odelot's RetroAchievements support is in Phosphor's Main, which stays for these cores."
+      "note": "Built into Phosphor: odelot's RetroAchievements support is in Phosphor's Main, and Phosphor gets his cores itself."
     },
     "db:MultiDatabases/physical-disc": {
       "status": "merged",
-      "note": "Built into Phosphor: physical CD support is in Phosphor's Main, which stays for it (Settings › Discs)."
+      "note": "Built into Phosphor: physical CD support is in Phosphor's Main."
     },
     "var:unofficial_updater": {
       "status": "safe",
@@ -139,28 +139,28 @@
       "note": "Works, with its own Main (its source isn't published): Phosphor's in-game menu isn't there while it runs."
     },
     "db:MultiDatabases/dreamster": {
-      "status": "guard",
-      "note": "Takes over the screen Phosphor uses."
+      "status": "safe",
+      "note": "Stops MiSTer's Main to run: Phosphor's Main stops for it and comes back afterwards (tested on the SS1)."
     },
     "db:MultiDatabases/solarus": {
-      "status": "guard",
-      "note": "Takes over the screen Phosphor uses."
+      "status": "safe",
+      "note": "Hybrid core: Phosphor's Main starts and stops its engine (tested on the SS1)."
     },
     "db:MultiDatabases/diablo": {
       "status": "guard",
       "note": "Starts its own launcher that takes over the screen."
     },
     "db:MiSTerOrganize/MiSTer_Frontier": {
-      "status": "guard",
-      "note": "Another main menu: it replaces Phosphor."
+      "status": "out",
+      "note": "Not used on Phosphor: another main menu that replaces Phosphor."
     },
     "entry:frontends_menu/Zaparoo Frontend": {
-      "status": "guard",
-      "note": "Another main menu: it replaces Phosphor's Main. Phosphor's own Zaparoo support works without it."
+      "status": "out",
+      "note": "Not used on Phosphor: another main menu that replaces Phosphor's Main (Phosphor's own Zaparoo support stays)."
     },
     "db:degauss": {
-      "status": "guard",
-      "note": "Another main menu: it replaces Phosphor."
+      "status": "out",
+      "note": "Not used on Phosphor: another main menu that replaces Phosphor."
     },
     "entry:frontends_menu/Stock MiSTer UI": {
       "status": "safe",
@@ -171,16 +171,16 @@
       "note": "Zaparoo Core: Phosphor tracks the games its cards start."
     },
     "var:arcade_organizer": {
-      "status": "safe",
-      "note": "Phosphor's library skips the _Organized folders, so games aren't listed twice."
+      "status": "out",
+      "note": "Not used on Phosphor: Phosphor's library sorts arcade games itself."
     },
     "entry:tools_and_scripts_menu/Names TXT": {
-      "status": "safe",
-      "note": "Core names for MiSTer's menu."
+      "status": "out",
+      "note": "Not used on Phosphor: core names for MiSTer's own menu; Phosphor uses its own."
     },
     "entry:names_txt_menu/Names TXT": {
-      "status": "safe",
-      "note": "Core names for MiSTer's menu."
+      "status": "out",
+      "note": "Not used on Phosphor: core names for MiSTer's own menu; Phosphor uses its own."
     },
     "db:mrext/all": {
       "status": "guard",
@@ -195,32 +195,32 @@
       "note": "Test ROMs and a core."
     },
     "var:anime0t4ku_mister_scripts": {
-      "status": "guard",
-      "note": "Its FTP save sync, Syncthing, DAV browser and clock scripts start at boot and clash with Phosphor's own (cloud sync, clock, file sharing)."
+      "status": "out",
+      "note": "Not used on Phosphor: its save sync, Syncthing, DAV, RetroAchievements viewer and wallpapers are built in; its clock (auto_time) comes to Phosphor's Settings."
     },
     "db:MultiDatabases/cifs-scripts": {
-      "status": "guard",
-      "note": "Mounts a network share at boot over the folders Phosphor's library and backups use; Phosphor has its own network share settings."
+      "status": "out",
+      "note": "Not used on Phosphor: network shares are built in (Settings > Network shares, the cifs-helper module)."
     },
     "db:MultiDatabases/mister-dvd": {
-      "status": "safe",
-      "note": "Phosphor starts the DVD player only when a DVD plays."
+      "status": "guard",
+      "note": "Ships a Main of its own (MiSTer_DVDcss) that Phosphor doesn't start yet: not tested with Phosphor."
     },
     "db:chipster6502/MiSTer_monitor_DB": {
       "status": "safe",
       "note": "Game art on a second screen: reads what's running, changes nothing."
     },
     "db:MultiDatabases/mister-hifi": {
-      "status": "guard",
-      "note": "Takes over the screen Phosphor uses."
+      "status": "out",
+      "note": "Not used on Phosphor: Phosphor has its own music player."
     },
     "db:MultiDatabases/misterfin": {
-      "status": "guard",
-      "note": "Starts at boot and takes over the screen Phosphor uses."
+      "status": "out",
+      "note": "Not used on Phosphor: a Jellyfin player that starts at boot and takes over the screen."
     },
     "db:MultiDatabases/shmup-deck": {
-      "status": "guard",
-      "note": "Starts games behind Phosphor's back."
+      "status": "out",
+      "note": "Not used on Phosphor: a phone menu for arcade shooters Phosphor's menu already starts, with a web server running at every boot."
     },
     "var:retrospy/retrospy-MiSTer": {
       "status": "safe",
@@ -305,6 +305,10 @@
     "entry:system_options_menu/Database Manager": {
       "status": "safe",
       "note": "Update All's own list of what's installed, to update or uninstall. Here, each item's Uninstall and Clean up do the same through it."
+    },
+    "entry:names_txt_menu/Arcade Names TXT": {
+      "status": "out",
+      "note": "Not used on Phosphor: arcade names for MiSTer's own menu; Phosphor uses its own."
     }
   },
   "values": {
