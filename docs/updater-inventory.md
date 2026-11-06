@@ -39,8 +39,8 @@ Checked 2026-11-05 against Update All 10f9b9a (2026-10-09).
 | MiSTer Hi-Fi, MiSTerFin | launcher | Started from Phosphor; MiSTerFin's boot hook patched out |
 | mrext (MiSTer Extensions) | patch | Games it starts are counted in Phosphor's play history (tested with Shmup Deck: launches and returns work, history doesn't) |
 | Shmup Deck | not needed | A phone menu for arcade games Phosphor already starts, as a web server running at every boot (tested 2026-11-06) |
-| CIFS Scripts | patch | Mount points kept clear of Phosphor's library and backup folders |
-| Anime0t4ku MiSTer Scripts | patch | FTP save sync, Syncthing, DAV and clock made to take turns with Phosphor's |
+| CIFS Scripts | in Phosphor | Phosphor's cifs-helper module mounts the shares, from cifs_mount.sh's own settings |
+| Anime0t4ku MiSTer Scripts | not needed | Everything but auto_time is already in Phosphor; auto_time (the time zone from the internet) is ported into Phosphor's Settings, credited to Anime0t4ku |
 | MiSTer DVD, Disc Tools, MiSTer Monitor, tty2oled, i2c2oled, MiSTer SAM, RetroSpy, Zaparoo Core | include | Phosphor already works with each |
 | BIOS Database, Arcade ROMs Database | opt-in | Copyrighted files: never in Phosphor's database |
 | Zaparoo Frontend, Degauss, MiSTer Frontier | out | Other frontends (Phosphor has its own Zaparoo support) |
@@ -51,7 +51,7 @@ Checked 2026-11-05 against Update All 10f9b9a (2026-10-09).
 | Feature | Verdict | Notes |
 |---|---|---|
 | Database list and settings, Database Manager (update only, uninstall) | port | Phosphor's updater screen, the TV and the Windows app |
-| Arcade Organizer | port | Phosphor's library already skips its `_Organized` folders |
+| Arcade Organizer | out | Phosphor's own library sorts arcade games; its `_Organized` folders are skipped |
 | MiSTer.ini edits, CRT video mode and screen position | in Phosphor | Settings › Video (left as Update All sets them today) |
 | Mirrors (mysticalrealm.org, mister.cc.cd) | port | Database URLs rewritten, as Update All does |
 | Linux Updates on/off | in Phosphor | The existing Linux update warning and restore point |
