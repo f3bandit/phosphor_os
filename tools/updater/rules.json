@@ -296,16 +296,14 @@
    "why": "A phone menu for arcade shooters Phosphor's menu already starts; a web server running at every boot"
   },
   "MultiDatabases/cifs-scripts": {
-   "category": "tools",
-   "tag": "patch",
-   "why": "Mounts over Phosphor's folders: mount points moved",
-   "ready": false
+   "category": "not needed",
+   "tag": "in phosphor",
+   "why": "Network share mounting is built into Phosphor (the cifs-helper module, from cifs_mount.sh's settings)"
   },
   "anime0t4ku_mister_scripts": {
-   "category": "tools",
-   "tag": "patch",
-   "why": "FTP save sync, Syncthing, DAV and clock made to take turns with Phosphor's",
-   "ready": false
+   "category": "not needed",
+   "tag": "not needed",
+   "why": "FTP save sync, Syncthing, DAV, RA viewer, CD organizer and wallpaper are already in Phosphor; auto_time (time zone from the internet) is ported into Phosphor's Settings, credited"
   },
   "MultiDatabases/mister-hifi": {
    "category": "not needed",
