@@ -3,6 +3,17 @@
 Changes between test images. The image build copies the newest section into the notes file it
 writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
 
+## 0.27.71 (next)
+
+### Fixed
+- **Card health repairs a damaged SD card in one go** (Phosphor for Windows 0.2.57, Tools › Card health): Repair
+  and Deep repair run the check again by themselves, up to 3 passes, while it's still fixing things and the card is
+  still marked dirty, and say how many passes it took. fsck.exfat stops at a problem it has to cut around and only
+  clears the dirty mark after a run that got all the way through, so a damaged card needed Repair twice. Problems a
+  Repair leaves still go to Deep repair, which is never started without you.
+- **DreamSTer and other scripts that stop MiSTer's Main** (`killall MiSTer`) stop Phosphor's Main the same way,
+  and come back to Phosphor afterwards (phosphor/compat, on the PATH of the scripts Phosphor runs).
+
 ## 0.27.70
 
 ### Bluetooth repair (Phosphor for Windows 0.2.56)
