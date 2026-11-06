@@ -515,6 +515,7 @@ class RetroAccount:
     def __init__(self, bridge):
         self.ra = bridge.service._retroaccount
         self.pending = {}                            # user_code -> Update All's device code answer
+        self.last = None                             # the last sync's benefits (shown until the next)
 
     def status(self, synced=False):
         ra = self.ra
@@ -529,6 +530,9 @@ class RetroAccount:
                               'jtbeta': ra.has_installed_jtbeta(),
                               'coinop_license': ra.has_installed_coin_op_license()}
             r['messages'] = [m for kind, m in ra.consume_important_messages() if kind == 'print' and m.strip()]
+            self.last = {'benefits': r['benefits'], 'synced_at': int(__import__('time').time())}
+        elif self.last and r['signed_in']:
+            r.update(self.last)
         return r
 
     def sync(self):
@@ -567,6 +571,7 @@ class RetroAccount:
 
     def logout(self):
         self.pending.clear()
+        self.last = None
         return {'ok': True, 'signed_out': self.ra.device_logout()}
 
     def link(self):
