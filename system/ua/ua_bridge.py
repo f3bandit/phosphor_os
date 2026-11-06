@@ -13,6 +13,12 @@
 #                                             on in Update All (its own Downloader's list), and the Arcade
 #                                             Organizer's folders (as its own Clean Folders finds them)
 #   ua_bridge.py clean_ao                     Update All's own Clean Folders: the Arcade Organizer's folders go
+#   ua_bridge.py ra_status                    RetroAccount: signed in, FPGA ID linked, the device's name
+#   ua_bridge.py ra_sync                      Update All's RetroAccount sync: its keys and benefits, as a run does
+#   ua_bridge.py ra_login / ra_poll CODE      Update All's device sign-in: a code and link for the phone, then
+#                                             poll until it's approved (serve only: the code is kept between calls)
+#   ua_bridge.py ra_logout                    Update All's sign-out of this device
+#   ua_bridge.py ra_link                      the FPGA ID read with Update All's linker and linked to the account
 #   ua_bridge.py serve                        the same, one JSON array of arguments per line on stdin
 #
 # Output: one JSON object on stdout. Update All's own prints go to stderr. Update All's start-up migrations
@@ -497,8 +503,112 @@ class Bridge:
         return {'ok': True, 'code': 0}
 
 
+class RetroAccount:
+    """RetroAccount (Update All's sign-in, for its Patreon extras, JOTEGO's private releases and the Coin-Op
+    Collection's license) through Update All's own RetroAccountService: the same sign-in, sync and FPGA ID link
+    Update All does, the same files on the card. Phosphor only draws it, and reads the FPGA ID with Update All's
+    own linker in its --extract-only mode, which loads menu.rbf back afterwards instead of Update All's tty3/F9
+    relaunch. Tokens and keys stay in Update All's files: nothing secret is printed."""
+
+    STATES = {0: 'checking', 1: 'active', 2: 'inactive', 3: 'need_login', 4: 'connection_failed'}
+
+    def __init__(self, bridge):
+        self.ra = bridge.service._retroaccount
+        self.pending = {}                            # user_code -> Update All's device code answer
+
+    def status(self, synced=False):
+        ra = self.ra
+        r = {'ok': True, 'signed_in': ra.get_login_state(), 'verified': ra.is_device_verified(),
+             'device': ra.get_device_label() or '', 'server': ra.server_url}
+        if synced:
+            r['benefits'] = {'update_all_extras': self.STATES.get(int(ra.update_all_extras_sync_state()), ''),
+                             'jotego_private': self.STATES.get(int(ra.jtbeta_access_sync_state()), ''),
+                             'coin_op': self.STATES.get(int(ra.coin_op_access_sync_state()), ''),
+                             'coin_op_releases': ra.coin_op_benefit_releases() or ''}
+            r['installed'] = {'patreon_key': ra.has_installed_update_all_patreon_key(),
+                              'jtbeta': ra.has_installed_jtbeta(),
+                              'coinop_license': ra.has_installed_coin_op_license()}
+            r['messages'] = [m for kind, m in ra.consume_important_messages() if kind == 'print' and m.strip()]
+        return r
+
+    def sync(self):
+        from update_all.update_output import NoopUpdateOutput
+        self.ra.mister_sync(NoopUpdateOutput())      # installs the keys and follows the benefits in downloader.ini
+        return self.status(synced=True)
+
+    def login_start(self):
+        code = self.ra.request_device_code()
+        if not code:
+            return {'ok': False, 'error': 'Could not reach RetroAccount'}
+        user_code = code['user_code']
+        self.pending[user_code] = code
+        uri = code.get('verification_uri') or f"{self.ra.server_url.rstrip('/')}/code?c={user_code}"
+        return {'ok': True, 'user_code': user_code, 'url': uri,
+                'expires_in': min(int(code.get('expires_in', 600)), 600), 'interval': int(code.get('interval', 5))}
+
+    def login_poll(self, user_code):
+        # Update All's DeviceLogin: poll, and on success save the credentials (which also syncs)
+        code = self.pending.get(user_code)
+        if not code:
+            return {'ok': False, 'error': 'No sign-in started for that code'}
+        device_id = code.get('device_id') or self.ra.get_existing_device_id()
+        token = self.ra.poll_for_token(code['device_code'], device_id)
+        if not token:
+            return {'ok': True, 'waiting': True}
+        self.pending.pop(user_code, None)
+        if token.get('status') == 'unauthorized':
+            return {'ok': False, 'error': 'The code was refused'}
+        credentials = token.get('credentials', token)
+        if isinstance(credentials, dict) and 'device_id' not in credentials:
+            credentials['device_id'] = token.get('device_id', code.get('device_code', ''))
+        if not self.ra.save_login_credentials(credentials):
+            return {'ok': False, 'error': 'Could not save the sign-in on the SD card'}
+        return self.status(synced=True)
+
+    def logout(self):
+        self.pending.clear()
+        return {'ok': True, 'signed_out': self.ra.device_logout()}
+
+    def link(self):
+        # Update All's FPGA ID linker, --extract-only: loads Linker.rbf, reads the ID, loads menu.rbf back
+        import subprocess
+        from update_all.constants import MEDIA_FAT, FILE_update_all_chip_id_rbf, FILE_update_all_chip_id_linker_log
+        if not self.ra.get_login_state():
+            return {'ok': False, 'error': 'Sign in first'}
+        rbf = os.path.join(MEDIA_FAT, FILE_update_all_chip_id_rbf)
+        if not os.path.isfile(rbf):
+            return {'ok': False, 'error': 'Linker.rbf is not on the SD card (Update All downloads it)'}
+        p = subprocess.run([sys.executable, PYZ, '--chip-id-linker', '--extract-only', '--rbf', rbf,
+                            '--log', os.path.join(MEDIA_FAT, FILE_update_all_chip_id_linker_log)],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=90)
+        result = (p.stdout.decode(errors='replace').strip().splitlines() or [''])[0].strip()
+        from update_all.other import is_chip_id_value
+        if not is_chip_id_value(result):
+            return {'ok': False, 'error': 'Could not read the FPGA ID', 'result': result[:80]}
+        attached = self.ra.attach_chip_id_to_current_device(result)
+        if not attached:
+            return {'ok': False, 'error': 'RetroAccount did not take the FPGA ID', 'status_code': attached.status_code}
+        return self.status()
+
+
 def run(b, args):
     cmd = args[0]
+    if cmd.startswith('ra_'):
+        if getattr(b, 'retroaccount', None) is None:
+            b.retroaccount = RetroAccount(b)
+        ra = b.retroaccount
+        if cmd == 'ra_status':
+            return ra.status()
+        if cmd == 'ra_sync':
+            return ra.sync()
+        if cmd == 'ra_login':
+            return ra.login_start()
+        if cmd == 'ra_poll':
+            return ra.login_poll(args[1])
+        if cmd == 'ra_logout':
+            return ra.logout()
+        if cmd == 'ra_link':
+            return ra.link()
     if cmd == 'list':
         return b.list()
     if cmd == 'act':
