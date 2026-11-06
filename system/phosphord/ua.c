@@ -329,7 +329,11 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		return o;
 	}
 	/* answered straight away when the bridge is free and up to date; otherwise "wait" (it's loaded meanwhile) */
-	if (!strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview") || !strcmp(d, "leftovers") || !strcmp(d, "clean_ao")) {
+	/* RetroAccount (Update All's sign-in) goes to the same bridge: ra_status, ra_sync, ra_login, ra_poll (args: the
+	 * code), ra_logout, ra_link (the FPGA ID: the Linker core for a few seconds, then menu.rbf again) */
+	int ra = !strncmp(d, "ra_", 3) && (!strcmp(d, "ra_status") || !strcmp(d, "ra_sync") || !strcmp(d, "ra_login") ||
+		!strcmp(d, "ra_poll") || !strcmp(d, "ra_logout") || !strcmp(d, "ra_link"));
+	if (ra || !strcmp(d, "act") || !strcmp(d, "allow") || !strcmp(d, "preview") || !strcmp(d, "leftovers") || !strcmp(d, "clean_ao")) {
 		pthread_mutex_lock(&lk);
 		if (busy) { pthread_mutex_unlock(&lk); *err = "Busy uninstalling; try again when it's done"; return NULL; }
 		int stale = files_stamp() != stamp;
@@ -351,14 +355,15 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON *a = args_of(d, req);
 		char *s = cJSON_PrintUnformatted(a);
 		cJSON_Delete(a);
-		char *r = s ? ask_locked(s, 60) : NULL;
+		char *r = s ? ask_locked(s, !strcmp(d, "ra_link") ? 120 : 60) : NULL;
 		pthread_mutex_unlock(&io);
 		free(s);
 		if (!r) { *err = "Update All's settings didn't answer"; return NULL; }
 		cJSON *o = cJSON_Parse(r);
 		free(r);
 		if (!o) { *err = "Update All's settings answered something unreadable"; return NULL; }
-		if (strcmp(d, "preview") && strcmp(d, "leftovers")) {
+		if (strcmp(d, "preview") && strcmp(d, "leftovers") && strcmp(d, "ra_status") && strcmp(d, "ra_login") &&
+		    strcmp(d, "ra_poll") && strcmp(d, "ra_link")) {
 			pthread_mutex_lock(&lk);
 			stamp = files_stamp();                    /* (our own change: not a reason to reload) */
 			if (!loading) { loading = 1; start_thread(refresher, NULL); }   /* values or the guard changed */
@@ -407,7 +412,7 @@ cJSON *ua_cmd(cJSON *req, const char **err)
 		cJSON_AddBoolToObject(o, "busy", 1);
 		return o;
 	}
-	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), install (args: a db id), leftovers, clean_ao, run";
+	*err = "do: list, act (args: menu, index, ok|toggle[, choice]), allow (args: key, on|off), preview (args: db ids), uninstall (args: db ids), install (args: a db id), leftovers, clean_ao, run, ra_status, ra_sync, ra_login, ra_poll (args: code), ra_logout, ra_link";
 	return NULL;
 }
 
