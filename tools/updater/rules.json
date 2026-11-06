@@ -200,8 +200,8 @@
   "MultiDatabases/dreamster": {
    "category": "hybrid cores",
    "tag": "patch",
-   "why": "Takes over the screen: rebuilt with Phosphor's hooks",
-   "ready": false
+   "why": "Stops MiSTer's Main with killall MiSTer: Phosphor's compat makes that Phosphor's Main, and it hands back through main= (tested on the SS1, r6b)",
+   "ready": true
   },
   "MultiDatabases/solarus": {
    "category": "hybrid cores",
