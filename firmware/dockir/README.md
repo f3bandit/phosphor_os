@@ -45,8 +45,8 @@ To add it to DockIR and Console Mode:
 3. **Updates from the SuperStation (Console Mode):** what `system/phosphord/dockir.c` does, in order:
    - find the receiver: USB `1c4f:0002`, its keyboard interface's `/dev/hidrawN` (`/sys/class/hidraw/*/device`);
    - `HIDIOCGFEATURE` (report 0, 8 bytes) must answer `DIRUP...`: only then can it be updated this way;
-   - `HIDIOCSFEATURE` with `00` + `DIRBOOT!`: it restarts as `RPI-RP2` (MiSTer's usbmount mounts it as a
-     `/media/usbN` with `INFO_UF2.TXT`; wait up to ~10 s);
+   - `HIDIOCSFEATURE` with `00` + `DIRBOOT!`: it restarts as the `RPI-RP2` drive (wait up to ~10 s for it).
+     MiSTer's usbmount mounts it as a `/media/usbN`; if it hasn't within ~3 s, mount it yourself (vfat);
    - copy the `.uf2` onto that drive and `sync`: it restarts with the new firmware by itself;
    - check it's back as `1c4f:0002` and answers the new id.
 4. **Remote buttons in Console Mode (issue #95, no Select):** map the receiver's keys to Console Mode's buttons the way
