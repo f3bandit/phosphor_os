@@ -28,6 +28,9 @@ are based on: phosphor-main (GPL-3.0) and phosphor-menu (GPL-3.0; MiSTer's
 Menu core is GPL-2.0-or-later). Their builds in each release come with
 SOURCE.md, which links the exact source.
 
+Retro Remake and Taki Udon have an additional permission for f3bandit's own code here,
+commercial use included: LICENSE-RETRO-REMAKE.md.
+
 Required Notice: Copyright (C) 2026 f3bandit (https://github.com/f3bandit)
 
 The full text follows.
