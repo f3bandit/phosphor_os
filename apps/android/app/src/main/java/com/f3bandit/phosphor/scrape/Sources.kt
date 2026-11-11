@@ -2,7 +2,7 @@
 // or key (TheGamesDB, ScreenScraper, IGDB), as phosphord's src_arcadedb.c and src_accounts.c and Phosphor
 // for Windows' scrape_sources.go. The logins are the ones saved on the MiSTer (sent to the phone over
 // the home network) and only go to those services.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import kotlinx.coroutines.sync.Mutex

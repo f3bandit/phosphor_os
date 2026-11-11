@@ -1,6 +1,6 @@
 // Phosphor for Android: the app's own settings (kept on the phone only): the TV's look as last seen,
 // box art downloads, notifications. Nothing here is a secret; the MiSTer's key is in Store.kt.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import android.content.Context

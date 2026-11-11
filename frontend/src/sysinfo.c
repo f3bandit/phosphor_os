@@ -1,5 +1,5 @@
 /* Phosphor frontend: live system state for the status bar.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Everything comes from /sys and /proc; nothing is spawned. PHOS_FAKE_STATUS
  * ("share=1,eth=0,wifi=2,bt=2") overrides it for screenshots. */

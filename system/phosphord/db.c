@@ -1,5 +1,5 @@
 /* phosphord: the library database.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * library.db lives on the SD card (data/). WAL mode lets the indexer write while the API reads;
  * synchronous=NORMAL keeps writes cheap on an SD card while staying consistent after power loss

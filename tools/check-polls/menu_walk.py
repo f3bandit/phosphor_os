@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 """Menu lag test, run on the SS1 (python3 there): walks Phosphor's menus with the shell's own remote keys
 (/tmp/phosphor-keys) and reports every stall the shell logged meanwhile (frontend.log "slow:" and "poll:").
 The source check (check_polls.py) finds synchronous polls; this finds what the menu actually does on the

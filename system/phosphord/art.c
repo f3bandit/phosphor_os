@@ -1,5 +1,5 @@
 /* phosphord: the artwork store.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * data/art/<system>/<game folder>/box.jpg. Images are scaled down once, when they're stored, so
  * the shell never has to decode a 2000-pixel scan on the ARM. The game folder name is the game's

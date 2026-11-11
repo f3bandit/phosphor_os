@@ -1,5 +1,5 @@
 /* phosphord: logging (stderr, <tmp>/phosphord.log, optionally the serial console).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_LOG_H
 #define PHOSD_LOG_H
 

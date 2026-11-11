@@ -7,7 +7,7 @@
 //   - Boot files, test ROMs and tools are set aside as not games.
 // Every match is kept here (files/automatch.json) for review: Keep, Undo; an undone game isn't matched
 // automatically again.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.content.Context

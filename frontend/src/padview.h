@@ -1,6 +1,6 @@
 /* Phosphor shell: a controller's button layout, drawn the way SS1 Tool draws it (its layouts, in
  * padlayouts.h), live: pressed buttons light up, sticks move, the button being mapped glows.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_PADVIEW_H
 #define PHOS_PADVIEW_H
 

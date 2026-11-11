@@ -1,5 +1,5 @@
 /* phosphord: what a game file is (CRC32 of a cartridge, serial of a disc, set name of an arcade game).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_IDENT_H
 #define PHOSD_IDENT_H
 

@@ -34,7 +34,7 @@ Release prep: name and trademark check, publish the GPL forks, own downloader da
 ## Decided
 
 - Frontend toolkit: **C + LVGL 9.6** (MIT). Slint was ruled out: its royalty-free licence excludes
-  embedded systems, leaving GPLv3 or paid, neither compatible with PolyForm Noncommercial.
+  embedded systems, leaving GPLv3 or paid, neither compatible with Phosphor's own licence.
 
 ## Open questions
 

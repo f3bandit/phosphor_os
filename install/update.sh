@@ -2,7 +2,7 @@
 # Phosphor updater: installs a Phosphor release package (phosphor-<version>-armhf.tar.gz) over the
 # installed Phosphor, or rolls back to the version before. Run by Phosphor itself (Settings > Update
 # Phosphor, on the TV or in the app) or from MiSTer's Scripts menu.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 #   update.sh list                    packages found, one per line: path|version
 #                                     (phosphor/updates, the top of the SD card and of each USB drive)

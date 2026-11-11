@@ -3,7 +3,7 @@
  * homebrew. Asked before the other sources, by the game's name only: its exact name, then its name
  * with tags, versions and fan-version words out (title_norm). Each cover is fetched from where its
  * maker posted it, or, when that link is gone, from Phosphor's copy in pack.zip ("pack:<file>").
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "scraper.h"
 #include "scrape_src.h"
 #include "cJSON.h"

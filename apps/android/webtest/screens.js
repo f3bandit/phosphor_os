@@ -1,6 +1,6 @@
 // Screenshots of every screen of the app's page (assets/web), with replies the SS1 really gave (fx/) behind a stand-in PhosNative.
 // cd apps/android && ./gradlew preBuild && node webtest/screens.js   (W=360 Z=1.35: a narrow phone with large text; TRY=1 MORE=1 extras) ; Play Store: W=360 H=640 DPR=3 FULL=0 TAG=-play
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 const fs = require("fs"), path = require("path"), http = require("http");
 const T = __dirname, WEB = path.join(__dirname, "../app/src/main/assets/web"), GEN = path.join(__dirname, "../app/build/generated/webshared/web");

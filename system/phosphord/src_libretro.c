@@ -1,5 +1,5 @@
 /* phosphord scraper source: libretro (no account).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Each system's official game list (No-Intro for cartridges, Redump for discs) and libretro's
  * details lists (developer, publisher, genre, year, players; PlayStation also has descriptions) are

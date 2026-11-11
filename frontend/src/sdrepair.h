@@ -1,6 +1,6 @@
 /* Phosphor frontend: the offline SD card repair's screen (phosphor --sdrepair STATE, in the repair copy of
  * MiSTer's Linux only).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_SDREPAIR_H
 #define PHOS_SDREPAIR_H
 

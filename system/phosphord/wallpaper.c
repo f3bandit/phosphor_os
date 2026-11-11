@@ -10,7 +10,7 @@
  *   wallpaper_screen file w h        the picture made to cover the screen, darkened: {screen}
  *   wallpaper_osd file|""            behind MiSTer's own menu (Phosphor's Main reads
  *                                    phosphor/config/osd_wallpaper); "" puts MiSTer's usual back
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "wallpaper.h"
 #include "art.h"
 #include "log.h"

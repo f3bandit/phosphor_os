@@ -1,5 +1,5 @@
 /* phosphord scraper source: the LaunchBox Games Database, no account.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * LaunchBox publishes its whole database as one download (Metadata.zip, ~110 MB; the XML inside is
  * ~515 MB). It's fetched once, read as a stream (never held in memory), and only the systems that

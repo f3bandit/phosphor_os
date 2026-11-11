@@ -1,5 +1,5 @@
 /* phosphord: a small FLAC encoder for ripping music CDs (16-bit stereo, 44.1 kHz).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Lossless and standard (any FLAC player reads it), just simpler than libFLAC: blocks of 4096 samples,
  * each channel coded with the best of FLAC's fixed predictors (order 0 to 4), mid/side or left/right,

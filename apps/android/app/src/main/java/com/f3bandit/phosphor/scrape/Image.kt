@@ -1,7 +1,7 @@
 // Phosphor for Android, box art on the phone: the picture made here, the way the MiSTer stores it
 // (longest side 512 px, averaged down, see-through edges on the shell's dark panel colour, JPEG), so the
 // MiSTer only has to save it. The same as Phosphor for Windows' scrape_image.go.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.graphics.Bitmap

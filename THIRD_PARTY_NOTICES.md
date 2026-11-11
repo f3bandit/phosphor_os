@@ -1,6 +1,6 @@
 # Third-party notices
 
-Phosphor is Copyright (C) 2026 f3bandit and licensed under the PolyForm Noncommercial License 1.0.0
+Phosphor is Copyright (C) 2026 f3bandit and all rights reserved, licensed to Retro Remake
 (LICENSE.md). It is built with the open-source software below, each under its own licence; their
 notices follow in full.
 

@@ -1,5 +1,5 @@
 /* phosphord: MiSTer's own file sharing (Samba) on and off from the menu.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * MiSTer starts Samba at boot when linux/samba.sh exists (/etc/init.d/S91smb); the release ships it
  * as linux/_samba.sh (off). On = copy _samba.sh to samba.sh and start it now; off = move samba.sh

@@ -8,7 +8,7 @@
  *   phos-nvme -temp /dev/sdX        just the temperature in °C
  *
  * The same interface as SS1 Tool's ss1fb helper, so the storage checks (sd_integrity.sh) use it.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include <errno.h>
 #include <fcntl.h>
 #include <scsi/sg.h>

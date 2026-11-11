@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 """Drawing and lifetime rules for the TV's shell (frontend/src/*.c), checked on every change (GitHub Actions
 "Shell checks"). Each one is a mistake that made it into a release (docs/menu-rules.md has the why):
 

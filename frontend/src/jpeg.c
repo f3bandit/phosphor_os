@@ -1,5 +1,5 @@
 /* Phosphor shell: JPEG box art, decoded whole (stb_image).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * phosphord stores box art as JPEG (about 60 KB a cover instead of 500 KB as PNG). LVGL's own
  * JPEG decoder (TJPGD) hands out tiles, which can't be scaled to fit the details panel, so covers

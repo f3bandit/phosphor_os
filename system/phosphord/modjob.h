@@ -1,5 +1,5 @@
 /* phosphord: runs a phosphor-modules script, quickly in the foreground or one job at a time in the background.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_MODJOB_H
 #define PHOSD_MODJOB_H
 

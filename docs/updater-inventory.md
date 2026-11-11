@@ -71,7 +71,7 @@ Checked 2026-11-05 against Update All 10f9b9a (2026-10-09).
   licence key bound to the linked FPGA ID is installed as `coinopkey.zip` and renewed at each sync.
 - **JOTEGO private releases:** follow the user's JOTEGO benefit in RetroAccount (Auto), or Yes/No by hand.
 - **Update All supporter:** the Patreon key file, checked by md5, decrypts the supporter timeline.
-- The ported login code stays GPL-3, in its own module next to `ua_bridge.py`, not in Phosphor's PolyForm code.
+- The ported login code stays GPL-3, in its own module next to `ua_bridge.py`, not in Phosphor's own code.
 - CI checks the supporter-only databases with f3bandit's own access (a GitHub secret) and publishes **only the
   verdicts** for them, never their file lists or URLs.
 

@@ -3,7 +3,7 @@
 # Put phosphor-<version>-armhf.tar.gz in /media/fat/phosphor/updates (or next to this script, or at
 # the top of the SD card), then run this from the Scripts menu. From 0.27.6 on, Settings > Update
 # Phosphor does the same from the TV or the app.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 FAT=/media/fat
 HERE="$(cd "$(dirname "$0")" && pwd)"
 pkg="$(ls -1t "$FAT"/phosphor/updates/phosphor-*-armhf.tar.gz "$HERE"/phosphor-*-armhf.tar.gz "$FAT"/phosphor-*-armhf.tar.gz 2>/dev/null | head -1)"

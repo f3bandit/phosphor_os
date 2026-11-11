@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 # Builds dist/Phosphor.exe the one way it should be: a windowed program (no cmd window), no debug info.
 # Refuses to finish if the result would open a console.
 set -e

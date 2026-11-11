@@ -1,5 +1,5 @@
 /* phosphord: markers for heavy work, for the health-watch module's power check.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "busy.h"
 #include "paths.h"
 #include "log.h"

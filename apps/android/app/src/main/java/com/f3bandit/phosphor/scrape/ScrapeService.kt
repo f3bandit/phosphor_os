@@ -1,6 +1,6 @@
 // Phosphor for Android: the box art run on the phone keeps going with the app in the background, as a
 // foreground service with a notification that shows how far it is (and a Stop button).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.app.Notification

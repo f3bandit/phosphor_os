@@ -1,5 +1,5 @@
 /* phosphord: scraper sources (libretro, ArcadeDB, LaunchBox, TheGamesDB, ScreenScraper, IGDB).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Every source answers the same question: "this game (by content), what do you have?" Sources are
  * asked in the user's order; for each field the first answer wins, and fields the game already

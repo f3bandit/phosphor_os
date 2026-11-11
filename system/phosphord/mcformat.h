@@ -1,5 +1,5 @@
 /* phosphord: PlayStation memory card images (mcformat.c, SS1 Tool's mcformat.go in C).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_MCFORMAT_H
 #define PHOSD_MCFORMAT_H
 

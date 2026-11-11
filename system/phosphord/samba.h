@@ -1,5 +1,5 @@
 /* phosphord: MiSTer's own file sharing (Samba) on and off from the menu.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_SAMBA_H
 #define PHOSD_SAMBA_H
 

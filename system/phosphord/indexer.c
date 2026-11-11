@@ -1,5 +1,5 @@
 /* phosphord: finds games on the SD card, USB drives and the network share.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * A scan walks each system's games folders on every root that's present. A file whose size and
  * modified time haven't changed is left alone (only marked as seen). Files on a root that isn't

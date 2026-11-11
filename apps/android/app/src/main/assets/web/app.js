@@ -1,9 +1,9 @@
-/* Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+/* Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 /* Phosphor for Android: the screens. A web page in the app's WebView (SS1 Tool for Android's layout,
    Phosphor's look). Everything the MiSTer does goes through PhosNative.call (the app sends it to
    phosphord's remote access with this phone's key); what only the phone does (pairing, box art
    lookups on the phone, notifications, its storage) through PhosNative.app.
-   Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+   Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 "use strict";
 
 /* ---------------------------------------------------------------- the app underneath */
@@ -1583,14 +1583,14 @@ PAGES.about = { async show(c) {
 	c.draw(flat(row("Phosphor for Android", { value: ST.appVersion }) + row("Works with", { value: "Phosphor 0.27.25 or later" }))
 		+ note("The app only talks to your MiSTer, on your home network. Box art lookups on the phone go to the services you turned on (libretro, ArcadeDB, LaunchBox, and with your logins TheGamesDB, ScreenScraper, IGDB). It collects nothing and sends nothing anywhere else. Passwords, WiFi and Bluetooth pairings stay on the MiSTer.")
 		+ note("Thanks to Taki and Retro Remake for making the SuperStation One, such excellent hardware. Disc support by Anime0t4ku and bonna79. RetroAchievements by odelot (RA Main and cores) and rcheevos by the RetroAchievements team. Music CD names from MusicBrainz and covers from the Cover Art Archive; audio decoding by dr_libs (David Reid) and stb_vorbis (Sean Barrett).")
-		+ note("PolyForm Noncommercial 1.0.0, like the rest of Phosphor. Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).")
+		+ note("All rights reserved, licensed to Retro Remake, like the rest of Phosphor. Fonts: Inter (SIL Open Font License 1.1), DejaVu Sans Mono (Bitstream Vera licence).")
 		+ flat(row("Open-source licences", { go: "licences" })));
 } };
 
 /* Phosphor's licence, Main and the menu core (GPL), and the notices of what it's built with (THIRD_PARTY_NOTICES.md, copied in by the build) */
 PAGES.licences = { async show(c) {
 	setBar("Open-source licences");
-	const head = note("Phosphor is Copyright (C) 2026 f3bandit, under the PolyForm Noncommercial License 1.0.0: free to use, share and change for any noncommercial purpose.")
+	const head = note("Phosphor is Copyright (C) 2026 f3bandit, all rights reserved, licensed to Retro Remake.")
 		+ note("Phosphor's Main (MiSTer_phosphor) and menu core (menu_phosphor.rbf) are GPL-3.0, built from MiSTer's Main and Menu core. Their source:")
 		+ flat([["Phosphor's Main", "https://github.com/f3bandit/phosphor-main"], ["Phosphor's menu core", "https://github.com/f3bandit/phosphor-menu"]]
 			.map(([t, u]) => `<a href="${attr(u)}" style="display:block;color:inherit;text-decoration:none">${row(t, { sub: u, value: "›" })}</a>`).join(""))   /* opens in the browser */

@@ -2,7 +2,7 @@
 // it. Once the MiSTer says it's stored, the picture is deleted (Settings > Storage > This phone: Auto
 // delete, on unless turned off); one the MiSTer didn't get stays, so it can be sent again. Only this
 // folder is ever touched: photos picked from the gallery are never deleted.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.content.Context

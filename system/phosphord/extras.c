@@ -1,5 +1,5 @@
 /* phosphord: the Windows app's view-only Devices and Network sections, MiSTer.ini, and Scripts.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * network and usb only read. MiSTer.ini: every save keeps the old file in phosphor/backups/ini first,
  * and any of those can be put back (which keeps the current one first too). Scripts are run by the
  * shell on the TV (as from MiSTer's Scripts menu), asked through <tmp>/script-request. */

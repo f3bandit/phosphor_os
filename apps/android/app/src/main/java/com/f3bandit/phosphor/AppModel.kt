@@ -1,6 +1,6 @@
 // Phosphor for Android: app state (which MiSTer, its key, does it answer), shared by the page and the
 // background work. Changes are told to the page (MainActivity sends them on as the "state" event).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import android.content.Context

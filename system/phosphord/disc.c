@@ -1,5 +1,5 @@
 /* phosphord: a disc in the dock's CD/DVD drive.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Phosphor's Main reads the drive (phosphor-main phosphor_disc.cpp: "disc" on its socket, API 5) with
  * the physical disc support merged from Main_MiSTer_Physical_Disc (Anime0t4ku, bonna79). This adds

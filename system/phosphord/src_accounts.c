@@ -1,5 +1,5 @@
 /* phosphord scraper sources that need an account or key: TheGamesDB, ScreenScraper, IGDB.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Keys go in config/scraper.ini; a source without its key is skipped. ScreenScraper is asked by
  * content (CRC32 / product code); TheGamesDB and IGDB by the official name a content match gave. */

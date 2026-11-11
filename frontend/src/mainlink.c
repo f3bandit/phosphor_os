@@ -1,5 +1,5 @@
 /* Phosphor shell: the link to phosphor-main (Phosphor's fork of MiSTer Main), when it's installed.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Talks to the fork's local API (/tmp/phosphor-main.sock, one text command per line) only; no code
  * from Main. With the fork, the shell holds the screen while this connection is open: Main's menu

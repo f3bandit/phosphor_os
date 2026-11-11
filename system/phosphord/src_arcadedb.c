@@ -1,5 +1,5 @@
 /* phosphord scraper source: ArcadeDB (adb.arcadeitalia.net), no account.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Arcade games, by the MAME set name in the .mra (e.g. sf2). Gives the full title, maker, year,
  * genre, players, the game's history text (from arcade-history.com) and the flyer as box art. */

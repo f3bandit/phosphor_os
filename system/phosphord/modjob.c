@@ -1,5 +1,5 @@
 /* phosphord: runs a phosphor-modules script, quickly in the foreground or one job at a time in the background.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * The script gets phosphord's own paths (PHOSPHOR_ROOT, PHOSPHOR_TMP, the CORENAME file), runs in its own
  * process group so a timeout stops all of it, and its output is kept for the screen to show. */

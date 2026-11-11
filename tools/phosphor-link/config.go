@@ -1,5 +1,5 @@
 // Phosphor Link settings: phosphor-link.ini next to the program (all optional).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package main
 
 import (

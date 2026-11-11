@@ -1,5 +1,5 @@
 /* phosphord: starting games and keeping play history.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * A game is started the way MiSTer's own tools do it: an MGL file handed to Main
  * ("load_core <file>" on /dev/MiSTer_cmd); arcade .mra files are loaded directly. When MiSTer's

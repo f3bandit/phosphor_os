@@ -1,5 +1,5 @@
 /* phosphord: Phosphor's online updates (see upnet.h).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 
 #include "upnet.h"
 #include "bgcache.h"

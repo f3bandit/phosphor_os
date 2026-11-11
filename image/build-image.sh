@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds a ready-to-flash SD card image: stock MiSTer (MiSTer-devel release) + Phosphor preinstalled.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 #   image/build-image.sh [phosphor-<v>-armhf.tar.gz] [options]
 #     --mister release_YYYYMMDD   MiSTer release to install (default: the newest in SD-Installer-Win64_MiSTer)
@@ -187,8 +187,8 @@ free software; its source is at the address given, in the version named.
   GPL-3.0, its Linux built with buildroot under GPL-2.0/LGPL-2.1). Changed here:
   de10_nano_hdmi_config.bin, its background colour from blue to dark.
 - Update All (Scripts/update_all.sh; GPL-3.0: https://github.com/theypsilon/Update_All_MiSTer).
-- Phosphor $PHOS_VER (phosphor/): Phosphor's own programs under the PolyForm Noncommercial License
-  1.0.0 (phosphor/LICENSE.md, with the notices of the libraries in it in
+- Phosphor $PHOS_VER (phosphor/): Phosphor's own programs, f3bandit's, all rights reserved, licensed
+  to Retro Remake (phosphor/LICENSE.md, with the notices of the libraries in it in
   phosphor/THIRD_PARTY_NOTICES.md); Phosphor's Main and menu core under GPL-3.0, their exact source
   in phosphor/SOURCE.md.
 

@@ -1,7 +1,7 @@
 // Phosphor for Android, box art on the phone: the name handling, the same as phosphord's (ident.c
 // title_norm, scraper.c name_base, src_libretro.c serial_norm and friends) and Phosphor for Windows'
 // scrape_text.go, so the phone matches exactly what the MiSTer would.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 private val titleNoise = setOf(

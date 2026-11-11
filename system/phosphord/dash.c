@@ -2,7 +2,7 @@
  * /proc and /sys, nothing kept: counters are cumulative, the app takes the differences between two
  * asks. Temperatures, CPU (all and each core), memory, uptime and load, the running core, drives,
  * network addresses and traffic, disk traffic, the busiest processes, and the kernel log's last lines.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "dash.h"
 #include "paths.h"
 #include <arpa/inet.h>

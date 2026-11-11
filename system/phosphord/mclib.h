@@ -1,5 +1,5 @@
 /* phosphord: the memory card library (one folder a card, one .mcd a version; the same as SS1 Tool's).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_MCLIB_H
 #define PHOSD_MCLIB_H
 

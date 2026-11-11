@@ -1,5 +1,5 @@
 /* phosphord: RetroSpy, installed through Update All and set up from Phosphor.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * RetroSpy (retro-spy.com) shows the controller being played on a PC, for streams and recordings. Its
  * MiSTer part is one program, <fat>/retrospy/retrospy, from Update All's database

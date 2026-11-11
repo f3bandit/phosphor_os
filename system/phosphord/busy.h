@@ -1,5 +1,5 @@
 /* phosphord: markers for heavy work, for the health-watch module's power check.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * <fat>/phosphor/state/busy/<name> exists while heavy work runs (not box art: it can run for hours
  * unattended, and switching a MiSTer off at the plug is normal) (boot id, start time, what). If the

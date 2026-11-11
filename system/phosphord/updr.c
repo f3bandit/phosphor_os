@@ -2,7 +2,7 @@
  * catalog's categories and tags (phosphor_os/tools/updater, the Database watch), the user's choices
  * (phosphor/config/updater.ini) and a run with MiSTer's own Downloader, after a restore point. The module
  * prints STEP|, LOG| and RESULT|ok|... or RESULT|fail|... for a run; plan, settings and catalog are JSON.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "updr.h"
 #include "modjob.h"
 #include <stdlib.h>

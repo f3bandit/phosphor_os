@@ -1,5 +1,5 @@
 /* phosphord: the music player (Phosphor's Music tile; the phone and Windows app as remotes).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Plays only while no game runs (a game starting stops it). Albums are folders of FLAC, MP3, Ogg or WAV
  * files in a "Music" folder at the top of the SD card or a drive (NVMe, USB): ripped CDs, Steam soundtracks

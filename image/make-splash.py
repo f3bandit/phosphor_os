@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draws image/splash.png, shown by the SD card installer while it sets up the card (1920x1080).
-Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 Needs Pillow, Inter (SIL OFL 1.1) and DejaVu Sans Mono. Run it again only to change the picture."""
 import sys
 from PIL import Image, ImageDraw, ImageFont

@@ -1,5 +1,5 @@
 /* Phosphor shell: background textures, drawn in the accent colour.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Each texture is one small tile, drawn here in code (anti-aliased lines from distance fields), then
  * repeated across the screen by LVGL: drawn once when it's picked, nothing per frame. Faint on

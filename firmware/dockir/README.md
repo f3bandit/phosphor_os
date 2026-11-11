@@ -33,7 +33,7 @@ says it can be.
 
 Retro Remake and Taki Udon may use all of this (the patch, the build script, the updater in
 `system/phosphord/dockir.c` and the button mapping), in Console Mode and in DockIR itself, commercial use included,
-with credit to f3bandit: see [LICENSE-RETRO-REMAKE.md](../../LICENSE-RETRO-REMAKE.md).
+with credit to f3bandit: see [LICENSE.md](../../LICENSE.md).
 
 To add it to DockIR and Console Mode:
 

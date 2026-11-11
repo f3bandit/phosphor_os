@@ -4,7 +4,7 @@
 // finishing. Each becomes a notification in the app (More > Notifications) and, unless turned off, an
 // Android notification. Checked every minute while the app is open, and about every 15 minutes in the
 // background (Android's job scheduler, on WiFi only: the MiSTer is on the home network).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import android.Manifest

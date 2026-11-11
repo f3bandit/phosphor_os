@@ -1,5 +1,5 @@
 /* phosphord: runs the diag module (whole-system checks) in the background and keeps the results.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_DIAG_H
 #define PHOSD_DIAG_H
 

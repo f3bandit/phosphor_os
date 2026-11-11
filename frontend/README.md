@@ -178,6 +178,6 @@ third_party/lvgl LVGL 9.6.0 (MIT; see its LICENCE.txt and COPYRIGHTS.md)
 
 ## Licence
 
-PolyForm Noncommercial 1.0.0, like the rest of this repository. LVGL and cJSON are MIT; Inter is SIL OFL 1.1;
+All rights reserved, licensed to Retro Remake, like the rest of this repository. LVGL and cJSON are MIT; Inter is SIL OFL 1.1;
 DejaVu Sans Mono is under the Bitstream Vera licence. Nothing GPL is linked: LVGL's FreeType and
 FrogFS integrations stay switched off.

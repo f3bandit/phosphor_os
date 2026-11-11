@@ -1,5 +1,5 @@
 /* phosphord: RetroAchievements (retroachievements.org) for Phosphor.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Achievements themselves run in Phosphor's Main (phosphor-main: odelot's RetroAchievements Main merged,
  * rcheevos by the RetroAchievements team) on odelot's RetroAchievements cores. This side:

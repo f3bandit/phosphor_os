@@ -1,4 +1,4 @@
-/* Phosphor's drawing profiler: see prof.h. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0. */
+/* Phosphor's drawing profiler: see prof.h. Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake. */
 #include "prof.h"
 #include <signal.h>
 #include <stdint.h>

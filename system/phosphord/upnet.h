@@ -2,7 +2,7 @@
  * kept 30 min) and, when asked, downloads the newer release package into phosphor/updates, checked
  * against the release's SHA256SUMS.txt. Installing stays the user's choice (update.sh, as for a
  * package put there by hand). Nothing is sent but the request itself.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_UPNET_H
 #define PHOSD_UPNET_H
 #include "cJSON.h"

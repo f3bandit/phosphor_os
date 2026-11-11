@@ -1,4 +1,4 @@
-/* phosphord: Update All from Phosphor (see ua.c). Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0. */
+/* phosphord: Update All from Phosphor (see ua.c). Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake. */
 #ifndef PHOSD_UA_H
 #define PHOSD_UA_H
 

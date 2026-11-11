@@ -1,6 +1,6 @@
 #!/bin/bash
 # The C library Phosphor's ARM programs are built with: musl (MIT), linked in statically.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 #   tools/musl/build-toolchain.sh [prefix]      (default /opt/musl-armhf)
 #

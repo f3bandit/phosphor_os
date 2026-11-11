@@ -1,6 +1,6 @@
 /* phosphord: Phosphor's own updater (phosphor-modules/updater): what Update All installs, from Phosphor's
  * catalog, with MiSTer's own Downloader.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_UPDR_H
 #define PHOSD_UPDR_H
 

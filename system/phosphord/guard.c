@@ -1,5 +1,5 @@
 /* phosphord: drives the update-guard module (settings after a Linux update, restore points).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * Only ever on request: the screen asks for the state, and its buttons start one job at a time. */
 #include "guard.h"
 #include "modjob.h"

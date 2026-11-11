@@ -1,7 +1,7 @@
 /* phosphord: controllers. Ported from SS1 Tool (padmap.go, controllers.go): the same controller
  * database lookups, button bindings and automatic layout picks, so the TV and the app draw a
  * controller the same way SS1 Tool does.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * The controller tester (first in SS1 Tool): f3bandit's idea and design.
  *
  * MiSTer keeps button mappings in <fat>/config/inputs:

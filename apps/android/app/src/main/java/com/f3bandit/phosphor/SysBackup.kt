@@ -5,7 +5,7 @@
 // Phosphor for Windows. A file is only fetched when it changed; one that changed when Linux did looks
 // reset by the update and is flagged. Putting one back sends it in pieces; phosphord checks it and keeps
 // the file as it was on the SS1 first. Passwords, logins, pairings and keys never come here.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import android.content.Context

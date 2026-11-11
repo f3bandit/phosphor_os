@@ -1,5 +1,5 @@
 /* phosphord: the memory card library, the same as SS1 Tool's so the two can share it.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * The memory card manager (first in SS1 Tool): f3bandit's idea and design.
  *
  *   phosphor/memcards/<card name>/<YYYY-MM-DD_HHMMSS>.mcd   one folder a card, one file a version (raw 128 KB)
