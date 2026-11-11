@@ -1,6 +1,6 @@
 /* phosphord: PlayStation memory card images (raw 128 KB, MiSTer's .mcd / .sav), the same rules as
  * SS1 Tool's mcformat.go, so the two read and change cards the same way.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * The memory card manager (first in SS1 Tool): f3bandit's idea and design.
  *
  * A card is 16 blocks of 8 KB; each block is 64 frames of 128 bytes. Block 0 is the card's own

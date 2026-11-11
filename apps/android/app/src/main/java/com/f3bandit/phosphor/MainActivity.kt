@@ -3,7 +3,7 @@
 // phosphord's remote access with this phone's key, which the page never sees) and the phone for its
 // own things (pairing, box art lookups on the phone, notifications, its storage) through PhosNative.app.
 // Box art comes through art/<id> on the page's own address, fetched here with the key.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import android.Manifest

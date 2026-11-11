@@ -1,5 +1,5 @@
 /* phosphord: .chd discs for rcheevos' hashing (matching the library to RetroAchievements).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * rcheevos' own CD reader knows .cue/.bin/.gdi/.iso but not .chd. This one opens .chd discs with libchdr
  * and hands every other file to rcheevos' reader. It answers as rcheevos' does: sectors are numbered on

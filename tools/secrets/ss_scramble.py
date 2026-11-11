@@ -4,7 +4,7 @@
 # repo) and writes them XORed with a fresh random key, so the login isn't plain text in the program.
 #   ss_scramble.py c  OUT.h     a C header (phosphord: src_accounts.c)
 #   ss_scramble.py go OUT.go    a Go file (Phosphor for Windows: scrape_ss.go)
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 import os, secrets, sys
 
 lang, out = sys.argv[1], sys.argv[2]

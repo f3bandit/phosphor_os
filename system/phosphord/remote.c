@@ -1,5 +1,5 @@
 /* phosphord: remote access over the home network (phone app, PC app, Claude plugin).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Off until turned on in Settings > Remote access. Plain HTTP/1.1 on port 8767, one request per
  * connection, only from home-network addresses (10/8, 172.16/12, 192.168/16, 169.254/16, 127/8,

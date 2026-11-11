@@ -1,6 +1,6 @@
 // Phosphor for Android: the paired MiSTer (address, device key). The key is encrypted with an
 // Android Keystore key that never leaves the phone; only the encrypted form is in app storage.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import android.content.Context

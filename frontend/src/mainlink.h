@@ -1,5 +1,5 @@
 /* Phosphor shell: the link to phosphor-main (Phosphor's fork of MiSTer Main), when it's installed.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_MAINLINK_H
 #define PHOS_MAINLINK_H
 

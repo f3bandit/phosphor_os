@@ -1,5 +1,5 @@
 /* phosphord: one-time import of artwork and details other tools left on the card.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Only fills what's empty, never overwrites what Phosphor already has, and never changes the
  * source files. Art is copied into Phosphor's store (scaled down), so the originals can go. */

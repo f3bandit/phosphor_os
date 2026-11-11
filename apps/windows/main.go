@@ -1,5 +1,5 @@
 // Phosphor for Windows: the PC companion for Phosphor on the SuperStation One.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 //
 // One exe, no install. It serves its screens on 127.0.0.1 (a random port, with a key in the URL so
 // nothing else on the PC can use it) and shows them in an Edge app window. It talks to the SS1 over

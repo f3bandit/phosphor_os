@@ -1,5 +1,5 @@
 // Phosphor for Android: talks to phosphord's remote access (docs/remote-api.md) over the home network.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import kotlinx.coroutines.Dispatchers

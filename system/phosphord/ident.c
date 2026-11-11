@@ -1,5 +1,5 @@
 /* phosphord: what a game file is.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Cartridges and computer files: CRC32 of the ROM data, the way the No-Intro sets count it
  * (copier headers left out: iNES/FDS 16 bytes, SNES 512, Atari 7800 128, Lynx 64; N64 read in

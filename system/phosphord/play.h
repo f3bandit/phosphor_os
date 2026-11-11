@@ -1,5 +1,5 @@
 /* phosphord: starting games and keeping play history.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_PLAY_H
 #define PHOSD_PLAY_H
 

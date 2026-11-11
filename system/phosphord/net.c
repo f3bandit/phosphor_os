@@ -1,5 +1,5 @@
 /* phosphord: HTTP through curl (on MiSTer's Linux), with its certificate bundle.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * curl does TLS, redirects and timeouts, so phosphord carries no network code of its own.
  *   PHOS_CURL    curl to run (default: curl on the PATH)

@@ -1,5 +1,5 @@
 /* phosphord: drives the backup-agent module (snapshots of saves and settings on the SD card, NVMe or NAS).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_BACKUP_H
 #define PHOSD_BACKUP_H
 

@@ -4,7 +4,7 @@
 # repository has no licence file): it's fetched from GitHub at DOCKIR_COMMIT and patched.
 # Needs: git, cmake, make, arm-none-eabi-gcc with newlib (Debian/Ubuntu: gcc-arm-none-eabi
 # libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib). Writes dockir-<id>.uf2 next to this script.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see ../../LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see ../../LICENSE.md).
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 DOCKIR_COMMIT=9403adc160d46d62bbb1c21d157ff83a4b1dc105

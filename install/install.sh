@@ -1,6 +1,6 @@
 #!/bin/bash
 # Phosphor installer. Run from the unpacked release folder on the MiSTer.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 #   install.sh             copy Phosphor to /media/fat/phosphor; nothing starts at boot
 #   install.sh --boot      also start phosphord (library service, not the shell) at boot,

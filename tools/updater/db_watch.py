@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 """Database watch: the first stage of Phosphor's own updater (docs/updater-inventory.md).
 
 Reads the database list from Update All's own source (theypsilon/Update_All_MiSTer, databases.py, read as

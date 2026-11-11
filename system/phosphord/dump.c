@@ -1,5 +1,5 @@
 /* phosphord: saving a copy of the game disc in the dock's drive (Disc > In the drive > Save a copy).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Phosphor's own implementation, from the standards rather than anyone's dumper: the table of contents
  * (Linux's CDROMREADTOC*), raw 2352-byte sectors read with MMC's READ CD (SG_IO, opcode 0xBE), each

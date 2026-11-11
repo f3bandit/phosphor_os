@@ -129,7 +129,7 @@ share; `_Arcade` for arcade). Phosphor never writes into games folders.
 ## Licences
 
 - Main fork and menu core fork: GPL-3.0 (derived from MiSTer-devel). Source published with any release.
-- Shell, phosphord, modules and everything else in this repo: PolyForm Noncommercial 1.0.0 (`LICENSE.md`).
+- Shell, phosphord, modules and everything else in this repo: f3bandit's, all rights reserved, licensed to Retro Remake (`LICENSE.md`).
   Keep the boundary clean: no MiSTer GPL code copied in; talk to the Main fork only through its API.
   Dependencies must be permissive (MIT, BSD, Apache, zlib, public domain), never GPL:
   LVGL (MIT), SQLite (public domain), cJSON (MIT), stb (public domain / MIT).

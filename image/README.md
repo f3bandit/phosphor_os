@@ -46,4 +46,4 @@ The build checks Mr. Fusion's layout and that the boot block points at `/media/f
 Mr. Fusion is GPL-3.0 (sources, and the licences of the Linux kernel and buildroot tools inside it, in
 [its repository](https://github.com/MiSTer-devel/mr-fusion), including `legal-info/`). The MiSTer release
 is MiSTer-devel's (GPL; sources in the MiSTer-devel repositories). Each build writes a `.txt` next to the
-image naming the exact versions. Phosphor itself is PolyForm Noncommercial 1.0.0.
+image naming the exact versions. Phosphor itself is All rights reserved; licensed to Retro Remake.

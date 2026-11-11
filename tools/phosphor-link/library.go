@@ -1,6 +1,6 @@
 // Library tools: manage a Phosphor library (box art, details, "Based on" links) over the home network,
 // through phosphord's remote access (Settings > Remote access on the MiSTer; see docs/remote-api.md).
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 //
 // These don't use the debug port: they talk HTTP to port 8767. The pairing (address + device key) is
 // kept in the user's settings folder (library.json, readable only by this user), not next to the program.

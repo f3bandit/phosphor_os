@@ -1,5 +1,5 @@
 /* phosphord: HTTP through curl (on MiSTer's Linux), with its certificate bundle.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_NET_H
 #define PHOSD_NET_H
 

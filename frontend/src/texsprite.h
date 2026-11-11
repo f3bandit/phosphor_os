@@ -1,5 +1,5 @@
 /* Phosphor shell: sprite textures (pixel-art sprites scattered over the screen or a tile), made with
- * tools/texture-maker. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * tools/texture-maker. Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_TEXSPRITE_H
 #define PHOS_TEXSPRITE_H
 

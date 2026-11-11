@@ -1,5 +1,5 @@
 /* Phosphor shell: CRT mode.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * On MiSTer the analog port (VGA / SCART / component on the SS1) shows the running core's own video, not
  * Linux's framebuffer, so a CRT never sees a screen drawn by a Linux program. Phosphor's menu core has

@@ -2,7 +2,7 @@
  * Bluetooth won't switch on) with the bt-repair module: SS1 Tool's own script (scripts/ss1_bt_repair.sh), so
  * Phosphor, SS1 Tool and Console Mode for Windows repair it the same way. What goes wrong and what the repair
  * does is in the script. It prints STEP|, LOG|, FOUND| lines and RESULT|ok|... or RESULT|fail|...
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "btfix.h"
 #include "modjob.h"
 #include <stdio.h>

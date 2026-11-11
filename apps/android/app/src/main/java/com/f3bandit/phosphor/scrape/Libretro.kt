@@ -3,7 +3,7 @@
 // libretro's details lists are fetched once and kept in the app's cache (fresh again after 30 days).
 // Matched by CRC (cartridges) or product code + size (discs), else the exact list name or the same
 // title words. Gives the game its official name; box art: libretro's thumbnails, by that name.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import kotlinx.coroutines.sync.Mutex

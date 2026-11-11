@@ -1,5 +1,5 @@
 /* phosphord: box art and details for identified games, from the sources the user picked.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Sources are asked in the user's order (config/scraper.ini, Settings > Box art sources). For each
  * field (description, developer, publisher, genre, year, players, region, box art) the first answer

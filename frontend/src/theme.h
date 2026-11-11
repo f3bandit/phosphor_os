@@ -1,5 +1,5 @@
 /* Phosphor frontend: colours, fonts and shared styles.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_THEME_H
 #define PHOS_THEME_H
 

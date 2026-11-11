@@ -4,7 +4,7 @@
  * bootloader, whose drive (RPI RP2) appears on the SS1; the .uf2 is copied onto it and it restarts with the
  * new firmware. A feature report read answers its id ("DIRUP001"). The first flash of a dock is by hand
  * (BOOTSEL + MCU RST in the NVMe slot, from a PC): its own firmware can't be told to restart.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *   PHOS_USB_SYS, PHOS_HIDRAW_SYS: /sys/bus/usb/devices and /sys/class/hidraw, for tests */
 #include "dockir.h"
 #include "log.h"

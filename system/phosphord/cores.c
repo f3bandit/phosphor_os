@@ -1,5 +1,5 @@
 /* phosphord: get or update cores with MiSTer's own downloader (Scripts/update.sh), on request.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Runs only when asked (the Welcome screen's "Get cores", Settings): MiSTer's update.sh fetches
  * MiSTer-devel's downloader and installs or updates cores, filters and the rest the same way it does on

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Phosphor: run from the NVMe (or a USB drive) instead of the SD card.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 # The SuperStation can only start from the SD card: its bootloader (MiSTer's u-boot), the Linux kernel
 # (linux/zImage_dtb) and the menu core (menu.rbf) stay there. Everything else runs from the drive:

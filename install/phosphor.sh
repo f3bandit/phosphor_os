@@ -1,6 +1,6 @@
 #!/bin/bash
 # Phosphor: start, stop and check phosphord and the shell by hand.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 #
 #   phosphor.sh start          phosphord + the shell on the framebuffer
 #   phosphor.sh service        phosphord only (library, scraper, API)

@@ -1,7 +1,7 @@
 /* phosphord: answers that take seconds to work out (a module's drive list, the update packages, cloud
  * status) kept and refreshed in the background, so phosphord (one request at a time) never makes the
  * TV or the app wait for them.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_BGCACHE_H
 #define PHOSD_BGCACHE_H
 #include <pthread.h>

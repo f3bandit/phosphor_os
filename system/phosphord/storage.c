@@ -1,5 +1,5 @@
 /* phosphord: drives the storage module (SD card, NVMe and USB checks; the faulty overlap tool).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * Only fsrepair changes a file system (and mount mounts a drive that was left unmounted) (the checker unmounts and repairs it); speed writes and removes
  * one file; the overlap tool is moved into phosphor/backups, never deleted, and can be put back; the offline
  * SD card repair (sdrescue) writes a copy of Linux to the chosen drive and a few lines to linux/u-boot.txt. */

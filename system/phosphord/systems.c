@@ -1,5 +1,5 @@
 /* phosphord: the systems Phosphor knows, and how each one is started.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * The MGL slot numbers (type/index/delay) follow each core's file menu. They still need checking
  * on hardware, so they can be changed in config/systems.ini without rebuilding. */

@@ -94,5 +94,5 @@ The API it uses: [docs/remote-api.md](../../docs/remote-api.md).
 
 ## Licence
 
-PolyForm Noncommercial 1.0.0, like the rest of Phosphor. Fonts: Inter (SIL OFL 1.1), DejaVu Sans Mono
+All rights reserved, licensed to Retro Remake, like the rest of Phosphor. Fonts: Inter (SIL OFL 1.1), DejaVu Sans Mono
 (Bitstream Vera licence), subset to Latin.

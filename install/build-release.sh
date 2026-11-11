@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds dist/phosphor-<version>-armhf.tar.gz: ARM binaries, scripts, example settings, modules.
 # Needs the ARM builds (frontend/build-arm, system/build-arm) and, for modules, ../phosphor-modules.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 set -e
 cd "$(dirname "$0")/.."
 V="$(sed -n 's/#define PHOS_VERSION "\(.*\)"/\1/p' frontend/src/settings.h)"

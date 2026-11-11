@@ -1,5 +1,5 @@
 /* phosphord: a small FLAC encoder for ripping music CDs (flacenc.c).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_FLACENC_H
 #define PHOSD_FLACENC_H
 

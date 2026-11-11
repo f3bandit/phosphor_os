@@ -1,5 +1,5 @@
 /* Phosphor shell: client for phosphord, the system service.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_API_H
 #define PHOS_API_H
 

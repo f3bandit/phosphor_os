@@ -1,7 +1,7 @@
 /* Phosphor for Android: SS1 Tool for Android's phone layout (app bar, chips, cards, two-column
    buttons and tiles, bottom bar with More) in Phosphor's look (the shell's palette, Inter and the
    mono labels, the accent and background texture picked in Look).
-   Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+   Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 @font-face { font-family: "Inter"; font-weight: 400; src: url(fonts/inter-Regular.woff2) format("woff2"); font-display: block; }
 @font-face { font-family: "Inter"; font-weight: 500; src: url(fonts/inter-Medium.woff2) format("woff2"); font-display: block; }
 @font-face { font-family: "Inter"; font-weight: 600; src: url(fonts/inter-SemiBold.woff2) format("woff2"); font-display: block; }

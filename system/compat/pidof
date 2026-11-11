@@ -3,7 +3,7 @@
 # so a script that stops or looks for "MiSTer" (DreamSTer's "killall MiSTer" before it takes the FPGA over)
 # means Phosphor's Main. Starting /media/fat/MiSTer again afterwards needs nothing: that Main follows main= in
 # MiSTer.ini to Phosphor's, as at boot. Any other name goes straight to the real pidof.
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 real=/usr/bin/pidof
 [ -x "$real" ] || real=/bin/pidof
 for a; do

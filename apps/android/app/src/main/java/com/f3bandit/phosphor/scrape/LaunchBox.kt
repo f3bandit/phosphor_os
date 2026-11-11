@@ -3,7 +3,7 @@
 // into the app's cache and read as a stream; what's kept is the games of Phosphor's systems (names,
 // alternate names, details, front box file names), in a small database in the cache (fresh again after
 // 30 days); the zip is deleted. Looked up by the official name a content match gave.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.database.sqlite.SQLiteDatabase

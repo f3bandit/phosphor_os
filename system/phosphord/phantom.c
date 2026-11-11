@@ -27,7 +27,7 @@
  *  - the same for the WiFi card: a USB WiFi device with no network interface 2 minutes after start-up
  *    gets its port reset once.
  * Looks at /sys only, every 5 s (no USB traffic, except the one look again and the one reset).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #include "phantom.h"
 #include "log.h"
 #include "paths.h"

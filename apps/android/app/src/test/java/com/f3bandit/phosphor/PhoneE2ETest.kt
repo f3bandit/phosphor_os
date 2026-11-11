@@ -3,7 +3,7 @@
 // address at a time, so some get "busy": they have to be sent again, not fail (0.27.58).
 //   PHOSD_BIN=/path/to/phosphord ./gradlew testDebugUnitTest --tests '*PhoneE2ETest*'
 // Skipped without PHOSD_BIN. CI (.github/workflows/tests.yml) builds phosphord for the PC and runs it.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor
 
 import kotlinx.coroutines.Dispatchers

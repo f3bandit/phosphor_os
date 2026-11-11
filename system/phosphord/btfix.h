@@ -1,5 +1,5 @@
 /* phosphord: repairs a "soft bricked" Bluetooth (the bt-repair module, SS1 Tool's same script).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_BTFIX_H
 #define PHOSD_BTFIX_H
 

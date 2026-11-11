@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+# Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 """The menu must never wait for phosphord on something it asks again and again.
 
 phosphord answers one request at a time. When the shell asks it something from a path that runs over and

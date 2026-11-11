@@ -1,5 +1,5 @@
 /* phosphord: drives the cloud-sync module (saves to the user's own cloud storage).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Quick things (status, storage places) are asked for on each request; anything that uses the network
  * (setup, send, get back, test, list MiSTers) runs one at a time in the background, stopped after 15

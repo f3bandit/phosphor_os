@@ -1,5 +1,5 @@
 /* phosphord: runs the diag module (whole-system checks) in the background and keeps the results.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * diag.sh --kv prints one "area.key=level|message" line per check and a "summary=level|text" line.
  * It takes up to ~20 s (network checks), so it never runs on the API thread: a request starts it,

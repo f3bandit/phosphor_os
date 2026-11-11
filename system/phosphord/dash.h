@@ -1,4 +1,4 @@
-/* phosphord: the dashboard's numbers. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+/* phosphord: the dashboard's numbers. Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_DASH_H
 #define PHOSD_DASH_H
 #include "cJSON.h"

@@ -3,7 +3,7 @@
 // into the app when GitHub can't be reached); each cover is fetched from where its maker posted it, or,
 // when that link is gone, from Phosphor's copy in pack.zip. Every cover is credited (hack_by,
 // cover_from). A game's exact name is matched first, then its name with tags and versions out.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.content.Context

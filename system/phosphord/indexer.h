@@ -1,5 +1,5 @@
 /* phosphord: finds games on the SD card, USB drives and the network share.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_INDEXER_H
 #define PHOSD_INDEXER_H
 

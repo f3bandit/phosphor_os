@@ -2,7 +2,7 @@
 // A developer tool (not part of Phosphor): the page does the drawing (web/, the same sprite drawing
 // as Phosphor's), this program serves it, writes the exports and adds a texture to Phosphor's source.
 //
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package main
 
 import (

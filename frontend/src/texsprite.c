@@ -1,4 +1,4 @@
-/* Phosphor shell: sprite textures. Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+/* Phosphor shell: sprite textures. Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * Kept step for step the same as SpriteTex.alpha (apps/windows/web/texture.js and
  * tools/texture-maker/web/spritetex.js), rounding included, so the TV, the Windows app and the
  * Texture Maker draw the same pixels. Built with -ffp-contract=off (CMakeLists.txt): a fused

@@ -1,5 +1,5 @@
 /* phosphord: the "Local files" source: box art and details already on the drives, no network.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Asked like any other source, first by default (it's instant and offline). Nothing on the drives is
  * changed: pictures are copied into Phosphor's store, scaled down, as from any source. For a game, in

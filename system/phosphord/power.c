@@ -1,5 +1,5 @@
 /* phosphord: the health-watch module's power check.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * Only on request: the shell asks once after start-up and when Diagnostics opens; nothing on a timer. */
 #include "power.h"
 #include "modjob.h"

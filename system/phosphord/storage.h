@@ -1,5 +1,5 @@
 /* phosphord: drives the storage module (SD card, NVMe and USB checks; the faulty overlap tool).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOSD_STORAGE_H
 #define PHOSD_STORAGE_H
 

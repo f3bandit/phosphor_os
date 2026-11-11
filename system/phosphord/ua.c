@@ -2,7 +2,7 @@
  * phosphor/ua/ua_bridge.py, which runs Update All's own settings code from its update_all.pyz: the whole list as
  * Update All shows it, with Phosphor's status for each item, changes saved the way Update All's menu saves them,
  * and uninstalls through Update All's own database manager.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * The bridge is kept running while it's used (Update All's code takes seconds to load on the SS1) and stopped
  * after 5 minutes unused. Requests go to it one at a time; the list is kept and sent again until it changes.

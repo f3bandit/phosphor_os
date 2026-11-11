@@ -1,5 +1,5 @@
 /* Phosphor frontend: screens and navigation.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Layout follows mockups/phosphor.html at 1280x720 and scales with the screen:
  *   status bar (wordmark, share/ethernet/WiFi/Bluetooth, clock)
@@ -9756,7 +9756,7 @@ static void show_about(void)
 	ab_add("Maldita Castilla and hybrid cores", "MiSTer ports and mister-hybrid-platform by gmcnaught");
 	ab_add("Music CD names", "MusicBrainz and the Cover Art Archive");
 	ab_add("Music decoding", "dr_libs by David Reid, stb_vorbis by Sean Barrett");
-	ab_add("Licence", "PolyForm Noncommercial 1.0.0: phosphor/LICENSE.md");
+	ab_add("Licence", "All rights reserved; licensed to Retro Remake: phosphor/LICENSE.md");
 	ab_add("Open-source software", "LVGL, SQLite, musl and more: phosphor/THIRD_PARTY_NOTICES.md");
 	ab_add("Main and menu core", "GPL-3.0; their source: phosphor/SOURCE.md");
 

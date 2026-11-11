@@ -1,4 +1,4 @@
-/* phosphord: RetroSpy (see retrospy.c). Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0. */
+/* phosphord: RetroSpy (see retrospy.c). Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake. */
 #ifndef PHOSD_RETROSPY_H
 #define PHOSD_RETROSPY_H
 

@@ -1,5 +1,5 @@
 /* Phosphor frontend: the offline drive repair's screen (the SD card, then the other drives).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Only in the repair copy of MiSTer's Linux on the repair drive (the storage module's sdrescue.sh puts this
  * program, Phosphor's Main and the repair step in it): phosphor --sdrepair STATE. No phosphord, no library:

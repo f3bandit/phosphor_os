@@ -1,5 +1,5 @@
 /* Phosphor frontend: controller and keyboard input (Linux evdev), with hot-plug and key repeat.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Reads every /dev/input/event* device that has keys or buttons. New devices are picked up when
  * /dev/input changes (inotify), so a controller plugged in later just works. Devices aren't

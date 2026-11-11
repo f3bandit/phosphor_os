@@ -1,5 +1,5 @@
 /* Phosphor shell: CRT mode, Phosphor's frames out of the analog port at a TV's own timing (see crt.c).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md). */
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md). */
 #ifndef PHOS_CRT_H
 #define PHOS_CRT_H
 #include "lvgl.h"

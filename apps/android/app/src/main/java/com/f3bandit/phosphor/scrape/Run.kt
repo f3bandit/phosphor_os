@@ -4,7 +4,7 @@
 // (PUT /art) and the details (scrape_result) to the MiSTer. The MiSTer's own lookup waits meanwhile,
 // and the TV says who's doing it. A few games at once; services that ask for a pace get it.
 // Each picture is kept in the app's folder (ArtStore) until the MiSTer has it.
-// Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+// Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
 package com.f3bandit.phosphor.scrape
 
 import android.content.Context

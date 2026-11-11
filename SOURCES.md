@@ -1,6 +1,6 @@
 # Sources, licences and credits for Phosphor's releases
 
-Phosphor's own work is under the PolyForm Noncommercial License 1.0.0 (LICENSE.md). Each release also
+Phosphor's own work is f3bandit's, all rights reserved, licensed to Retro Remake (LICENSE.md). Each release also
 contains free software by other people. This page says where its source is and who it belongs to, for
 every release, including the ones published before their packages carried this information
 themselves (from 0.27.41 on, each package has SOURCE.md, THIRD_PARTY_NOTICES.md and the licence texts).

@@ -1,5 +1,5 @@
 /* phosphord: WiFi from the menu (scan, connect, forget, order) on MiSTer's own WiFi setup.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * MiSTer runs wpa_supplicant with /media/fat/linux/wpa_supplicant.conf and dhcpcd for the address,
  * without a control socket, so this works the same way MiSTer's own WiFi script does: networks are

@@ -1,5 +1,5 @@
 /* phosphord: screenshots.
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * They live where MiSTer keeps its own: screenshots/<core>/ on the SD card. In a game, MiSTer's Main
  * takes them (Phosphor's Main: both sticks pressed in, L3 + R3, or "screenshot" for the apps); on Phosphor's own

@@ -1,5 +1,5 @@
 /* phosphord: drives the backup-agent module (snapshots of saves and settings on the SD card, NVMe or NAS).
- * Copyright (C) 2026 f3bandit. PolyForm Noncommercial 1.0.0 (see LICENSE.md).
+ * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  * Snapshots stay on local drives or the NAS, so they may hold settings (WiFi); restoring "saves only"
  * leaves those alone. Every restore takes a safety snapshot first (the module's own rule). */
 #include "backup.h"
