@@ -9,7 +9,7 @@
  * button mapping set up in MiSTer, sent to the shell as events (mainlink.c, input_main_pad). The SS1's
  * front ports (SNAC) are for games only, as in MiSTer. With that Main, controllers aren't read here at all, only keyboards. With a
  * Main that doesn't send them, they come from Main's "MiSTer virtual input" keys and the pads themselves.
- * Remote keys (Phosphor Link's press) come in on a FIFO, and everything is noted in the input watch
+ * Remote keys (written to a FIFO from a shell on the MiSTer) come in on a FIFO, and everything is noted in the input watch
  * log in RAM (input_watch). A key held from several places still counts as one press, and a second press of the
  * same key within a few milliseconds of letting go (some pads bounce) is dropped. */
 #define _GNU_SOURCE                                         /* strcasestr */
@@ -72,7 +72,7 @@ const char *input_notice(void)
 
 static pkey_t queue[32];
 static unsigned char queue_app[32], last_app;   /* where a key came from: 1 the apps' Remote control, 2 another
-                                                   remote (Phosphor Link), 3 a keyboard; 0 a controller */
+                                                   remote (the key FIFO), 3 a keyboard; 0 a controller */
 static int push_app;
 static int qh, qt;
 static pkey_t held = KEY_NONE_;

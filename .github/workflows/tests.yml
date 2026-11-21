@@ -1,14 +1,14 @@
-# Tests for Phosphor for Windows and phosphor-link, including end-to-end ones against a real phosphord
+# Tests for Phosphor for Windows, including end-to-end ones against a real phosphord
 # (built for the PC here): Look up on this PC with box art from a pretend source while the app's page asks
 # for progress, a big upload to a busy SS1, Local files (gamelist.xml, media folders, Update All's artwork
-# packs, a folder on the PC; one system, one game), and the library tools with every connection taken.
+# packs, a folder on the PC; one system, one game).
 # The phone app's end-to-end test runs in android.yml.
 name: Tests
 on:
   push:
-    paths: ["system/**", "apps/windows/**", "tools/phosphor-link/**", ".github/workflows/tests.yml"]
+    paths: ["system/**", "apps/windows/**", ".github/workflows/tests.yml"]
   pull_request:
-    paths: ["system/**", "apps/windows/**", "tools/phosphor-link/**", ".github/workflows/tests.yml"]
+    paths: ["system/**", "apps/windows/**", ".github/workflows/tests.yml"]
   workflow_dispatch:
 jobs:
   test:
@@ -21,9 +21,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: apps/windows/go.mod
-          cache-dependency-path: |
-            apps/windows/go.sum
-            tools/phosphor-link/go.sum
+          cache-dependency-path: apps/windows/go.sum
       - name: phosphord for the PC
         run: |
           cmake -S system -B build-pc -DCMAKE_BUILD_TYPE=Release
@@ -42,9 +40,3 @@ jobs:
           cmake --build ../../build-asan -j"$(nproc)" --target phosphord
           PHOSD_BIN=$PWD/../../build-asan/phosphord ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
             go test -count=1 -run TestE2E -v . | grep -E "^(---|ok|FAIL)|runtime error|AddressSanitizer"
-      - name: phosphor-link
-        working-directory: tools/phosphor-link
-        run: |
-          go vet ./...
-          go test -count=1 -v -run TestE2E . | grep -E "^(---|ok|FAIL)|busy_e2e"
-          go test -count=1 ./...

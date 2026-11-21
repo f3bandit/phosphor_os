@@ -30,8 +30,8 @@ it from the command line.
   `_shmask.cfg`, `_gamma.cfg`, same layout Main uses), applies presets from `Presets/`, lists
   `Filters/`, `Shadow_Masks/`, `Gamma/`. Every change is backed up first and can be undone; the core
   name comes from `systems.ini` (`cfgname=`) or the installed core file.
-- **Remote access** (off until turned on in Settings): HTTP on port 8767 for the phone app, a PC app or
-  the Claude plugin, home network only, devices paired with a 6-digit code shown on the TV, only key
+- **Remote access** (off until turned on in Settings): HTTP on port 8767 for the phone app or a PC app,
+  home network only, devices paired with a 6-digit code shown on the TV, only key
   hashes stored (`config/remote.ini`). Library, details, box art upload and download, "Based on",
   scraper, screen filters, launch; not WiFi or pairing. See [docs/remote-api.md](../docs/remote-api.md).
 - **Front ports** (`memcard.c`): controllers and memory cards on the SuperStation One's front ports,

@@ -2,23 +2,20 @@
 
 Everything here was built and tested in the sandbox (and some of it on the SS1 over the debug
 port), but still needs checking on the real thing. Work down the list; tick items off with the date.
-Phosphor Link (debug port) does most of the setup, so most of this can be driven from the Claude app.
 
 Legend: **[ ]** not tested yet · **[~]** partly tested on the SS1 · **[x]** done
 
 ## 0. Before starting
 
 - [ ] Back up the SD card (or at least `/media/fat/MiSTer.ini`, `linux/`, `ConsoleMode/`, `Scripts/`).
-- [ ] Phosphor Link connects (`phosphor-link status`) and the Claude app sees it.
-- [ ] Note the stock state for comparison: `phosphor-link run "bash diag.sh report"` (diag module).
+- [ ] Note the stock state for comparison: `bash diag.sh report` on the SS1 (diag module).
 - [ ] After installing or flashing: `/media/fat/phosphor/phosphor.sh check` gives a one-screen summary (what
       runs, what answers: phosphord, the shell, Phosphor's Main, front ports, Bluetooth, WiFi, logs).
 
 ## Installing for the tests
 
 Build: `install/build-release.sh` → `dist/phosphor-<version>-armhf.tar.gz` (~2.3 MB).
-Copy it to the SS1 over the network share (`\\200.200.200.23\sdcard`, Samba is on) or with
-Phosphor Link (`push_file`, ~6 min over the debug port), then on the SS1:
+Copy it to the SS1 over the network share (`\\200.200.200.23\sdcard`, Samba is on), then on the SS1:
 
 ```
 cd /media/fat && tar xzf phosphor-<version>-armhf.tar.gz && phosphor-<version>/install.sh
@@ -30,16 +27,6 @@ cd /media/fat && tar xzf phosphor-<version>-armhf.tar.gz && phosphor-<version>/i
 - [ ] `install.sh` (no boot entry) → only `/media/fat/phosphor` created.
 - [ ] `install.sh --boot` → block "phosphor" in `linux/user-startup.sh`, backup in `phosphor/backup/`; reboot → phosphord running.
 - [ ] `uninstall.sh` → boot block gone, `user-startup.sh` byte-for-byte as before, library kept; `--all` → folder gone.
-
-## 1. Phosphor Link (PC tool, debug port)
-
-- [x] Connects on COM5, logs in, `status` and `selftest` pass (2026-10-22).
-- [x] Claude desktop app uses it (status, run, push_file) (2026-10-22).
-- [ ] `reboot`: reboots the SS1 and returns the whole boot log; nothing typed during U-Boot.
-- [ ] `watch` / `serial_log`: shows Main's messages while browsing the menu and starting a core.
-- [ ] `term`: interactive console, Ctrl-] quits, console left as it was (`dmesg -n` restored).
-- [ ] SSH fallback: add `host=200.200.200.23` to `phosphor-link.ini`, unplug the debug cable, `status`.
-- [ ] Big file over SSH vs serial (speed).
 
 ## 2. Modules (phosphor-modules)
 
@@ -232,18 +219,6 @@ From the PC (same network), with curl; the commands are in `docs/remote-api.md`.
 - [ ] Forget the device (X) → its token gets 401.
 - [ ] Reboot: still on, device still paired (`phosphor/config/remote.ini` has hashes, not tokens).
 - [ ] While a game runs, the remote API still answers and doesn't slow the game.
-
-## 9. Claude library tools (Phosphor Link 0.2, Claude desktop app on the PC)
-
-Replace `phosphor-link.exe` with 0.2.0 (quit Claude first), restart Claude.
-
-- [ ] Ask Claude to pair: it asks for the address and code from the TV; pairing works.
-- [ ] "How's my library?" → library_status numbers match the TV.
-- [ ] "Find games without box art and fix three of them": Claude checks CRC/product code, finds the right
-      region's front cover, uploads it; the covers show on the TV.
-- [ ] "Fill in the details for <game>": description in its own words, year/developer/publisher correct.
-- [ ] A hack (e.g. an FFT TLW version): Claude links it to the original instead of copying art.
-- [ ] Forget the PC on the TV → the next tool call says to pair again.
 
 ## 10. Phosphor for Android (Pixel 10)
 

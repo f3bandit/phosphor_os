@@ -25,7 +25,7 @@ int input_held(void);
 pkey_t input_poll(unsigned now_ms);
 /* the key input_poll just gave came from the Windows app (Remote control) */
 int input_from_app(void);
-/* the last key came from a keyboard or a remote (the apps, Phosphor Link), not a controller */
+/* the last key came from a keyboard or a remote (the apps, the key FIFO), not a controller */
 int input_not_controller(void);
 /* inject keys for tests and screenshots */
 void input_push(pkey_t k);
@@ -41,7 +41,7 @@ pkey_t key_from_name(const char *name);
  * nothing new. Each one is returned once. */
 const char *input_notice(void);
 /* the input watch log, /tmp/phosphor-input.log (RAM): every button the shell gets and where from, so
- * input can be checked from Phosphor Link. Remote keys: write names ("up", "a", "start"...) one a line
+ * input can be checked over SSH or the debug port. Remote keys: write names ("up", "a", "start"...) one a line
  * to the FIFO /tmp/phosphor-keys */
 void input_watch(const char *src, const char *what);
 

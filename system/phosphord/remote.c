@@ -1,4 +1,4 @@
-/* phosphord: remote access over the home network (phone app, PC app, Claude plugin).
+/* phosphord: remote access over the home network (phone app, PC app).
  * Copyright (C) 2026 f3bandit. All rights reserved; licensed to Retro Remake (see LICENSE.md).
  *
  * Off until turned on in Settings > Remote access. Plain HTTP/1.1 on port 8767, one request per

@@ -119,7 +119,7 @@ check_dirty_drives() {
 #  - USB disks: manage_shutdown on, so the kernel sends "sync your cache, stop" (START STOP UNIT) when
 #    the disk goes, here or at the restart itself
 #  - each USB device then let go by its driver (authorized 0): the drives first, the WiFi card last;
-#    hubs and USB serial ports (the dock's debug port: Phosphor Link) are left alone
+#    hubs and USB serial ports (the dock's debug port) are left alone
 # Prints nothing (safe-stop's output is read by phosphord). PHOS_SYS: a test /sys.
 usb_quiesce() {
 	S="${PHOS_SYS:-/sys}"

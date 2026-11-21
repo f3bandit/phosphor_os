@@ -1,6 +1,6 @@
 # Remote access API
 
-For the Phosphor phone app, a PC app, or the Claude plugin: manage a MiSTer's Phosphor library over the
+For the Phosphor phone app or a PC app: manage a MiSTer's Phosphor library over the
 home network. phosphord 0.8 and later (`games` filters: 0.8.1).
 
 ## Turning it on

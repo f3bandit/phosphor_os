@@ -92,7 +92,7 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   rounded corners are cached for more sizes.
 
 ### For developers
-- `docs/menu-rules.md`: the rules for the TV menu, and `CLAUDE.md`. `tools/check-polls/check_drawing.py` in
+- `docs/menu-rules.md`: the rules for the TV menu. `tools/check-polls/check_drawing.py` in
   "Shell checks" (see-through drawing, timers and animations outliving their screen, labels set over and over,
   lists rebuilt over and over, a screen updated before it's built); `check_polls.py` follows calls all the way
   down. `menu_walk.py` on the SS1 also fails crashes, screens repainting while idle and quick in-and-out
@@ -236,13 +236,13 @@ writes next to each image (`dist/phosphor-<version>-sdcard-*.txt`).
   (Phosphor for Windows 0.2.50). When the SS1 was busy, it answered a box art upload with "busy" but
   dropped the rest of the picture, and on Windows that reset the connection before the answer arrived:
   the game was left for later. Uploads cut off like that are now sent again (they only replace the art).
-  The phone app (0.9.13) and phosphor-link do the same, and phosphor-link now waits out "busy" too.
+  The phone app (0.9.13) does the same.
   Reported by n00dlez.
 
 ### Tests
 - New end-to-end tests run on every change against a real phosphord built for the PC: Look up on this
   PC with box art from a pretend source while the app's page asks for progress, the phone app's uploads
-  six at a time, and phosphor-link with every connection taken. They fail on 0.27.57's apps with the same
+  six at a time. They fail on 0.27.57's apps with the same
   "busy: try again", and found the upload problem above.
 
 ## 0.27.58
@@ -1049,7 +1049,6 @@ Thanks to n00dlez for testing with MC BlueBridge adapters and an 8BitDo Ultimate
 - **Keep a copy:** remote access (paired devices, SSH mode, password, keys) copied to the NVMe or a
   USB drive after each change. A freshly flashed SD card gets it back on first boot, with a notice.
   Backup snapshots now include it too (so a NAS gets a copy when snapshots go there).
-- phosphor-link 0.4.1 logs in with the Phosphor app's key, so it still works with Keys only.
 
 ## 0.27.9
 

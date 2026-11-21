@@ -4955,7 +4955,7 @@ static const char *const SI_TEXT[SET_COUNT][2] = {
 	               "Needed for updates, box art and cloud saves. Ethernet on the dock works too." },
 	[SET_BT] = { "Pair Bluetooth controllers and keyboards, and forget ones you no longer use.",
 	             "Put the controller in pairing mode first, then choose Pair." },
-	[SET_REMOTE] = { "Lets the Phosphor phone app and Phosphor Link on a PC reach this MiSTer over your home network, after you pair them with a code shown here.",
+	[SET_REMOTE] = { "Lets the Phosphor phone app and Phosphor for Windows reach this MiSTer over your home network, after you pair them with a code shown here.",
 	                 "Only paired devices get in. Nothing goes over the internet." },
 	[SET_SAMBA] = { "Shares the SD card and the games drive as a network folder, so you can copy games and files from a PC.",
 	                "Leave it off when you don't need it: anyone on your network can open the share." },
@@ -5947,7 +5947,7 @@ static void wifi_key(pkey_t k)
 }
 
 /* ---------- Remote access ----------
- * Lets the phone app / PC app / Claude plugin manage the library over the home network. Off until
+ * Lets the phone app / PC app manage the library over the home network. Off until
  * turned on here; each device pairs once with a 6-digit code shown on this screen. */
 
 typedef struct { char id[17], name[64]; long created, last_seen; } rdev_t;

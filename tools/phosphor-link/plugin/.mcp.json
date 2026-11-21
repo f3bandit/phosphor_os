@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "phosphor-link": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/server/phosphor-link.exe",
-      "args": ["mcp"]
-    }
-  }
-}
